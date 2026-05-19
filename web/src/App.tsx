@@ -83,8 +83,8 @@ function AuthenticatedApp() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+      <div className="min-h-screen light-theme:bg-white light-theme:text-slate-900 bg-slate-950 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 light-theme:border-blue-600 border-blue-500" />
       </div>
     )
   }
@@ -97,7 +97,7 @@ function AuthenticatedApp() {
     theme === 'steel'
       ? 'dashboard-steel min-h-screen flex flex-col text-[#d7dde5]'
       : theme === 'light'
-        ? 'min-h-screen text-slate-900'
+        ? 'min-h-screen bg-white text-slate-900'
         : 'min-h-screen bg-slate-950 text-slate-100'
 
   return (

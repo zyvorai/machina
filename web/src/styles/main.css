@@ -126,6 +126,12 @@ code {
   background-clip: text;
   color: transparent;
 }
+.login-page-light .login-text-gradient {
+  background: none;
+  color: #0f172a;
+  -webkit-background-clip: unset;
+  background-clip: unset;
+}
 .login-stat-pill {
   display: inline-flex;
   align-items: center;
@@ -347,9 +353,13 @@ code {
 /* Light theme overrides */
 .light-theme {
   color-scheme: light;
+  background-color: #f1f5f9;
 }
 .light-theme body {
   background-color: #f1f5f9;
+}
+#root.light-theme {
+  background-color: #ffffff;
 }
 .light-theme .bg-slate-950 { background-color: #f8fafc; }
 .light-theme .bg-slate-900\/80 { background-color: rgba(255,255,255,0.95); }
@@ -385,6 +395,70 @@ code {
 .light-theme .glass-card {
   background: rgba(255, 255, 255, 0.7);
   border-color: rgba(226, 232, 240, 0.8);
+}
+
+/* Broad light-theme slate override for utility classes */
+.light-theme [class*="bg-slate-900"] {
+  background-color: #f1f5f9 !important;
+}
+.light-theme [class*="bg-slate-800"] {
+  background-color: #ffffff !important;
+}
+.light-theme [class*="bg-slate-700"] {
+  background-color: #e2e8f0 !important;
+}
+.light-theme [class*="bg-slate-600"] {
+  background-color: rgba(226, 232, 240, 0.9) !important;
+}
+.light-theme [class*="bg-slate-500"] {
+  background-color: rgba(241, 245, 249, 0.95) !important;
+}
+
+.light-theme [class*="text-white"] {
+  color: #0f172a !important;
+}
+.light-theme [class*="text-slate-100"] {
+  color: #0f172a !important;
+}
+.light-theme [class*="text-slate-200"] {
+  color: #334155 !important;
+}
+.light-theme [class*="text-slate-300"] {
+  color: #334155 !important;
+}
+.light-theme [class*="text-slate-400"] {
+  color: #475569 !important;
+}
+.light-theme [class*="text-slate-500"] {
+  color: #64748b !important;
+}
+
+/* Additional light theme text color overrides */
+.light-theme .text-slate-600 { color: #475569; }
+.light-theme .text-slate-50 { color: #0f172a; }
+.light-theme .text-gray-100,
+.light-theme .text-gray-200,
+.light-theme .text-gray-300 { color: #374151; }
+.light-theme .text-gray-400 { color: #6b7280; }
+.light-theme .text-gray-500 { color: #9ca3af; }
+.light-theme .text-slate-950 { color: #0f172a; }
+.light-theme .bg-slate-950\/50 { background-color: rgba(248, 250, 252, 0.5); }
+.light-theme .bg-slate-900\/20 { background-color: rgba(241, 245, 249, 0.2); }
+.light-theme .bg-slate-700\/10 { background-color: rgba(226, 232, 240, 0.1); }
+.light-theme .text-gray-600,
+.light-theme .text-gray-700 { color: #374151; }
+.light-theme .text-gray-800,
+.light-theme .text-gray-900 { color: #111827; }
+
+/* Light theme button and link overrides */
+.light-theme button,
+.light-theme a { color: #0f172a; }
+.light-theme button:not(.btn-primary):not(.btn-secondary) { color: #0f172a; }
+
+/* Light theme disabled state */
+.light-theme .disabled,
+.light-theme :disabled {
+  opacity: 0.5;
 }
 
 /* Steel theme — dark steel dashboard shell + nav helpers */
