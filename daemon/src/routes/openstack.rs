@@ -23,6 +23,7 @@ use machina_core::{
     force_delete_instance, is_openstack_configured, list_flavors,
     list_floating_ips, list_cinder_volumes, list_images, list_instance_floating_ips,
     list_instance_volumes, list_instances, list_keypairs, list_networks, list_security_groups,
+    ListInstancesParams,
     pause_instance, preview_qcow2_upload, reboot_instance, rebuild_instance, remove_security_group,
     confirm_resize_instance, resize_instance, revert_resize_instance, resume_instance,
     snapshot_instance, start_instance, stop_instance, ResizeInstanceRequest,
@@ -94,6 +95,8 @@ async fn openstack_test_connection() -> Result<Json<OpenStackConnectionStatus>, 
 pub struct InstanceListQuery {
     pub search: Option<String>,
     pub status: Option<String>,
+    pub limit: Option<u32>,
+    pub marker: Option<String>,
 }
 
 async fn openstack_list_instances(
@@ -101,16 +104,22 @@ async fn openstack_list_instances(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let cfg = openstack_cfg();
     ensure_openstack_enabled(&cfg)?;
-    let instances = list_instances(
+    let result = list_instances(
         &cfg,
-        q.search.as_deref(),
-        q.status.as_deref(),
+        ListInstancesParams {
+            search: q.search.as_deref(),
+            status: q.status.as_deref(),
+            limit: q.limit,
+            marker: q.marker.as_deref(),
+        },
     )
     .await?;
-    let total = instances.len();
     Ok(Json(serde_json::json!({
-        "instances": instances,
-        "total": total,
+        "instances": result.instances,
+        "next_marker": result.next_marker,
+        "has_more": result.has_more,
+        "total": result.total,
+        "search_truncated": result.search_truncated,
     })))
 }
 
@@ -920,6 +929,7 @@ pub fn openstack_routes() -> Router<LibvirtManager> {
         .route("/openstack/images/upload", post(openstack_image_upload))
         .route("/openstack/images/{id}/pull", post(openstack_image_pull))
         .merge(crate::routes::openstack_extended::openstack_extended_routes())
+        .merge(crate::routes::openstack_services::openstack_services_routes())
 }
 
 async fn openstack_image_pull(

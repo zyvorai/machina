@@ -107,14 +107,18 @@ connect_timeout_secs = 30
 | Floating IPs | `/openstack/floating-ips` — allocate, associate, release |
 | Floating IP detail | `/openstack/floating-ips/{id}` |
 | Networking | `/openstack/networking` — lab create (network/subnet/router/port/FIP) + topology lists |
+| Network topology (SVG) | `/openstack/topology` — Neutron graph (networks, subnets, routers, ports, FIPs, instances) |
+| Heat stacks | `/openstack/heat` — list, create (template), delete · detail `/openstack/heat/{name}/{id}` |
+| Octavia load balancers | `/openstack/load-balancers` — list, create, delete · detail `/openstack/load-balancers/{id}` |
+| Identity (read-only) | `/openstack/identity` — Keystone projects and users |
 | Network / subnet / router / port detail | `/openstack/networks/{id}` · `/openstack/subnets/{id}` · `/openstack/routers/{id}` · `/openstack/ports/{id}` |
-| Flavors / server groups | `/openstack/flavors/{id}` · `/openstack/server-groups/{id}` |
+| Flavors / server groups | `/openstack/flavors/{id}` · `/openstack/server-groups/{id}` · `/openstack/hypervisors/{id}` |
 | SSH keypairs | `/openstack/keypairs` — list, create/import, delete |
 | Bulk migrations | `/openstack/migrations` — HyperSDK proxy (when `[hypersdk] enabled`) |
 
 Lifecycle APIs:
 
-- `GET /api/v1/openstack/instances` — query `search`, `status`
+- `GET /api/v1/openstack/instances` — query `search`, `status`, `limit` (default 25 when paginating), `marker` (Nova server UUID for next page); returns `next_marker`, `has_more`, and `search_truncated` when name search scans more than 500 matches; omit `limit`/`marker` for full project list with `total`
 - `GET /api/v1/openstack/instances/{id}`
 - `POST .../start`, `.../stop`, `.../reboot` — body `{ "reboot_type": "soft" \| "hard" }`
 - `POST .../pause`, `.../unpause`, `.../suspend`, `.../resume`
@@ -133,7 +137,7 @@ Volumes & networking:
 - `GET /api/v1/openstack/volumes` — Cinder volumes (attach picker)
 - `POST /api/v1/openstack/volumes` — body `{ "size_gb": N, "name": "...", "description": "..." }`
 - `DELETE /api/v1/openstack/volumes/{id}`
-- `GET /api/v1/openstack/security-groups` — Neutron security groups + rules (read-only)
+- `GET /api/v1/openstack/security-groups` — Neutron security groups + rules (list)
 - `GET /api/v1/openstack/security-groups/{id}`
 - `GET .../instances/{id}/volumes` — attachments for one instance
 - `POST .../instances/{id}/volumes/attach` — body `{ "volume_id": "..." }`
@@ -176,6 +180,18 @@ Catalog APIs for the create wizard:
 - `PUT .../neutron-agents/{id}` · `PUT .../hypervisors/{id}` — maintenance `{ "maintenance": true|false }`
 - `PUT .../networks/{id}` · `PUT .../ports/{id}` · `GET|POST /api/v1/openstack/clouds` · `POST .../cloud` (session cloud switch)
 
+Heat, Octavia, Identity, topology:
+
+- `GET /api/v1/openstack/heat/reachable` · `GET|POST .../heat/stacks` · `GET|PATCH|DELETE .../heat/stacks/{name}/{id}`
+- `GET .../heat/stacks/{name}/{id}/resources|events|template`
+- `GET .../octavia/reachable` · `GET|POST .../load-balancers` · `GET|DELETE .../load-balancers/{id}`
+- `GET|POST .../load-balancers/{id}/listeners` · `GET|POST .../load-balancers/pools` · members and health-monitors under pools
+- `GET|POST .../identity/projects` · `GET .../identity/projects/{id}` · `GET|POST .../identity/users` · `PUT .../identity/users/{id}`
+- `GET .../identity/roles` · `GET|PUT .../identity/role-assignments` · `POST .../identity/role-assignments/revoke`
+- `GET .../network-topology` — `{ "graph": { "nodes", "edges" } }` for the topology SVG page
+
+Phases **441–520** (OpenStack depth): Heat stack **resources/events/template/outputs** and **PATCH update**; Octavia **listeners/pools/members/health monitors**; Keystone **roles**, **role assignments**, **project/user create**, user enable/disable; bash E2E catalog GET for Heat/Octavia/identity/topology; TUI `heat-stacks|heat-events|heat-resources|lb-listeners|identity-roles|identity-assignments`.
+
 Phases **291–340** (Tier 1 polish): port/transfer detail pages; instance **locked** badge; Neutron quota panel; dedicated SG/FIP/snapshot detail routes; router subnet interface UX on router detail; Neutron project id fallback for quotas; TUI migrate/backup/rebuild/shelve/rescue/interfaces/vol-upload/subnet-update; OpenAPI sweep for routes 141–340.
 
 Phases **341–390** (Tier 1 follow-up): subnet **DHCP** toggle on subnet detail; port **admin down** on port detail and networking list; volume **upload-to-Glance** progress polling with link to image detail; instance list **client pagination** (25 per page); instance detail **shelve/unshelve** toolbar actions; Nova list uses one GET per server for **locked** (no duplicate fetch); TUI `port-update`.
@@ -212,18 +228,20 @@ See [openstack-migration.md](openstack-migration.md) for full API tables.
 
 Optional `use_hyper2kvm` on VM push delegates to hyper2kvm for guest-fix and deploy parity with hyper2kvm CLI.
 
-**HyperSDK proxy** (optional `[hypersdk]` in config): `GET /api/v1/hypersdk/status`, `.../providers/vms`, `POST .../migrations/submit`, `GET .../migrations/jobs` — forwards to hypervisord for bulk pipelines. UI: **OpenStack → OS Migrations**.
+**HyperSDK proxy** (optional `[hypersdk]` in config): `GET /api/v1/hypersdk/status`, `.../providers/list`, `.../providers/vms`, `POST .../migrations/submit`, `GET .../migrations/jobs`, `GET .../migrations/jobs/{id}`, `GET|POST .../hypersdk/proxy?path=/api/...` — forwards to hypervisord for bulk pipelines. UI: **OpenStack → OS Migrations** (providers, VM picker, job detail).
+
+## What stays in Horizon / `osc` (advanced / not in Machina)
+
+- Heat nested-stack drill-down and environment-file CRUD
+- Octavia L7 policies/rules and amphora diagnostics
+- Keystone domain/group/SAML federation admin
+- Full HyperSDK dashboard (Machina proxies list/submit/jobs/detail; advanced flows use hypervisord UI)
+
+Identity **writes** (create project/user, role grant/revoke) require admin-scoped `[openstack]` credentials on the daemon host.
+
+TUI commands (`:` prefix): `openstack` / `os` (status), `openstack list`, `openstack start|stop|delete <id>`, `openstack quotas|snapshots`, `openstack attach|detach <inst> <vol>`, `openstack fips`, `openstack fip-allocate <net>`, `openstack fip-release <id>`, `openstack port-delete <id>`, `openstack migrate|migrate-live|backup|rebuild`, `openstack shelve|unshelve|rescue|unrescue`, `openstack interfaces|interface-attach|interface-detach`, `openstack vol-upload-image <vol> <name>`, `openstack subnet-update <id> <field> <value>`, `openstack port-update <id> <field> <value>`, `openstack flavor-create <name> <vcpus> <ram_mb> <disk_gb>`, `openstack flavor-delete <id>`, `openstack quota-set <compute|cinder|neutron> <key> <limit>`, `openstack svc-enable|svc-disable <binary> <host>`, `openstack agent-admin <id> <up|down>`, `openstack hv-maintenance <id> <on|off>`, `openstack aggregate-create <name> [az]`, `openstack aggregate-add-host|aggregate-remove-host <id> <host>`, `openstack heat-stacks`, `openstack heat-events|heat-resources <name> <id>`, `openstack lb-listeners <lb_id>`, `openstack identity-roles`, `openstack identity-assignments <project_id>`, `openstack network|subnet|router|port|fip|volume|image|server-group <id>`, `openstack confirm-resize|revert-resize`, `openstack lock|unlock|force-delete`, `openstack clouds|cloud <name>`.
 
 ## Packaging
 
 - Rust `openstack` crate (Nova/Glance/Neutron) in `machina-core`; no extra system packages beyond HTTPS.
 - Optional: `python3-openstackclient` on the host for debugging; Glance upload uses machina-core when `[openstack] upload_enabled = true`.
-
-## What stays in Horizon / `osc` (not in v1)
-
-- Neutron topology editor, Heat stacks, Octavia load balancers, identity project admin
-- Full HyperSDK dashboard features (Machina proxies list/submit/jobs; advanced flows use hypervisord UI)
-
-TUI commands (`:` prefix): `openstack` / `os` (status), `openstack list`, `openstack start|stop|delete <id>`, `openstack quotas|snapshots`, `openstack attach|detach <inst> <vol>`, `openstack fips`, `openstack fip-allocate <net>`, `openstack fip-release <id>`, `openstack port-delete <id>`, `openstack migrate|migrate-live|backup|rebuild`, `openstack shelve|unshelve|rescue|unrescue`, `openstack interfaces|interface-attach|interface-detach`, `openstack vol-upload-image <vol> <name>`, `openstack subnet-update <id> <field> <value>`, `openstack port-update <id> <field> <value>`, `openstack flavor-create <name> <vcpus> <ram_mb> <disk_gb>`, `openstack flavor-delete <id>`, `openstack quota-set <compute|cinder|neutron> <key> <limit>`, `openstack svc-enable|svc-disable <binary> <host>`, `openstack agent-admin <id> <up|down>`, `openstack hv-maintenance <id> <on|off>`, `openstack aggregate-create <name> [az]`, `openstack aggregate-add-host|aggregate-remove-host <id> <host>`, `openstack network|subnet|router|port|fip|volume|image|server-group <id>`, `openstack confirm-resize|revert-resize`, `openstack lock|unlock|force-delete`, `openstack clouds|cloud <name>`.
-
-Neutron topology editing, Heat, Octavia, identity project admin—use Horizon or the OpenStack CLI for those tasks.

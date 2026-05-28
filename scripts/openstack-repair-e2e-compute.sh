@@ -32,12 +32,54 @@ os_env() {
 
 ensure_fake_driver() {
   if grep -q '^compute_driver=fake.FakeDriver' "$CONF" 2>/dev/null; then
+    ensure_fake_vif_plugging
     return 0
   fi
   log "Setting compute_driver=fake.FakeDriver (Machina + libvirt coexistence)"
   sed -i 's/^compute_driver=.*/compute_driver=fake.FakeDriver/' "$CONF"
   grep -q '^compute_driver=fake.FakeDriver' "$CONF" \
     || echo 'compute_driver=fake.FakeDriver' >>"$CONF"
+  ensure_fake_vif_plugging
+}
+
+ensure_fake_vif_plugging() {
+  # OVN/linuxbridge port binding fails on fake compute; let builds complete anyway.
+  if grep -q '^vif_plugging_is_fatal=' "$CONF" 2>/dev/null; then
+    sed -i 's/^vif_plugging_is_fatal=.*/vif_plugging_is_fatal=false/' "$CONF"
+  else
+    echo 'vif_plugging_is_fatal=false' >>"$CONF"
+  fi
+  if grep -q '^vif_plugging_timeout=' "$CONF" 2>/dev/null; then
+    sed -i 's/^vif_plugging_timeout=.*/vif_plugging_timeout=0/' "$CONF"
+  else
+    echo 'vif_plugging_timeout=0' >>"$CONF"
+  fi
+}
+
+ml2_uses_ovn() {
+  [[ -f /etc/neutron/plugins/ml2/ml2_conf.ini ]] || return 1
+  grep -E '^mechanism_drivers=' /etc/neutron/plugins/ml2/ml2_conf.ini 2>/dev/null | grep -q ovn
+}
+
+ensure_ovn_chassis() {
+  ml2_uses_ovn || return 0
+  command -v ovs-vsctl >/dev/null 2>&1 || return 0
+  local ip
+  ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || true)"
+  [[ -n "$ip" ]] || ip="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  [[ -n "$ip" ]] || return 0
+  log "OVN: ensure chassis for $HOST ($ip)"
+  ovs-vsctl --may-exist add-br br-int
+  ovs-vsctl --may-exist add-br br-ex 2>/dev/null || true
+  ip link set br-ex up 2>/dev/null || true
+  ovs-vsctl set open . external-ids:system-id="$HOST"
+  ovs-vsctl set open . "external-ids:ovn-remote=tcp:${ip}:6642"
+  ovs-vsctl set open . external-ids:ovn-remote-probe-interval=60000
+  ovs-vsctl set open . external-ids:ovn-encap-type=geneve
+  ovs-vsctl set open . "external-ids:ovn-encap-ip=${ip}"
+  ovs-vsctl set open . external-ids:ovn-bridge-mappings=physnet1:br-ex
+  systemctl restart ovn-controller neutron-ovn-agent neutron-server 2>/dev/null || true
+  sleep 3
 }
 
 delete_error_instances() {
@@ -85,6 +127,16 @@ reset_nova_compute_state() {
   chown nova:nova /var/lib/nova/instances/compute_nodes
 }
 
+sync_compute_id_from_db() {
+  local cn
+  cn="$(mysql nova -N -e "SELECT uuid FROM compute_nodes WHERE hypervisor_hostname='${HOST}' LIMIT 1" 2>/dev/null || true)"
+  [[ -n "$cn" ]] || return 0
+  echo "$cn" >/var/lib/nova/compute_id
+  chown nova:nova /var/lib/nova/compute_id
+  chmod 600 /var/lib/nova/compute_id
+  log "Synced /var/lib/nova/compute_id from compute_nodes ($cn)"
+}
+
 map_cell_hosts() {
   command -v nova-manage >/dev/null 2>&1 || return 0
   local cell
@@ -100,9 +152,10 @@ restart_nova_compute() {
   systemctl reset-failed openstack-nova-compute 2>/dev/null || true
   systemctl enable openstack-nova-compute 2>/dev/null || true
   systemctl restart openstack-nova-compute
-  sleep 6
+  sleep 8
   if systemctl is-active --quiet openstack-nova-compute; then
     log "nova-compute is active"
+    sync_compute_id_from_db
   else
     tail -25 /var/log/nova/nova-compute.log 2>/dev/null || journalctl -u openstack-nova-compute -n 25 --no-pager
     die "nova-compute failed to start"
@@ -111,11 +164,12 @@ restart_nova_compute() {
 
 main() {
   ensure_fake_driver
+  ensure_ovn_chassis
   delete_error_instances
   delete_placement_rp_by_name
   reset_nova_compute_state
-  map_cell_hosts
   restart_nova_compute
+  map_cell_hosts
   os_env
   openstack compute service list 2>/dev/null | grep nova-compute || true
   log "Done. Run E2E: VSPASS=… ./scripts/e2e-test-remote.sh USER HOST"

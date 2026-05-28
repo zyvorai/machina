@@ -1,11 +1,12 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
-import { ArrowLeft, Loader2, GitBranch } from 'lucide-react'
+import { Link, useNavigate, useParams } from 'react-router'
+import { ArrowLeft, GitBranch, Loader2, Trash2 } from 'lucide-react'
 import { listOpenStackNetworks, type OpenStackNetwork } from '../api/openstack'
 import {
   addOpenStackRouterInterface,
+  deleteOpenStackRouter,
   getOpenStackRouter,
   listOpenStackSubnets,
   removeOpenStackRouterInterface,
@@ -29,6 +30,7 @@ export default function OpenStackRouterDetailPage() {
 
 function OpenStackRouterDetailContent() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const toast = useToastContext()
   const [router, setRouter] = useState<OpenStackRouter | null>(null)
   const [networks, setNetworks] = useState<OpenStackNetwork[]>([])
@@ -160,6 +162,17 @@ function OpenStackRouterDetailContent() {
             }}>Unlink subnet</button>
         </div>
       </section>
+      <button type="button" className="px-3 py-1.5 rounded-lg border border-red-600/50 text-red-300 text-sm inline-flex items-center gap-1"
+        onClick={async () => {
+          if (!router || !confirm(`Delete router ${router.name}?`)) return
+          try {
+            await deleteOpenStackRouter(router.id)
+            toast.success('Router deleted')
+            navigate('/openstack/networking')
+          } catch (e: unknown) { toast.error(formatUserError(e)) }
+        }}>
+        <Trash2 className="w-4 h-4" /> Delete router
+      </button>
       <OpenStackFooter />
     </div>
   )

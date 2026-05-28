@@ -2,7 +2,7 @@
 // Proprietary software — see LICENSE in the repository root.
 // https://zyvor.dev · info@zyvor.dev
 
-import { apiPost, apiPut, apiDelete, readJsonObject } from './client'
+import { apiPost, apiPut, apiPatch, apiDelete, readJsonObject } from './client'
 import { parseResponseError } from './parseResponseError'
 
 const API = '/api/v1'
@@ -646,4 +646,330 @@ export function addOpenStackAggregateHost(aggregateId: string, host: string): Pr
 
 export function removeOpenStackAggregateHost(aggregateId: string, host: string): Promise<{ aggregate: OpenStackHostAggregate }> {
   return apiPost(`${API}/openstack/aggregates/${inst(aggregateId)}/remove-host`, { host })
+}
+
+export interface OpenStackHeatStack {
+  id: string
+  stack_name: string
+  stack_status: string
+  stack_status_reason?: string
+  creation_time?: string
+  updated_time?: string
+  description?: string
+  timeout_mins?: number
+  parameters?: Record<string, unknown>
+  outputs?: OpenStackHeatOutput[]
+}
+
+export interface OpenStackHeatOutput {
+  output_key: string
+  output_value?: string
+  description?: string
+}
+
+export interface OpenStackHeatResource {
+  logical_resource_id: string
+  resource_name: string
+  resource_status: string
+  resource_type: string
+  physical_resource_id?: string
+}
+
+export interface OpenStackHeatEvent {
+  event_time?: string
+  resource_name: string
+  resource_status?: string
+  resource_status_reason?: string
+  resource_type?: string
+}
+
+export function listOpenStackHeatStacks(): Promise<{ stacks: OpenStackHeatStack[] }> {
+  return readJsonObject(`${API}/openstack/heat/stacks`)
+}
+
+export function getOpenStackHeatStack(name: string, id: string): Promise<{ stack: OpenStackHeatStack }> {
+  return readJsonObject(`${API}/openstack/heat/stacks/${encodeURIComponent(name)}/${encodeURIComponent(id)}`)
+}
+
+export function createOpenStackHeatStack(body: {
+  stack_name: string
+  template_body: string
+  parameters?: Record<string, unknown>
+  timeout_mins?: number
+}): Promise<{ stack: OpenStackHeatStack }> {
+  return apiPost(`${API}/openstack/heat/stacks`, body)
+}
+
+export function deleteOpenStackHeatStack(name: string, id: string): Promise<void> {
+  return apiDelete(`${API}/openstack/heat/stacks/${encodeURIComponent(name)}/${encodeURIComponent(id)}`)
+}
+
+export function listOpenStackHeatResources(name: string, id: string): Promise<{ resources: OpenStackHeatResource[] }> {
+  return readJsonObject(`${API}/openstack/heat/stacks/${encodeURIComponent(name)}/${encodeURIComponent(id)}/resources`)
+}
+
+export function listOpenStackHeatEvents(name: string, id: string): Promise<{ events: OpenStackHeatEvent[] }> {
+  return readJsonObject(`${API}/openstack/heat/stacks/${encodeURIComponent(name)}/${encodeURIComponent(id)}/events`)
+}
+
+export function getOpenStackHeatTemplate(name: string, id: string): Promise<{ template: string }> {
+  return readJsonObject(`${API}/openstack/heat/stacks/${encodeURIComponent(name)}/${encodeURIComponent(id)}/template`)
+}
+
+export function updateOpenStackHeatStack(
+  name: string,
+  id: string,
+  body: { template_body?: string; parameters?: Record<string, unknown>; timeout_mins?: number },
+): Promise<{ stack: OpenStackHeatStack }> {
+  return apiPatch(`${API}/openstack/heat/stacks/${encodeURIComponent(name)}/${encodeURIComponent(id)}`, body)
+}
+
+export interface OpenStackLoadBalancer {
+  id: string
+  name: string
+  provisioning_status: string
+  operating_status: string
+  vip_address?: string
+  vip_subnet_id?: string
+  description?: string
+}
+
+export function listOpenStackLoadBalancers(): Promise<{ loadbalancers: OpenStackLoadBalancer[] }> {
+  return readJsonObject(`${API}/openstack/load-balancers`)
+}
+
+export function getOpenStackLoadBalancer(id: string): Promise<{ loadbalancer: OpenStackLoadBalancer }> {
+  return readJsonObject(`${API}/openstack/load-balancers/${inst(id)}`)
+}
+
+export function createOpenStackLoadBalancer(body: {
+  name: string
+  vip_subnet_id: string
+  description?: string
+}): Promise<{ loadbalancer: OpenStackLoadBalancer }> {
+  return apiPost(`${API}/openstack/load-balancers`, body)
+}
+
+export function deleteOpenStackLoadBalancer(id: string): Promise<void> {
+  return apiDelete(`${API}/openstack/load-balancers/${inst(id)}`)
+}
+
+export interface OpenStackLbListener {
+  id: string
+  name: string
+  protocol: string
+  protocol_port: number
+  provisioning_status: string
+  operating_status: string
+  loadbalancer_id?: string
+  default_pool_id?: string
+}
+
+export interface OpenStackLbPool {
+  id: string
+  name: string
+  protocol: string
+  lb_algorithm: string
+  provisioning_status: string
+  operating_status: string
+  loadbalancer_id?: string
+}
+
+export interface OpenStackLbMember {
+  id: string
+  address: string
+  protocol_port: number
+  subnet_id?: string
+  provisioning_status: string
+  operating_status: string
+}
+
+export interface OpenStackLbHealthMonitor {
+  id: string
+  name: string
+  type: string
+  delay: number
+  timeout: number
+  max_retries: number
+  provisioning_status: string
+  operating_status: string
+  pool_id?: string
+}
+
+export function listOpenStackLbListeners(lbId: string): Promise<{ listeners: OpenStackLbListener[] }> {
+  return readJsonObject(`${API}/openstack/load-balancers/${inst(lbId)}/listeners`)
+}
+
+export function createOpenStackLbListener(
+  lbId: string,
+  body: { name: string; protocol: string; protocol_port: number; loadbalancer_id?: string },
+): Promise<{ listener: OpenStackLbListener }> {
+  return apiPost(`${API}/openstack/load-balancers/${inst(lbId)}/listeners`, { ...body, loadbalancer_id: lbId })
+}
+
+export function deleteOpenStackLbListener(id: string): Promise<void> {
+  return apiDelete(`${API}/openstack/load-balancers/listeners/${inst(id)}`)
+}
+
+export function listOpenStackLbPools(lbId: string): Promise<{ pools: OpenStackLbPool[] }> {
+  return readJsonObject(`${API}/openstack/load-balancers/${inst(lbId)}/pools`)
+}
+
+export function createOpenStackLbPool(body: {
+  name: string
+  protocol: string
+  lb_algorithm: string
+  listener_id: string
+}): Promise<{ pool: OpenStackLbPool }> {
+  return apiPost(`${API}/openstack/load-balancers/pools`, body)
+}
+
+export function deleteOpenStackLbPool(id: string): Promise<void> {
+  return apiDelete(`${API}/openstack/load-balancers/pools/${inst(id)}`)
+}
+
+export function listOpenStackLbMembers(poolId: string): Promise<{ members: OpenStackLbMember[] }> {
+  return readJsonObject(`${API}/openstack/load-balancers/pools/${inst(poolId)}/members`)
+}
+
+export function createOpenStackLbMember(
+  poolId: string,
+  body: { address: string; protocol_port: number; subnet_id?: string },
+): Promise<{ member: OpenStackLbMember }> {
+  return apiPost(`${API}/openstack/load-balancers/pools/${inst(poolId)}/members`, body)
+}
+
+export function deleteOpenStackLbMember(poolId: string, memberId: string): Promise<void> {
+  return apiDelete(`${API}/openstack/load-balancers/pools/${inst(poolId)}/members/${inst(memberId)}`)
+}
+
+export function listOpenStackLbHealthMonitors(poolId: string): Promise<{ healthmonitors: OpenStackLbHealthMonitor[] }> {
+  return readJsonObject(`${API}/openstack/load-balancers/pools/${inst(poolId)}/health-monitors`)
+}
+
+export function createOpenStackLbHealthMonitor(body: {
+  pool_id: string
+  name: string
+  type: string
+  delay: number
+  timeout: number
+  max_retries: number
+}): Promise<{ healthmonitor: OpenStackLbHealthMonitor }> {
+  return apiPost(`${API}/openstack/load-balancers/health-monitors`, body)
+}
+
+export function deleteOpenStackLbHealthMonitor(id: string): Promise<void> {
+  return apiDelete(`${API}/openstack/load-balancers/health-monitors/${inst(id)}`)
+}
+
+export interface OpenStackProject {
+  id: string
+  name: string
+  enabled: boolean
+  description?: string
+}
+
+export interface OpenStackIdentityUser {
+  id: string
+  name: string
+  enabled: boolean
+  email?: string
+  default_project_id?: string
+}
+
+export function listOpenStackIdentityProjects(): Promise<{ projects: OpenStackProject[] }> {
+  return readJsonObject(`${API}/openstack/identity/projects`)
+}
+
+export function getOpenStackIdentityProject(id: string): Promise<{ project: OpenStackProject }> {
+  return readJsonObject(`${API}/openstack/identity/projects/${inst(id)}`)
+}
+
+export function createOpenStackIdentityProject(body: {
+  name: string
+  description?: string
+  enabled?: boolean
+}): Promise<{ project: OpenStackProject }> {
+  return apiPost(`${API}/openstack/identity/projects`, body)
+}
+
+export function listOpenStackIdentityUsers(): Promise<{ users: OpenStackIdentityUser[] }> {
+  return readJsonObject(`${API}/openstack/identity/users`)
+}
+
+export function getOpenStackIdentityUser(id: string): Promise<{ user: OpenStackIdentityUser }> {
+  return readJsonObject(`${API}/openstack/identity/users/${inst(id)}`)
+}
+
+export function createOpenStackIdentityUser(body: {
+  name: string
+  password: string
+  email?: string
+  default_project_id?: string
+  enabled?: boolean
+}): Promise<{ user: OpenStackIdentityUser }> {
+  return apiPost(`${API}/openstack/identity/users`, body)
+}
+
+export function updateOpenStackIdentityUser(
+  id: string,
+  body: { enabled?: boolean; email?: string },
+): Promise<{ user: OpenStackIdentityUser }> {
+  return apiPut(`${API}/openstack/identity/users/${inst(id)}`, body)
+}
+
+export interface OpenStackRole {
+  id: string
+  name: string
+}
+
+export interface OpenStackRoleAssignment {
+  role_id: string
+  user_id?: string
+  project_id?: string
+  role_name?: string
+  user_name?: string
+}
+
+export function listOpenStackIdentityRoles(): Promise<{ roles: OpenStackRole[] }> {
+  return readJsonObject(`${API}/openstack/identity/roles`)
+}
+
+export function listOpenStackRoleAssignments(projectId?: string): Promise<{ role_assignments: OpenStackRoleAssignment[] }> {
+  const q = projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''
+  return readJsonObject(`${API}/openstack/identity/role-assignments${q}`)
+}
+
+export function grantOpenStackRoleAssignment(body: {
+  project_id: string
+  user_id: string
+  role_id: string
+}): Promise<{ status: string }> {
+  return apiPut(`${API}/openstack/identity/role-assignments`, body)
+}
+
+export function revokeOpenStackRoleAssignment(body: {
+  project_id: string
+  user_id: string
+  role_id: string
+}): Promise<{ status: string }> {
+  return apiPost(`${API}/openstack/identity/role-assignments/revoke`, body)
+}
+
+export interface TopologyNode {
+  id: string
+  label: string
+  kind: string
+  status?: string
+  extra?: string
+}
+
+export interface TopologyEdge {
+  from: string
+  to: string
+  label?: string
+}
+
+export function getOpenStackNetworkTopology(): Promise<{ graph: { nodes: TopologyNode[]; edges: TopologyEdge[] } }> {
+  return readJsonObject(`${API}/openstack/network-topology`)
 }

@@ -1,10 +1,10 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
-import { ArrowLeft, Network, Loader2 } from 'lucide-react'
+import { Link, useNavigate, useParams } from 'react-router'
+import { ArrowLeft, Network, Loader2, Trash2 } from 'lucide-react'
 import type { OpenStackNetwork } from '../api/openstack'
-import { getOpenStackNetwork, updateOpenStackNetwork } from '../api/openstackExtras'
+import { getOpenStackNetwork, updateOpenStackNetwork, deleteOpenStackNetwork } from '../api/openstackExtras'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
@@ -21,9 +21,11 @@ export default function OpenStackNetworkDetailPage() {
 
 function OpenStackNetworkDetailContent() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const toast = useToastContext()
   const [net, setNet] = useState<OpenStackNetwork | null>(null)
   const [loading, setLoading] = useState(true)
+  const [deleteOpen, setDeleteOpen] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -68,16 +70,42 @@ function OpenStackNetworkDetailContent() {
         <div><dt className="text-xs text-slate-500 uppercase">External</dt><dd className="text-slate-200 mt-1">{net.external ? 'Yes' : 'No'}</dd></div>
         <div><dt className="text-xs text-slate-500 uppercase">Shared</dt><dd className="text-slate-200 mt-1">{net.shared ? 'Yes' : 'No'}</dd></div>
       </dl>
-      <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-600 text-sm"
-        onClick={async () => {
-          const n = prompt('Network name', net.name)
-          if (n === null || !n.trim()) return
-          try {
-            await updateOpenStackNetwork(net.id, { name: n.trim() })
-            toast.success('Renamed')
-            void load()
-          } catch (e: unknown) { toast.error(formatUserError(e)) }
-        }}>Rename</button>
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-600 text-sm"
+          onClick={async () => {
+            const n = prompt('Network name', net.name)
+            if (n === null || !n.trim()) return
+            try {
+              await updateOpenStackNetwork(net.id, { name: n.trim() })
+              toast.success('Renamed')
+              void load()
+            } catch (e: unknown) { toast.error(formatUserError(e)) }
+          }}>Rename</button>
+        <button type="button" className="px-3 py-1.5 rounded-lg border border-red-600/50 text-red-300 text-sm hover:bg-red-500/10 inline-flex items-center gap-1"
+          onClick={() => setDeleteOpen(true)}>
+          <Trash2 className="w-4 h-4" /> Delete
+        </button>
+      </div>
+      {deleteOpen && (
+        <div className="rounded-xl border border-red-500/40 bg-red-950/20 p-4 space-y-3">
+          <p className="text-sm text-red-200">Delete network <span className="font-mono">{net.name || net.id}</span>? Subnets and ports must be removed first.</p>
+          <div className="flex gap-2">
+            <button type="button" className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-sm"
+              onClick={async () => {
+                try {
+                  await deleteOpenStackNetwork(net.id)
+                  toast.success('Network deleted')
+                  navigate('/openstack/networking')
+                } catch (e: unknown) {
+                  toast.error(formatUserError(e))
+                  setDeleteOpen(false)
+                }
+              }}>Delete</button>
+            <button type="button" className="px-3 py-1.5 rounded-lg border border-slate-600 text-sm"
+              onClick={() => setDeleteOpen(false)}>Cancel</button>
+          </div>
+        </div>
+      )}
       <OpenStackFooter />
     </div>
   )

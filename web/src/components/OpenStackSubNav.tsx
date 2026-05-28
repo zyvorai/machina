@@ -5,7 +5,7 @@
 import { Link, useLocation } from 'react-router'
 import { usePlatformInfo } from '../contexts/PlatformInfoContext'
 import { useOpenStackConnection } from '../hooks/useOpenStackConnection'
-import { Cloud, Server, HardDrive, Plus, GitBranch, LayoutGrid, Settings, Shield, Network, Key, Disc, Cpu, Layers, Globe, Camera } from 'lucide-react'
+import { Cloud, Server, HardDrive, Plus, GitBranch, LayoutGrid, Settings, Shield, Network, Key, Disc, Cpu, Layers, Globe, Camera, Scale, KeyRound, Map } from 'lucide-react'
 import OpenStackCloudPicker from './OpenStackCloudPicker'
 
 const TABS = [
@@ -17,7 +17,11 @@ const TABS = [
   { to: '/openstack/flavors', label: 'Flavors', icon: Cpu },
   { to: '/openstack/server-groups', label: 'Groups', icon: Layers },
   { to: '/openstack/networking', label: 'Network', icon: Network },
+  { to: '/openstack/topology', label: 'Topology', icon: Map },
   { to: '/openstack/floating-ips', label: 'FIPs', icon: Globe },
+  { to: '/openstack/heat', label: 'Heat', icon: Layers },
+  { to: '/openstack/load-balancers', label: 'LBs', icon: Scale },
+  { to: '/openstack/identity', label: 'Identity', icon: KeyRound },
   { to: '/openstack/keypairs', label: 'Keys', icon: Key },
   { to: '/openstack/security-groups', label: 'Security', icon: Shield },
   { to: '/openstack/create', label: 'Create', icon: Plus },

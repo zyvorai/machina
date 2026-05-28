@@ -1,9 +1,9 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
-import { ArrowLeft, Loader2, Network } from 'lucide-react'
-import { getOpenStackSubnet, updateOpenStackSubnet, type OpenStackSubnet } from '../api/openstackExtras'
+import { Link, useNavigate, useParams } from 'react-router'
+import { ArrowLeft, Loader2, Network, Trash2 } from 'lucide-react'
+import { getOpenStackSubnet, updateOpenStackSubnet, deleteOpenStackSubnet, type OpenStackSubnet } from '../api/openstackExtras'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
@@ -20,6 +20,7 @@ export default function OpenStackSubnetDetailPage() {
 
 function OpenStackSubnetDetailContent() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const toast = useToastContext()
   const [subnet, setSubnet] = useState<OpenStackSubnet | null>(null)
   const [loading, setLoading] = useState(true)
@@ -103,6 +104,17 @@ function OpenStackSubnetDetailContent() {
               void load()
             } catch (e: unknown) { toast.error(formatUserError(e)) }
           }}>{dhcpOn ? 'Disable DHCP' : 'Enable DHCP'}</button>
+        <button type="button" className="px-3 py-1.5 rounded-lg border border-red-600/50 text-red-300 text-sm inline-flex items-center gap-1"
+          onClick={async () => {
+            if (!confirm(`Delete subnet ${subnet.name || subnet.cidr}?`)) return
+            try {
+              await deleteOpenStackSubnet(subnet.id)
+              toast.success('Subnet deleted')
+              navigate('/openstack/networking')
+            } catch (e: unknown) { toast.error(formatUserError(e)) }
+          }}>
+          <Trash2 className="w-4 h-4" /> Delete
+        </button>
       </div>
       <OpenStackFooter />
     </div>

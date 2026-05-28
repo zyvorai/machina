@@ -194,7 +194,15 @@ function OpenStackInstanceDetailContent() {
         <div className="rounded-xl border border-violet-500/30 bg-violet-950/20 px-4 py-3 text-sm flex flex-wrap items-center gap-2">
           <Layers className="w-4 h-4 text-violet-400 shrink-0" />
           <span className="text-violet-200">Heat stack</span>
-          {heatStack.stack_name && (
+          {heatStack.stack_name && heatStack.stack_id && (
+            <Link
+              to={`/openstack/heat/${encodeURIComponent(heatStack.stack_name)}/${encodeURIComponent(heatStack.stack_id)}`}
+              className="font-medium text-sky-400 hover:underline"
+            >
+              {heatStack.stack_name}
+            </Link>
+          )}
+          {heatStack.stack_name && !heatStack.stack_id && (
             <span className="font-medium text-slate-100">{heatStack.stack_name}</span>
           )}
           {heatStack.stack_id && (

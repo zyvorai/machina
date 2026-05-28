@@ -75,12 +75,21 @@ const OpenStackSubnetDetail = lazy(() => import('./pages/OpenStackSubnetDetail')
 const OpenStackRouterDetail = lazy(() => import('./pages/OpenStackRouterDetail'))
 const OpenStackPortDetail = lazy(() => import('./pages/OpenStackPortDetail'))
 const OpenStackFlavorDetail = lazy(() => import('./pages/OpenStackFlavorDetail'))
+const OpenStackHypervisorDetail = lazy(() => import('./pages/OpenStackHypervisorDetail'))
 const OpenStackServerGroupDetail = lazy(() => import('./pages/OpenStackServerGroupDetail'))
 const OpenStackVolumeTransferDetail = lazy(() => import('./pages/OpenStackVolumeTransferDetail'))
 const OpenStackInstanceInterfaces = lazy(() => import('./pages/OpenStackInstanceInterfaces'))
 const OpenStackSecurityGroupDetail = lazy(() => import('./pages/OpenStackSecurityGroupDetail'))
 const OpenStackFloatingIpDetail = lazy(() => import('./pages/OpenStackFloatingIpDetail'))
 const OpenStackVolumeSnapshotDetail = lazy(() => import('./pages/OpenStackVolumeSnapshotDetail'))
+const OpenStackHeat = lazy(() => import('./pages/OpenStackHeat'))
+const OpenStackHeatDetail = lazy(() => import('./pages/OpenStackHeatDetail'))
+const OpenStackLoadBalancers = lazy(() => import('./pages/OpenStackLoadBalancers'))
+const OpenStackLoadBalancerDetail = lazy(() => import('./pages/OpenStackLoadBalancerDetail'))
+const OpenStackIdentity = lazy(() => import('./pages/OpenStackIdentity'))
+const OpenStackIdentityProjectDetail = lazy(() => import('./pages/OpenStackIdentityProjectDetail'))
+const OpenStackIdentityUserDetail = lazy(() => import('./pages/OpenStackIdentityUserDetail'))
+const OpenStackTopology = lazy(() => import('./pages/OpenStackTopology'))
 const Fleet = lazy(() => import('./pages/Fleet'))
 const RdpConsole = lazy(() => import('./pages/RdpConsole'))
 const SystemCheck = lazy(() => import('./pages/SystemCheck'))
@@ -236,6 +245,7 @@ function AuthenticatedShell() {
                 <Route path="/openstack/keypairs" element={<OpenStackKeypairs />} />
                 <Route path="/openstack/flavors" element={<OpenStackFlavors />} />
                 <Route path="/openstack/flavors/:id" element={<OpenStackFlavorDetail />} />
+                <Route path="/openstack/hypervisors/:id" element={<OpenStackHypervisorDetail />} />
                 <Route path="/openstack/server-groups" element={<OpenStackServerGroups />} />
                 <Route path="/openstack/server-groups/:id" element={<OpenStackServerGroupDetail />} />
                 <Route path="/openstack/networks/:id" element={<OpenStackNetworkDetail />} />
@@ -245,6 +255,14 @@ function AuthenticatedShell() {
                 <Route path="/openstack/volume-transfers/:id" element={<OpenStackVolumeTransferDetail />} />
                 <Route path="/openstack/volume-snapshots" element={<OpenStackVolumeSnapshots />} />
                 <Route path="/openstack/volume-snapshots/:id" element={<OpenStackVolumeSnapshotDetail />} />
+                <Route path="/openstack/heat" element={<OpenStackHeat />} />
+                <Route path="/openstack/heat/:name/:id" element={<OpenStackHeatDetail />} />
+                <Route path="/openstack/load-balancers" element={<OpenStackLoadBalancers />} />
+                <Route path="/openstack/load-balancers/:id" element={<OpenStackLoadBalancerDetail />} />
+                <Route path="/openstack/identity" element={<OpenStackIdentity />} />
+                <Route path="/openstack/identity/projects/:id" element={<OpenStackIdentityProjectDetail />} />
+                <Route path="/openstack/identity/users/:id" element={<OpenStackIdentityUserDetail />} />
+                <Route path="/openstack/topology" element={<OpenStackTopology />} />
                 <Route path="/openstack/instances/:id/console" element={<OpenStackConsole />} />
                 <Route path="/networks" element={<Networks />} />
                 <Route path="/storage" element={<Storage />} />

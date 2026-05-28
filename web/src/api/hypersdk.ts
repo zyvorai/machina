@@ -58,3 +58,11 @@ export function getHypersdkMigrationJob(id: string): Promise<HypersdkMigrationJo
 export function submitHypersdkMigration(config: Record<string, unknown>): Promise<{ job_id?: string; id?: string }> {
   return apiPost(`${API}/hypersdk/migrations/submit`, config)
 }
+
+export function hypersdkProxyGet(path: string): Promise<Record<string, unknown>> {
+  return readJsonObject(`${API}/hypersdk/proxy?path=${encodeURIComponent(path)}`)
+}
+
+export function hypersdkProxyPost(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  return apiPost(`${API}/hypersdk/proxy?path=${encodeURIComponent(path)}`, body)
+}

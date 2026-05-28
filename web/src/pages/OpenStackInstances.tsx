@@ -54,7 +54,12 @@ function OpenStackInstancesContent() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
-  const [page, setPage] = useState(0)
+  const [marker, setMarker] = useState<string | undefined>(undefined)
+  const [markerStack, setMarkerStack] = useState<string[]>([])
+  const [nextMarker, setNextMarker] = useState<string | undefined>(undefined)
+  const [hasMore, setHasMore] = useState(false)
+  const [searchTruncated, setSearchTruncated] = useState(false)
+  const [total, setTotal] = useState<number | undefined>(undefined)
   const toast = useToastContext()
   const { lastEvent, refreshKey } = usePlatformInfo()
 
@@ -70,10 +75,16 @@ function OpenStackInstancesContent() {
         listOpenStackInstances({
           search: search.trim() || undefined,
           status: statusFilter || undefined,
+          limit: PAGE_SIZE,
+          marker,
         }),
       ])
       setStatus(conn)
       setInstances(list.instances)
+      setNextMarker(list.next_marker)
+      setHasMore(Boolean(list.has_more))
+      setSearchTruncated(Boolean(list.search_truncated))
+      setTotal(list.total)
     } catch (e: unknown) {
       const msg = formatUserError(e)
       setLoadError(msg)
@@ -81,10 +92,11 @@ function OpenStackInstancesContent() {
     } finally {
       setLoading(false)
     }
-  }, [search, statusFilter, toast, computeLive])
+  }, [search, statusFilter, marker, toast, computeLive])
 
   useEffect(() => {
-    setPage(0)
+    setMarker(undefined)
+    setMarkerStack([])
   }, [search, statusFilter])
 
   useEffect(() => {
@@ -112,9 +124,26 @@ function OpenStackInstancesContent() {
     }
   }
 
-  const pageCount = Math.max(1, Math.ceil(instances.length / PAGE_SIZE))
-  const safePage = Math.min(page, pageCount - 1)
-  const pageInstances = instances.slice(safePage * PAGE_SIZE, safePage * PAGE_SIZE + PAGE_SIZE)
+  const goNextPage = () => {
+    if (!nextMarker) return
+    setMarkerStack((stack) => [...stack, marker ?? ''])
+    setMarker(nextMarker)
+  }
+
+  const goPrevPage = () => {
+    setMarkerStack((stack) => {
+      if (stack.length === 0) return stack
+      const next = [...stack]
+      const prev = next.pop() ?? ''
+      setMarker(prev === '' ? undefined : prev)
+      return next
+    })
+  }
+
+  const canGoPrev = markerStack.length > 0 || marker !== undefined
+  const pageLabel = total != null
+    ? `${instances.length} instance${instances.length === 1 ? '' : 's'}`
+    : `Page ${markerStack.length + 1}${hasMore ? '+' : ''} · ${instances.length} row${instances.length === 1 ? '' : 's'}`
 
   return (
     <div className="space-y-6">
@@ -246,7 +275,7 @@ function OpenStackInstancesContent() {
                 </td>
               </tr>
             )}
-            {pageInstances.map((inst) => (
+            {instances.map((inst) => (
               <tr key={inst.id} className="hover:bg-slate-800/40">
                 <td className="px-4 py-3">
                   <Link
@@ -271,7 +300,7 @@ function OpenStackInstancesContent() {
                   {inst.flavor_name || inst.flavor_id || '—'}
                 </td>
                 <td className="px-4 py-3 text-slate-400 font-mono text-xs">
-                  {inst.ip_addresses.length ? inst.ip_addresses.join(', ') : '—'}
+                  {inst.ip_addresses?.length ? inst.ip_addresses.join(', ') : '—'}
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex justify-end gap-1">
@@ -306,19 +335,24 @@ function OpenStackInstancesContent() {
           </tbody>
         </table>
       </div>
-      {instances.length > PAGE_SIZE && (
+      {(searchTruncated || canGoPrev || hasMore) && (
         <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-slate-400">
           <span>
-            Showing {safePage * PAGE_SIZE + 1}–{Math.min((safePage + 1) * PAGE_SIZE, instances.length)} of {instances.length}
+            {pageLabel}
+            {searchTruncated && (
+              <span className="ml-2 text-amber-400/90">Search capped at 500 matches — refine query</span>
+            )}
           </span>
+          {(canGoPrev || hasMore) && (
           <div className="flex gap-2">
-            <button type="button" disabled={safePage <= 0}
+            <button type="button" disabled={!canGoPrev}
               className="px-3 py-1.5 rounded-lg border border-slate-600 disabled:opacity-40 hover:bg-slate-800"
-              onClick={() => setPage((p) => Math.max(0, p - 1))}>Previous</button>
-            <button type="button" disabled={safePage >= pageCount - 1}
+              onClick={goPrevPage}>Previous</button>
+            <button type="button" disabled={!hasMore || !nextMarker}
               className="px-3 py-1.5 rounded-lg border border-slate-600 disabled:opacity-40 hover:bg-slate-800"
-              onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))}>Next</button>
+              onClick={goNextPage}>Next</button>
           </div>
+          )}
         </div>
       )}
         </>

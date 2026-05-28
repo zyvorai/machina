@@ -2667,6 +2667,46 @@ impl App {
                 let r = self.client.openstack_aggregate_remove_host(id, host).await;
                 self.report_cmd_result(r, &format!("Removed {host} from aggregate {id}"), "openstack-agg-rm", id, false).await;
             },
+            ["openstack", "heat-stacks"] | ["os", "heat-stacks"] => {
+                match self.client.openstack_api_get("heat/stacks").await {
+                    Ok(v) => self.show_json_overlay("Heat stacks", &v),
+                    Err(e) => self.state.status_message = status_err("openstack heat-stacks", &e),
+                }
+            },
+            ["openstack", "heat-events", name, id] | ["os", "heat-events", name, id] => {
+                let path = format!("heat/stacks/{name}/{id}/events");
+                match self.client.openstack_api_get(&path).await {
+                    Ok(v) => self.show_json_overlay(&format!("Heat events {name}"), &v),
+                    Err(e) => self.state.status_message = status_err("openstack heat-events", &e),
+                }
+            },
+            ["openstack", "heat-resources", name, id] | ["os", "heat-resources", name, id] => {
+                let path = format!("heat/stacks/{name}/{id}/resources");
+                match self.client.openstack_api_get(&path).await {
+                    Ok(v) => self.show_json_overlay(&format!("Heat resources {name}"), &v),
+                    Err(e) => self.state.status_message = status_err("openstack heat-resources", &e),
+                }
+            },
+            ["openstack", "lb-listeners", lb] | ["os", "lb-listeners", lb] => {
+                let path = format!("load-balancers/{lb}/listeners");
+                match self.client.openstack_api_get(&path).await {
+                    Ok(v) => self.show_json_overlay(&format!("LB listeners {lb}"), &v),
+                    Err(e) => self.state.status_message = status_err("openstack lb-listeners", &e),
+                }
+            },
+            ["openstack", "identity-roles"] | ["os", "identity-roles"] => {
+                match self.client.openstack_api_get("identity/roles").await {
+                    Ok(v) => self.show_json_overlay("Keystone roles", &v),
+                    Err(e) => self.state.status_message = status_err("openstack identity-roles", &e),
+                }
+            },
+            ["openstack", "identity-assignments", project] | ["os", "identity-assignments", project] => {
+                let path = format!("identity/role-assignments?project_id={project}");
+                match self.client.openstack_api_get(&path).await {
+                    Ok(v) => self.show_json_overlay(&format!("Role assignments {project}"), &v),
+                    Err(e) => self.state.status_message = status_err("openstack identity-assignments", &e),
+                }
+            },
             ["openstack", "create", name, flavor, image, network] => {
                 let req = CreateInstanceRequest {
                     name: name.to_string(),

@@ -244,10 +244,20 @@ export function postOpenStackTestConnection(): Promise<OpenStackConnectionStatus
 export function listOpenStackInstances(params?: {
   search?: string
   status?: string
-}): Promise<{ instances: OpenStackInstance[]; total: number }> {
+  limit?: number
+  marker?: string
+}): Promise<{
+  instances: OpenStackInstance[]
+  total?: number
+  next_marker?: string
+  has_more?: boolean
+  search_truncated?: boolean
+}> {
   const q = new URLSearchParams()
   if (params?.search) q.set('search', params.search)
   if (params?.status) q.set('status', params.status)
+  if (params?.limit != null) q.set('limit', String(params.limit))
+  if (params?.marker) q.set('marker', params.marker)
   const suffix = q.toString() ? `?${q}` : ''
   return readJsonObject(`${API}/openstack/instances${suffix}`)
 }

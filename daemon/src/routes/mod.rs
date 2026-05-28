@@ -17,6 +17,7 @@ mod hypersdk;
 mod integrations;
 mod openstack;
 mod openstack_extended;
+mod openstack_services;
 mod host_network;
 mod jobs;
 mod k8s;

@@ -569,6 +569,10 @@ impl DaemonClient {
         self.get_json(&format!("/api/v1/openstack/{resource}")).await
     }
 
+    pub async fn openstack_api_get(&self, path: &str) -> Result<serde_json::Value> {
+        self.get_json(&format!("/api/v1/openstack/{path}")).await
+    }
+
     pub async fn openstack_list_cinder_volumes(&self) -> Result<Vec<OpenStackAttachedVolume>> {
         #[derive(serde::Deserialize)]
         struct R {

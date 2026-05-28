@@ -82,12 +82,39 @@ async function mockAuthenticatedApi(page: import('@playwright/test').Page) {
     if (url.includes('/openstack/status')) {
       return route.fulfill({ json: openstackLiveStatus })
     }
+    if (url.includes('/openstack/clouds')) {
+      return route.fulfill({ json: { clouds: [{ name: 'test', active: true }] } })
+    }
     if (url.includes('/openstack/instances')) {
       return route.fulfill({
         status: 503,
         contentType: 'text/html',
         body: '<!DOCTYPE html><html><body>Bad Gateway</body></html>',
       })
+    }
+    if (url.includes('/fleet/status')) {
+      return route.fulfill({ json: { enabled: false, peers: [] } })
+    }
+    if (url.includes('/fleet/vms')) {
+      return route.fulfill({ json: { enabled: false, vms: [] } })
+    }
+    if (url.includes('/fleet/metrics')) {
+      return route.fulfill({
+        json: {
+          enabled: false,
+          local: {
+            host_cpu_percent: 0,
+            host_memory_percent: 0,
+            load_1: 0,
+            vm_count: 0,
+            vms_running: 0,
+          },
+          peers: [],
+        },
+      })
+    }
+    if (url.includes('/fleet/alerts')) {
+      return route.fulfill({ json: { peers: [], total_unacknowledged: 0 } })
     }
     if (url.endsWith('/vms') || url.match(/\/vms(\?|$)/)) {
       return route.fulfill({ json: [] })
@@ -103,7 +130,7 @@ async function mockAuthenticatedApi(page: import('@playwright/test').Page) {
         json: { hostname: 'test-host', memory_mb: 16384, cpus: 8, hypervisor: 'kvm' },
       })
     }
-    if (url.includes('/ws/')) {
+    if (url.includes('/events/stream') || url.includes('/ws/')) {
       return route.abort()
     }
     return route.fulfill({ json: {} })
@@ -126,7 +153,7 @@ test('VM list shows empty state when authenticated', async ({ page }) => {
 test('Fleet page loads when authenticated', async ({ page }) => {
   await mockAuthenticatedApi(page)
   await page.goto('/fleet')
-  await expect(page.getByRole('heading', { name: /fleet/i })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'Fleet', exact: true })).toBeVisible({ timeout: 15_000 })
 })
 
 test('language switcher changes login label', async ({ page }) => {

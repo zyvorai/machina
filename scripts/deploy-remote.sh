@@ -18,6 +18,8 @@ HEALTH_URL="${HEALTH_URL:-https://127.0.0.1:5092/api/v1/health}"
 STRICT="${STRICT:-0}"
 # Default matches VM-style layout: rsync here → build on server → install to /usr/local + systemd
 REMOTE_DIR="${REMOTE_DIR:-~/.deployment/machina}"
+# Limit parallel rustc link jobs on memory-tight hypervisors (k3s + OpenStack + Machina).
+REMOTE_CARGO_BUILD_JOBS="${REMOTE_CARGO_BUILD_JOBS:-1}"
 
 info() { deploy_ui_info_b "$@"; }
 ok()   { deploy_ui_info "$@"; }
@@ -67,6 +69,7 @@ deploy-remote.sh check [USER@HOST | USER HOST]
 Flow: rsync → ~/.deployment/machina (REMOTE_DIR) → build on server → install → systemd.
 Full install: install.sh enables + restarts the daemon (--no-start skips). Post-install curl/API verification is skipped on the remote (--no-tests). install.sh also ensures mkosi (v16+): distro package if recent, else pipx from GitHub, else optional git clone (MACHINA_MKOSI_FROM_CLONE=1), else /opt/mkosi-venv; host build tools (bubblewrap, dosfstools, …) best-effort. Default disk workflow in the Create VM UI.
 Quick: make install then daemon-reload + try-restart (only restarts if machina-daemon was active).
+Memory-tight hosts: swap + optional nginx disable via scripts/host-tune-memory.sh; remote cargo uses CARGO_BUILD_JOBS=${REMOTE_CARGO_BUILD_JOBS:-1} (override with REMOTE_CARGO_BUILD_JOBS=4).
 Open the UI at https://HOST:5092 (install.sh generates a self-signed cert; replace with your CA for browsers).
 
 --remote-build   After rsync+chown, run `make release` on the SSH host only (no sudo install.sh).
@@ -383,10 +386,11 @@ if $REMOTE_BUILD || $REMOTE_CHECK; then
     mk_target=release
     $REMOTE_CHECK && mk_target=check
     phase 3 "$TOTAL_STEPS" "Compile on remote (make ${mk_target})" "no install.sh — use full deploy to install binaries"
-    ssh_r "$REMOTE" "bash -s" "$REMOTE_DIR" "$mk_target" <<'EOS' || die "remote compile failed"
+    ssh_r "$REMOTE" "bash -s" "$REMOTE_DIR" "$mk_target" "$REMOTE_CARGO_BUILD_JOBS" <<'EOS' || die "remote compile failed"
 set -euo pipefail
 REMOTE_DIR="${1:?}"
 REMOTE_MAKE_TARGET="${2:?}"
+REMOTE_CARGO_JOBS="${3:-1}"
 cd "$REMOTE_DIR" || exit 1
 export PATH="${HOME}/.cargo/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:${PATH}"
 if ! command -v cargo >/dev/null 2>&1; then
@@ -405,6 +409,8 @@ if [ -z "${LIBCLANG_PATH:-}" ]; then
     fi
 fi
 [ -n "${LIBCLANG_PATH:-}" ] && printf 'ℹ  LIBCLANG_PATH=%s\n' "$LIBCLANG_PATH"
+export CARGO_BUILD_JOBS="$REMOTE_CARGO_JOBS"
+printf 'ℹ  CARGO_BUILD_JOBS=%s\n' "$CARGO_BUILD_JOBS"
 make "$REMOTE_MAKE_TARGET"
 EOS
     ok "Remote compile finished — run without --remote-build/--remote-check to install"
@@ -443,6 +449,7 @@ if $QUICK; then
     ssh_r_bash "$REMOTE" "
 set -euo pipefail
 export PATH=\"\${HOME}/.cargo/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:\${PATH}\"
+export CARGO_BUILD_JOBS=${REMOTE_CARGO_BUILD_JOBS}
 cd $REMOTE_DIR
 make release web
 sudo bash install.sh${QUICK_OPTS}

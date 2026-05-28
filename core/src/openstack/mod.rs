@@ -12,11 +12,16 @@ mod compute;
 mod console_tunnel;
 mod glance;
 mod glance_meta;
+mod heat;
+mod identity;
 mod instance_ops;
 mod keypairs_ops;
 mod lifecycle;
 mod libvirt_push;
 mod networking;
+mod network_graph;
+mod octavia;
+mod octavia_l7;
 mod pull;
 mod quotas;
 mod resources;
@@ -39,7 +44,8 @@ pub use auth::{
 pub use compute::{
     connect_cloud, connection_status_skeleton, delete_instance, force_delete_instance, get_instance,
     is_openstack_configured, list_instances, reboot_instance, start_instance, stop_instance,
-    test_connection, OpenStackConnectionStatus, OpenStackInstance,
+    test_connection, ListInstancesParams, ListInstancesResult, OpenStackConnectionStatus,
+    OpenStackInstance,
 };
 pub use glance::{
     delete_glance_image, preview_qcow2_upload, upload_cloud_hint, upload_qcow2_to_glance,
@@ -75,6 +81,30 @@ pub use volumes::{
     CreateVolumeFromSnapshotRequest, CreateVolumeTransferRequest, ExtendVolumeRequest,
     OpenStackCreateVolumeRequest, OpenStackVolumeSnapshot, OpenStackVolumeTransfer, RetypeVolumeRequest,
     SnapshotVolumeRequest, UpdateVolumeRequest,
+};
+pub use heat::{
+    create_heat_stack, delete_heat_stack, get_heat_stack, get_heat_stack_template, list_heat_stack_events,
+    list_heat_stack_resources, list_heat_stacks, probe_heat_reachable, update_heat_stack, CreateHeatStackRequest,
+    OpenStackHeatEvent, OpenStackHeatOutput, OpenStackHeatResource, OpenStackHeatStack, UpdateHeatStackRequest,
+};
+pub use identity::{
+    create_identity_project, create_identity_user, get_identity_project, get_identity_user, grant_role_assignment,
+    list_identity_projects, list_identity_roles, list_identity_users, list_role_assignments, revoke_role_assignment,
+    update_identity_user, CreateIdentityProjectRequest, CreateIdentityUserRequest, OpenStackIdentityUser,
+    OpenStackProject, OpenStackRole, OpenStackRoleAssignment, RoleAssignmentRequest, UpdateIdentityUserRequest,
+};
+pub use network_graph::{
+    build_network_topology, NetworkTopologyGraph, TopologyEdge, TopologyNode,
+};
+pub use octavia::{
+    create_load_balancer, delete_load_balancer, get_load_balancer, list_load_balancers,
+    probe_octavia_reachable, CreateLoadBalancerRequest, OpenStackLoadBalancer,
+};
+pub use octavia_l7::{
+    create_lb_health_monitor, create_lb_listener, create_lb_member, create_lb_pool, delete_lb_health_monitor,
+    delete_lb_listener, delete_lb_member, delete_lb_pool, list_lb_health_monitors, list_lb_listeners,
+    list_lb_members, list_lb_pools, CreateLbHealthMonitorRequest, CreateLbListenerRequest, CreateLbMemberRequest,
+    CreateLbPoolRequest, OpenStackLbHealthMonitor, OpenStackLbListener, OpenStackLbMember, OpenStackLbPool,
 };
 pub use keypairs_ops::{create_keypair, delete_keypair, CreateKeypairRequest};
 pub use lifecycle::{

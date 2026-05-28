@@ -148,7 +148,8 @@ e2e_openstack_run() {
   e2e_hdr "OPENSTACK: CATALOG GET (all list routes)"
   for path in flavors networks images keypairs volumes volume-snapshots volume-transfers volume-types \
     security-groups floating-ips quotas clouds subnets routers ports availability-zones hypervisors \
-    compute-services neutron-agents aggregates server-groups; do
+    compute-services neutron-agents aggregates server-groups heat/reachable heat/stacks octavia/reachable \
+    load-balancers identity/projects identity/users identity/roles network-topology; do
     e2e_openstack_get_ok "$path" "GET /openstack/${path}"
   done
 

@@ -16,7 +16,7 @@ export default function OpenStackCloudPicker() {
     if (phase === 'off' || phase === 'needsWire') return
     try {
       const { clouds: list } = await listOpenStackClouds()
-      setClouds(list)
+      setClouds(list ?? [])
       setError(null)
     } catch (e: unknown) {
       setError(formatUserError(e))

@@ -154,6 +154,41 @@ async fn hypersdk_submit_migration(Json(body): Json<Value>) -> Result<Json<Value
     ))
 }
 
+#[derive(Debug, Deserialize)]
+struct HypersdkProxyQuery {
+    pub path: String,
+}
+
+fn validate_proxy_path(path: &str) -> Result<&str, AppError> {
+    let p = path.trim();
+    if !p.starts_with("/api/") {
+        return Err(AppError::from(LibvirtError::Invalid(
+            "proxy path must start with /api/".into(),
+        )));
+    }
+    if p.contains("..") {
+        return Err(AppError::from(LibvirtError::Invalid(
+            "invalid proxy path".into(),
+        )));
+    }
+    Ok(p)
+}
+
+async fn hypersdk_proxy_get(Query(q): Query<HypersdkProxyQuery>) -> Result<Json<Value>, AppError> {
+    let cfg = hypersdk_cfg();
+    let path = validate_proxy_path(&q.path)?;
+    Ok(Json(proxy_get(&cfg, path, &[]).await?))
+}
+
+async fn hypersdk_proxy_post(
+    Query(q): Query<HypersdkProxyQuery>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, AppError> {
+    let cfg = hypersdk_cfg();
+    let path = validate_proxy_path(&q.path)?;
+    Ok(Json(proxy_post(&cfg, path, body).await?))
+}
+
 pub fn hypersdk_routes() -> Router<LibvirtManager> {
     Router::new()
         .route("/hypersdk/status", get(hypersdk_status))
@@ -162,4 +197,5 @@ pub fn hypersdk_routes() -> Router<LibvirtManager> {
         .route("/hypersdk/migrations/jobs", get(hypersdk_list_migration_jobs))
         .route("/hypersdk/migrations/jobs/{id}", get(hypersdk_get_migration_job))
         .route("/hypersdk/migrations/submit", post(hypersdk_submit_migration))
+        .route("/hypersdk/proxy", get(hypersdk_proxy_get).post(hypersdk_proxy_post))
 }

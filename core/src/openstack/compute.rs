@@ -140,11 +140,58 @@ pub fn connection_status_skeleton(cfg: &OpenStackConfig) -> OpenStackConnectionS
     }
 }
 
+/// Query options for `list_instances`.
+#[derive(Debug, Clone, Default)]
+pub struct ListInstancesParams<'a> {
+    pub search: Option<&'a str>,
+    pub status: Option<&'a str>,
+    /// When set with optional `marker`, Nova returns one page via `GET /servers/detail`.
+    pub limit: Option<u32>,
+    pub marker: Option<&'a str>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ListInstancesResult {
+    pub instances: Vec<OpenStackInstance>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub next_marker: Option<String>,
+    #[serde(default)]
+    pub has_more: bool,
+    /// Set when the full project list is returned (no server-side `limit`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total: Option<usize>,
+    /// True when search mode hit the scan cap before filling the page.
+    #[serde(default)]
+    pub search_truncated: bool,
+}
+
+const DEFAULT_PAGE_LIMIT: u32 = 25;
+const MAX_PAGE_LIMIT: u32 = 100;
+const MAX_SEARCH_SCAN_PAGES: u32 = 20;
+const MAX_SEARCH_MATCHES: usize = 500;
+
 pub async fn list_instances(
+    cfg: &OpenStackConfig,
+    params: ListInstancesParams<'_>,
+) -> Result<ListInstancesResult, LibvirtError> {
+    if params.limit.is_none() && params.marker.is_none() {
+        return list_instances_all(cfg, params.search, params.status).await;
+    }
+    let has_search = params
+        .search
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false);
+    if has_search {
+        return list_instances_search_paged(cfg, params).await;
+    }
+    list_instances_paged(cfg, params).await
+}
+
+async fn list_instances_all(
     cfg: &OpenStackConfig,
     search: Option<&str>,
     status_filter: Option<&str>,
-) -> Result<Vec<OpenStackInstance>, LibvirtError> {
+) -> Result<ListInstancesResult, LibvirtError> {
     let session = connect_session(cfg).await?;
     let cloud = Cloud::from(session.clone());
     let summaries = cloud.list_servers().await.map_err(map_openstack_err)?;
@@ -165,11 +212,7 @@ pub async fn list_instances(
             }
         }
         let mut inst = fetch_nova_server(&session, &id).await?;
-        if let Some(ref fid) = inst.flavor_id {
-            if let Some(fname) = flavor_cache.get(fid) {
-                inst.flavor_name = Some(fname.clone());
-            }
-        }
+        enrich_instance_flavor_names(&mut inst, &flavor_cache);
         if let Some(ref want) = status_l {
             if !inst.status.eq_ignore_ascii_case(want) {
                 continue;
@@ -177,7 +220,244 @@ pub async fn list_instances(
         }
         out.push(inst);
     }
-    Ok(out)
+    let total = out.len();
+    Ok(ListInstancesResult {
+        instances: out,
+        next_marker: None,
+        has_more: false,
+        total: Some(total),
+        search_truncated: false,
+    })
+}
+
+async fn list_instances_search_paged(
+    cfg: &OpenStackConfig,
+    params: ListInstancesParams<'_>,
+) -> Result<ListInstancesResult, LibvirtError> {
+    let limit = params
+        .limit
+        .unwrap_or(DEFAULT_PAGE_LIMIT)
+        .clamp(1, MAX_PAGE_LIMIT) as usize;
+    let search_l = params
+        .search
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| LibvirtError::Invalid("search required".into()))?;
+    let status_s = params
+        .status
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+
+    let session = connect_session(cfg).await?;
+    let cloud = Cloud::from(session.clone());
+    let flavor_cache = flavor_name_cache(&cloud).await;
+
+    let mut marker = params.marker.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+    let mut out = Vec::new();
+    let mut pages_fetched = 0u32;
+    let mut nova_has_more = false;
+    let mut last_nova_id: Option<String> = None;
+    let mut total_scanned = 0usize;
+    let mut search_truncated = false;
+
+    while out.len() < limit && pages_fetched < MAX_SEARCH_SCAN_PAGES && total_scanned < MAX_SEARCH_MATCHES {
+        let fetch_limit = MAX_PAGE_LIMIT;
+        let limit_str = fetch_limit.to_string();
+        let mut query: Vec<(String, String)> = vec![("limit".into(), limit_str)];
+        if let Some(m) = &marker {
+            query.push(("marker".into(), m.clone()));
+        }
+        if let Some(ref s) = status_s {
+            query.push(("status".into(), s.clone()));
+        }
+        let query_refs: Vec<(&str, &str)> = query
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        let resp = session
+            .get(COMPUTE, &["servers", "detail"])
+            .query(&query_refs)
+            .send()
+            .await
+            .map_err(map_osauth_err)?;
+        let body: serde_json::Value = resp.json().await.map_err(map_json_err)?;
+        let servers = body
+            .get("servers")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        if servers.is_empty() {
+            nova_has_more = false;
+            break;
+        }
+
+        let page_count = servers.len();
+        nova_has_more = page_count == fetch_limit as usize;
+        last_nova_id = servers
+            .last()
+            .and_then(|s| s.get("id"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        for server in servers {
+            total_scanned += 1;
+            if total_scanned > MAX_SEARCH_MATCHES {
+                search_truncated = true;
+                break;
+            }
+            let mut inst = instance_from_nova_json(&server)?;
+            if !inst.name.to_lowercase().contains(&search_l)
+                && !inst.id.to_lowercase().contains(&search_l)
+            {
+                continue;
+            }
+            enrich_instance_flavor_names(&mut inst, &flavor_cache);
+            out.push(inst);
+            if out.len() >= limit {
+                break;
+            }
+        }
+
+        pages_fetched += 1;
+        if !nova_has_more || out.len() >= limit || search_truncated {
+            break;
+        }
+        marker = last_nova_id.clone();
+    }
+
+    if total_scanned >= MAX_SEARCH_MATCHES && nova_has_more {
+        search_truncated = true;
+    }
+
+    let next_marker = if nova_has_more && !search_truncated {
+        last_nova_id
+    } else {
+        None
+    };
+
+    Ok(ListInstancesResult {
+        instances: out,
+        next_marker,
+        has_more: nova_has_more && !search_truncated,
+        total: None,
+        search_truncated,
+    })
+}
+
+async fn list_instances_paged(
+    cfg: &OpenStackConfig,
+    params: ListInstancesParams<'_>,
+) -> Result<ListInstancesResult, LibvirtError> {
+    let limit = params
+        .limit
+        .unwrap_or(DEFAULT_PAGE_LIMIT)
+        .clamp(1, MAX_PAGE_LIMIT);
+    let search_l = params
+        .search
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
+    let status_s = params
+        .status
+        .map(|s| s.trim().to_uppercase())
+        .filter(|s| !s.is_empty());
+
+    let session = connect_session(cfg).await?;
+    let cloud = Cloud::from(session.clone());
+    let flavor_cache = flavor_name_cache(&cloud).await;
+
+    let mut marker = params.marker.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+    let mut out = Vec::new();
+    let mut pages_fetched = 0u32;
+    let mut nova_has_more = false;
+    let mut last_nova_id: Option<String> = None;
+
+    while out.len() < limit as usize && pages_fetched < MAX_SEARCH_SCAN_PAGES {
+        let limit_str = limit.to_string();
+        let mut query: Vec<(String, String)> = vec![("limit".into(), limit_str)];
+        if let Some(m) = &marker {
+            query.push(("marker".into(), m.clone()));
+        }
+        if let Some(ref s) = status_s {
+            query.push(("status".into(), s.clone()));
+        }
+        let query_refs: Vec<(&str, &str)> = query
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        let resp = session
+            .get(COMPUTE, &["servers", "detail"])
+            .query(&query_refs)
+            .send()
+            .await
+            .map_err(map_osauth_err)?;
+        let body: serde_json::Value = resp.json().await.map_err(map_json_err)?;
+        let servers = body
+            .get("servers")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        if servers.is_empty() {
+            nova_has_more = false;
+            break;
+        }
+
+        let page_count = servers.len();
+        nova_has_more = page_count == limit as usize;
+        last_nova_id = servers
+            .last()
+            .and_then(|s| s.get("id"))
+            .and_then(|v| v.as_str())
+            .map(String::from);
+
+        for server in servers {
+            let mut inst = instance_from_nova_json(&server)?;
+            if let Some(ref q) = search_l {
+                if !inst.name.to_lowercase().contains(q) && !inst.id.to_lowercase().contains(q) {
+                    continue;
+                }
+            }
+            enrich_instance_flavor_names(&mut inst, &flavor_cache);
+            out.push(inst);
+            if out.len() >= limit as usize {
+                break;
+            }
+        }
+
+        pages_fetched += 1;
+        if search_l.is_none() {
+            break;
+        }
+        if !nova_has_more {
+            break;
+        }
+        marker = last_nova_id.clone();
+    }
+
+    let next_marker = if nova_has_more {
+        last_nova_id
+    } else {
+        None
+    };
+
+    Ok(ListInstancesResult {
+        instances: out,
+        next_marker,
+        has_more: nova_has_more,
+        total: None,
+        search_truncated: false,
+    })
+}
+
+fn enrich_instance_flavor_names(inst: &mut OpenStackInstance, cache: &HashMap<String, String>) {
+    if let Some(ref fid) = inst.flavor_id {
+        if let Some(fname) = cache.get(fid) {
+            inst.flavor_name = Some(fname.clone());
+        }
+    }
 }
 
 pub async fn get_instance(cfg: &OpenStackConfig, id: &str) -> Result<OpenStackInstance, LibvirtError> {

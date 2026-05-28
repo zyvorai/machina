@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import {
   addOpenStackAggregateHost,
   createOpenStackAggregate,
@@ -11,9 +12,7 @@ import {
   listOpenStackHostAggregates,
   listOpenStackHypervisors,
   listOpenStackNeutronAgents,
-  getOpenStackHypervisor,
   removeOpenStackAggregateHost,
-  setOpenStackHypervisorMaintenance,
   setOpenStackNeutronAgentAdmin,
   updateOpenStackAggregate,
   type OpenStackAvailabilityZone,
@@ -33,7 +32,6 @@ export default function OpenStackAdminPanel() {
   const [services, setServices] = useState<OpenStackComputeService[]>([])
   const [agents, setAgents] = useState<OpenStackNeutronAgent[]>([])
   const [aggregates, setAggregates] = useState<OpenStackHostAggregate[]>([])
-  const [hvDetail, setHvDetail] = useState<OpenStackHypervisor | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [downOnly, setDownOnly] = useState(false)
@@ -116,14 +114,9 @@ export default function OpenStackAdminPanel() {
           <ul className="space-y-1 font-mono text-slate-300 max-h-40 overflow-y-auto">
             {hvs.map((h) => (
               <li key={h.id} className="flex flex-wrap items-center gap-2">
-                <button type="button" className="text-left hover:text-sky-300" onClick={async () => {
-                  try {
-                    const r = await getOpenStackHypervisor(h.id)
-                    setHvDetail(r.hypervisor)
-                  } catch { /* ignore */ }
-                }}>
+                <Link to={`/openstack/hypervisors/${encodeURIComponent(h.id)}`} className="text-left hover:text-sky-300">
                   {h.hostname} · {h.running_vms} VMs · {h.vcpus_used}/{h.vcpus} vCPU
-                </button>
+                </Link>
               </li>
             ))}
             {hvs.length === 0 && <li className="text-slate-500">No hypervisor data</li>}
@@ -232,29 +225,6 @@ export default function OpenStackAdminPanel() {
           </ul>
         </div>
       </div>
-      {hvDetail && (
-        <div className="rounded-lg border border-sky-500/30 bg-sky-950/20 p-3 text-xs font-mono text-slate-300 space-y-2">
-          <div>
-            {hvDetail.hostname} · {hvDetail.state}/{hvDetail.status} · {hvDetail.memory_mb_used}/{hvDetail.memory_mb} MB RAM
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {hvDetail.status === 'disabled' ? (
-              <button type="button" className="text-emerald-400 hover:underline"
-                onClick={() => void run(
-                  () => setOpenStackHypervisorMaintenance(hvDetail.id, false),
-                  'Maintenance off',
-                )}>Exit maintenance</button>
-            ) : (
-              <button type="button" className="text-amber-400 hover:underline"
-                onClick={() => void run(
-                  () => setOpenStackHypervisorMaintenance(hvDetail.id, true),
-                  'Maintenance on',
-                )}>Enter maintenance</button>
-            )}
-            <button type="button" className="text-slate-500 hover:underline" onClick={() => setHvDetail(null)}>Dismiss</button>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

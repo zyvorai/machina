@@ -11,7 +11,8 @@ use crate::config::OpenStackConfig;
 use crate::LibvirtError;
 
 use super::auth::{
-    connect_session, effective_cloud_name, map_json_err, map_osauth_err, resolve_clouds_yaml_path,
+    connect_identity_session, connect_session, effective_cloud_name, map_json_err, map_osauth_err,
+    resolve_clouds_yaml_path,
 };
 
 const IDENTITY: GenericService = GenericService::new("identity", VersionSelector::Any);
@@ -90,7 +91,7 @@ fn project_name_from_clouds_yaml(cfg: &OpenStackConfig) -> Option<String> {
     None
 }
 
-async fn resolve_project_id_by_name(session: &osauth::Session, name: &str) -> Option<String> {
+async fn resolve_project_id_by_name(cfg: &OpenStackConfig, name: &str) -> Option<String> {
     #[derive(Deserialize)]
     struct ProjectsResp {
         projects: Vec<ProjectRow>,
@@ -100,6 +101,7 @@ async fn resolve_project_id_by_name(session: &osauth::Session, name: &str) -> Op
         id: String,
         name: String,
     }
+    let session = connect_identity_session(cfg).await.ok()?;
     if let Ok(resp) = session
         .get(IDENTITY, &["projects"])
         .query(&[("name", name.trim())])
@@ -154,7 +156,7 @@ async fn resolve_project_id(cfg: &OpenStackConfig, session: &osauth::Session) ->
         return Some(id);
     }
     if let Some(name) = resolve_project_name(cfg) {
-        if let Some(id) = resolve_project_id_by_name(session, &name).await {
+        if let Some(id) = resolve_project_id_by_name(cfg, &name).await {
             return Some(id);
         }
     }

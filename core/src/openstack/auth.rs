@@ -211,6 +211,43 @@ pub async fn connect_session(cfg: &OpenStackConfig) -> Result<Session, LibvirtEr
         .map_err(map_osauth_err)
 }
 
+/// Keystone catalog on Packstack registers identity at `:5000` without `/v3`, and root
+/// version discovery returns `{"versions":{"values":[...]}}` which osauth cannot parse.
+/// Pin the identity API root from `auth_url` (always `/v3`) before any identity calls.
+pub(crate) async fn connect_identity_session(cfg: &OpenStackConfig) -> Result<Session, LibvirtError> {
+    use osauth::services::{GenericService, VersionSelector};
+
+    const IDENTITY: GenericService = GenericService::new("identity", VersionSelector::Major(3));
+
+    let mut session = connect_session(cfg).await?;
+    if let Some(root) = identity_api_root(cfg) {
+        session.set_endpoint_override(IDENTITY, root);
+    }
+    Ok(session)
+}
+
+fn identity_api_root(cfg: &OpenStackConfig) -> Option<reqwest::Url> {
+    if let Some(auth_url) = resolve_auth_url(cfg) {
+        if let Ok(mut url) = reqwest::Url::parse(auth_url.trim()) {
+            normalize_identity_url(&mut url);
+            return Some(url);
+        }
+    }
+    if let Ok(auth) = std::env::var("OS_AUTH_URL") {
+        if let Ok(mut url) = reqwest::Url::parse(auth.trim()) {
+            normalize_identity_url(&mut url);
+            return Some(url);
+        }
+    }
+    None
+}
+
+fn normalize_identity_url(url: &mut reqwest::Url) {
+    if !url.path().contains("/v3") {
+        url.set_path("/v3/");
+    }
+}
+
 pub(crate) fn map_json_err(e: reqwest::Error) -> LibvirtError {
     let mut msg = e.to_string();
     if msg.len() > 600 {
@@ -283,5 +320,21 @@ mod tests {
         cfg.clouds_yaml_path = yaml.to_string_lossy().into_owned();
         assert_eq!(effective_cloud_name_for_config(&cfg).as_deref(), Some("fromfile"));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn identity_api_root_appends_v3_when_missing() {
+        let mut cfg = OpenStackConfig::default();
+        cfg.auth_url = "http://127.0.0.1:5000".into();
+        let url = identity_api_root(&cfg).expect("url");
+        assert_eq!(url.as_str(), "http://127.0.0.1:5000/v3/");
+    }
+
+    #[test]
+    fn identity_api_root_keeps_existing_v3_path() {
+        let mut cfg = OpenStackConfig::default();
+        cfg.auth_url = "http://127.0.0.1:5000/v3".into();
+        let url = identity_api_root(&cfg).expect("url");
+        assert_eq!(url.as_str(), "http://127.0.0.1:5000/v3");
     }
 }

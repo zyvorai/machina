@@ -183,6 +183,24 @@ export async function apiPut<T>(url: string, body?: unknown): Promise<T> {
   return await res.text() as T
 }
 
+export async function apiPatch<T>(url: string, body?: unknown): Promise<T> {
+  const res = await fetchApi(url, {
+    ...defaultOpts,
+    method: 'PATCH',
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(formatHttpErrorBody(res.status, res.statusText, text))
+  }
+  const contentType = res.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    return res.json()
+  }
+  return await res.text() as T
+}
+
 export async function apiDelete(url: string): Promise<void> {
   const res = await fetchApi(url, { ...defaultOpts, method: 'DELETE' })
   if (!res.ok) {

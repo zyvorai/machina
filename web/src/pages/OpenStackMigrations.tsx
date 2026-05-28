@@ -6,10 +6,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import {
   getHypersdkStatus,
+  getHypersdkMigrationJob,
   listHypersdkMigrationJobs,
+  listHypersdkProviders,
   listHypersdkProviderVms,
   submitHypersdkMigration,
   type HypersdkMigrationJob,
+  type HypersdkProvider,
   type HypersdkProviderVm,
 } from '../api/hypersdk'
 import OpenStackFooter from '../components/OpenStackFooter'
@@ -38,8 +41,12 @@ function OpenStackMigrationsContent() {
   const hypersdkEnabled = Boolean(info?.hypersdk?.enabled)
 
   const [status, setStatus] = useState<Awaited<ReturnType<typeof getHypersdkStatus>> | null>(null)
+  const [providers, setProviders] = useState<HypersdkProvider[]>([])
   const [vms, setVms] = useState<HypersdkProviderVm[]>([])
   const [jobs, setJobs] = useState<HypersdkMigrationJob[]>([])
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null)
+  const [selectedJob, setSelectedJob] = useState<HypersdkMigrationJob | null>(null)
+  const [jobDetailLoading, setJobDetailLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [submitVmName, setSubmitVmName] = useState('')
@@ -56,12 +63,15 @@ function OpenStackMigrationsContent() {
     }
     try {
       setLoadError(null)
-      const [st, vmRes, jobRes] = await Promise.all([
+      const [st, provRes, vmRes, jobRes] = await Promise.all([
         getHypersdkStatus(),
+        listHypersdkProviders().catch(() => ({ providers: [] })),
         listHypersdkProviderVms('openstack').catch(() => ({ vms: [] })),
         listHypersdkMigrationJobs().catch(() => ({ jobs: [] })),
       ])
       setStatus(st)
+      const provList = Array.isArray(provRes) ? provRes : provRes.providers ?? []
+      setProviders(provList)
       const vmList = Array.isArray(vmRes) ? vmRes : vmRes.vms ?? []
       setVms(vmList)
       setJobs(jobRes.jobs ?? [])
@@ -75,6 +85,20 @@ function OpenStackMigrationsContent() {
   useEffect(() => {
     void load()
   }, [load])
+
+  const loadJobDetail = useCallback(async (jobId: string) => {
+    setSelectedJobId(jobId)
+    setJobDetailLoading(true)
+    try {
+      const job = await getHypersdkMigrationJob(jobId)
+      setSelectedJob(job)
+    } catch (e: unknown) {
+      setSelectedJob(null)
+      toast.error(formatUserError(e))
+    } finally {
+      setJobDetailLoading(false)
+    }
+  }, [toast])
 
   const buildMigrationPayload = (): Record<string, unknown> => {
     if (submitAdvanced && submitJson.trim()) {
@@ -258,6 +282,22 @@ function OpenStackMigrationsContent() {
         </section>
       )}
 
+      {hypersdkEnabled && status?.reachable && providers.length > 0 && (
+        <section className="rounded-xl border border-slate-700/80 overflow-hidden">
+          <h2 className="px-4 py-3 border-b border-slate-700/80 font-medium text-slate-200">HyperSDK providers</h2>
+          <ul className="divide-y divide-slate-800 text-sm">
+            {providers.map((p) => (
+              <li key={p.provider} className="px-4 py-3 flex justify-between gap-4">
+                <span className="text-slate-200">{p.name ?? p.provider}</span>
+                <span className={p.connected ? 'text-emerald-400' : 'text-slate-500'}>
+                  {p.connected ? 'connected' : 'disconnected'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="rounded-xl border border-slate-700/80 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-700/80 flex items-center gap-2">
           <Server className="w-4 h-4 text-sky-400" />
@@ -312,13 +352,31 @@ function OpenStackMigrationsContent() {
           {jobs.length === 0 && (
             <li className="px-4 py-6 text-center text-slate-500">No jobs reported.</li>
           )}
-          {jobs.map((j) => (
-            <li key={j.job_id ?? j.id} className="px-4 py-3 flex justify-between gap-4">
-              <span className="text-slate-200">{j.vm_name ?? j.job_id ?? j.id}</span>
-              <span className="text-slate-400">{j.status ?? '—'}</span>
-            </li>
-          ))}
+          {jobs.map((j) => {
+            const jobId = j.job_id ?? j.id ?? ''
+            const active = selectedJobId === jobId
+            return (
+              <li key={jobId || j.vm_name}>
+                <button
+                  type="button"
+                  className={`w-full px-4 py-3 flex justify-between gap-4 text-left hover:bg-slate-800/40 ${active ? 'bg-slate-800/60' : ''}`}
+                  onClick={() => jobId && void loadJobDetail(jobId)}
+                  disabled={!jobId}
+                >
+                  <span className="text-slate-200">{j.vm_name ?? jobId}</span>
+                  <span className="text-slate-400">{j.status ?? '—'}</span>
+                </button>
+              </li>
+            )
+          })}
         </ul>
+        {selectedJobId && (
+          <div className="border-t border-slate-700/80 px-4 py-3 text-xs font-mono text-slate-400 whitespace-pre-wrap break-all">
+            {jobDetailLoading && 'Loading job detail…'}
+            {!jobDetailLoading && selectedJob && JSON.stringify(selectedJob, null, 2)}
+            {!jobDetailLoading && !selectedJob && 'No detail returned.'}
+          </div>
+        )}
       </section>
 
       <OpenStackFooter />
