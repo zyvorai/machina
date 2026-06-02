@@ -2,17 +2,16 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { ArrowLeft, ChevronRight, Lock, Server, Shield } from 'lucide-react'
+import { ArrowLeft, ChevronRight, Lock, Shield } from 'lucide-react'
 import {
   MacGlassPanel,
   MacListRow,
-  MacSectionTitle,
   MacSegmentedControl,
   MacSettingsGroup,
-  MacSettingsPane,
   MacSheet,
   MacToggle,
 } from '../../../components/platform/mac/PlatformMacUi'
+import DetailTabs from '../../../components/platform/DetailTabs'
 import PageLayout from '../../../components/PageLayout'
 import JsonInspector from '../../../components/platform/JsonInspector'
 import { formatAllowedFrom } from '../../../utils/firewallDisplay'
@@ -37,7 +36,7 @@ import {
 } from '../../../api/zeusFirewall'
 import { useToastContext } from '../../../contexts/ToastContext'
 import { formatUserError } from '../../../utils/apiError'
-import { hubLinkClasses, riskTone, statusBadgeClasses, statusSurfaceClasses, statusToneClass } from '../../../utils/semanticColors'
+import { hubLinkClasses, riskTone, statusBadgeClasses, statusPillClasses, statusSurfaceClasses, statusToneClass } from '../../../utils/semanticColors'
 
 type StealthLevel = 'off' | 'standard' | 'strict'
 type PaneId = 'firewall' | 'connections' | 'advanced'
@@ -46,6 +45,12 @@ const STEALTH_OPTIONS: Array<{ value: StealthLevel; label: string }> = [
   { value: 'off', label: 'Off' },
   { value: 'standard', label: 'Standard' },
   { value: 'strict', label: 'Strict' },
+]
+
+const PRIMARY_PANES: Array<{ id: PaneId; label: string }> = [
+  { id: 'firewall', label: 'Firewall' },
+  { id: 'connections', label: 'Incoming' },
+  { id: 'advanced', label: 'Advanced' },
 ]
 
 export default function PlatformFirewallTargetDetail() {
@@ -123,35 +128,41 @@ export default function PlatformFirewallTargetDetail() {
   if (!id) return null
   const inv = detail?.inventory
   const isMetal = detail?.target.kind === 'bare_metal'
+  const score = inv?.score.score ?? 0
+  const scoreTone = score >= 80 ? 'ok' : score >= 50 ? 'warn' : 'error'
 
   return (
-    <PageLayout hideHeader error={error}>
-      <Link to="/platform/zeus/security/firewall" className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}>
-        <ArrowLeft className="w-4 h-4" /> Firewall
-      </Link>
+    <PageLayout
+      compact
+      contentLoading={!detail && !error}
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security/firewall" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Firewall
+        </Link>
+      }
+      title={detail?.target.name ?? 'Machine firewall'}
+      subtitle={detail && inv ? (
+        <span className="flex flex-wrap items-center gap-2 text-sm">
+          <span className={statusPillClasses(scoreTone)}>Score {score}/100</span>
+          <span className={statusPillClasses(inv.posture.enabled ? 'ok' : 'warn')}>{inv.posture.enabled ? 'Enabled' : 'Disabled'}</span>
+          <span className="text-slate-400">{isMetal ? 'Bare metal BMC/PXE' : detail.target.backend}</span>
+        </span>
+      ) : undefined}
+      icon={<Shield className="w-6 h-6 text-slate-400" />}
+      contentClassName="space-y-4"
+    >
       {detail && inv && (
         <>
-          <MacSectionTitle
-            title={detail.target.name}
-            subtitle={`${isMetal ? 'Bare metal BMC/PXE policy' : 'macOS-style machine protection'} · ${detail.target.backend} · Score ${inv.score.score}/100`}
-          />
           {isMetal && (
             <div className={`rounded-xl px-4 py-3 text-sm ${statusSurfaceClasses('warn')}`}>
               Policy-only — live BMC firewall apply is on the roadmap. Profiles and scans update desired posture in Zeus OS.
             </div>
           )}
-          <MacSettingsPane
-            title="Security"
-            active={pane}
-            onSelect={(p) => setPane(p as PaneId)}
-            sections={[
-              { id: 'firewall', label: 'Firewall', icon: <Shield className="w-4 h-4" /> },
-              { id: 'connections', label: 'Incoming', icon: <Server className="w-4 h-4" /> },
-              { id: 'advanced', label: 'Advanced', icon: <Lock className="w-4 h-4" /> },
-            ]}
-          >
+          <DetailTabs primary={PRIMARY_PANES} active={pane} onChange={setPane} />
+          <MacGlassPanel title={PRIMARY_PANES.find((p) => p.id === pane)?.label ?? 'Security'}>
             {pane === 'firewall' && (
-              <>
+              <div className="space-y-4 -mt-1">
                 <MacSettingsGroup title="Firewall">
                   <div className="px-4 py-2">
                     <MacToggle
@@ -242,10 +253,10 @@ export default function PlatformFirewallTargetDetail() {
                   <Link to="/platform/zeus/security/activity" className={hubLinkClasses()}>Activity</Link>
                   <Link to="/platform/zeus/security/compliance" className={hubLinkClasses()}>Compliance</Link>
                 </div>
-              </>
+              </div>
             )}
             {pane === 'connections' && (
-              <>
+              <div className="space-y-4 -mt-1">
                 <MacSettingsGroup title="Allowed incoming connections">
                   {services.length === 0 && inv.open_ports.length === 0 ? (
                     <p className="px-4 py-3 text-sm text-slate-500">No mapped services — scan exposure on Advanced tab.</p>
@@ -294,10 +305,10 @@ export default function PlatformFirewallTargetDetail() {
                     }}
                   />
                 </MacSettingsGroup>
-              </>
+              </div>
             )}
             {pane === 'advanced' && (
-              <>
+              <div className="space-y-4 -mt-1">
                 {isMetal && (
                   <MacSettingsGroup title="BMC / PXE exposure">
                     <MacListRow
@@ -444,9 +455,9 @@ export default function PlatformFirewallTargetDetail() {
                     ))}
                   </ul>
                 </MacGlassPanel>
-              </>
+              </div>
             )}
-          </MacSettingsPane>
+          </MacGlassPanel>
         </>
       )}
       <MacSheet

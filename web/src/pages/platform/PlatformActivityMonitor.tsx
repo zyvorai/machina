@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Activity, Server, Terminal } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
-import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import DetailTabs from '../../components/platform/DetailTabs'
+import { MacGlassPanel, MacListRow } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import { getFleetActivity, type FleetActivityOverview } from '../../api/platform'
 import { formatUserError } from '../../utils/apiError'
 import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusToneClass, taskStatusTone, utilizationBarClass, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
@@ -47,11 +48,16 @@ export default function PlatformActivityMonitor() {
   const maxVmMem = Math.max(1, ...(data?.top_vms.map((v) => v.memory_used_mib) ?? [1]))
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle
-        title="Activity Monitor"
-        subtitle="Fleet-wide CPU, memory, and Linux PSI — macOS Activity Monitor for your hypervisors."
-      />
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Activity Monitor"
+      subtitle="Fleet-wide CPU, memory, and Linux PSI — macOS Activity Monitor for your hypervisors."
+      icon={<Activity className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       <div className="flex flex-wrap gap-3 text-xs">
         <Link to="/platform/placement" className={hubLinkClasses()}>HA status & fence events →</Link>
         <Link to="/platform/developer" className={hubLinkClasses()}>Developer SDK →</Link>
@@ -60,24 +66,14 @@ export default function PlatformActivityMonitor() {
       </div>
       {data && <p className="text-sm text-slate-400">{data.summary}</p>}
 
-      <div className="flex flex-wrap gap-2">
-        {([
-          { id: 'vms' as Tab, label: 'VMs', icon: <Terminal className="w-3 h-3" /> },
-          { id: 'hosts' as Tab, label: 'Hosts', icon: <Server className="w-3 h-3" /> },
-        ]).map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border ${
-              tab === t.id ? 'border-blue-400/50 bg-blue-500/10 text-blue-200' : 'border-white/[0.08] text-slate-400'
-            }`}
-            onClick={() => setTab(t.id)}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
-        <button type="button" className="btn-secondary text-xs ml-auto" onClick={() => void load()}>Refresh</button>
-      </div>
+      <DetailTabs
+        primary={[
+          { id: 'vms', label: 'VMs' },
+          { id: 'hosts', label: 'Hosts' },
+        ]}
+        active={tab}
+        onChange={setTab}
+      />
 
       {tab === 'vms' && (
         data?.top_vms.length ? (
@@ -131,6 +127,6 @@ export default function PlatformActivityMonitor() {
           <PlatformEmptyState title="No hosts" subtitle="Enroll hypervisors to monitor fleet activity." />
         )
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -2108,9 +2108,9 @@ export const getClusterTopology = () => platformFetch<TopologyGraph>('/api/v1/to
 
 export const getVmTopology = (id: string) => platformFetch<TopologyGraph>(`/api/v1/vms/${id}/topology`)
 
+/** VNC WebSocket on the daemon origin (proxied to machina-controller). */
 export function platformVncWsUrl(wsPath: string): string {
-  const base = getDirectControllerBase()
-  const u = new URL(base)
-  const protocol = u.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${u.host}${wsPath}`
+  if (typeof window === 'undefined') return wsPath
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}${wsPath}`
 }

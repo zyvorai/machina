@@ -3,9 +3,8 @@
 import { Link } from 'react-router'
 import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusToneClass, taskStatusTone, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
 import { ExternalLink, Puzzle, Sparkles, Boxes } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
 import { LaunchpadAppIcon, MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
-import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
+import PlatformPageChrome, { PlatformBackLink, platformStatSubtitle } from '../../components/platform/PlatformPageChrome'
 import { usePlatformInfo } from '../../contexts/PlatformInfoContext'
 import { integrationCards } from '../../utils/platformIntegrationsNav'
 import { CLASSIC_TOOL_CARDS } from '../../utils/platformClassicTools'
@@ -21,22 +20,27 @@ export default function PlatformIntegrations({ embedded }: { embedded?: boolean 
   const enabledCount = cards.filter((c) => c.enabled).length
 
   return (
-    <PageLayout hideHeader compact={embedded} className={embedded ? '' : 'max-w-4xl'}>
-      {!embedded && (
-        <PlatformTahoeHero
-          eyebrow="Platform"
-          title="Apps & Integrations"
-          subtitle="Everything the daemon exposes beyond the simple desktop — OpenStack, K8s, migration tools, and classic UI."
-          icon={Puzzle}
-          stats={[
-            { label: 'Available', value: String(cards.length), tone: 'sky' },
-            { label: 'Enabled', value: String(enabledCount), tone: 'emerald' },
-            { label: 'Desktop tier', value: tier.charAt(0).toUpperCase() + tier.slice(1), tone: 'violet' },
-          ]}
-        />
-      )}
-
-      <div className="tahoe-content space-y-6">
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      className={embedded ? '' : 'max-w-4xl'}
+      prepend={embedded ? undefined : <PlatformBackLink to="/platform" label="Platform" />}
+      title={embedded ? undefined : 'Apps & Integrations'}
+      subtitle={
+        embedded ? undefined : (
+          <span className="flex flex-col gap-1">
+            <span className="text-slate-400">OpenStack, K8s, migration tools, and classic UI</span>
+            {platformStatSubtitle([
+              { label: 'Available', value: String(cards.length) },
+              { label: 'Enabled', value: String(enabledCount) },
+              { label: 'Desktop tier', value: tier.charAt(0).toUpperCase() + tier.slice(1) },
+            ])}
+          </span>
+        )
+      }
+      icon={embedded ? undefined : <Puzzle className="w-6 h-6 text-slate-400" />}
+      contentClassName="space-y-6"
+    >
         <MacGlassPanel title="Fleet apps" subtitle="Launchpad and connected platforms">
           <div className="platform-launchpad-grid grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-x-4 gap-y-8 -mt-1">
             <Link to="/platform/applications" className="block">
@@ -102,7 +106,6 @@ export default function PlatformIntegrations({ embedded }: { embedded?: boolean 
             Switch to <Link to="/platform/settings?section=general" className={hubLinkClasses()}>Settings → Appearance → Advanced</Link> for the full fleet sidebar, Zeus Firewall panes, and developer SDK routes.
           </p>
         </MacGlassPanel>
-      </div>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

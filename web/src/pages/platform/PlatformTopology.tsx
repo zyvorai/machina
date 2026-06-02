@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
-import { Cable, GitBranch, Layers, RefreshCw } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import { MacSectionTitle, MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
+import { Cable, GitBranch, Layers } from 'lucide-react'
+import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { formatUserError } from '../../utils/apiError'
@@ -82,14 +82,16 @@ export default function PlatformTopology() {
   }, [graph])
 
   return (
-    <PageLayout hideHeader error={error} onErrorRetry={() => void load()}>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <MacSectionTitle title="Topology" subtitle="Digital twin graph — hosts, VMs, overlay segments, and LLDP uplinks" />
-        <button type="button" className="btn-secondary text-xs flex items-center gap-2" disabled={loading} onClick={() => void load()}>
-          <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-          Refresh LLDP
-        </button>
-      </div>
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Topology"
+      subtitle="Digital twin graph — hosts, VMs, overlay segments, and LLDP uplinks"
+      icon={<GitBranch className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} label="Refresh LLDP" />}
+      contentClassName="space-y-4"
+    >
       {loading && !graph && <PageSkeleton />}
       {!loading && graph && graph.nodes.length === 0 && (
         <PlatformEmptyState
@@ -231,6 +233,6 @@ export default function PlatformTopology() {
         )}
         </div>
       </MacGlassPanel>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

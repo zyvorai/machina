@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { CheckCircle2, XCircle } from 'lucide-react'
-import { MacGlassPanel, MacSectionTitle, MacSheet } from '../../../components/platform/mac/PlatformMacUi'
+import { ArrowLeft, CheckCircle2, GitBranch, XCircle } from 'lucide-react'
+import { MacGlassPanel, MacSheet } from '../../../components/platform/mac/PlatformMacUi'
 import PageLayout from '../../../components/PageLayout'
 import CopyButton from '../../../components/CopyButton'
 import { getK8sFirewallStatus, planK8sFirewall, applyK8sFirewall } from '../../../api/zeusFirewall'
@@ -31,9 +31,19 @@ export default function PlatformFirewallK8s() {
   }, [])
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Kubernetes Firewall" subtitle="NetworkPolicy and Cilium from Zeus profiles" />
-      <Link to="/platform/zeus/security/firewall" className={`text-sm ${hubLinkClasses()}`}>← Firewall overview</Link>
+    <PageLayout
+      compact
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security/firewall" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Firewall
+        </Link>
+      }
+      title="Kubernetes Firewall"
+      subtitle={`NetworkPolicy and Cilium · ${ready ? backend : 'cluster not ready'}`}
+      icon={<GitBranch className="w-6 h-6 text-slate-400" />}
+      contentClassName="space-y-4"
+    >
       <MacGlassPanel title="Cluster">
         <div className="flex items-center gap-3">
           {ready ? (

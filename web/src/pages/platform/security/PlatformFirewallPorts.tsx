@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../../components/platform/mac/PlatformMacUi'
+import { ArrowLeft, Network, RefreshCw } from 'lucide-react'
+import { MacGlassPanel, MacListRow } from '../../../components/platform/mac/PlatformMacUi'
 import PlatformFilterPills from '../../../components/platform/PlatformFilterPills'
 import PageLayout from '../../../components/PageLayout'
 import { explainFirewall, getFirewallOverview, getFirewallPorts, type OpenPort } from '../../../api/zeusFirewall'
@@ -45,9 +46,24 @@ export default function PlatformFirewallPorts() {
   })
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Open Ports" subtitle="Listening services across the fleet" />
-      <Link to="/platform/zeus/security/firewall" className={`text-sm ${hubLinkClasses()}`}>← Firewall overview</Link>
+    <PageLayout
+      compact
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security/firewall" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Firewall
+        </Link>
+      }
+      title="Open Ports"
+      subtitle={`${filtered.length} listening port${filtered.length === 1 ? '' : 's'} across the fleet`}
+      icon={<Network className="w-6 h-6 text-slate-400" />}
+      actions={
+        <button type="button" className="btn-secondary" onClick={() => void load()} aria-label="Refresh">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      }
+      contentClassName="space-y-4"
+    >
       {explain && (
         <MacGlassPanel title="Zeus insight" subtitle="Exposure recommendation">
           <p className="text-sm text-slate-300">{explain}</p>

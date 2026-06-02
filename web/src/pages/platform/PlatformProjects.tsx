@@ -5,10 +5,9 @@ import { Link, useNavigate } from 'react-router'
 import { Boxes, LayoutGrid, Monitor, Server } from 'lucide-react'
 import {
   MacGlassPanel,
-  MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import PageLayout from '../../components/PageLayout'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
 import { getFleetSpaces, type FleetSpacesOverview } from '../../api/platform'
 import { useActiveWorkspace } from '../../hooks/useActiveWorkspace'
@@ -84,16 +83,17 @@ export default function PlatformProjects({ embedded }: { embedded?: boolean } = 
   }
 
   return (
-    <PageLayout hideHeader compact={embedded} error={error}>
-      {!embedded && (
-        <header>
-          <p className="text-xs font-semibold uppercase tracking-wider text-violet-400/80">Stage Manager</p>
-          <MacSectionTitle
-            title="Workspace Spaces"
-            subtitle="macOS Stage Manager metaphor — each project is a space grouping fleet VMs. Click a space to focus the active workspace."
-          />
-        </header>
-      )}
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      error={error}
+      onErrorRetry={() => void load()}
+      title={embedded ? undefined : 'Workspace Spaces'}
+      subtitle={embedded ? undefined : 'macOS Stage Manager metaphor — each project is a space grouping fleet VMs. Click a space to focus the active workspace.'}
+      icon={embedded ? undefined : <LayoutGrid className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       {fleet && <p className="text-sm text-slate-400">{fleet.summary}</p>}
 
       {fleet && (
@@ -188,6 +188,6 @@ export default function PlatformProjects({ embedded }: { embedded?: boolean } = 
         </div>
       )}
       <FleetSettingsPane kind="spaces" />
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, Gauge, Timer } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
 import PageSkeleton from '../../components/PageSkeleton'
-import { MacGlassPanel, MacSectionTitle, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
+import { MacGlassPanel, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import {
   getObservabilityOverview,
   listApiTraces,
@@ -75,8 +75,16 @@ export default function PlatformObservability() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Observability" subtitle="SLO dashboards and API trace inventory." />
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Observability"
+      subtitle="SLO dashboards and API trace inventory."
+      icon={<Gauge className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       {loading && !overview && !error && <PageSkeleton />}
       {overview && (
         <>
@@ -140,6 +148,6 @@ export default function PlatformObservability() {
           </MacGlassPanel>
         </>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

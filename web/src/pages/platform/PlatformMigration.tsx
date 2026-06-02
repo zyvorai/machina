@@ -1,10 +1,12 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router'
-import PageLayout from '../../components/PageLayout'
+import { Link, useNavigate } from 'react-router'
 import { ArrowRightLeft, CheckCircle2, AlertTriangle, XCircle, ExternalLink, Play, Loader2 } from 'lucide-react'
-import { MacSectionTitle, MacGlassPanel, MacListRow } from '../../components/platform/mac/PlatformMacUi'
+import { MacGlassPanel, MacListRow } from '../../components/platform/mac/PlatformMacUi'
+import DetailTabs from '../../components/platform/DetailTabs'
+import PlatformPageChrome, { PlatformBackLink } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import { getHypersdkStatus, listHypersdkProviders, listHypersdkProviderVms, submitHypersdkMigration, hypersdkProxyGet } from '../../api/hypersdk'
 import { getGuestkitStatus, guestkitDoctor, guestkitMigratePlan, submitGuestkitInspectJob, getGuestkitJob, listGuestkitJobsDaemon, getGuestkitCapabilitiesDaemon, type GuestkitJobRow } from '../../api/guestkit'
 import JsonInspector from '../../components/platform/JsonInspector'
@@ -30,14 +32,20 @@ const SOURCES = [
 
 type ScanVm = { name: string; status: string; os: string; note: string; provider?: string; advisor?: MigrationAdvisorReport }
 
+type MigrationTab = 'radar' | 'jobs'
+
+const MIGRATION_TABS = [
+  { id: 'radar' as const, label: 'Scan & migrate' },
+  { id: 'jobs' as const, label: 'GuestKit jobs' },
+]
+
 export default function PlatformMigration() {
   const { info } = usePlatformInfo()
   const [tier] = usePlatformDesktopTier()
   const openstackConn = useOpenStackConnection()
   const navigate = useNavigate()
   const toast = useToastContext()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tab = searchParams.get('tab') === 'jobs' ? 'jobs' : 'radar'
+  const [tab, setTab] = usePlatformTabState<MigrationTab>(MIGRATION_TABS.map((t) => t.id), { defaultTab: 'radar' })
   const hypersdk = Boolean(info?.hypersdk?.enabled)
   const guestkit = Boolean(info?.guestkit?.enabled)
   const openstack = Boolean(info?.openstack?.enabled)
@@ -57,10 +65,6 @@ export default function PlatformMigration() {
   const [gkCaps, setGkCaps] = useState<string | null>(null)
   const [hsProxyPath, setHsProxyPath] = useState('/providers')
   const [hsProxyResult, setHsProxyResult] = useState<Record<string, unknown> | null>(null)
-
-  const setTab = (next: 'radar' | 'jobs') => {
-    setSearchParams(next === 'jobs' ? { tab: 'jobs' } : {})
-  }
 
   const scanSource = useCallback(async (p: string) => {
     setLoading(true)
@@ -142,21 +146,15 @@ export default function PlatformMigration() {
   }, [tab, guestkit])
 
   return (
-    <PageLayout hideHeader contentClassName="space-y-8 max-w-4xl">
-      <MacSectionTitle title="Migration Radar" subtitle="Machina Migration Radar — HyperSDK scan + GuestKit offline assurance." />
-
-      <div className="flex gap-2 border-b border-white/[0.06] pb-1">
-        {(['radar', 'jobs'] as const).map((id) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm rounded-t-lg capitalize ${tab === id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400'}`}
-          >
-            {id === 'radar' ? 'Scan & migrate' : 'GuestKit jobs'}
-          </button>
-        ))}
-      </div>
+    <PlatformPageChrome
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Migration Radar"
+      subtitle="Machina Migration Radar — HyperSDK scan + GuestKit offline assurance."
+      icon={<ArrowRightLeft className="w-6 h-6 text-slate-400" />}
+      className="max-w-4xl"
+      contentClassName="space-y-4"
+    >
+      <DetailTabs primary={MIGRATION_TABS} active={tab} onChange={setTab} />
 
       {tab === 'jobs' && (
         <MacGlassPanel title="GuestKit job queue">
@@ -374,6 +372,6 @@ export default function PlatformMigration() {
       </section>
       </>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -2,8 +2,7 @@
 
 import type { LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
-import ErrorBanner from '../../ErrorBanner'
-import PlatformTahoeHero from './PlatformTahoeHero'
+import PlatformPageChrome, { platformStatSubtitle } from '../PlatformPageChrome'
 import type { TahoeStat } from './tahoeTypes'
 
 export interface PlatformStandardViewProps {
@@ -16,45 +15,48 @@ export interface PlatformStandardViewProps {
   badge?: ReactNode
   loading?: boolean
   error?: string | null
+  onErrorRetry?: () => void
   className?: string
+  contentClassName?: string
   children: ReactNode
 }
 
 export default function PlatformStandardView({
   title,
   description,
-  eyebrow,
+  eyebrow: _eyebrow,
   actions,
-  icon,
+  icon: Icon,
   stats,
   badge,
   loading = false,
   error = null,
-  className = 'space-y-6',
+  onErrorRetry,
+  className,
+  contentClassName = 'space-y-4',
   children,
 }: PlatformStandardViewProps) {
-  if (loading) {
-    return (
-      <div className={`${className} animate-pulse`}>
-        <div className="tahoe-hero rounded-3xl h-40 border border-white/[0.06]" />
-        <div className="tahoe-skeleton-block h-48 rounded-3xl" />
-      </div>
-    )
-  }
+  const subtitle = (
+    <span className="flex flex-wrap items-center gap-2 text-sm">
+      {stats && stats.length > 0 ? platformStatSubtitle(stats) : null}
+      {description ? <span className="text-slate-400">{description}</span> : null}
+      {badge}
+    </span>
+  )
 
   return (
-    <div className={`${className} animate-fade-in`}>
-      <PlatformTahoeHero
-        title={title}
-        subtitle={description}
-        eyebrow={eyebrow}
-        icon={icon}
-        actions={actions}
-        stats={stats}
-        badge={badge}
-      />
-      {error ? <ErrorBanner message={error} /> : null}
-      <div className="tahoe-content">{children}</div>
-    </div>
+    <PlatformPageChrome
+      className={className}
+      loading={loading}
+      error={error}
+      onErrorRetry={onErrorRetry}
+      title={title}
+      subtitle={subtitle}
+      icon={<Icon className="w-6 h-6 text-slate-400" />}
+      actions={actions}
+      contentClassName={contentClassName}
+    >
+      {children}
+    </PlatformPageChrome>
   )
 }

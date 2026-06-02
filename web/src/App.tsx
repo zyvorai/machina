@@ -258,6 +258,15 @@ function RouteRecorder() {
   return null
 }
 
+/** When the platform control plane is active, land on the macOS desktop (dock + menubar). */
+function HomeRoute() {
+  const { info, loading } = usePlatformInfo()
+  if (!loading && info?.control_plane?.proxy_url) {
+    return <Navigate to="/platform" replace />
+  }
+  return <Dashboard />
+}
+
 function AuthenticatedShell() {
   return (
     <WebSocketProvider>
@@ -322,7 +331,7 @@ function AuthenticatedShellRoutes() {
               <Suspense fallback={<PageSkeleton />}>
                 <Routes>
                 <Route path="/login" element={<Navigate to="/" replace />} />
-                <Route path="/" element={<Dashboard />} />
+                <Route path="/" element={<HomeRoute />} />
                 <Route path="/vms" element={<VMList />} />
                 <Route path="/vms/:name" element={<VMDetails />} />
                 <Route path="/vms/:name/console" element={<Console />} />

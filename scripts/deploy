@@ -30,7 +30,8 @@ Flags (passed to deploy-remote.sh):
   --remote-build    compile on server (make release)
   --remote-check    compile check on server (make check)
   --bind ADDR       daemon bind address
-  --open-firewall   open firewalld port 5092
+  --open-firewall      open firewalld port 5092 (and 5093 with --platform)
+  --disable-firewalld  stop/disable firewalld and ufw (default for remote IPv4)
   --dry-run         show plan only
   --cleanup         remove remote deploy tree after install
 

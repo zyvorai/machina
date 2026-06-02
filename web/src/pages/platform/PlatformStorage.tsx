@@ -1,10 +1,12 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams, Link } from 'react-router'
+import { Link } from 'react-router'
 import { AlertTriangle, Clock, HardDrive, Layers, Loader2, Plus, RefreshCw, Shield } from 'lucide-react'
 import ErrorBanner from '../../components/ErrorBanner'
-import PageLayout from '../../components/PageLayout'
+import DetailTabs from '../../components/platform/DetailTabs'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton, platformStatSubtitle } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import { StructuredErrorBanner } from '../../components/StructuredErrorBanner'
 import { storageErrorPresentation } from '../../utils/storageErrorPresentation'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
@@ -12,7 +14,6 @@ import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import {
   MacGlassPanel,
   MacListRow,
-  MacSectionTitle,
   MacSheet,
   MacStatWidget,
   gradientForName,
@@ -41,7 +42,12 @@ import {statusBadgeClasses, statusToneClass, hubLinkClasses} from '../../utils/s
 
 type TabId = 'disks' | 'pools' | 'tiers' | 'sla'
 
-const TAB_IDS: TabId[] = ['disks', 'pools', 'tiers', 'sla']
+const STORAGE_TABS: Array<{ id: TabId; label: string }> = [
+  { id: 'disks', label: 'Disks' },
+  { id: 'pools', label: 'Pools' },
+  { id: 'tiers', label: 'Tiers' },
+  { id: 'sla', label: 'Backup SLA' },
+]
 
 function capacityRing(used: number, cap: number) {
   if (cap <= 0) return 0
@@ -50,9 +56,7 @@ function capacityRing(used: number, cap: number) {
 
 export default function PlatformStorage() {
   const toast = useToastContext()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const rawTab = searchParams.get('tab')
-  const tab: TabId = TAB_IDS.includes(rawTab as TabId) ? (rawTab as TabId) : 'disks'
+  const [tab, setTab] = usePlatformTabState<TabId>(STORAGE_TABS.map((t) => t.id), { defaultTab: 'disks' })
 
   const [rows, setRows] = useState<StoragePool[]>([])
   const [fleetStorage, setFleetStorage] = useState<FleetStorageOverview | null>(null)
@@ -72,10 +76,6 @@ export default function PlatformStorage() {
   const [slaRto, setSlaRto] = useState(4)
   const [slaRetention, setSlaRetention] = useState(30)
   const [slaSaving, setSlaSaving] = useState(false)
-
-  const setTab = (next: TabId) => {
-    setSearchParams(next === 'disks' ? {} : { tab: next })
-  }
 
   const tierName = (id?: string | null) => tiers.find((t) => t.id === id)?.name ?? null
 
@@ -181,13 +181,27 @@ export default function PlatformStorage() {
   const totalUsed = rows.reduce((s, p) => s + p.used_gib, 0)
 
   return (
-    <PageLayout hideHeader className="platform-readable">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Disk Utility</p>
-          <MacSectionTitle title="Storage" subtitle="Pool capacity rings, tier taxonomy, backup SLA — plus fleet SMART disk health." />
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load(false)}
+      className="platform-readable"
+      prepend={<PlatformBackLink to="/platform/resources" label="Resources" />}
+      title="Storage"
+      subtitle={
+        <span className="flex flex-col gap-1">
+          <span className="text-slate-400">Pools, tiers, backup SLA, and fleet disk health</span>
+          {rows.length > 0
+            ? platformStatSubtitle([
+                { label: 'Pools', value: String(rows.length) },
+                { label: 'Capacity', value: `${totalUsed.toFixed(0)} / ${totalCap.toFixed(0)} GiB` },
+                { label: 'Online hosts', value: String(hostCount) },
+              ])
+            : null}
+        </span>
+      }
+      icon={<HardDrive className="w-6 h-6 text-slate-400" />}
+      actions={
+        <>
           {tab === 'pools' && (
             <>
               <button type="button" className="btn-secondary text-sm" disabled={discovering} onClick={() => void runDiscover()}>
@@ -197,31 +211,15 @@ export default function PlatformStorage() {
               <button type="button" className="btn-secondary text-sm" disabled={discovering} onClick={async () => {
                 try { await syncAllHosts(); toast.success('Host sync queued') } catch (e: unknown) { toast.error(formatUserError(e)) }
               }}>Sync hosts</button>
-              <button type="button" className="btn-primary flex items-center gap-2" onClick={() => setSheetOpen(true)}><Plus className="w-4 h-4" /> Add pool</button>
+              <button type="button" className="btn-primary flex items-center gap-2 text-sm" onClick={() => setSheetOpen(true)}><Plus className="w-4 h-4" /> Add pool</button>
             </>
           )}
-        </div>
-      </header>
-
-      <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
-        {([
-          ['disks', 'Disks', HardDrive],
-          ['pools', 'Pools', HardDrive],
-          ['tiers', 'Tiers', Layers],
-          ['sla', 'Backup SLA', Shield],
-        ] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm rounded-t-lg flex items-center gap-2 transition ${
-              tab === id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Icon className="w-4 h-4" /> {label}
-          </button>
-        ))}
-      </div>
+          <PlatformRefreshButton onClick={() => void load(false)} />
+        </>
+      }
+      contentClassName="space-y-4"
+    >
+      <DetailTabs primary={STORAGE_TABS} active={tab} onChange={setTab} />
 
       {error && (storageErrorPresentation(error) ? (
         <StructuredErrorBanner error={storageErrorPresentation(error)!} />
@@ -543,6 +541,6 @@ export default function PlatformStorage() {
         </div>
       </MacSheet>
       {tab === 'disks' && <FleetSettingsPane kind="storage" />}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

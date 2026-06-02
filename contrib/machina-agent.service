@@ -1,9 +1,11 @@
 [Unit]
 Description=Machina host agent (libvirt executor)
 Documentation=https://github.com/ssahani/machina
-After=network-online.target libvirtd.service machina-controller.service
-Wants=network-online.target
-Requires=libvirtd.service
+After=network-online.target machina-controller.service
+Wants=network-online.target libvirtd.service
+# Do not Requires=libvirtd: on RHEL/CentOS 9 the monolithic unit may start
+# minutes after boot (socket-activated daemons); a hard Requires leaves agent dead.
+ExecStartPre=-/usr/bin/systemctl start libvirtd.service
 
 [Service]
 Type=simple
@@ -25,6 +27,7 @@ SyslogIdentifier=machina-agent
 
 MemoryMax=512M
 TasksMax=128
+LimitNOFILE=65536
 
 [Install]
 WantedBy=multi-user.target

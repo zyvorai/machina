@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { Settings, Shield, Users, HardDrive, Network, RefreshCw, Key, LifeBuoy, Info, LayoutGrid, Lock, FileBarChart, Terminal, Plug, Workflow, Sparkles } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
+import PlatformPageChrome from '../../components/platform/PlatformPageChrome'
 import PlatformSettings from './PlatformSettings'
 import PlatformAiProviders from './PlatformAiProviders'
 import PlatformZeusSettings from './PlatformZeusSettings'
@@ -234,7 +234,12 @@ export default function PlatformSettingsHub() {
   const adminMfaRequired = mfaPolicies.find((p) => p.role_name === 'admin')?.required ?? false
 
   return (
-    <PageLayout hideHeader>
+    <PlatformPageChrome
+      title="Settings"
+      subtitle="Cluster, security, integrations, and platform preferences"
+      icon={<Settings className="w-6 h-6 text-slate-400" />}
+      contentClassName="space-y-0"
+    >
     <MacSettingsPane
       title="Settings"
       sections={SECTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
@@ -254,9 +259,9 @@ export default function PlatformSettingsHub() {
         </div>
       )}
 
-      {section === 'zeus' && <PlatformZeusSettings />}
+      {section === 'zeus' && <PlatformZeusSettings embedded />}
 
-      {section === 'ai-providers' && <PlatformAiProviders />}
+      {section === 'ai-providers' && <PlatformAiProviders embedded />}
 
       {section === 'security' && (
         <div className="space-y-6">
@@ -606,6 +611,6 @@ export default function PlatformSettingsHub() {
         </div>
       )}
     </MacSettingsPane>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link } from 'react-router'
 import {
   AlertTriangle,
   CalendarClock,
@@ -15,10 +15,11 @@ import {
 import {
   MacGlassPanel,
   MacListRow,
-  MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import PageLayout from '../../components/PageLayout'
+import DetailTabs from '../../components/platform/DetailTabs'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import ErrorBanner from '../../components/ErrorBanner'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
@@ -48,7 +49,11 @@ import { usePlatformDesktopTier } from '../../hooks/usePlatformDesktopTier'
 
 type TabId = 'mission' | 'updates' | 'schedules'
 
-const TAB_IDS: TabId[] = ['mission', 'updates', 'schedules']
+const MAINTENANCE_TABS = [
+  { id: 'mission' as const, label: 'Mission' },
+  { id: 'updates' as const, label: 'Updates' },
+  { id: 'schedules' as const, label: 'Schedules' },
+]
 
 function missionTimelineProps(steps: MaintenanceMissionHost['steps']) {
   const labels = steps.map((s) => s.label)
@@ -70,8 +75,7 @@ function stepTone(status: MaintenanceStepStatus): string {
 export default function PlatformMaintenance() {
   const toast = useToastContext()
   const [tier] = usePlatformDesktopTier()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const rawTab = searchParams.get('tab')
+  const [tab, setTab] = usePlatformTabState<TabId>(MAINTENANCE_TABS.map((t) => t.id), { defaultTab: 'updates' })
 
   const [fleet, setFleet] = useState<FleetUpdatesOverview | null>(null)
   const [mission, setMission] = useState<FleetMaintenanceMissionOverview | null>(null)
@@ -86,15 +90,6 @@ export default function PlatformMaintenance() {
   const [runAt, setRunAt] = useState('')
   const [defaultTabSet, setDefaultTabSet] = useState(false)
 
-  const tab: TabId = useMemo(() => {
-    if (TAB_IDS.includes(rawTab as TabId)) return rawTab as TabId
-    return 'updates'
-  }, [rawTab])
-
-  const setTab = (next: TabId) => {
-    setSearchParams(next === 'updates' ? {} : { tab: next })
-  }
-
   const loadSchedules = useCallback(async () => {
     const [schedules, hostRows] = await Promise.all([listMaintenanceSchedules(), listPlatformHosts()])
     setRows(schedules)
@@ -108,9 +103,9 @@ export default function PlatformMaintenance() {
     try {
       const data = await getFleetUpdates()
       setFleet(data)
-      if (!defaultTabSet && !rawTab && data.hosts_with_updates > 0) {
+      if (!defaultTabSet && data.hosts_with_updates > 0) {
         setDefaultTabSet(true)
-        setSearchParams({ tab: 'mission' })
+        setTab('mission')
       }
     } catch (e: unknown) {
       setError(formatUserError(e))
@@ -118,7 +113,7 @@ export default function PlatformMaintenance() {
     } finally {
       setLoadingUpdates(false)
     }
-  }, [defaultTabSet, rawTab, setSearchParams])
+  }, [defaultTabSet, setTab])
 
   const loadMission = useCallback(async () => {
     setError(null)
@@ -166,39 +161,17 @@ export default function PlatformMaintenance() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Software Update</p>
-          <MacSectionTitle
-            title="Maintenance"
-            subtitle="Fleet patch catalog, maintenance mission timeline, and deferred windows — guided orchestration only."
-          />
-        </div>
-        <button type="button" className="btn-secondary flex items-center gap-2" onClick={() => void load()}>
-          {loadingUpdates ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-          Refresh
-        </button>
-      </header>
-
-      <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
-        {([
-          ['mission', 'Mission', ListChecks],
-          ['updates', 'Updates', Download],
-          ['schedules', 'Schedules', CalendarClock],
-        ] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm rounded-t-lg flex items-center gap-2 transition ${
-              tab === id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Icon className="w-4 h-4" /> {label}
-          </button>
-        ))}
-      </div>
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Maintenance"
+      subtitle="Fleet patch catalog, maintenance mission timeline, and deferred windows — guided orchestration only."
+      icon={<Download className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
+      <DetailTabs primary={MAINTENANCE_TABS} active={tab} onChange={setTab} />
 
       {actionError && <ErrorBanner message={actionError} />}
       {pageLoading && <PageSkeleton />}
@@ -484,6 +457,6 @@ export default function PlatformMaintenance() {
         </>
       )}
       {tab === 'updates' && <FleetSettingsPane kind="updates" />}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../../components/platform/mac/PlatformMacUi'
+import { ArrowLeft, RefreshCw, Shield } from 'lucide-react'
+import { MacGlassPanel, MacListRow } from '../../../components/platform/mac/PlatformMacUi'
 import PageLayout from '../../../components/PageLayout'
 import { getFirewallActivity, getFirewallOverview } from '../../../api/zeusFirewall'
 import { formatUserError } from '../../../utils/apiError'
@@ -70,9 +71,24 @@ export default function PlatformFirewallActivity() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Firewall Activity" subtitle="macOS-style blocked and allowed connections — process, domain, IP" />
-      <Link to="/platform/zeus/security" className={`text-sm ${hubLinkClasses()}`}>← Security Center</Link>
+    <PageLayout
+      compact
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Security Center
+        </Link>
+      }
+      title="Firewall Activity"
+      subtitle={`${blocked.length} blocked · ${allowed.length} allowed connection events`}
+      icon={<Shield className="w-6 h-6 text-slate-400" />}
+      actions={
+        <button type="button" className="btn-secondary" onClick={() => void load()} aria-label="Refresh">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      }
+      contentClassName="space-y-4"
+    >
       <MacGlassPanel title="Today" subtitle={note || 'PacketWolf provides live flows when connected'}>
         {blocked.length === 0 && allowed.length === 0 ? (
           <p className="text-sm text-slate-500">No connection events yet. Enable PacketWolf for live blocked flows.</p>

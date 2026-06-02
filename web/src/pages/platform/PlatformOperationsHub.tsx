@@ -16,8 +16,7 @@ import {
   Wrench,
   Workflow,
 } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
+import PlatformPageChrome, { PlatformBackLink, platformStatSubtitle } from '../../components/platform/PlatformPageChrome'
 import PlatformHubLaunchpad from '../../components/platform/tahoe/PlatformHubLaunchpad'
 import { listNotifications, listPlatformTasks } from '../../api/platform'
 
@@ -36,20 +35,21 @@ export default function PlatformOperationsHub() {
   }, [])
 
   return (
-    <PageLayout hideHeader>
-      <PlatformTahoeHero
-        compact
-        eyebrow="Platform"
-        title="Operations"
-        subtitle="Lifecycle, monitoring, and fleet insights — grouped like macOS Utilities."
-        icon={Wrench}
-        stats={[
-          { label: 'Active tasks', value: activeTasks != null ? String(activeTasks) : '—', tone: 'emerald' },
-          { label: 'Unread alerts', value: unreadAlerts != null ? String(unreadAlerts) : '—', tone: unreadAlerts ? 'amber' : 'sky' },
-        ]}
-      />
-
-      <div className="tahoe-content">
+    <PlatformPageChrome
+      prepend={<PlatformBackLink to="/platform" label="Platform" />}
+      title="Operations"
+      subtitle={
+        <span className="flex flex-col gap-1">
+          <span className="text-slate-400">Lifecycle, monitoring, and fleet insights</span>
+          {platformStatSubtitle([
+            { label: 'Active tasks', value: activeTasks != null ? String(activeTasks) : '—' },
+            { label: 'Unread alerts', value: unreadAlerts != null ? String(unreadAlerts) : '—' },
+          ])}
+        </span>
+      }
+      icon={<Wrench className="w-6 h-6 text-slate-400" />}
+      contentClassName="space-y-4"
+    >
         <PlatformHubLaunchpad
           groups={[
             {
@@ -84,7 +84,6 @@ export default function PlatformOperationsHub() {
             },
           ]}
         />
-      </div>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

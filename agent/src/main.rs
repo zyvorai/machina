@@ -2,9 +2,11 @@
 
 use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 use clap::{Parser, Subcommand};
 use machina_agent::console_ws::{self, ConsoleProxyState};
+use machina_agent::libvirt_ops::LibvirtCtx;
 use machina_agent::grpc::AgentService;
 use machina_agent::pb::host_agent_server::HostAgentServer;
 use machina_agent::state::shared_state;
@@ -102,12 +104,13 @@ async fn run_serve(cli: &Cli) -> anyhow::Result<()> {
     });
     let state = shared_state(hostname);
     let libvirt_uri = cli.libvirt_uri.clone();
-    let service = AgentService::new(state, libvirt_uri.clone())?;
+    let libvirt = Arc::new(Mutex::new(LibvirtCtx::open(&libvirt_uri)?));
+    let service = AgentService::new(state, libvirt.clone());
 
     let grpc_addr: SocketAddr = cli.listen.parse()?;
     let console_addr: SocketAddr = cli.console_listen.parse()?;
     let console_state = ConsoleProxyState {
-        libvirt_uri,
+        libvirt,
         secret: String::new(),
     };
 

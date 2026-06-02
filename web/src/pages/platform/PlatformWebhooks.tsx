@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Webhook, Plus } from 'lucide-react'
-import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
-import PageLayout from '../../components/PageLayout'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import {
   createWebhook,
   deleteWebhook,
@@ -43,8 +42,17 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
   useEffect(() => { void load() }, [load])
 
   return (
-    <PageLayout hideHeader compact={embedded} error={error}>
-      {!embedded && <MacSectionTitle title="Webhooks" subtitle="Event notifications" />}
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      error={error}
+      onErrorRetry={() => void load()}
+      title={embedded ? undefined : 'Webhooks'}
+      subtitle={embedded ? undefined : 'Event notifications'}
+      icon={embedded ? undefined : <Webhook className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       <div className="card p-4 flex gap-3">
         <input className="input flex-1" value={url} onChange={(e) => setUrl(e.target.value)} />
         <button type="button" className="btn-primary flex items-center gap-2" onClick={async () => {
@@ -90,6 +98,6 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
           {deliveries.length === 0 && <li className="text-slate-500">No deliveries yet.</li>}
         </ul>
       </section>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

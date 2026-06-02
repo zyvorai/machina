@@ -17,6 +17,7 @@ mod hypersdk;
 mod guestkit;
 mod zeus_firewall;
 mod platform_controller;
+mod platform_ws;
 mod integrations;
 mod openstack;
 mod openstack_extended;
@@ -74,5 +75,7 @@ pub fn api_routes() -> Router<LibvirtManager> {
 }
 
 pub fn websocket_routes() -> Router<LibvirtManager> {
-    Router::new().merge(ws::ws_routes())
+    Router::new()
+        .merge(ws::ws_routes())
+        .merge(platform_ws::platform_ws_routes())
 }

@@ -1,8 +1,9 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import PageLayout from '../../components/PageLayout'
-import { MacGlassPanel, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import { Bot } from 'lucide-react'
+import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import {
   createAiProvider,
   deleteAiProvider,
@@ -21,7 +22,7 @@ const PROVIDER_KINDS = [
   'azure_openai', 'ollama', 'vllm', 'openai_compatible',
 ]
 
-export default function PlatformAiProviders() {
+export default function PlatformAiProviders({ embedded }: { embedded?: boolean } = {}) {
   const toast = useToastContext()
   const [providers, setProviders] = useState<AiProviderRow[]>([])
   const [models, setModels] = useState<AiModelRow[]>([])
@@ -49,8 +50,15 @@ export default function PlatformAiProviders() {
   }, [selected])
 
   return (
-    <PageLayout hideHeader compact>
-      <MacSectionTitle title="AI Providers" subtitle="Multi-LLM BYOK — OpenAI, Anthropic, Gemini, Ollama, vLLM, and custom endpoints" />
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      title={embedded ? undefined : 'AI Providers'}
+      subtitle={embedded ? undefined : 'Multi-LLM BYOK — OpenAI, Anthropic, Gemini, Ollama, vLLM, and custom endpoints'}
+      icon={embedded ? undefined : <Bot className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       <MacGlassPanel title="Add provider" subtitle="API keys are stored encrypted and never returned on GET">
         <div className="grid md:grid-cols-2 gap-3">
           <input className="input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -124,6 +132,6 @@ export default function PlatformAiProviders() {
           </div>
         )}
       </MacGlassPanel>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

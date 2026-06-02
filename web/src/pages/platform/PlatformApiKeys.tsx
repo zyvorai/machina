@@ -2,8 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Key, Plus, Trash2 } from 'lucide-react'
-import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
-import PageLayout from '../../components/PageLayout'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import { createApiKey, deleteApiKey, listApiKeys, type ApiKeyRow } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
@@ -25,8 +24,17 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
   useEffect(() => { void load() }, [load])
 
   return (
-    <PageLayout hideHeader compact={embedded} error={error}>
-      {!embedded && <MacSectionTitle title="API keys" subtitle="Bearer tokens for automation (machina_*)" />}
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      error={error}
+      onErrorRetry={() => void load()}
+      title={embedded ? undefined : 'API keys'}
+      subtitle={embedded ? undefined : 'Bearer tokens for automation (machina_*)'}
+      icon={embedded ? undefined : <Key className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       {newToken && (
         <div className={`card p-4 text-sm ${statusSurfaceClasses('warn')}`}>
           <p className={`mb-2 ${statusToneClass('warn')}`}>Copy this token now — it will not be shown again:</p>
@@ -66,6 +74,6 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
           ))}</tbody>
         </table>
       </div>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

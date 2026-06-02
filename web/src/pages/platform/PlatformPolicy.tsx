@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Shield } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
-import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import { MacGlassPanel, MacListRow } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import { listPolicyRules, listProjectQuotas, upsertProjectQuota, type PolicyRule } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
@@ -47,8 +47,17 @@ export default function PlatformPolicy({ embedded }: { embedded?: boolean } = {}
   }
 
   return (
-    <PageLayout hideHeader compact={embedded} error={error}>
-      {!embedded && <MacSectionTitle title="Policy & Quotas" subtitle="Controller policy rules and per-project resource limits." />}
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      error={error}
+      onErrorRetry={() => void load()}
+      title={embedded ? undefined : 'Policy & Quotas'}
+      subtitle={embedded ? undefined : 'Controller policy rules and per-project resource limits.'}
+      icon={embedded ? undefined : <Shield className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       <MacGlassPanel title="Policy rules">
         {rules.length === 0 ? (
           <p className="text-sm text-slate-400">No policy rules configured.</p>
@@ -90,6 +99,6 @@ export default function PlatformPolicy({ embedded }: { embedded?: boolean } = {}
         </ul>
       </MacGlassPanel>
       {!embedded && <FleetSettingsPane kind="general" />}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

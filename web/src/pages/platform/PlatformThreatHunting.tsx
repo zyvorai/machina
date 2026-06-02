@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { Bot, Sparkles } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import { MacGlassPanel, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import { Bot, Search, Sparkles } from 'lucide-react'
+import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import SecurityTimelinePanel from '../../components/platform/SecurityTimelinePanel'
 import {
   getFleetSecurityTimeline,
@@ -120,9 +120,16 @@ export default function PlatformThreatHunting() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Threat hunting" subtitle="Search · timeline · graph · evidence · AI summary" />
-      <Link to="/platform/zeus/security" className={`text-sm ${hubLinkClasses()}`}>← Security Center</Link>
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<Link to="/platform/zeus/security" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>← Security Center</Link>}
+      title="Threat hunting"
+      subtitle="Search · timeline · graph · evidence · AI summary"
+      icon={<Search className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       {huntQueries.length > 0 && (
         <MacGlassPanel title="Saved hunt queries" subtitle="OpenSearch-backed SOC playbooks">
           <div className="flex flex-wrap gap-2">
@@ -264,6 +271,6 @@ export default function PlatformThreatHunting() {
           </ol>
         </MacGlassPanel>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

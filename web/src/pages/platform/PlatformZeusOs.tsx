@@ -1,12 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link } from 'react-router'
 import { Cpu, Search, Server, Shield, Workflow } from 'lucide-react'
-import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
-import PageLayout from '../../components/PageLayout'
-import PageSkeleton from '../../components/PageSkeleton'
+import { MacGlassPanel, MacListRow } from '../../components/platform/mac/PlatformMacUi'
+import DetailTabs from '../../components/platform/DetailTabs'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import PlatformZeusHubLaunchpad from '../../components/platform/tahoe/PlatformZeusHubLaunchpad'
 import { formatUserError } from '../../utils/apiError'
 import { hubLinkClasses, statusToneClass } from '../../utils/semanticColors'
@@ -44,14 +45,16 @@ import {
 
 type Tab = 'fleet' | 'security' | 'knowledge' | 'services' | 'baremetal'
 
+const ZEUS_TABS: Array<{ id: Tab; label: string }> = [
+  { id: 'fleet', label: 'Fleet' },
+  { id: 'security', label: 'Security' },
+  { id: 'knowledge', label: 'Knowledge' },
+  { id: 'services', label: 'Services' },
+  { id: 'baremetal', label: 'Bare Metal' },
+]
+
 export default function PlatformZeusOs() {
-  const [searchParams] = useSearchParams()
-  const initialTab = searchParams.get('tab')
-  const [tab, setTab] = useState<Tab>(
-    initialTab === 'baremetal' || initialTab === 'security' || initialTab === 'knowledge' || initialTab === 'services'
-      ? initialTab
-      : 'fleet',
-  )
+  const [tab, setTab] = usePlatformTabState<Tab>(ZEUS_TABS.map((t) => t.id), { defaultTab: 'fleet' })
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [heatmap, setHeatmap] = useState<FleetHeatmap | null>(null)
@@ -179,21 +182,30 @@ export default function PlatformZeusOs() {
     }
   }
 
-  const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'fleet', label: 'Fleet', icon: <Cpu className="w-4 h-4" /> },
-    { id: 'security', label: 'Security', icon: <Shield className="w-4 h-4" /> },
-    { id: 'knowledge', label: 'Knowledge', icon: <Search className="w-4 h-4" /> },
-    { id: 'services', label: 'Services', icon: <Workflow className="w-4 h-4" /> },
-    { id: 'baremetal', label: 'Bare Metal', icon: <Server className="w-4 h-4" /> },
-  ]
+  const load = useCallback(() => {
+    if (tab === 'fleet') return loadFleet()
+    if (tab === 'security') return loadSecurity()
+    if (tab === 'services') return loadServices()
+    if (tab === 'baremetal') return loadBaremetal()
+  }, [tab, loadFleet, loadSecurity, loadServices, loadBaremetal])
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle
-        title="Machina Zeus OS"
-        subtitle="Fleet intelligence · AI security graph · knowledge engine · service fabric · bare metal"
-      />
-      {loading && tab === 'fleet' && !heatmap && <PageSkeleton />}
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      contentLoading={loading && tab === 'fleet' && !heatmap}
+      prepend={<PlatformBackLink to="/platform" label="Dashboard" />}
+      title="Machina Zeus OS"
+      subtitle="Fleet intelligence · security graph · knowledge · services · bare metal"
+      icon={<Cpu className="w-6 h-6 text-orange-400/80" />}
+      actions={
+        <>
+          <PlatformRefreshButton onClick={() => void load()} />
+          <Link to="/mission-control" className="btn-secondary text-sm">Mission Control</Link>
+        </>
+      }
+      contentClassName="space-y-4"
+    >
       {zeusSummary && <p className="text-sm text-orange-200/90">{zeusSummary}</p>}
       {hubSummary && (
         <MacGlassPanel title="Remediation hub" subtitle="SRE · compliance · fleet power — unified review queue">
@@ -208,21 +220,7 @@ export default function PlatformZeusOs() {
         </MacGlassPanel>
       )}
       <PlatformZeusHubLaunchpad activeTab={tab} />
-      <div className="flex flex-wrap gap-2">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs border ${
-              tab === t.id ? 'border-orange-400/50 bg-orange-500/10 text-orange-200' : 'border-white/[0.08] text-slate-400'
-            }`}
-            onClick={() => setTab(t.id)}
-          >
-            {t.icon} {t.label}
-          </button>
-        ))}
-        <Link to="/mission-control" className={`text-xs self-center ml-2 ${hubLinkClasses()}`}>Mission Control →</Link>
-      </div>
+      <DetailTabs primary={ZEUS_TABS} active={tab} onChange={setTab} />
 
       {tab === 'fleet' && heatmap && (
         <div className="space-y-4">
@@ -434,6 +432,6 @@ export default function PlatformZeusOs() {
           </MacGlassPanel>
         </div>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

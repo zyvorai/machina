@@ -1,16 +1,15 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router'
-import { ArrowLeft, Copy, Play, Square, RotateCcw, Trash2, Terminal, MoveRight, Archive, HardDrive, Activity, Shield, ExternalLink } from 'lucide-react'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
+import { ArrowLeft, Copy, Play, Square, RotateCcw, Trash2, Terminal, MoveRight, Archive, HardDrive, Activity, Shield, ExternalLink, Monitor } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
 import GuestToolsStrip from '../../components/platform/GuestToolsStrip'
 import MachinaDoctorPanel from '../../components/platform/MachinaDoctorPanel'
 import ExplainButton from '../../components/ai/ExplainButton'
 import OsDiagnosePanel from '../../components/platform/OsDiagnosePanel'
-import VmDetailTabs, { type VmDetailTab } from '../../components/platform/VmDetailTabs'
+import VmDetailTabs, { type VmDetailTab, isGuestRelatedTab } from '../../components/platform/VmDetailTabs'
 import { MacGlassPanel, MacListRow } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
 import JsonInspector from '../../components/platform/JsonInspector'
 import { StructuredErrorBanner } from '../../components/StructuredErrorBanner'
 import {
@@ -62,7 +61,7 @@ import { getVmGuestFirewallPorts, type GuestPortReport } from '../../api/zeusFir
 import { useAi } from '../../contexts/AiContext'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
-import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusToneClass, taskStatusTone, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
+import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusToneClass, taskStatusTone, vmStateTone, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
 import { vmErrorPresentation } from '../../utils/vmErrorPresentation'
 import { isCenterPopoutMode, openCenterPopout } from '../../utils/platformCenterPopout'
 import { PlatformOpenStackVmLink } from '../../components/platform/PlatformCrossLinks'
@@ -71,8 +70,27 @@ import { tasksHubHref } from '../../utils/platformHubLinks'
 
 export default function PlatformVmDetail() {
   const location = useLocation()
+  const navigate = useNavigate()
   const isPopout = isCenterPopoutMode(location.search)
   const { id } = useParams<{ id: string }>()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const rawTab = tabParam === 'guestPorts' ? 'security' : tabParam
+  const tab: VmDetailTab = (
+    ['overview', 'doctor', 'console', 'performance', 'disks', 'network', 'guestHealth', 'guestServices', 'security', 'snapshots', 'backup', 'topology', 'events', 'settings'] as VmDetailTab[]
+  ).includes(rawTab as VmDetailTab) ? (rawTab as VmDetailTab) : 'overview'
+  const setTab = (next: VmDetailTab) => {
+    if (next === 'console' && id) {
+      navigate(`/platform/vms/${id}/console`)
+      return
+    }
+    setSearchParams((p) => {
+      const n = new URLSearchParams(p)
+      if (next === 'overview') n.delete('tab')
+      else n.set('tab', next)
+      return n
+    }, { replace: true })
+  }
   const [tier] = usePlatformDesktopTier()
   const { setContextVmId, openCopilot } = useAi()
   const toast = useToastContext()
@@ -94,7 +112,6 @@ export default function PlatformVmDetail() {
   const [metrics, setMetrics] = useState<{ cpu_percent: number; memory_used_mib: number; updated_at: string } | null>(null)
   const [attachPath, setAttachPath] = useState('/var/lib/libvirt/images/data.qcow2')
   const [attachDev, setAttachDev] = useState('vdb')
-  const [tab, setTab] = useState<VmDetailTab>('overview')
   const [health, setHealth] = useState<VmHealthReport | null>(null)
   const [doctor, setDoctor] = useState<VmDoctorReport | null>(null)
   const [healthLoading, setHealthLoading] = useState(false)
@@ -232,7 +249,7 @@ export default function PlatformVmDetail() {
   }, [id])
 
   useEffect(() => {
-    if ((tab === 'security' || tab === 'guestPorts') && id) void loadGuestPorts()
+    if (tab === 'security' && id) void loadGuestPorts()
     if (tab === 'guestHealth' && id) void loadGuestHealth()
     if (tab === 'guestServices' && id) void loadGuestServices()
   }, [tab, id, loadGuestPorts, loadGuestHealth, loadGuestServices])
@@ -247,66 +264,81 @@ export default function PlatformVmDetail() {
   }
 
   const hostName = hosts.find((h) => h.id === vm?.host_id)?.hostname
+  const stateTone = vm ? vmStateTone(vm.observed_state) : 'neutral'
+  const lifecycleTone = vm?.lifecycle_phase === 'running' ? 'ok' : vm?.lifecycle_phase === 'error' ? 'error' : 'neutral'
 
   if (!id) return null
 
+  const powerActions = vm && vm.inventory_source !== 'kubevirt' && vm.observed_state !== 'missing' ? (
+    <>
+      <button type="button" className="btn-primary text-sm" onClick={() => void act('Start queued', () => vmPower(id, 'start'))}><Play className="w-4 h-4" /> Start</button>
+      <button type="button" className="btn-secondary text-sm" onClick={() => void act('Stop queued', () => vmPower(id, 'stop'))}><Square className="w-4 h-4" /> Stop</button>
+      <button type="button" className="btn-secondary text-sm" onClick={() => void act('Reboot queued', () => vmPower(id, 'reboot'))}><RotateCcw className="w-4 h-4" /> Reboot</button>
+    </>
+  ) : null
+
   return (
-    <PageLayout hideHeader>
-      {!isPopout && (
-        <Link to="/platform/vms" className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}><ArrowLeft className="w-4 h-4" /> Virtual Machines</Link>
-      )}
-      {error && <ErrorBanner message={error} />}
+    <PageLayout
+      compact
+      prepend={!isPopout ? (
+        <Link to="/platform/vms" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Virtual Machines
+        </Link>
+      ) : undefined}
+      title={vm?.name ?? 'Virtual machine'}
+      subtitle={vm ? (
+        <span className="flex flex-wrap items-center gap-2 text-sm">
+          <span className={statusPillClasses(stateTone)}>{vm.observed_state}</span>
+          {vm.lifecycle_phase && vm.lifecycle_phase !== vm.observed_state && (
+            <span className={statusPillClasses(lifecycleTone)}>{vm.lifecycle_phase}</span>
+          )}
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-400">{hostName || 'No host'}</span>
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-400">{vm.vcpus} vCPU · {Math.round(vm.memory_mib / 1024)} GiB</span>
+          {vm.ha_enabled && <span className={statusPillClasses('info')}>HA</span>}
+        </span>
+      ) : undefined}
+      icon={<Monitor className="w-6 h-6 text-slate-400" />}
+      actions={vm ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to={`/platform/vms/${id}/console`} className="btn-primary text-sm inline-flex items-center gap-1">
+            <Terminal className="w-4 h-4" /> Console
+          </Link>
+          {powerActions}
+          {!isPopout && (
+            <button type="button" className="btn-secondary text-sm inline-flex items-center gap-1" onClick={() => openCenterPopout(`/platform/vms/${id}`)}>
+              <ExternalLink className="w-4 h-4" /> Pop out
+            </button>
+          )}
+          <button
+            type="button"
+            className="btn-danger text-sm"
+            onClick={() => {
+              if (!window.confirm('Delete this VM permanently?')) return
+              void act('Delete queued', () => vmDelete(id, true))
+            }}
+          >
+            <Trash2 className="w-4 h-4" /> Delete
+          </button>
+        </div>
+      ) : undefined}
+      error={error}
+      contentLoading={!vm && !error}
+    >
       {vm && (
         <>
-          <header className="space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h1 className="text-3xl font-bold text-slate-50">{vm.name}</h1>
-                <p className="text-sm text-slate-400 mt-1 capitalize">
-                  Status: {vm.observed_state} · Host: {hostName || '—'} · {vm.vcpus} vCPU · {Math.round(vm.memory_mib / 1024)} GiB
-                  {vm.ha_enabled ? ' · HA enabled' : ''}
-                </p>
+          <PlatformOpenStackVmLink vm={vm} />
+          {vm.inventory_source === 'kubevirt' && (
+            <MacGlassPanel title="KubeVirt guest">
+              <p className="text-sm text-slate-300">
+                Namespace: <span className="font-mono text-sky-200">{vm.k8s_namespace ?? 'default'}</span>
+              </p>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <Link to="/platform/integrations?tab=k8s" className={`text-sm ${hubLinkClasses()}`}>K8s Workloads →</Link>
               </div>
-              {!isPopout && (
-                <button
-                  type="button"
-                  className="btn-secondary text-sm flex items-center gap-1"
-                  onClick={() => openCenterPopout(`/platform/vms/${id}`)}
-                >
-                  <ExternalLink className="w-4 h-4" /> Pop out
-                </button>
-              )}
-            </div>
-            {vm.host_id && (
-              <Link to={`/platform/zeus/security/firewall/${vm.host_id}`} className={`text-sm inline-block ${hubLinkClasses()}`}>
-                Machine Security → Zeus Firewall
-              </Link>
-            )}
-            <PlatformOpenStackVmLink vm={vm} />
-            {vm.inventory_source === 'kubevirt' && (
-              <MacGlassPanel title="KubeVirt guest">
-                <p className="text-sm text-slate-300">
-                  Namespace: <span className="font-mono text-sky-200">{vm.k8s_namespace ?? 'default'}</span>
-                </p>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  <Link to="/platform/integrations?tab=k8s" className={`text-sm ${hubLinkClasses()}`}>K8s Workloads →</Link>
-                </div>
-              </MacGlassPanel>
-            )}
-            <div className="flex flex-wrap gap-2">
-              {vm.inventory_source !== 'kubevirt' && vm.observed_state !== 'missing' && (
-                <>
-                  <button type="button" className="btn-primary" onClick={() => void act('Start queued', () => vmPower(id, 'start'))}><Play className="w-4 h-4" /> Start</button>
-                  <button type="button" className="btn-secondary" onClick={() => void act('Stop queued', () => vmPower(id, 'stop'))}><Square className="w-4 h-4" /> Stop</button>
-                  <button type="button" className="btn-secondary" onClick={() => void act('Reboot queued', () => vmPower(id, 'reboot'))}><RotateCcw className="w-4 h-4" /> Reboot</button>
-                </>
-              )}
-              <button type="button" className="btn-danger" onClick={() => {
-                if (!window.confirm('Delete this VM permanently?')) return
-                void act('Delete queued', () => vmDelete(id, true))
-              }}><Trash2 className="w-4 h-4" /> Delete</button>
-            </div>
-          </header>
+            </MacGlassPanel>
+          )}
 
           {vm.observed_state === 'missing' && (
             <MacGlassPanel title="Missing from inventory">
@@ -348,30 +380,43 @@ export default function PlatformVmDetail() {
 
           <VmDetailTabs active={tab} onChange={setTab} />
 
-          <GuestToolsStrip
-            status={health?.guest_tools_status}
-            guestIp={health?.guest_ip}
-            guestHostname={health?.guest_hostname}
-            installing={guestInstalling}
-            onInstall={() => {
-              if (!id) return
-              setGuestInstalling(true)
-              void installGuestTools(id)
-                .then(() => { toast.success('Guest tools install queued'); return runHealth() })
-                .catch((e: unknown) => toast.error(formatUserError(e)))
-                .finally(() => setGuestInstalling(false))
-            }}
-          />
+          {isGuestRelatedTab(tab) && (
+            <GuestToolsStrip
+              vmId={id}
+              compact={tab !== 'overview'}
+              status={health?.guest_tools_status}
+              guestIp={health?.guest_ip}
+              guestHostname={health?.guest_hostname}
+              installing={guestInstalling}
+              onInstall={() => {
+                if (!id) return
+                setGuestInstalling(true)
+                void installGuestTools(id)
+                  .then(() => { toast.success('Guest tools install queued'); return runHealth() })
+                  .catch((e: unknown) => toast.error(formatUserError(e)))
+                  .finally(() => setGuestInstalling(false))
+              }}
+            />
+          )}
 
           {tab === 'overview' && (
-            <div className="space-y-4 pt-2">
+            <div className="space-y-4">
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
                 <InfoCard label="Desired state" value={vm.desired_state} />
                 <InfoCard label="Lifecycle" value={vm.lifecycle_phase || 'idle'} />
                 <InfoCard label="Project" value={project || 'default'} />
                 <InfoCard label="Backup" value={backups.some((b) => b.status === 'completed') ? 'Protected' : 'Not configured'} />
               </div>
-              <MacGlassPanel title="Project & tags">
+              {metrics && (
+                <MacGlassPanel title="At a glance">
+                  <div className="flex flex-wrap gap-6 text-sm text-slate-300">
+                    <span className="flex items-center gap-2"><Activity className="w-4 h-4 text-slate-500" /> CPU {metrics.cpu_percent.toFixed(1)}%</span>
+                    <span>Memory {metrics.memory_used_mib} MiB</span>
+                    <button type="button" className={`text-xs ${hubLinkClasses()}`} onClick={() => setTab('performance')}>Performance details →</button>
+                  </div>
+                </MacGlassPanel>
+              )}
+              <MacGlassPanel title="Organization">
                 <div className="flex flex-wrap gap-3 items-end">
                   <div>
                     <label className="text-xs text-slate-500 block mb-1">Project</label>
@@ -384,42 +429,14 @@ export default function PlatformVmDetail() {
                   <button type="button" className="btn-secondary" onClick={() => void act('Project updated', () => patchVm(id, { project, tags: tags.split(',').map((t) => t.trim()).filter(Boolean) }))}>Save</button>
                 </div>
               </MacGlassPanel>
-              <MacGlassPanel title="Operations">
-                <div className="grid gap-4 md:grid-cols-2">
-                <div>
-                  <h3 className="font-semibold mb-2 flex items-center gap-2"><MoveRight className="w-4 h-4" /> Live migrate</h3>
-                  <select className="input w-full mb-2" value={destHost} onChange={(e) => setDestHost(e.target.value)}>
-                    {hosts.map((h) => <option key={h.id} value={h.id}>{h.hostname}</option>)}
-                  </select>
-                  <div className="flex gap-2">
-                    <button type="button" className="btn-secondary" disabled={!destHost} onClick={async () => {
-                      try { setPrecheck(await migratePrecheck(id, destHost)) } catch (e: unknown) { toast.error(formatUserError(e)) }
-                    }}>Pre-check</button>
-                    <button type="button" className="btn-secondary" disabled={!destHost} onClick={() => void act('Migration queued', () => vmMigrate(id, destHost))}>Migrate</button>
-                  </div>
-                  {precheck && (
-                    <ul className="text-xs mt-2 space-y-1">{precheck.checks.map((c) => (
-                      <li key={c.name} className={statusToneClass(c.passed ? 'ok' : 'error')}>
-                        {c.name}: {c.message}
-                        {c.remediation && !c.passed && (
-                          <p className="text-slate-400 pl-2 mt-1">
-                            Fix: {c.remediation}
-                            {!c.passed && c.name.toLowerCase().includes('network') && (
-                              <button type="button" className="btn-secondary text-[10px] ml-2" onClick={() => setTab('network')}>Choose network</button>
-                            )}
-                          </p>
-                        )}
-                      </li>
-                    ))}</ul>
-                  )}
+              {vm.host_id && (
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <Link to={`/platform/zeus/security/firewall/${vm.host_id}`} className={`inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+                    <Shield className="w-4 h-4" /> Host firewall (Zeus)
+                  </Link>
+                  <button type="button" className={hubLinkClasses()} onClick={() => setTab('doctor')}>Run health doctor →</button>
                 </div>
-                <div>
-                  <h3 className="font-semibold mb-2 flex items-center gap-2"><Copy className="w-4 h-4" /> Clone</h3>
-                  <input className="input w-full mb-2" placeholder="new-vm-name" value={cloneName} onChange={(e) => setCloneName(e.target.value)} />
-                  <button type="button" className="btn-secondary" disabled={!cloneName} onClick={() => void act('Clone queued', () => vmClone(id, cloneName))}>Clone</button>
-                </div>
-                </div>
-              </MacGlassPanel>
+              )}
             </div>
           )}
 
@@ -439,16 +456,18 @@ export default function PlatformVmDetail() {
           )}
 
           {tab === 'console' && (
-            <MacGlassPanel title="Console" className="pt-2">
-              <div className="text-center py-4">
-                <Terminal className="w-12 h-12 mx-auto text-slate-600 mb-4" />
-                <Link to={`/platform/vms/${id}/console`} className="btn-primary inline-flex items-center gap-2"><Terminal className="w-4 h-4" /> Open console</Link>
-              </div>
+            <MacGlassPanel title="Console">
+              <p className="text-sm text-slate-400 mb-4">
+                Opens a full-screen noVNC session in a dedicated view.
+              </p>
+              <Link to={`/platform/vms/${id}/console`} className="btn-primary inline-flex items-center gap-2">
+                <Terminal className="w-4 h-4" /> Open graphical console
+              </Link>
             </MacGlassPanel>
           )}
 
           {tab === 'performance' && (
-            <MacGlassPanel title="Performance" className="pt-2">
+            <MacGlassPanel title="Performance">
               {metrics ? (
                 <>
                   <div className="flex flex-wrap gap-6 text-sm">
@@ -528,34 +547,6 @@ export default function PlatformVmDetail() {
             </div>
           )}
 
-          {tab === 'guestPorts' && (
-            <div className="space-y-4 pt-2">
-              <div className="flex justify-end">
-                <ExplainButton screen="guest_ports" objectRef={{ vm_id: id }} />
-              </div>
-              <MacGlassPanel title="Guest listening ports" subtitle="In-guest ports via QEMU agent">
-                {guestPortsLoading && <p className="text-sm text-slate-500">Loading…</p>}
-                {!guestPortsLoading && guestPorts && (
-                  <>
-                    <p className="text-xs text-slate-500 mb-3">{guestPorts.summary}</p>
-                    {guestPorts.ports.length === 0 ? (
-                      <p className="text-sm text-slate-500">No listening ports reported.</p>
-                    ) : (
-                      guestPorts.ports.map((p) => (
-                        <MacListRow
-                          key={`${p.port}-${p.protocol}`}
-                          title={`${p.port}/${p.protocol}`}
-                          subtitle={[p.service_name || p.process, String(p.risk)].filter(Boolean).join(' · ')}
-                        />
-                      ))
-                    )}
-                  </>
-                )}
-                <button type="button" className="btn-secondary text-xs mt-3" onClick={() => void loadGuestPorts()}>Refresh</button>
-              </MacGlassPanel>
-            </div>
-          )}
-
           {tab === 'guestServices' && (
             <div className="space-y-4 pt-2">
               <MacGlassPanel title="Guest services" subtitle="Agent + listening process inventory (v1)">
@@ -588,6 +579,9 @@ export default function PlatformVmDetail() {
 
           {tab === 'security' && (
             <div className="space-y-4 pt-2">
+              <div className="flex justify-end">
+                <ExplainButton screen="guest_ports" objectRef={{ vm_id: id }} />
+              </div>
               <MacGlassPanel
                 title="Security"
                 subtitle="In-guest listening ports via QEMU guest agent · host firewall on parent machine"
@@ -716,11 +710,47 @@ export default function PlatformVmDetail() {
           )}
 
           {tab === 'settings' && (
-            <div className="space-y-4 pt-2">
+            <div className="space-y-4">
               <MacGlassPanel title="High availability">
                 <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={ha.enabled} onChange={(e) => setHa({ ...ha, enabled: e.target.checked })} /> Restart on host failure</label>
                 <label className="flex items-center gap-2 text-sm mt-2"><input type="checkbox" checked={ha.fence_on_failure} onChange={(e) => setHa({ ...ha, fence_on_failure: e.target.checked })} /> Fence host on failure</label>
                 <button type="button" className="btn-secondary mt-2" onClick={() => void act('HA policy updated', () => setVmHa(id, ha))}>Save HA policy</button>
+              </MacGlassPanel>
+              <MacGlassPanel title="Live migrate & clone">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm"><MoveRight className="w-4 h-4" /> Live migrate</h3>
+                    <select className="input w-full mb-2" value={destHost} onChange={(e) => setDestHost(e.target.value)}>
+                      {hosts.map((h) => <option key={h.id} value={h.id}>{h.hostname}</option>)}
+                    </select>
+                    <div className="flex gap-2">
+                      <button type="button" className="btn-secondary text-sm" disabled={!destHost} onClick={async () => {
+                        try { setPrecheck(await migratePrecheck(id, destHost)) } catch (e: unknown) { toast.error(formatUserError(e)) }
+                      }}>Pre-check</button>
+                      <button type="button" className="btn-secondary text-sm" disabled={!destHost} onClick={() => void act('Migration queued', () => vmMigrate(id, destHost))}>Migrate</button>
+                    </div>
+                    {precheck && (
+                      <ul className="text-xs mt-2 space-y-1">{precheck.checks.map((c) => (
+                        <li key={c.name} className={statusToneClass(c.passed ? 'ok' : 'error')}>
+                          {c.name}: {c.message}
+                          {c.remediation && !c.passed && (
+                            <p className="text-slate-400 pl-2 mt-1">
+                              Fix: {c.remediation}
+                              {!c.passed && c.name.toLowerCase().includes('network') && (
+                                <button type="button" className="btn-secondary text-[10px] ml-2" onClick={() => setTab('network')}>Choose network</button>
+                              )}
+                            </p>
+                          )}
+                        </li>
+                      ))}</ul>
+                    )}
+                  </div>
+                  <div>
+                    <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm"><Copy className="w-4 h-4" /> Clone</h3>
+                    <input className="input w-full mb-2" placeholder="new-vm-name" value={cloneName} onChange={(e) => setCloneName(e.target.value)} />
+                    <button type="button" className="btn-secondary text-sm" disabled={!cloneName} onClick={() => void act('Clone queued', () => vmClone(id, cloneName))}>Clone</button>
+                  </div>
+                </div>
               </MacGlassPanel>
               <MacGlassPanel title="VM spec">
                 {specData ? <JsonInspector data={specData} /> : <p className="text-sm text-slate-500">Spec unavailable</p>}

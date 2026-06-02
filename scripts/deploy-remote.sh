@@ -61,7 +61,7 @@ usage() {
     cat <<'EOF'
 deploy-remote.sh USER@HOST | USER HOST [PASSWORD] [--sync-only|--quick|--e2e|--platform|--cleanup|--dry-run]
         [--skip-platform-e2e|--skip-daemon-e2e]
-        [--remote-build|--remote-check] [--bind ADDR] [--open-firewall] [--no-start] [--deps-only] [extra install.sh args...]
+        [--remote-build|--remote-check] [--bind ADDR] [--open-firewall|--disable-firewalld] [--no-start] [--deps-only] [extra install.sh args...]
 
 Prefer: ./scripts/deploy remote USER@HOST [flags]  |  ./scripts/deploy status
 
@@ -84,7 +84,8 @@ Examples:
   deploy-remote.sh sus 185.165.240.5 --quick
   deploy-remote.sh 185.165.240.5 sus --quick    # HOST USER (auto-swapped)
   VSPASS=max deploy-remote.sh sus 185.165.240.5 --quick --e2e --platform
-  deploy-remote.sh sus 212.8.252.194 --quick --platform --e2e --bind 0.0.0.0 --open-firewall
+  VSPASS=max deploy-remote.sh sus 212.8.252.194 --platform --e2e --bind 0.0.0.0
+  deploy-remote.sh sus 212.8.252.194 --quick --platform --e2e --bind 0.0.0.0 --disable-firewalld
   deploy-remote.sh sus@host --remote-check    # fast compile smoke after rsync
   deploy-remote.sh sus@host --remote-build   # full release build on server, then exit
   # Full install passes --no-tests to install.sh (no post-install curl suite on the server).
@@ -238,6 +239,7 @@ QUICK=false
 CLEANUP=false
 BIND=""
 OPEN_FW=false
+DISABLE_FW=false
 NO_START=false
 DEPS_ONLY=false
 REMOTE_BUILD=false
@@ -261,6 +263,7 @@ parse_flags() {
             --skip-live-ux) SKIP_LIVE_UX=true; shift ;;
             --cleanup) CLEANUP=true; shift ;;
             --open-firewall) OPEN_FW=true; shift ;;
+            --disable-firewalld) DISABLE_FW=true; shift ;;
             --no-start) NO_START=true; shift ;;
             --deps-only) DEPS_ONLY=true; shift ;;
             --remote-build) REMOTE_BUILD=true; SKIP_INSTALL=true; shift ;;
@@ -314,10 +317,12 @@ fi
 REMOTE="${USER}@${HOST}"
 
 # Full install defaults: remote IPv4 targets must listen on 0.0.0.0 and open :5092 unless overridden.
-if [[ -z "$BIND" ]] && [[ "$HOST" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && [[ "$HOST" != "127.0.0.1" ]]; then
-    BIND="0.0.0.0"
-    OPEN_FW=true
-    tip "Remote IPv4 deploy: using --bind 0.0.0.0 --open-firewall (override with --bind 127.0.0.1)"
+if [[ "$HOST" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}$ ]] && [[ "$HOST" != "127.0.0.1" ]]; then
+    [[ -z "$BIND" ]] && BIND="0.0.0.0"
+    if ! $OPEN_FW; then
+        DISABLE_FW=true
+    fi
+    tip "Remote IPv4 deploy: --bind ${BIND:-0.0.0.0} + --disable-firewalld (pass --open-firewall to open ports instead)"
 fi
 
 declare -a INSTALL_ARGS=()
@@ -379,6 +384,7 @@ fi
 OPTS_LINE=""
 [[ -n "$BIND" ]] && OPTS_LINE+="--bind $BIND  "
 $OPEN_FW && OPTS_LINE+="--open-firewall  "
+$DISABLE_FW && OPTS_LINE+="--disable-firewalld  "
 $NO_START && OPTS_LINE+="--no-start  "
 $DEPS_ONLY && OPTS_LINE+="--deps-only  "
 $CLEANUP && OPTS_LINE+="cleanup deploy dir after  "
@@ -469,6 +475,7 @@ fi
 OPTS=" --no-tests"
 [[ -n "$BIND" ]] && OPTS+=" --bind $BIND"
 $OPEN_FW && OPTS+=" --open-firewall"
+$DISABLE_FW && OPTS+=" --disable-firewalld"
 $NO_START && OPTS+=" --no-start"
 $DEPS_ONLY && OPTS+=" --deps-only"
 
@@ -482,6 +489,7 @@ if $QUICK; then
     QUICK_OPTS=" --no-tests"
     [[ -n "$BIND" ]] && QUICK_OPTS+=" --bind $BIND"
     $OPEN_FW && QUICK_OPTS+=" --open-firewall"
+    $DISABLE_FW && QUICK_OPTS+=" --disable-firewalld"
     # Build as SSH user (rustup cargo on PATH); install.sh applies bind/firewall/systemd like full deploy.
     ssh_r_bash "$REMOTE" "
 set -euo pipefail
@@ -507,12 +515,15 @@ if $INSTALL_PLATFORM; then
     PLATFORM_OPTS=""
     [[ -n "$BIND" ]] && PLATFORM_OPTS+=" --bind $BIND"
     $OPEN_FW && PLATFORM_OPTS+=" --open-firewall"
+    $DISABLE_FW && PLATFORM_OPTS+=" --disable-firewalld"
     PLATFORM_OPTS+=" --public-url http://${HOST}:5093"
     ssh_r_bash "$REMOTE" "
 set -euo pipefail
 cd $REMOTE_DIR
 sudo bash scripts/install-platform.sh${PLATFORM_OPTS}
 " || die "platform install failed"
+    deploy_ui_highlight "Platform postflight — agent, inventory, e2e cleanup"
+    ssh_r_bash "$REMOTE" "sudo bash $REMOTE_DIR/scripts/lib/platform-sweep-remote.sh" || warn "platform postflight had issues (non-fatal)"
 fi
 
 phase "$SNAPSHOT_PHASE" "$TOTAL_STEPS" "Service snapshot" "machina-daemon + libvirtd + platform status"

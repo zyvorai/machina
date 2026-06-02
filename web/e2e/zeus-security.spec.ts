@@ -14,9 +14,12 @@ test('Security Center loads with threat score', async ({ page }) => {
 test('Machine Security view shows process tabs', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/zeus/machines/h1')
-  await expect(page.getByText('Machine · h1')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText('Processes')).toBeVisible()
-  await page.getByRole('button', { name: 'Containers' }).click()
+  await expect(page.getByRole('heading', { name: 'Machine security' })).toBeVisible({ timeout: 15_000 })
+  const tabBar = page.locator('div.flex.flex-wrap.items-center.gap-1.border-b').filter({
+    has: page.getByRole('button', { name: 'Processes' }),
+  })
+  await tabBar.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Containers' }).click()
   await expect(page.getByText('ns/zeus')).toBeVisible({ timeout: 15_000 })
 })
 

@@ -1,12 +1,14 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
-import PageLayout from '../../components/PageLayout'
+import { Link } from 'react-router'
 import { AlertTriangle, CheckCircle2, Layers, Loader2, Package, Plus, RefreshCw, Sparkles, Star, Puzzle } from 'lucide-react'
+import DetailTabs from '../../components/platform/DetailTabs'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
-import { MacGlassPanel, MacSectionTitle, MacSheet } from '../../components/platform/mac/PlatformMacUi'
+import { MacGlassPanel, MacSheet } from '../../components/platform/mac/PlatformMacUi'
 import {
   createFromTemplate,
   createTemplate,
@@ -30,6 +32,11 @@ const PLUGIN_CATEGORIES = ['All', 'automation', 'observability', 'migration', 's
 
 type TabId = 'templates' | 'plugins'
 
+const MARKETPLACE_TABS = [
+  { id: 'templates' as const, label: 'Templates' },
+  { id: 'plugins' as const, label: 'Plugins' },
+]
+
 function templateIcon(t: PlatformTemplate) {
   if (t.icon) return t.icon
   const fam = (t.os_family ?? t.category ?? '').toLowerCase()
@@ -41,8 +48,7 @@ function templateIcon(t: PlatformTemplate) {
 
 export default function PlatformTemplates() {
   const toast = useToastContext()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tab = (searchParams.get('tab') as TabId) || 'templates'
+  const [tab, setTab] = usePlatformTabState<TabId>(MARKETPLACE_TABS.map((t) => t.id), { defaultTab: 'templates' })
   const [rows, setRows] = useState<PlatformTemplate[]>([])
   const [plugins, setPlugins] = useState<MarketplacePlugin[]>([])
   const [pluginCategory, setPluginCategory] = useState<string>('All')
@@ -115,10 +121,6 @@ export default function PlatformTemplates() {
   }, [toast])
 
   useEffect(() => { void load(true) }, [load])
-
-  const setTab = (next: TabId) => {
-    setSearchParams(next === 'templates' ? {} : { tab: next })
-  }
 
   const loadPlugins = useCallback(async () => {
     setPluginLoading(true)
@@ -221,13 +223,15 @@ export default function PlatformTemplates() {
   }
 
   return (
-    <PageLayout hideHeader error={error} contentClassName="space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">App Store</p>
-          <MacSectionTitle title="Marketplace" subtitle="Golden image templates and platform integration plugins." />
-        </div>
-        <div className="flex gap-2">
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load(false)}
+      prepend={<PlatformBackLink to="/platform/resources" label="Resources" />}
+      title="Marketplace"
+      subtitle="Golden image templates and platform integration plugins."
+      icon={<Package className="w-6 h-6 text-slate-400" />}
+      actions={
+        <>
           {tab === 'templates' && (
             <>
               <button type="button" className="btn-secondary text-sm" onClick={() => void load(false)} disabled={loading}>
@@ -246,26 +250,12 @@ export default function PlatformTemplates() {
               <RefreshCw className={`w-4 h-4 ${pluginLoading ? 'animate-spin' : ''}`} /> Refresh
             </button>
           )}
-        </div>
-      </header>
-
-      <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
-        {([
-          ['templates', 'Templates', Layers],
-          ['plugins', 'Plugins', Puzzle],
-        ] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm rounded-t-lg flex items-center gap-2 transition ${
-              tab === id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Icon className="w-4 h-4" /> {label}
-          </button>
-        ))}
-      </div>
+          <PlatformRefreshButton onClick={() => void (tab === 'plugins' ? loadPlugins() : load(false))} />
+        </>
+      }
+      contentClassName="space-y-4"
+    >
+      <DetailTabs primary={MARKETPLACE_TABS} active={tab} onChange={setTab} />
 
       {tab === 'templates' && (
         <>
@@ -472,7 +462,7 @@ export default function PlatformTemplates() {
           <button type="button" className="btn-primary md:col-span-2" onClick={() => void publishPlugin()}>Publish</button>
         </div>
       </MacSheet>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }
 

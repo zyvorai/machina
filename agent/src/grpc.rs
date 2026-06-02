@@ -1,9 +1,6 @@
 use std::sync::Arc;
 
-use machina_core::config::LibvirtConfig;
-use machina_core::LibvirtManager;
 use machina_spec::VirtualMachine;
-use tokio::sync::Mutex;
 use tonic::{Request, Response, Status};
 
 use crate::libvirt_ops;
@@ -13,20 +10,30 @@ use crate::state::SharedAgentState;
 
 pub struct AgentService {
     pub state: SharedAgentState,
-    pub libvirt_uri: String,
-    pub manager: Arc<Mutex<LibvirtManager>>,
+    pub libvirt: Arc<std::sync::Mutex<libvirt_ops::LibvirtCtx>>,
 }
 
 impl AgentService {
-    pub fn new(state: SharedAgentState, libvirt_uri: String) -> Result<Self, machina_core::LibvirtError> {
-        let mut cfg = LibvirtConfig::default();
-        cfg.uri = libvirt_uri.clone();
-        let manager = LibvirtManager::new(&cfg)?;
-        Ok(Self {
-            state,
-            libvirt_uri,
-            manager: Arc::new(Mutex::new(manager)),
+    pub fn new(
+        state: SharedAgentState,
+        libvirt: Arc<std::sync::Mutex<libvirt_ops::LibvirtCtx>>,
+    ) -> Self {
+        Self { state, libvirt }
+    }
+
+    async fn libvirt_call<T, F>(&self, f: F) -> Result<T, Status>
+    where
+        F: FnOnce(&libvirt_ops::LibvirtCtx) -> Result<T, machina_core::LibvirtError> + Send + 'static,
+        T: Send + 'static,
+    {
+        let libvirt = self.libvirt.clone();
+        tokio::task::spawn_blocking(move || {
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
+            f(&ctx)
         })
+        .await
+        .map_err(|e| Status::internal(e.to_string()))?
+        .map_err(|e| Status::internal(e.to_string()))
     }
 }
 
@@ -51,9 +58,9 @@ impl HostAgent for AgentService {
     ) -> Result<Response<HeartbeatResponse>, Status> {
         let _ = request.into_inner();
         let st = self.state.read().await;
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let (vms, stats) = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             let vms = ctx.list_vms()?;
             let stats = ctx.host_resource_stats().unwrap_or((0.0, 0, 0));
             Ok::<_, machina_core::LibvirtError>((vms, stats))
@@ -74,14 +81,8 @@ impl HostAgent for AgentService {
         &self,
         _request: Request<ListVmsRequest>,
     ) -> Result<Response<ListVmsResponse>, Status> {
-        let uri = self.libvirt_uri.clone();
-        let vms = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
-            ctx.list_vms()
-        })
-        .await
-        .map_err(|e| Status::internal(e.to_string()))?
-        .map_err(|e| Status::internal(e.to_string()))?;
+        let vms = self.libvirt_call(|ctx| {
+            ctx.list_vms()        }).await?;
         Ok(Response::new(ListVmsResponse {
             vms: vms
                 .into_iter()
@@ -104,14 +105,8 @@ impl HostAgent for AgentService {
         &self,
         _request: Request<ListNetworksRequest>,
     ) -> Result<Response<ListNetworksResponse>, Status> {
-        let uri = self.libvirt_uri.clone();
-        let networks = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
-            ctx.list_networks()
-        })
-        .await
-        .map_err(|e| Status::internal(e.to_string()))?
-        .map_err(|e| Status::internal(e.to_string()))?;
+        let networks = self.libvirt_call(|ctx| {
+            ctx.list_networks()        }).await?;
         Ok(Response::new(ListNetworksResponse {
             networks: networks
                 .into_iter()
@@ -131,14 +126,8 @@ impl HostAgent for AgentService {
         &self,
         _request: Request<ListStoragePoolsRequest>,
     ) -> Result<Response<ListStoragePoolsResponse>, Status> {
-        let uri = self.libvirt_uri.clone();
-        let pools = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
-            ctx.list_storage_pools()
-        })
-        .await
-        .map_err(|e| Status::internal(e.to_string()))?
-        .map_err(|e| Status::internal(e.to_string()))?;
+        let pools = self.libvirt_call(|ctx| {
+            ctx.list_storage_pools()        }).await?;
         Ok(Response::new(ListStoragePoolsResponse {
             pools: pools
                 .into_iter()
@@ -163,7 +152,7 @@ impl HostAgent for AgentService {
         let req = request.into_inner();
         let vm: VirtualMachine =
             serde_json::from_str(&req.spec_json).map_err(|e| Status::invalid_argument(e.to_string()))?;
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let disk_path = req.disk_path.clone();
         let template_source = req.template_source.clone();
         let cloud = libvirt_ops::CloudInitParams {
@@ -177,7 +166,7 @@ impl HostAgent for AgentService {
             .unwrap_or("/var/lib/libvirt/images")
             .to_string();
         let (name, uuid) = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             let tpl = if template_source.is_empty() {
                 None
             } else {
@@ -200,11 +189,11 @@ impl HostAgent for AgentService {
         request: Request<VmPowerRequest>,
     ) -> Result<Response<VmPowerResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let action = req.action.clone();
         let state = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.power(&vm_name, &action)
         })
         .await
@@ -221,10 +210,10 @@ impl HostAgent for AgentService {
         request: Request<DeleteVmRequest>,
     ) -> Result<Response<DeleteVmResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.delete(&vm_name)
         })
         .await
@@ -238,12 +227,12 @@ impl HostAgent for AgentService {
         request: Request<MigrateVmRequest>,
     ) -> Result<Response<MigrateVmResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let dest_uri = req.dest_uri.clone();
         let live = req.live;
         tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.migrate(&vm_name, &dest_uri, live)
         })
         .await
@@ -260,10 +249,10 @@ impl HostAgent for AgentService {
         request: Request<GetConsoleRequest>,
     ) -> Result<Response<GetConsoleResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let (host, port) = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.resolve_vnc(&vm_name)
         })
         .await
@@ -282,11 +271,11 @@ impl HostAgent for AgentService {
         request: Request<CloneVmRequest>,
     ) -> Result<Response<CloneVmResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let source = req.source_name.clone();
         let new_name = req.new_name.clone();
         let (vm_name, uuid) = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.clone_vm(&source, &new_name)?;
             let dom = virt::domain::Domain::lookup_by_name(&ctx.conn, &new_name)
                 .map_err(|e| machina_core::LibvirtError::Operation(e.to_string()))?;
@@ -322,9 +311,9 @@ impl HostAgent for AgentService {
         &self,
         _request: Request<GetHostInfoRequest>,
     ) -> Result<Response<GetHostInfoResponse>, Status> {
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let (cpu, lv, qemu) = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.host_info()
         })
         .await
@@ -342,12 +331,12 @@ impl HostAgent for AgentService {
         request: Request<PrecheckMigrateRequest>,
     ) -> Result<Response<PrecheckMigrateResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let dest_cpu = req.dest_cpu_model.clone();
         let dest_lv = req.dest_libvirt_version.clone();
         let checks = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.precheck_migrate(&vm_name, &dest_cpu, &dest_lv)
         })
         .await
@@ -372,7 +361,7 @@ impl HostAgent for AgentService {
         request: Request<FenceHostRequest>,
     ) -> Result<Response<FenceHostResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let hostname = if req.hostname.is_empty() {
             self.state.read().await.hostname.clone()
         } else {
@@ -384,7 +373,7 @@ impl HostAgent for AgentService {
         let ipmi_password = req.ipmi_password.clone();
         let shell_command = req.shell_command.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.fence_host(
                 &hostname,
                 &method,
@@ -410,13 +399,13 @@ impl HostAgent for AgentService {
         request: Request<CreateSnapshotRequest>,
     ) -> Result<Response<CreateSnapshotResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let snap_name = req.snapshot_name.clone();
         let desc = req.description.clone();
         let snap_out = snap_name.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.create_snapshot(&vm_name, &snap_name, &desc)?;
             let dom = virt::domain::Domain::lookup_by_name(&ctx.conn, &vm_name)
                 .map_err(|e| machina_core::LibvirtError::Operation(e.to_string()))?;
@@ -449,11 +438,11 @@ impl HostAgent for AgentService {
         request: Request<DeleteSnapshotRequest>,
     ) -> Result<Response<DeleteSnapshotResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let snap_name = req.snapshot_name.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.delete_snapshot(&vm_name, &snap_name)
         })
         .await
@@ -469,10 +458,10 @@ impl HostAgent for AgentService {
         request: Request<ListSnapshotsRequest>,
     ) -> Result<Response<ListSnapshotsResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let snaps = tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.list_snapshots(&vm_name)
         })
         .await
@@ -496,11 +485,11 @@ impl HostAgent for AgentService {
         request: Request<BackupVmRequest>,
     ) -> Result<Response<BackupVmResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let dest = req.dest_path.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.backup_vm_disk(&vm_name, &dest)
         })
         .await
@@ -524,11 +513,11 @@ impl HostAgent for AgentService {
         request: Request<RevertSnapshotRequest>,
     ) -> Result<Response<RevertSnapshotResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let snap_name = req.snapshot_name.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.revert_snapshot(&vm_name, &snap_name)
         })
         .await
@@ -550,11 +539,11 @@ impl HostAgent for AgentService {
         request: Request<RestoreVmBackupRequest>,
     ) -> Result<Response<RestoreVmBackupResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let backup_path = req.backup_path.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.restore_vm_backup(&vm_name, &backup_path)
         })
         .await
@@ -576,14 +565,14 @@ impl HostAgent for AgentService {
         request: Request<CloneFromSnapshotRequest>,
     ) -> Result<Response<CloneFromSnapshotResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let snap_name = req.snapshot_name.clone();
         let new_name = req.new_name.clone();
         let new_disk_path = req.new_disk_path.clone();
         let revert_source = req.revert_source;
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.clone_from_snapshot(
                 &vm_name,
                 &snap_name,
@@ -664,12 +653,12 @@ impl HostAgent for AgentService {
         request: Request<AttachDiskRequest>,
     ) -> Result<Response<AttachDiskResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         let disk_path = req.disk_path.clone();
         let target = req.target_dev.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.attach_disk(&vm_name, &disk_path, &target)
         })
         .await
@@ -691,10 +680,10 @@ impl HostAgent for AgentService {
         request: Request<GetGuestHealthRequest>,
     ) -> Result<Response<GetGuestHealthResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.guest_health(&vm_name)
         })
         .await
@@ -728,10 +717,10 @@ impl HostAgent for AgentService {
         request: Request<InstallGuestToolsRequest>,
     ) -> Result<Response<InstallGuestToolsResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.install_guest_tools(&vm_name)
         })
         .await
@@ -837,10 +826,10 @@ impl HostAgent for AgentService {
         request: Request<GetGuestFirewallPortsRequest>,
     ) -> Result<Response<GetGuestFirewallPortsResponse>, Status> {
         let req = request.into_inner();
-        let uri = self.libvirt_uri.clone();
+        let libvirt = self.libvirt.clone();
         let vm_name = req.vm_name.clone();
         match tokio::task::spawn_blocking(move || {
-            let ctx = libvirt_ops::LibvirtCtx::open(&uri)?;
+            let ctx = libvirt.lock().map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
             ctx.guest_firewall_ports(&vm_name)
         })
         .await

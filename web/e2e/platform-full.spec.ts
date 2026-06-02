@@ -135,7 +135,12 @@ test('backups destinations tab loads at normal tier', async ({ page }) => {
 test('vm detail topology tab loads at power tier', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/vms/v1')
-  await page.getByRole('button', { name: 'Topology' }).click()
+  await expect(page.getByRole('heading', { name: 'vm-1' })).toBeVisible({ timeout: 15_000 })
+  const tabBar = page.locator('div.flex.flex-wrap.items-center.gap-1.border-b').filter({
+    has: page.getByRole('button', { name: 'Overview' }),
+  })
+  await tabBar.getByRole('button', { name: 'More' }).click()
+  await page.getByRole('menuitem', { name: 'Topology' }).click()
   await expect(page.getByText('2 nodes · 1 edges')).toBeVisible({ timeout: 15_000 })
 })
 

@@ -16,7 +16,7 @@ import {
   FolderOpen,
   Wrench,
 } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
+import PlatformPageChrome, { PlatformRefreshButton, platformStatSubtitle } from '../../components/platform/PlatformPageChrome'
 import ActionCard from '../../components/platform/ActionCard'
 import PlatformAboutHelp from '../../components/platform/PlatformAboutHelp'
 import PlatformJarvisBriefing from '../../components/platform/PlatformJarvisBriefing'
@@ -25,7 +25,6 @@ import RemediateChips from '../../components/platform/RemediateChips'
 import PlatformWelcome from '../../components/platform/PlatformWelcome'
 import InfrastructureDnaStrip from '../../components/platform/InfrastructureDnaStrip'
 import EnterpriseSecurityStrip from '../../components/platform/EnterpriseSecurityStrip'
-import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
 import PlatformTahoeEmptyState from '../../components/platform/tahoe/PlatformTahoeEmptyState'
 import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
 import SimpleCreateVmWizard, { sizeToSpec } from '../../components/platform/SimpleCreateVmWizard'
@@ -164,39 +163,37 @@ export default function PlatformDashboard() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      title={!jarvisLanding ? (cluster?.name || 'Production Cluster') : 'Zyvor Platform'}
+      subtitle={
+        !jarvisLanding ? (
+          <span className="flex flex-col gap-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className={statusPillClasses(healthy ? 'ok' : 'warn')}>
+                {healthy ? <><CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />Healthy</> : <><AlertTriangle className="w-3.5 h-3.5 inline mr-1" />{warnings} warning{warnings === 1 ? '' : 's'}</>}
+              </span>
+              <span className="text-slate-400">KVM datacenter control plane</span>
+            </span>
+            {platformStatSubtitle([
+              { label: 'VMs running', value: String(running) },
+              { label: 'Hosts online', value: `${onlineHosts} / ${hosts.length}` },
+              { label: 'Memory used', value: storagePct != null ? `${Math.round(storagePct)}%` : '—' },
+              { label: 'Alerts', value: warnings ? String(warnings) : 'None' },
+            ])}
+          </span>
+        ) : (
+          <span className="text-slate-400">Fleet overview and launchpad</span>
+        )
+      }
+      icon={<LayoutGrid className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       <PlatformJarvisBriefing />
       <ZeusApprovalQueue />
       {showPower && <RemediateChips compact />}
-
-      {!jarvisLanding && (
-      <PlatformTahoeHero
-        compact
-        eyebrow="Zyvor Platform"
-        title={cluster?.name || 'Production Cluster'}
-        subtitle="Control your KVM datacenter — fleet health, VMs, and integrations in one desktop."
-        icon={LayoutGrid}
-        badge={
-          <span className={`tahoe-health-badge ${healthy ? 'tahoe-health-badge-ok' : 'tahoe-health-badge-warn'}`}>
-            {healthy ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-            {healthy ? 'Healthy' : `${warnings} warning${warnings === 1 ? '' : 's'}`}
-          </span>
-        }
-        actions={
-          <button type="button" onClick={() => void load()} className="tahoe-btn-ghost">
-            <RefreshCw className="w-4 h-4" /> Refresh
-          </button>
-        }
-        stats={[
-          { label: 'VMs running', value: String(running), tone: running > 0 ? 'emerald' : 'sky' },
-          { label: 'Hosts online', value: `${onlineHosts} / ${hosts.length}`, tone: onlineHosts === hosts.length ? 'emerald' : 'amber' },
-          { label: 'Memory used', value: storagePct != null ? `${Math.round(storagePct)}%` : '—', tone: 'violet' },
-          { label: 'Alerts', value: warnings ? String(warnings) : 'None', tone: warnings ? 'amber' : 'emerald' },
-        ]}
-      />
-      )}
-
-      <div className="tahoe-content space-y-4">
       {hosts.length === 0 && (
         <PlatformTahoeEmptyState
           icon={Server}
@@ -387,10 +384,8 @@ export default function PlatformDashboard() {
         </MacGlassPanel>
       )}
 
-      </div>
-
       <SimpleCreateVmWizard open={wizardOpen} onClose={() => setWizardOpen(false)} onCreate={handleCreate} />
       <PlatformWelcome vmCount={vms.length} onCreateVm={() => setWizardOpen(true)} onDone={() => void load()} />
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -12,7 +12,10 @@ chmod 600 "$LOG_FILE"
 
 BIND_HOST="0.0.0.0"
 OPEN_FIREWALL=false
+DISABLE_FIREWALL=false
 PUBLIC_URL=""
+# shellcheck source=lib/disable-firewalld.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/disable-firewalld.sh"
 SKIP_AUTH="${MACHINA_SKIP_AUTH:-1}"
 
 info()  { echo "ℹ️  $*"; }
@@ -25,7 +28,7 @@ log_cmd() { "$@" >>"$LOG_FILE" 2>&1; }
 
 usage() {
   cat <<'EOF'
-install-platform.sh [--bind ADDR] [--open-firewall] [--public-url URL] [--require-auth]
+install-platform.sh [--bind ADDR] [--open-firewall|--disable-firewalld] [--public-url URL] [--require-auth]
 
 Installs PostgreSQL, machina-controller (:5093), and machina-agent (:50051).
 Requires root and pre-built target/release/{machina-controller,machina-agent}.
@@ -39,6 +42,7 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --bind) BIND_HOST="${2:?}"; shift 2 ;;
     --open-firewall) OPEN_FIREWALL=true; shift ;;
+    --disable-firewalld) DISABLE_FIREWALL=true; shift ;;
     --public-url) PUBLIC_URL="${2:?}"; shift 2 ;;
     --require-auth) SKIP_AUTH=0; shift ;;
     -h|--help) usage ;;
@@ -261,7 +265,16 @@ install_postgresql
 install_binaries
 write_platform_env
 install_systemd_units
-open_firewall_port
+if $DISABLE_FIREWALL; then
+  step "Disabling host firewall (firewalld/ufw)"
+  if disable_firewalld "$LOG_FILE"; then
+    ok "Host firewall stopped and disabled"
+  else
+    warn "No active firewalld/ufw — continuing"
+  fi
+else
+  open_firewall_port
+fi
 start_services
 wait_for_health
 

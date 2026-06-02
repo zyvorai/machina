@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { RefreshCw, Server, Wrench } from 'lucide-react'
+import { Plus, RefreshCw, Server, Wrench } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
-import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
 import FinderView, { type FinderViewMode } from '../../components/platform/mac/FinderView'
 import { gradientForName } from '../../components/platform/mac/PlatformMacUi'
 import {
@@ -18,7 +17,7 @@ import {
 } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
-import {hostStateTone, statusToneClass, hubLinkClasses} from '../../utils/semanticColors'
+import { hostStateTone, statusPillClasses, statusToneClass, hubLinkClasses } from '../../utils/semanticColors'
 
 function hostTone(h: PlatformHost): 'ok' | 'warn' | 'default' {
   const tone = hostStateTone(h.state, h.fenced, h.maintenance_mode)
@@ -193,28 +192,45 @@ export default function PlatformHosts() {
     </div>
   )
 
-  return (
-    <PageLayout hideHeader error={error}>
-      <PlatformTahoeHero
-        title={filterOffline ? 'Offline hosts' : 'Hosts'}
-        subtitle="Hypervisors enrolled in this fleet — sync, validate, and open host detail."
-        icon={Server}
-        stats={[
-          { label: 'Total', value: String(hosts.length), tone: 'sky' },
-          { label: 'Online', value: String(online), tone: online === hosts.length ? 'emerald' : 'amber' },
-          { label: 'VMs', value: String(hosts.reduce((s, h) => s + h.vm_count, 0)), tone: 'violet' },
-        ]}
-      />
+  const totalVms = hosts.reduce((s, h) => s + h.vm_count, 0)
+  const fleetTone = online === hosts.length && hosts.length > 0 ? 'ok' : online === 0 && hosts.length > 0 ? 'error' : 'warn'
 
-      <div className="tahoe-content space-y-4">
+  return (
+    <PageLayout
+      compact
+      error={error}
+      title={filterOffline ? 'Offline hosts' : 'Hosts'}
+      subtitle={
+        <span className="flex flex-wrap items-center gap-2 text-sm">
+          <span className={statusPillClasses(fleetTone)}>{online} / {hosts.length} online</span>
+          <span className="text-slate-400">{totalVms} VM{totalVms === 1 ? '' : 's'} fleet-wide</span>
+          {filterOffline && <span className="text-slate-500">Showing offline only</span>}
+        </span>
+      }
+      icon={<Server className="w-6 h-6 text-slate-400" />}
+      actions={
+        <>
+          <button type="button" className="btn-secondary text-sm" onClick={async () => {
+            try { await syncAllHosts(); toast.success('Sync all queued') } catch (e: unknown) { toast.error(formatUserError(e)) }
+          }}>Sync all</button>
+          <button type="button" onClick={() => void load()} className="btn-secondary"><RefreshCw className="w-4 h-4" /></button>
+          {!filterOffline && (
+            <Link to="/platform/enroll" className="btn-primary text-sm inline-flex items-center gap-1">
+              <Plus className="w-4 h-4" /> Add host
+            </Link>
+          )}
+        </>
+      }
+      contentClassName="space-y-4"
+    >
       <FinderView
-        title="Hosts"
+        title="Fleet"
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Filter hosts…"
         viewMode={viewMode}
         onViewModeChange={setViewMode}
-        toolbarActions={toolbar}
+        toolbarActions={filterOffline ? toolbar : undefined}
         pathSegments={[
           { label: 'Platform', onClick: () => navigate('/platform') },
           { label: filterOffline ? 'Offline hosts' : 'Hosts' },
@@ -233,7 +249,6 @@ export default function PlatformHosts() {
           </PlatformEmptyState>
         }
       />
-      </div>
     </PageLayout>
   )
 }

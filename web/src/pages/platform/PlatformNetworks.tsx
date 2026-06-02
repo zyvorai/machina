@@ -1,9 +1,11 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
-import PageLayout from '../../components/PageLayout'
-import { Cable, Layers, Link2, Loader2, Network, Plus, RefreshCw, Router, Shield, Wifi } from 'lucide-react'
+import { Link } from 'react-router'
+import { Cable, Layers, Loader2, Network, Plus, RefreshCw, Router, Shield, Wifi } from 'lucide-react'
+import DetailTabs from '../../components/platform/DetailTabs'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
@@ -12,7 +14,6 @@ import MachinaNetworkLens from '../../components/ai/MachinaNetworkLens'
 import {
   MacGlassPanel,
   MacListRow,
-  MacSectionTitle,
   MacSheet,
   MacStatWidget,
   gradientForName,
@@ -51,13 +52,16 @@ const PRESETS = [
 
 type TabId = 'networks' | 'segments' | 'ipam' | 'lens'
 
-const TAB_IDS: TabId[] = ['networks', 'segments', 'ipam', 'lens']
+const NETWORK_TABS = [
+  { id: 'networks' as const, label: 'Networks' },
+  { id: 'segments' as const, label: 'Segments' },
+  { id: 'ipam' as const, label: 'IPAM' },
+  { id: 'lens' as const, label: 'Network Lens' },
+]
 
 export default function PlatformNetworks() {
   const toast = useToastContext()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const rawTab = searchParams.get('tab')
-  const tab: TabId = TAB_IDS.includes(rawTab as TabId) ? (rawTab as TabId) : 'networks'
+  const [tab, setTab] = usePlatformTabState<TabId>(NETWORK_TABS.map((t) => t.id), { defaultTab: 'networks' })
 
   const [loading, setLoading] = useState(true)
   const [rows, setRows] = useState<PlatformNetwork[]>([])
@@ -89,10 +93,6 @@ export default function PlatformNetworks() {
 
   const segmentName = (id?: string | null) =>
     segments.find((s) => s.id === id)?.name ?? null
-
-  const setTab = (next: TabId) => {
-    setSearchParams(next === 'networks' ? {} : { tab: next })
-  }
 
   const load = useCallback(async (autoDiscover = false) => {
     setError(null)
@@ -248,13 +248,15 @@ export default function PlatformNetworks() {
   }
 
   return (
-    <PageLayout hideHeader error={error} contentClassName="space-y-8">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Network</p>
-          <MacSectionTitle title="Networks" subtitle="Overlays, libvirt bridges, IPAM — NSX-class segments and micro-segmentation." />
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load(false)}
+      prepend={<PlatformBackLink to="/platform/resources" label="Resources" />}
+      title="Networks"
+      subtitle="Overlays, libvirt bridges, IPAM — NSX-class segments and micro-segmentation."
+      icon={<Network className="w-6 h-6 text-slate-400" />}
+      actions={
+        <>
           {tab === 'networks' && (
             <>
               <button type="button" className="btn-secondary text-sm flex items-center gap-1.5" disabled={discovering} onClick={() => void runDiscover()}>
@@ -271,28 +273,12 @@ export default function PlatformNetworks() {
               <Plus className="w-4 h-4" /> New segment
             </button>
           )}
-        </div>
-      </header>
-
-      <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
-        {([
-          ['networks', 'Networks', Network],
-          ['segments', 'Segments', Layers],
-          ['ipam', 'IPAM', Shield],
-          ['lens', 'Network Lens', Wifi],
-        ] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm rounded-t-lg flex items-center gap-2 transition ${
-              tab === id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Icon className="w-4 h-4" /> {label}
-          </button>
-        ))}
-      </div>
+          <PlatformRefreshButton onClick={() => void load(false)} />
+        </>
+      }
+      contentClassName="space-y-4"
+    >
+      <DetailTabs primary={NETWORK_TABS} active={tab} onChange={setTab} />
 
       {loading && rows.length === 0 && !discovering && !error && <PageSkeleton />}
 
@@ -719,6 +705,6 @@ export default function PlatformNetworks() {
         )}
       </MacSheet>
       {tab === 'networks' && <FleetSettingsPane kind="network" />}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

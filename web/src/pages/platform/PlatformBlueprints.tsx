@@ -1,16 +1,17 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link } from 'react-router'
 import { LayoutGrid, Play, Plus, Trash2, Workflow, Wrench } from 'lucide-react'
 import {
   LaunchpadAppIcon,
   MacGlassPanel,
-  MacSectionTitle,
   MacStatWidget,
   NewLaunchpadCard,
 } from '../../components/platform/mac/PlatformMacUi'
-import PageLayout from '../../components/PageLayout'
+import DetailTabs from '../../components/platform/DetailTabs'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
 import {
   createBlueprint,
@@ -29,13 +30,14 @@ import { hubLinkClasses } from '../../utils/semanticColors'
 
 type TabId = 'launchpad' | 'studio'
 
-const TAB_IDS: TabId[] = ['launchpad', 'studio']
+const BLUEPRINT_TABS = [
+  { id: 'launchpad' as const, label: 'Launchpad' },
+  { id: 'studio' as const, label: 'Studio' },
+]
 
 export default function PlatformBlueprints() {
   const toast = useToastContext()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const rawTab = searchParams.get('tab')
-  const tab: TabId = TAB_IDS.includes(rawTab as TabId) ? (rawTab as TabId) : 'launchpad'
+  const [tab, setTab] = usePlatformTabState<TabId>(BLUEPRINT_TABS.map((t) => t.id), { defaultTab: 'launchpad' })
 
   const [fleet, setFleet] = useState<FleetShortcutsOverview | null>(null)
   const [rows, setRows] = useState<Blueprint[]>([])
@@ -46,10 +48,6 @@ export default function PlatformBlueprints() {
   const [nlPrompt, setNlPrompt] = useState('Nightly backup for all production VMs')
   const [preview, setPreview] = useState<{ name: string; description: string; actions: string[] } | null>(null)
   const [generating, setGenerating] = useState(false)
-
-  const setTab = (next: TabId) => {
-    setSearchParams(next === 'launchpad' ? {} : { tab: next })
-  }
 
   const load = useCallback(async () => {
     setError(null)
@@ -95,14 +93,16 @@ export default function PlatformBlueprints() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
-      <header>
-        <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Shortcuts</p>
-        <MacSectionTitle
-          title="Blueprint Studio"
-          subtitle="macOS Shortcuts-style Launchpad — tap a blueprint to run automation across VM sets."
-        />
-      </header>
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Blueprint Studio"
+      subtitle="macOS Shortcuts-style Launchpad — tap a blueprint to run automation across VM sets."
+      icon={<Workflow className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       {fleet && <p className="text-sm text-slate-400">{fleet.summary}</p>}
 
       {fleet && tab === 'launchpad' && (
@@ -113,23 +113,7 @@ export default function PlatformBlueprints() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
-        {([
-          ['launchpad', 'Launchpad', LayoutGrid],
-          ['studio', 'Studio', Wrench],
-        ] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm rounded-t-lg flex items-center gap-2 transition ${
-              tab === id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Icon className="w-4 h-4" /> {label}
-          </button>
-        ))}
-      </div>
+      <DetailTabs primary={BLUEPRINT_TABS} active={tab} onChange={setTab} />
 
       {tab === 'launchpad' && (
         <MacGlassPanel title="Shortcut Launchpad" subtitle="Click an icon to run — actions execute as queued tasks per VM.">
@@ -210,6 +194,6 @@ export default function PlatformBlueprints() {
         </>
       )}
       <FleetSettingsPane kind="shortcuts" />
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -1,8 +1,9 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import PageLayout from '../../components/PageLayout'
-import { MacGlassPanel, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import { Sparkles } from 'lucide-react'
+import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import {
   createAiPrompt,
   deleteAiPrompt,
@@ -18,7 +19,7 @@ import {
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
 
-export default function PlatformZeusSettings() {
+export default function PlatformZeusSettings({ embedded }: { embedded?: boolean } = {}) {
   const toast = useToastContext()
   const [prompts, setPrompts] = useState<AiPromptRow[]>([])
   const [agents, setAgents] = useState<AgentPluginRow[]>([])
@@ -36,8 +37,15 @@ export default function PlatformZeusSettings() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <PageLayout hideHeader compact>
-      <MacSectionTitle title="Zeus" subtitle="Prompt library, memory controls, and agent marketplace" />
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      title={embedded ? undefined : 'Zeus'}
+      subtitle={embedded ? undefined : 'Prompt library, memory controls, and agent marketplace'}
+      icon={embedded ? undefined : <Sparkles className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       <MacGlassPanel title="Memory" subtitle="Enterprise controls for conversation and infrastructure recall">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={memoryEnabled} onChange={(e) => setMemoryEnabled(e.target.checked)} />
@@ -95,6 +103,6 @@ export default function PlatformZeusSettings() {
           ))}
         </div>
       </MacGlassPanel>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

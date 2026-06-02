@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { Link } from 'react-router'
-import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../../components/platform/mac/PlatformMacUi'
+import { ArrowLeft, Network } from 'lucide-react'
+import { MacGlassPanel, MacListRow } from '../../../components/platform/mac/PlatformMacUi'
 import PageLayout from '../../../components/PageLayout'
 import { simulateConnectivity } from '../../../api/zeusFirewall'
 import { formatUserError } from '../../../utils/apiError'
@@ -29,9 +30,19 @@ export default function PlatformFirewallConnectivity() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Connectivity Matrix" subtitle="Simulate paths before applying a profile" />
-      <Link to="/platform/zeus/security/firewall" className={`text-sm ${hubLinkClasses()}`}>← Firewall overview</Link>
+    <PageLayout
+      compact
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security/firewall" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Firewall
+        </Link>
+      }
+      title="Connectivity Matrix"
+      subtitle={summary || 'Simulate paths before applying a profile'}
+      icon={<Network className="w-6 h-6 text-slate-400" />}
+      contentClassName="space-y-4"
+    >
       <MacGlassPanel title="Simulation">
         <div className="flex flex-wrap gap-2 mb-4 max-w-xl">
           <input className="input text-sm flex-1 min-w-[8rem]" value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="host id or local" />

@@ -10,11 +10,13 @@ use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use std::sync::{Arc, Mutex};
+
 use crate::libvirt_ops::LibvirtCtx;
 
 #[derive(Clone)]
 pub struct ConsoleProxyState {
-    pub libvirt_uri: String,
+    pub libvirt: Arc<Mutex<LibvirtCtx>>,
     pub secret: String,
 }
 
@@ -29,13 +31,15 @@ async fn vnc_ws(
     State(st): State<ConsoleProxyState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
-    let uri = st.libvirt_uri.clone();
-    ws.on_upgrade(move |socket| handle_vnc(socket, name, uri))
+    let libvirt = st.libvirt.clone();
+    ws.on_upgrade(move |socket| handle_vnc(socket, name, libvirt))
 }
 
-async fn handle_vnc(socket: WebSocket, name: String, uri: String) {
+async fn handle_vnc(socket: WebSocket, name: String, libvirt: Arc<Mutex<LibvirtCtx>>) {
     let resolved = tokio::task::spawn_blocking(move || {
-        let ctx = LibvirtCtx::open(&uri)?;
+        let ctx = libvirt
+            .lock()
+            .map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
         ctx.resolve_vnc(&name)
     })
     .await;

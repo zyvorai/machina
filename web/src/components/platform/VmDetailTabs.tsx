@@ -1,5 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
+import DetailTabs from './DetailTabs'
+
 export type VmDetailTab =
   | 'overview'
   | 'doctor'
@@ -8,7 +10,6 @@ export type VmDetailTab =
   | 'disks'
   | 'network'
   | 'guestHealth'
-  | 'guestPorts'
   | 'guestServices'
   | 'security'
   | 'snapshots'
@@ -17,22 +18,24 @@ export type VmDetailTab =
   | 'events'
   | 'settings'
 
-const TABS: { id: VmDetailTab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'doctor', label: 'Doctor' },
-  { id: 'console', label: 'Console' },
-  { id: 'performance', label: 'Performance' },
-  { id: 'disks', label: 'Disks' },
-  { id: 'network', label: 'Network' },
-  { id: 'guestHealth', label: 'Guest Health' },
-  { id: 'guestPorts', label: 'Guest Ports' },
-  { id: 'guestServices', label: 'Services' },
-  { id: 'security', label: 'Security' },
-  { id: 'snapshots', label: 'Snapshots' },
-  { id: 'backup', label: 'Backup' },
-  { id: 'topology', label: 'Topology' },
-  { id: 'events', label: 'Events' },
-  { id: 'settings', label: 'Settings' },
+const PRIMARY = [
+  { id: 'overview' as const, label: 'Overview' },
+  { id: 'console' as const, label: 'Console' },
+  { id: 'performance' as const, label: 'Performance' },
+  { id: 'doctor' as const, label: 'Doctor' },
+  { id: 'disks' as const, label: 'Disks' },
+]
+
+const MORE = [
+  { id: 'network' as const, label: 'Network', group: 'Connectivity' },
+  { id: 'guestHealth' as const, label: 'Guest health', group: 'Guest' },
+  { id: 'guestServices' as const, label: 'Guest services', group: 'Guest' },
+  { id: 'security' as const, label: 'Security & ports', group: 'Guest' },
+  { id: 'snapshots' as const, label: 'Snapshots', group: 'Data' },
+  { id: 'backup' as const, label: 'Backup', group: 'Data' },
+  { id: 'topology' as const, label: 'Topology', group: 'Fleet' },
+  { id: 'events' as const, label: 'Events', group: 'Fleet' },
+  { id: 'settings' as const, label: 'Settings', group: 'Admin' },
 ]
 
 interface VmDetailTabsProps {
@@ -41,22 +44,9 @@ interface VmDetailTabsProps {
 }
 
 export default function VmDetailTabs({ active, onChange }: VmDetailTabsProps) {
-  return (
-    <div className="flex gap-1 overflow-x-auto border-b border-slate-800 pb-px -mx-1">
-      {TABS.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => onChange(tab.id)}
-          className={`px-4 py-2.5 text-sm whitespace-nowrap rounded-t-lg transition-colors ${
-            active === tab.id
-              ? 'bg-slate-800/80 text-white font-medium border-b-2 border-blue-500 -mb-px'
-              : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/30'
-          }`}
-        >
-          {tab.label}
-        </button>
-      ))}
-    </div>
-  )
+  return <DetailTabs primary={PRIMARY} more={MORE} active={active} onChange={onChange} />
+}
+
+export function isGuestRelatedTab(tab: VmDetailTab): boolean {
+  return tab === 'overview' || tab === 'guestHealth' || tab === 'guestServices' || tab === 'security'
 }

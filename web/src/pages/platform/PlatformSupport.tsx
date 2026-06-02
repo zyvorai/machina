@@ -2,8 +2,7 @@
 
 import { useState } from 'react'
 import { LifeBuoy, Download, RefreshCw } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import PlatformAboutHelp from '../../components/platform/PlatformAboutHelp'
 import { getSupportBundle } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
@@ -44,8 +43,15 @@ export default function PlatformSupport({ embedded }: { embedded?: boolean } = {
   }
 
   return (
-    <PageLayout hideHeader compact={embedded} className={embedded ? 'max-w-none' : 'max-w-3xl'}>
-      {!embedded && <MacSectionTitle title="Support Assistant" subtitle="About Zyvor Platform, troubleshooting, and support bundle export." />}
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      className={embedded ? 'max-w-none' : 'max-w-3xl'}
+      title={embedded ? undefined : 'Support Assistant'}
+      subtitle={embedded ? undefined : 'About Zyvor Platform, troubleshooting, and support bundle export.'}
+      icon={embedded ? undefined : <LifeBuoy className="w-6 h-6 text-slate-400" />}
+      contentClassName="space-y-4"
+    >
 
       <PlatformAboutHelp />
       <div className="card p-5 flex flex-wrap gap-3 items-center justify-between">
@@ -74,6 +80,6 @@ export default function PlatformSupport({ embedded }: { embedded?: boolean } = {
           </article>
         ))}
       </section>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -1,15 +1,16 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import { Boxes, Plus, Users } from 'lucide-react'
 import {
   MacGlassPanel,
   MacListRow,
-  MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import PageLayout from '../../components/PageLayout'
+import DetailTabs from '../../components/platform/DetailTabs'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
 import {
   createUser,
@@ -28,14 +29,15 @@ import { hubLinkClasses, statusToneClass } from '../../utils/semanticColors'
 
 type TabId = 'users' | 'workspaces'
 
-const TAB_IDS: TabId[] = ['users', 'workspaces']
+const USER_TABS = [
+  { id: 'users' as const, label: 'Users' },
+  { id: 'workspaces' as const, label: 'Groups' },
+]
 
 export default function PlatformUsers({ embedded }: { embedded?: boolean } = {}) {
   const toast = useToastContext()
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const rawTab = searchParams.get('tab')
-  const tab: TabId = TAB_IDS.includes(rawTab as TabId) ? (rawTab as TabId) : 'users'
+  const [tab, setTab] = usePlatformTabState<TabId>(USER_TABS.map((t) => t.id), { defaultTab: 'users' })
   const { workspace, setWorkspace } = useActiveWorkspace()
 
   const [fleet, setFleet] = useState<FleetUsersOverview | null>(null)
@@ -45,10 +47,6 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
   const [user, setUser] = useState('')
   const [pass, setPass] = useState('')
   const [role, setRole] = useState('operator')
-
-  const setTab = (next: TabId) => {
-    setSearchParams(next === 'users' ? {} : { tab: next })
-  }
 
   const load = useCallback(async () => {
     setError(null)
@@ -70,16 +68,17 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
   }
 
   return (
-    <PageLayout hideHeader compact={embedded} error={error}>
-      {!embedded && (
-        <header>
-          <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Users & Groups</p>
-          <MacSectionTitle
-            title="Access & Workspaces"
-            subtitle="Platform RBAC accounts and tenant workspaces — switch active workspace from the menu bar."
-          />
-        </header>
-      )}
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      error={error}
+      onErrorRetry={() => void load()}
+      title={embedded ? undefined : 'Access & Workspaces'}
+      subtitle={embedded ? undefined : 'Platform RBAC accounts and tenant workspaces — switch active workspace from the menu bar.'}
+      icon={embedded ? undefined : <Users className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       {me && <p className="text-sm text-slate-400">Signed in as <strong className="text-slate-200">{me.username}</strong> ({me.role})</p>}
       {fleet && <p className="text-sm text-slate-400">{fleet.summary}</p>}
 
@@ -97,23 +96,7 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
-        {([
-          ['users', 'Users', Users],
-          ['workspaces', 'Groups', Boxes],
-        ] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm rounded-t-lg flex items-center gap-2 transition ${
-              tab === id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Icon className="w-4 h-4" /> {label}
-          </button>
-        ))}
-      </div>
+      <DetailTabs primary={USER_TABS} active={tab} onChange={setTab} />
 
       {tab === 'users' && (
         <>
@@ -209,6 +192,6 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
         </MacGlassPanel>
       )}
       <FleetSettingsPane kind="users" />
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

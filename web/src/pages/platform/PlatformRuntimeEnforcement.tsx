@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Shield, ShieldBan, Server, Ban } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
 import {
   MacGlassPanel,
   MacListRow,
-  MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import PageSkeleton from '../../components/PageSkeleton'
 import {
   applyEnforcementPolicy,
@@ -80,12 +79,16 @@ export default function PlatformRuntimeEnforcement() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle
-        title="Runtime enforcement"
-        subtitle="eBPF deny rules — process · DNS · port · IP via Tetragon TracingPolicy"
-      />
-      <Link to="/platform/zeus/security" className={`text-sm ${hubLinkClasses()}`}>← Security Center</Link>
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<Link to="/platform/zeus/security" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>← Security Center</Link>}
+      title="Runtime enforcement"
+      subtitle="eBPF deny rules — process · DNS · port · IP via Tetragon TracingPolicy"
+      icon={<Shield className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       {loading && !status && <PageSkeleton />}
 
       {status && (
@@ -157,6 +160,6 @@ export default function PlatformRuntimeEnforcement() {
           {agentBundle && <p className="text-sm text-slate-400">{agentBundle}</p>}
         </div>
       </MacGlassPanel>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

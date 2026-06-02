@@ -2,13 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
-import { MapPin, RefreshCw, Server } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import PageSkeleton from '../../components/PageSkeleton'
+import { MapPin, Server } from 'lucide-react'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import InfrastructureEarthGlobe from '../../components/platform/InfrastructureEarthGlobe'
 import MachineFinderGeography, { UNASSIGNED_SITE } from '../../components/platform/MachineFinderGeography'
-import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton, platformStatSubtitle } from '../../components/platform/PlatformPageChrome'
 import FinderView from '../../components/platform/mac/FinderView'
 import {
   getFleetMission,
@@ -108,34 +106,37 @@ export default function PlatformMachineFinder() {
     filteredMission.sites.length > 0 || filteredMission.unassigned_hosts.length > 0
   )
 
-  const toolbar = (
-    <>
-      <Link to="/platform?mission=1" className={`btn-secondary text-sm ${hubLinkClasses()}`}>Mission Control</Link>
-      <button type="button" className="btn-secondary" onClick={() => void load()} aria-label="Refresh">
-        <RefreshCw className="w-4 h-4" />
-      </button>
-    </>
-  )
-
   return (
-    <PageLayout hideHeader error={error} onErrorRetry={() => void load()}>
-      <PlatformTahoeHero
-        title="Machine Finder"
-        subtitle="Browse datacenter geography — site, rack, host, and VM — aligned with Mission Control."
-        icon={MapPin}
-        stats={mission ? [
-          { label: 'Sites', value: String(mission.sites.length), tone: 'sky' },
-          { label: 'Hosts', value: String(mission.summary.hosts), tone: 'violet' },
-          { label: 'VMs', value: String(mission.summary.vms), tone: 'emerald' },
-        ] : []}
-      />
-
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      contentLoading={loading && !mission}
+      prepend={<PlatformBackLink to="/platform/hosts" label="Hosts" />}
+      title="Machine Finder"
+      subtitle={
+        <span className="flex flex-col gap-1">
+          <span className="text-slate-400">Site, rack, host, and VM geography</span>
+          {mission
+            ? platformStatSubtitle([
+                { label: 'Sites', value: String(mission.sites.length) },
+                { label: 'Hosts', value: String(mission.summary.hosts) },
+                { label: 'VMs', value: String(mission.summary.vms) },
+              ])
+            : null}
+        </span>
+      }
+      icon={<MapPin className="w-6 h-6 text-slate-400" />}
+      actions={
+        <>
+          <Link to="/platform?mission=1" className="btn-secondary text-sm">Mission Control</Link>
+          <PlatformRefreshButton onClick={() => void load()} />
+        </>
+      }
+      contentClassName="space-y-4"
+    >
       {!loading && mission && (
         <InfrastructureEarthGlobe mission={mission} className="mx-0" />
       )}
-
-      <div className="tahoe-content space-y-4">
-        {loading && <PageSkeleton />}
 
         {!loading && !error && !hasGeography && (
           <PlatformEmptyState
@@ -156,7 +157,7 @@ export default function PlatformMachineFinder() {
             searchPlaceholder="Filter hosts or VMs…"
             viewMode="columns"
             onViewModeChange={() => {}}
-            toolbarActions={toolbar}
+            toolbarActions={null}
             pathSegments={[
               { label: 'Platform', onClick: () => navigate('/platform') },
               { label: 'Hosts', onClick: () => navigate('/platform/hosts') },
@@ -182,7 +183,6 @@ export default function PlatformMachineFinder() {
             showInspector={false}
           />
         )}
-      </div>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

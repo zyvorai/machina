@@ -2,14 +2,12 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { AlertTriangle, Radar, RefreshCw, Shield, ShieldAlert } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
+import { AlertTriangle, Radar, Shield, ShieldAlert } from 'lucide-react'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import {
   MacGlassPanel,
-  MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import SecurityTimelinePanel from '../../components/platform/SecurityTimelinePanel'
 import {
@@ -28,10 +26,16 @@ import {
   type ZeusSecurityStatus,
 } from '../../api/zeusSecurity'
 import { formatUserError } from '../../utils/apiError'
-import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusSurfaceClasses, statusToneClass, taskStatusTone, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
+import { riskTone, statusBadgeClasses, statusPillClasses, statusSurfaceClasses, statusToneClass, hubLinkClasses } from '../../utils/semanticColors'
 import { useToastContext } from '../../contexts/ToastContext'
 
-function threatTone(score: number): 'ok' | 'warn' | 'default' {
+function threatPillTone(score: number): 'ok' | 'warn' | 'neutral' {
+  if (score >= 80) return 'ok'
+  if (score >= 50) return 'warn'
+  return 'neutral'
+}
+
+function threatStatTone(score: number): 'ok' | 'warn' | 'default' {
   if (score >= 80) return 'ok'
   if (score >= 50) return 'warn'
   return 'default'
@@ -117,13 +121,27 @@ export default function PlatformSecurityCenter() {
   const critical = threat?.critical_events ?? []
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle
-        title="Security Center"
-        subtitle="PacketWolf eBPF fabric — observe, understand, secure"
-      />
-      <Link to="/platform/zeus" className={`text-sm ${hubLinkClasses()}`}>← Machina Zeus OS</Link>
-      {loading && !threat && <PageSkeleton />}
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      contentLoading={loading && !threat}
+      prepend={<PlatformBackLink to="/platform/zeus" label="Machina Zeus OS" />}
+      title="Security Center"
+      subtitle={
+        <span className="flex flex-wrap items-center gap-2 text-sm">
+          <span className={statusPillClasses(threatPillTone(score))}>Threat {Math.round(score)}</span>
+          {status && (
+            <span className={statusPillClasses(status.fabric_reachable ? 'ok' : 'warn')}>
+              {status.fabric_reachable ? 'Fabric online' : 'Fabric unreachable'}
+            </span>
+          )}
+          <span className="text-slate-400">PacketWolf eBPF · observe, understand, secure</span>
+        </span>
+      }
+      icon={<Shield className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
 
       {status && !status.fabric_reachable && status.packetwolf.enabled && (
         <PlatformEmptyState
@@ -174,7 +192,7 @@ export default function PlatformSecurityCenter() {
               label="Fleet threat score"
               value={String(Math.round(score))}
               icon={<Shield className="w-4 h-4" />}
-              tone={threatTone(score)}
+              tone={threatStatTone(score)}
             />
             <MacStatWidget
               label="Critical events"
@@ -271,11 +289,8 @@ export default function PlatformSecurityCenter() {
             </Link>
           </div>
 
-          <button type="button" className="btn-secondary text-sm flex items-center gap-2" onClick={() => void load()}>
-            <RefreshCw className="w-4 h-4" /> Refresh
-          </button>
         </>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

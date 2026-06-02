@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router'
+import { Link } from 'react-router'
 import { Key, Lock, Shield, Users } from 'lucide-react'
 import ErrorBanner from '../../components/ErrorBanner'
-import PageLayout from '../../components/PageLayout'
-import { MacGlassPanel, MacListRow, MacSectionTitle, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
+import DetailTabs from '../../components/platform/DetailTabs'
+import { MacGlassPanel, MacListRow, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import {
   getEnterpriseSecurityOverview,
   getFipsMatrix,
@@ -28,7 +30,13 @@ import { useToastContext } from '../../contexts/ToastContext'
 
 type TabId = 'keychain' | 'vault' | 'mfa' | 'fips' | 'tenants'
 
-const TAB_IDS: TabId[] = ['keychain', 'vault', 'mfa', 'fips', 'tenants']
+const ENTERPRISE_TABS = [
+  { id: 'keychain' as const, label: 'Keychain' },
+  { id: 'vault' as const, label: 'Vault sync' },
+  { id: 'mfa' as const, label: 'MFA compliance' },
+  { id: 'fips' as const, label: 'FIPS matrix' },
+  { id: 'tenants' as const, label: 'Tenant isolation' },
+]
 
 const KIND_LABELS: Record<string, string> = {
   vault: 'Vault',
@@ -47,14 +55,8 @@ function entryHref(kind: string): string | undefined {
 
 export default function PlatformEnterprise({ embedded }: { embedded?: boolean } = {}) {
   const toast = useToastContext()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const rawTab = searchParams.get('tab')
-  const tab: TabId = embedded
-    ? 'keychain'
-    : TAB_IDS.includes(rawTab as TabId)
-      ? (rawTab as TabId)
-      : 'keychain'
-  const setTab = (next: TabId) => setSearchParams(next === 'keychain' ? {} : { tab: next })
+  const [tab, setTab] = usePlatformTabState<TabId>(ENTERPRISE_TABS.map((t) => t.id), { defaultTab: 'keychain' })
+  const activeTab: TabId = embedded ? 'keychain' : tab
 
   const [keychain, setKeychain] = useState<FleetKeychainOverview | null>(null)
   const [overview, setOverview] = useState<EnterpriseSecurityOverview | null>(null)
@@ -69,7 +71,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
   const load = useCallback(async () => {
     setError(null)
     try {
-      if (tab === 'keychain') {
+      if (activeTab === 'keychain') {
         setKeychain(await getFleetKeychain())
         return
       }
@@ -88,7 +90,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
     } catch (e: unknown) {
       setError(formatUserError(e))
     }
-  }, [tab])
+  }, [activeTab])
 
   useEffect(() => { void load() }, [load])
 
@@ -117,33 +119,26 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
     }
   }
 
-  const tabs: Array<{ id: TabId; label: string }> = [
-    { id: 'keychain', label: 'Keychain' },
-    { id: 'vault', label: 'Vault sync' },
-    { id: 'mfa', label: 'MFA compliance' },
-    { id: 'fips', label: 'FIPS matrix' },
-    { id: 'tenants', label: 'Tenant isolation' },
-  ]
-
   return (
-    <PageLayout hideHeader compact={embedded} error={error}>
-      {!embedded && (
-        <header>
-          <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Keychain Access</p>
-          <MacSectionTitle
-            title="Enterprise Security"
-            subtitle="Secrets inventory and link-out — vault, MFA, API keys, air-gap bundles (no live secret export)."
-          />
-        </header>
-      )}
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      error={error}
+      onErrorRetry={() => void load()}
+      title={embedded ? undefined : 'Enterprise Security'}
+      subtitle={embedded ? undefined : 'Secrets inventory and link-out — vault, MFA, API keys, air-gap bundles (no live secret export).'}
+      icon={embedded ? undefined : <Lock className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       {actionError && <ErrorBanner message={actionError} />}
-      {(keychain?.summary || overview?.summary) && tab !== 'keychain' && (
+      {(keychain?.summary || overview?.summary) && activeTab !== 'keychain' && (
         <p className="text-sm text-slate-400">{overview?.summary}</p>
       )}
-      {tab === 'keychain' && keychain && (
+      {activeTab === 'keychain' && keychain && (
         <p className="text-sm text-slate-400">{keychain.summary}</p>
       )}
-      {tab === 'keychain' && keychain && (
+      {activeTab === 'keychain' && keychain && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <MacStatWidget label="Vault connected" value={`${keychain.vault_connected}/${keychain.vault_providers}`} icon={<Lock className="w-4 h-4" />} tone={keychain.disconnected_vaults > 0 ? 'warn' : 'ok'} />
           <MacStatWidget label="MFA enrolled" value={String(keychain.mfa_enrolled_users)} icon={<Shield className="w-4 h-4" />} />
@@ -151,31 +146,16 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
           <MacStatWidget label="Air-gap bundles" value={String(keychain.air_gap_bundles)} icon={<Users className="w-4 h-4" />} />
         </div>
       )}
-      {tab !== 'keychain' && (
+      {activeTab !== 'keychain' && (
         <div className="grid gap-4 sm:grid-cols-3">
           <MacStatWidget label="Vault connected" value={overview ? `${overview.vault_connected}/${overview.vault_providers}` : '—'} icon={<Lock className="w-4 h-4" />} />
           <MacStatWidget label="MFA enrolled" value={overview ? String(overview.mfa_enrolled_users) : '—'} icon={<Shield className="w-4 h-4" />} />
           <MacStatWidget label="Tenant policies" value={overview ? String(overview.tenant_policies) : '—'} icon={<Users className="w-4 h-4" />} />
         </div>
       )}
-      {!embedded && (
-        <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-2 text-sm rounded-t-lg transition ${
-                tab === t.id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      )}
+      {!embedded && <DetailTabs primary={ENTERPRISE_TABS} active={tab} onChange={setTab} />}
 
-      {tab === 'keychain' && (
+      {activeTab === 'keychain' && (
         <MacGlassPanel title="Secrets inventory" subtitle="Metadata only — manage credentials in linked panes.">
           {!keychain ? (
             <p className="text-sm text-slate-400 py-6 text-center">Loading keychain inventory…</p>
@@ -217,7 +197,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
         </MacGlassPanel>
       )}
 
-      {tab === 'vault' && (
+      {activeTab === 'vault' && (
         <MacGlassPanel title="Vault providers" action={
           <button type="button" className={`text-xs ${hubLinkClasses()}`} disabled={syncBusy} onClick={() => void syncAll()}>
             {syncBusy ? 'Syncing…' : 'Sync all'}
@@ -237,7 +217,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
         </MacGlassPanel>
       )}
 
-      {tab === 'mfa' && mfa && (
+      {activeTab === 'mfa' && mfa && (
         <MacGlassPanel title="MFA compliance">
           <p className="text-sm text-slate-400 mb-3">{mfa.summary}</p>
           {mfa.users.length === 0 ? (
@@ -269,7 +249,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
         </MacGlassPanel>
       )}
 
-      {tab === 'fips' && fips && (
+      {activeTab === 'fips' && fips && (
         <MacGlassPanel title="FIPS crypto matrix">
           <p className="text-sm text-slate-400 mb-2">{fips.summary}</p>
           <p className="text-xs text-slate-500 mb-4">Runtime: {fips.openssl_version}</p>
@@ -286,7 +266,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
         </MacGlassPanel>
       )}
 
-      {tab === 'tenants' && tenants && (
+      {activeTab === 'tenants' && tenants && (
         <MacGlassPanel title="Workspace isolation">
           <p className="text-sm text-slate-400 mb-3">{tenants.summary}</p>
           <table className="w-full text-sm text-left">
@@ -313,6 +293,6 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
           </table>
         </MacGlassPanel>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

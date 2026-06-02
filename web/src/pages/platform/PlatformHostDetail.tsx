@@ -5,8 +5,8 @@ import { Link, useParams, useLocation } from 'react-router'
 import { ArrowLeft, ExternalLink, Network, Shield, Server, Activity, FileWarning, Bot } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
 import OsDiagnosePanel from '../../components/platform/OsDiagnosePanel'
+import HostDetailTabs, { type HostDetailTab } from '../../components/platform/HostDetailTabs'
 import {
-  MacSettingsPane,
   MacSettingsGroup,
   MacGlassPanel,
   MacListRow,
@@ -43,20 +43,10 @@ import { getFirewallTarget, type FirewallTargetDetail } from '../../api/zeusFire
 import { useAi } from '../../contexts/AiContext'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
-import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusToneClass, taskStatusTone, utilizationBarClass, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
+import { hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusToneClass, taskStatusTone, utilizationBarClass, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
 import { openCenterPopout } from '../../utils/platformCenterPopout'
 import { hostClassicTools } from '../../utils/platformClassicTools'
 import { PlatformClassicToolLinks } from '../../components/platform/PlatformCrossLinks'
-
-type HostSection = 'general' | 'network' | 'linux' | 'security' | 'audit'
-
-const SECTIONS: Array<{ id: HostSection; label: string; icon: React.ReactNode }> = [
-  { id: 'general', label: 'General', icon: <Server className="w-4 h-4" /> },
-  { id: 'network', label: 'Network', icon: <Network className="w-4 h-4" /> },
-  { id: 'linux', label: 'Linux', icon: <Activity className="w-4 h-4" /> },
-  { id: 'security', label: 'Security', icon: <Shield className="w-4 h-4" /> },
-  { id: 'audit', label: 'Audit', icon: <FileWarning className="w-4 h-4" /> },
-]
 
 function psiBar(label: string, pct: number) {
   return (
@@ -77,7 +67,7 @@ export default function PlatformHostDetailPage() {
   const location = useLocation()
   const toast = useToastContext()
   const { openCopilot, setContextHostId } = useAi()
-  const [section, setSection] = useState<HostSection>('general')
+  const [section, setSection] = useState<HostDetailTab>('general')
   const [host, setHost] = useState<PlatformHostDetail | null>(null)
   const [linuxObs, setLinuxObs] = useState<HostLinuxObservability | null>(null)
   const [linuxUpdates, setLinuxUpdates] = useState<HostLinuxUpdates | null>(null)
@@ -171,11 +161,41 @@ export default function PlatformHostDetailPage() {
   const memPsi = (linuxObs?.pressure?.memory?.some ?? 0) * 100
   const ioPsi = (linuxObs?.pressure?.io?.some ?? 0) * 100
 
+  const hostTone = host?.state === 'online' ? 'ok' : host?.state === 'offline' ? 'error' : 'warn'
+
   return (
-    <PageLayout hideHeader compact contentClassName="space-y-4">
-      <Link to="/platform/hosts" className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}>
-        <ArrowLeft className="w-4 h-4" /> Hosts
-      </Link>
+    <PageLayout
+      compact
+      contentLoading={loading && !host}
+      prepend={
+        <Link to="/platform/hosts" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Hosts
+        </Link>
+      }
+      title={host?.hostname ?? 'Host'}
+      subtitle={host ? (
+        <span className="flex flex-wrap items-center gap-2 text-sm">
+          <span className={statusPillClasses(hostTone)}>{host.state}</span>
+          <span className={statusPillClasses(host.validation_status === 'valid' ? 'ok' : 'warn')}>{host.validation_status || 'pending'}</span>
+          {host.fenced && <span className={statusPillClasses('error')}>Fenced</span>}
+          <span className="text-slate-500">·</span>
+          <span className="text-slate-400">{host.vm_count ?? 0} VMs</span>
+        </span>
+      ) : undefined}
+      icon={<Server className="w-6 h-6 text-slate-400" />}
+      actions={host ? (
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="btn-secondary text-sm" onClick={() => void syncHost(id).then(() => toast.success('Sync queued')).catch((e: unknown) => toast.error(formatUserError(e)))}>Sync</button>
+          <button type="button" className="btn-secondary text-sm inline-flex items-center gap-1" onClick={() => { openCopilot(); void runDiagnose('host health and pressure') }}>
+            <Bot className="w-4 h-4" /> Copilot
+          </button>
+          <Link to={`/platform/zeus/security/firewall/${id}`} className="btn-secondary text-sm inline-flex items-center gap-1">
+            <Shield className="w-4 h-4" /> Firewall
+          </Link>
+        </div>
+      ) : undefined}
+      contentClassName="space-y-4"
+    >
       {error && (hostErrorPresentation(error) ? (
         <StructuredErrorBanner error={hostErrorPresentation(error)!} />
       ) : (
@@ -188,37 +208,11 @@ export default function PlatformHostDetailPage() {
           <Link to="/node" className={hubLinkClasses()}>Classic node tools</Link>
         </p>
       )}
-      {loading && !host && <PageSkeleton />}
       {host && (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm text-slate-400">
-              {host.validation_status || 'pending'} · {host.state}{host.fenced ? ' · fenced' : ''}
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="btn-secondary text-xs flex items-center gap-1"
-                onClick={() => openCenterPopout(`${location.pathname}${location.search}`)}
-              >
-                <ExternalLink className="w-3 h-3" /> Pop Out
-              </button>
-              <button
-                type="button"
-                className="btn-secondary text-xs flex items-center gap-1"
-                onClick={() => { openCopilot(); void runDiagnose('why is this host under pressure') }}
-              >
-                <Bot className="w-3 h-3" /> Ask Copilot about this host
-              </button>
-            </div>
-          </div>
-          <MacSettingsPane
-            title={host.hostname}
-            sections={SECTIONS}
-            active={section}
-            onSelect={(s) => setSection(s as HostSection)}
-          >
+          <HostDetailTabs active={section} onChange={setSection} />
             {section === 'general' && (
+              <MacGlassPanel title="General">
               <div className="space-y-6">
                 {(host.validation_report?.length ?? 0) > 0 && (
                   <MacSettingsGroup title="Join validation">
@@ -308,6 +302,7 @@ export default function PlatformHostDetailPage() {
                   </div>
                 </MacSettingsGroup>
               </div>
+              </MacGlassPanel>
             )}
 
             {section === 'network' && (
@@ -478,7 +473,6 @@ export default function PlatformHostDetailPage() {
                 )}
               </MacGlassPanel>
             )}
-          </MacSettingsPane>
         </>
       )}
     </PageLayout>

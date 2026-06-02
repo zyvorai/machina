@@ -1,12 +1,11 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { RefreshCw } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
+import { ClipboardList } from 'lucide-react'
 import ExplainButton from '../../components/ai/ExplainButton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformFilterPills from '../../components/platform/PlatformFilterPills'
-import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import { statusBgClass, taskStatusTone } from '../../utils/semanticColors'
 import { cancelTask, listPlatformTasks, retryTask, type PlatformTask } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
@@ -43,11 +42,16 @@ export default function PlatformTasks() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <MacSectionTitle title="Tasks" subtitle="Orchestration queue — like Activity Monitor for your datacenter." />
-        <button type="button" className="btn-secondary" onClick={() => void load()}><RefreshCw className="w-4 h-4" /></button>
-      </header>
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Tasks"
+      subtitle="Orchestration queue — like Activity Monitor for your datacenter."
+      icon={<ClipboardList className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       <PlatformFilterPills
         value={filter}
         onChange={setFilter}
@@ -98,6 +102,6 @@ export default function PlatformTasks() {
           ))}
         </ul>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

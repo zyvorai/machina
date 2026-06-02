@@ -7,7 +7,6 @@ import { ArrowLeft, Bot, Radar } from 'lucide-react'
 import {
   MacGlassPanel,
   MacListRow,
-  MacSettingsPane,
 } from '../../components/platform/mac/PlatformMacUi'
 import PageSkeleton from '../../components/PageSkeleton'
 import ProcessGraphCanvas from '../../components/platform/ProcessGraphCanvas'
@@ -33,20 +32,24 @@ import {
 import { formatUserError } from '../../utils/apiError'
 import { useToastContext } from '../../contexts/ToastContext'
 import { useAi } from '../../contexts/AiContext'
-import { hubLinkClasses } from '../../utils/semanticColors'
+import DetailTabs from '../../components/platform/DetailTabs'
+import { statusPillClasses, hubLinkClasses } from '../../utils/semanticColors'
 
 type TabId = 'processes' | 'connections' | 'dns' | 'ports' | 'files' | 'events' | 'containers' | 'users' | 'graph'
 
-const TABS: Array<{ id: TabId; label: string }> = [
+const PRIMARY_TABS: Array<{ id: TabId; label: string }> = [
   { id: 'processes', label: 'Processes' },
   { id: 'connections', label: 'Connections' },
-  { id: 'dns', label: 'DNS' },
-  { id: 'ports', label: 'Open Ports' },
-  { id: 'files', label: 'Files' },
-  { id: 'events', label: 'Security Events' },
-  { id: 'graph', label: 'Process Graph' },
-  { id: 'containers', label: 'Containers' },
-  { id: 'users', label: 'Users' },
+  { id: 'events', label: 'Events' },
+  { id: 'graph', label: 'Graph' },
+]
+
+const MORE_TABS: Array<{ id: TabId; label: string; group?: string }> = [
+  { id: 'dns', label: 'DNS', group: 'Network' },
+  { id: 'ports', label: 'Open ports', group: 'Network' },
+  { id: 'files', label: 'Files', group: 'Artifacts' },
+  { id: 'containers', label: 'Containers', group: 'Runtime' },
+  { id: 'users', label: 'Users', group: 'Runtime' },
 ]
 
 function eventRow(e: SecurityEvent) {
@@ -146,43 +149,54 @@ export default function PlatformMachineSecurity() {
       }`
     : 'Agent fabric status unavailable'
 
-  return (
-    <PageLayout hideHeader compact contentClassName="space-y-4" error={error}>
-      <Link to="/platform/zeus/security" className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}>
-        <ArrowLeft className="w-4 h-4" /> Security Center
-      </Link>
-      {loading && !summary && <PageSkeleton />}
+  const threatTone = typeof threatScore === 'number' && threatScore > 70 ? 'error' : typeof threatScore === 'number' && threatScore > 40 ? 'warn' : 'ok'
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="text-xl font-semibold text-white">Machine · {hostId}</h1>
-          <p className="text-sm text-slate-400">
-            Threat score {String(threatScore)} · Sensor {String(sensor.status ?? 'unknown')}
-          </p>
-          <p className="text-xs text-slate-500">{fabricLine}</p>
-        </div>
+  return (
+    <PageLayout
+      compact
+      contentLoading={loading && !summary}
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Security Center
+        </Link>
+      }
+      title={`Machine security`}
+      subtitle={
+        <span className="flex flex-wrap items-center gap-2 text-sm">
+          <span className={statusPillClasses(threatTone)}>Threat {String(threatScore)}</span>
+          <span className="text-slate-400">Sensor {String(sensor.status ?? 'unknown')}</span>
+          <span className="text-slate-500 text-xs">{fabricLine}</span>
+        </span>
+      }
+      actions={
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            className="btn-secondary text-xs flex items-center gap-1"
+            className="btn-secondary text-sm inline-flex items-center gap-1"
             onClick={() => void installTetragonSensor(hostId).then((r) => toast.success(r.summary)).catch((e: unknown) => toast.error(formatUserError(e)))}
           >
-            <Radar className="w-3 h-3" /> Install Tetragon
+            <Radar className="w-4 h-4" /> Install Tetragon
           </button>
           <button
             type="button"
-            className="btn-secondary text-xs flex items-center gap-1"
+            className="btn-secondary text-sm"
             onClick={() => void reconstructAttack(hostId).then((r) => setAttackChain(r.attack_chain)).catch((e: unknown) => toast.error(formatUserError(e)))}
           >
             Attack chain
           </button>
-          <button type="button" className="btn-secondary text-xs flex items-center gap-1" onClick={() => openCopilot()}>
-            <Bot className="w-3 h-3" /> Copilot
+          <button type="button" className="btn-secondary text-sm inline-flex items-center gap-1" onClick={() => openCopilot()}>
+            <Bot className="w-4 h-4" /> Copilot
           </button>
         </div>
-      </div>
+      }
+      contentClassName="space-y-4"
+    >
+      {loading && !summary && <PageSkeleton />}
 
-      <MacSettingsPane title={`Host ${hostId}`} sections={TABS} active={tab} onSelect={(t) => setTab(t as TabId)}>
+      <DetailTabs primary={PRIMARY_TABS} more={MORE_TABS} active={tab} onChange={setTab} />
+
+      <MacGlassPanel title={PRIMARY_TABS.find((t) => t.id === tab)?.label ?? MORE_TABS.find((t) => t.id === tab)?.label ?? 'Security'}>
         {tab === 'ports' ? (
           ports.length === 0 ? (
             <p className="text-sm text-slate-500 p-3">No open ports reported.</p>
@@ -223,7 +237,7 @@ export default function PlatformMachineSecurity() {
             <JsonInspector data={items.slice(0, 5)} />
           </>
         )}
-      </MacSettingsPane>
+      </MacGlassPanel>
 
       {attackChain && attackChain.length > 0 && (
         <MacGlassPanel title="Attack reconstruction" subtitle="AI timeline analysis">

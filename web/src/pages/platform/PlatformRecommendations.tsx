@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
-import { Workflow } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
+import { Lightbulb, Workflow } from 'lucide-react'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
-import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import RemediateChips from '../../components/platform/RemediateChips'
 import { createVmBackup, listPlatformRecommendations, setVmHa, type PlatformRecommendation } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
@@ -49,8 +48,17 @@ export default function PlatformRecommendations() {
   }
 
   return (
-    <PageLayout hideHeader error={error} contentClassName="max-w-3xl">
-      <MacSectionTitle title="Recommendations" subtitle="Live analysis from your cluster — not static placeholders." />
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Recommendations"
+      subtitle="Live analysis from your cluster — not static placeholders."
+      icon={<Lightbulb className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      className="max-w-3xl"
+      contentClassName="space-y-4"
+    >
       <RemediateChips />
       <ul className="space-y-4">
         {rows.map((r) => (
@@ -68,6 +76,6 @@ export default function PlatformRecommendations() {
           <PlatformEmptyState title="No recommendations" subtitle="Your estate looks good — check back after changes to hosts or VMs." />
         )}
       </ul>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Cpu, Monitor, RefreshCw, Server } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
-import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton, platformStatSubtitle } from '../../components/platform/PlatformPageChrome'
 import { MacGlassPanel, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
 import { getFleetGpu, type FleetGpuOverview, type GpuProfileKind } from '../../api/platform'
 import { getGpuPlacement } from '../../api/ai'
@@ -78,20 +76,28 @@ export default function PlatformGpuCommandCenter() {
   useEffect(() => { void loadPlacement() }, [loadPlacement])
 
   return (
-    <PageLayout hideHeader error={error} onErrorRetry={() => void load()}>
-      <PlatformTahoeHero
-        title="GPU Command Center"
-        subtitle="MIG, vGPU, and CUDA placement — inventory from host tags plus AI placement advisor."
-        icon={Cpu}
-        stats={overview ? [
-          { label: 'GPU hosts', value: String(overview.gpu_host_count), tone: 'violet' },
-          { label: 'GPU VMs', value: String(overview.gpu_vm_count), tone: 'emerald' },
-          { label: 'CUDA ready', value: String(overview.cuda_ready_hosts), tone: 'sky' },
-        ] : []}
-      />
-
-      <div className="tahoe-content space-y-4">
-        {loading && <PageSkeleton />}
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      contentLoading={loading && !overview}
+      prepend={<PlatformBackLink to="/platform/resources" label="Resources" />}
+      title="GPU Command Center"
+      subtitle={
+        <span className="flex flex-col gap-1">
+          <span className="text-slate-400">MIG, vGPU, and CUDA placement</span>
+          {overview
+            ? platformStatSubtitle([
+                { label: 'GPU hosts', value: String(overview.gpu_host_count) },
+                { label: 'GPU VMs', value: String(overview.gpu_vm_count) },
+                { label: 'CUDA ready', value: String(overview.cuda_ready_hosts) },
+              ])
+            : null}
+        </span>
+      }
+      icon={<Cpu className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
 
         {!loading && overview && overview.gpu_host_count === 0 && (
           <PlatformEmptyState
@@ -213,7 +219,6 @@ export default function PlatformGpuCommandCenter() {
             </MacGlassPanel>
           </>
         )}
-      </div>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

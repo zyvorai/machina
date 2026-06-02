@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
+import { ArrowLeft, RefreshCw, Shield } from 'lucide-react'
 import PageLayout from '../../../components/PageLayout'
-import { MacGlassPanel, MacListRow, MacSectionTitle, MacSheet } from '../../../components/platform/mac/PlatformMacUi'
+import { MacGlassPanel, MacListRow, MacSheet } from '../../../components/platform/mac/PlatformMacUi'
 import {
   createFirewallPolicy,
   getMultisiteDrTemplates,
@@ -74,9 +75,24 @@ export default function PlatformFirewallPolicies() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Policy Studio" subtitle="Create, simulate, and manage Zeus firewall policies." />
-      <Link to="/platform/zeus/security/firewall" className={`text-sm ${hubLinkClasses()}`}>← Firewall overview</Link>
+    <PageLayout
+      compact
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security/firewall" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Firewall
+        </Link>
+      }
+      title="Policy Studio"
+      subtitle={`${rows.length} polic${rows.length === 1 ? 'y' : 'ies'} · create, simulate, and manage Zeus firewall policies`}
+      icon={<Shield className="w-6 h-6 text-slate-400" />}
+      actions={
+        <button type="button" className="btn-secondary" onClick={() => void load()} aria-label="Refresh">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      }
+      contentClassName="space-y-4"
+    >
       <MacGlassPanel title="New policy">
         <div className="grid gap-3 max-w-lg">
           <input className="input text-sm" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />

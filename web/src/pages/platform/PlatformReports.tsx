@@ -1,13 +1,14 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router'
 import { BookOpen, DollarSign, FolderKanban, PieChart } from 'lucide-react'
 import ErrorBanner from '../../components/ErrorBanner'
-import PageLayout from '../../components/PageLayout'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
-import { MacGlassPanel, MacSectionTitle, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
+import DetailTabs from '../../components/platform/DetailTabs'
+import { MacGlassPanel, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { usePlatformTabState } from '../../hooks/usePlatformTabState'
 import {
   getCapacityReport,
   getFinOpsReport,
@@ -33,13 +34,15 @@ import { useToastContext } from '../../contexts/ToastContext'
 
 type TabId = 'reports' | 'runbooks' | 'showback'
 
+const REPORT_TABS = [
+  { id: 'reports' as const, label: 'Reports' },
+  { id: 'runbooks' as const, label: 'Runbooks' },
+  { id: 'showback' as const, label: 'Showback' },
+]
+
 export default function PlatformReports({ embedded }: { embedded?: boolean } = {}) {
   const toast = useToastContext()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const tab = (searchParams.get('tab') as TabId) || 'reports'
-  const setTab = (next: TabId) => {
-    setSearchParams(next === 'reports' ? {} : { tab: next })
-  }
+  const [tab, setTab] = usePlatformTabState<TabId>(REPORT_TABS.map((t) => t.id), { defaultTab: 'reports' })
 
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [cap, setCap] = useState<CapacityReport | null>(null)
@@ -124,26 +127,18 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
   }
 
   return (
-    <PageLayout hideHeader compact={embedded} error={error} onErrorRetry={() => void load()}>
-      {!embedded && <MacSectionTitle title="Reports" subtitle="Cost Guardian, FinOps, operations runbooks, and compliance showback." />}
-      <div className="flex flex-wrap gap-2">
-        {([
-          ['reports', 'Reports', PieChart],
-          ['runbooks', 'Runbooks', BookOpen],
-          ['showback', 'Showback', DollarSign],
-        ] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`px-3 py-1.5 rounded-full text-xs border transition flex items-center gap-1.5 ${
-              tab === id ? 'bg-blue-500/20 border-blue-500/40 text-blue-200' : 'border-white/[0.08] text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Icon className="w-3.5 h-3.5" /> {label}
-          </button>
-        ))}
-      </div>
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      error={error}
+      onErrorRetry={() => void load()}
+      title={embedded ? undefined : 'Reports'}
+      subtitle={embedded ? undefined : 'Cost Guardian, FinOps, operations runbooks, and compliance showback.'}
+      icon={embedded ? undefined : <PieChart className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
+      <DetailTabs primary={REPORT_TABS} active={tab} onChange={setTab} />
       {loading && <PageSkeleton />}
 
       {!loading && tab === 'runbooks' && (
@@ -460,6 +455,6 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
         ))}</ul>
       </MacGlassPanel>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

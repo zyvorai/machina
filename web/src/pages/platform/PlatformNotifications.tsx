@@ -3,15 +3,14 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Bell } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
-import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { statusBadgeClasses, statusSurfaceClasses, statusToneClass } from '../../utils/semanticColors'
 import { createVmBackup, listNotifications, markNotificationDelivered, markAllNotificationsDelivered, type NotificationRow } from '../../api/platform'
 import { aiRunbook } from '../../api/ai'
 import ExplainButton from '../../components/ai/ExplainButton'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
-import { statusBadgeClasses, statusSurfaceClasses, statusToneClass } from '../../utils/semanticColors'
 import { usePlatformDesktopTier } from '../../hooks/usePlatformDesktopTier'
 import type { PlatformDesktopTier } from '../../utils/platformDesktopTier'
 import { tasksHubHref } from '../../utils/platformHubLinks'
@@ -53,27 +52,37 @@ export default function PlatformNotifications() {
   const unread = rows.filter((n) => !n.delivered).length
 
   return (
-    <PageLayout hideHeader error={error}>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <MacSectionTitle title="Alerts" subtitle="Notification Center — actionable alerts, not just log lines." />
-        {unread > 0 && (
-          <div className="flex items-center gap-2">
-            <span className={`px-3 py-1 rounded-full text-sm border ${statusBadgeClasses('warn')}`}>
-              {unread} unread
-            </span>
-            <button
-              type="button"
-              className="btn-secondary text-xs"
-              onClick={() => void markAllNotificationsDelivered().then((n) => {
-                toast.success(`Marked ${n} notification(s) read`)
-                void load()
-              }).catch((e: unknown) => toast.error(formatUserError(e)))}
-            >
-              Mark all read
-            </button>
-          </div>
-        )}
-      </header>
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Alerts"
+      subtitle="Notification Center — actionable alerts, not just log lines."
+      icon={<Bell className="w-6 h-6 text-slate-400" />}
+      actions={
+        <>
+          {unread > 0 && (
+            <>
+              <span className={`px-3 py-1 rounded-full text-sm border ${statusBadgeClasses('warn')}`}>
+                {unread} unread
+              </span>
+              <button
+                type="button"
+                className="btn-secondary text-xs"
+                onClick={() => void markAllNotificationsDelivered().then((n) => {
+                  toast.success(`Marked ${n} notification(s) read`)
+                  void load()
+                }).catch((e: unknown) => toast.error(formatUserError(e)))}
+              >
+                Mark all read
+              </button>
+            </>
+          )}
+          <PlatformRefreshButton onClick={() => void load()} />
+        </>
+      }
+      contentClassName="space-y-4"
+    >
       <label className="flex items-center gap-2 text-sm text-slate-400">
         <input type="checkbox" checked={undeliveredOnly} onChange={(e) => setUndeliveredOnly(e.target.checked)} />
         Undelivered only
@@ -132,6 +141,6 @@ export default function PlatformNotifications() {
           </div>
         </div>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

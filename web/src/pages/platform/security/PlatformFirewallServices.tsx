@@ -2,12 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
-import { MacGlassPanel, MacSectionTitle } from '../../../components/platform/mac/PlatformMacUi'
+import { ArrowLeft, RefreshCw, Server } from 'lucide-react'
+import { MacGlassPanel } from '../../../components/platform/mac/PlatformMacUi'
 import PageLayout from '../../../components/PageLayout'
 import { getFirewallOverview, getFirewallServices, type AllowedService } from '../../../api/zeusFirewall'
 import { formatUserError } from '../../../utils/apiError'
 import { firewallRiskClass, formatAllowedFrom } from '../../../utils/firewallDisplay'
-import { statusToneClass } from '../../../utils/semanticColors'
+import { statusToneClass, hubLinkClasses } from '../../../utils/semanticColors'
 
 type ServiceRow = AllowedService & { target: string; targetId: string; key: string }
 
@@ -58,9 +59,24 @@ export default function PlatformFirewallServices() {
   }, [services, filter])
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Allowed Apps & Services" subtitle="Service-centric firewall view — deduplicated rules per host." />
-      <Link to="/platform/zeus/security/firewall" className="text-sm text-sky-400 hover:underline">← Firewall overview</Link>
+    <PageLayout
+      compact
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security/firewall" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Firewall
+        </Link>
+      }
+      title="Allowed Apps & Services"
+      subtitle={`${visible.length} service${visible.length === 1 ? '' : 's'} · deduplicated rules per host`}
+      icon={<Server className="w-6 h-6 text-slate-400" />}
+      actions={
+        <button type="button" className="btn-secondary" onClick={() => void load()} aria-label="Refresh">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      }
+      contentClassName="space-y-4"
+    >
       <MacGlassPanel title="Allowed services">
         <div className="flex flex-wrap gap-2 mb-4">
           <input

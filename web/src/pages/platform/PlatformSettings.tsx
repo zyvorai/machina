@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Settings } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import { MacSectionTitle, MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
+import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import {
   getClusterSummary,
   getClusterLeadership,
@@ -76,10 +76,17 @@ export default function PlatformSettings({ embedded }: { embedded?: boolean }) {
   useEffect(() => { void load() }, [load])
 
   return (
-    <PageLayout hideHeader compact={embedded} error={error}>
-      {!embedded && (
-        <MacSectionTitle title="Platform settings" subtitle="Cluster name, OIDC, CPU compatibility, HA" />
-      )}
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      error={error}
+      onErrorRetry={() => void load()}
+      title={embedded ? undefined : 'Platform settings'}
+      subtitle={embedded ? undefined : 'Cluster name, OIDC, CPU compatibility, HA'}
+      icon={embedded ? undefined : <Settings className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
       {leadership && (
         <MacGlassPanel title="Controller leadership">
           <div className="space-y-2 text-sm">
@@ -239,6 +246,6 @@ export default function PlatformSettings({ embedded }: { embedded?: boolean }) {
           } catch (e: unknown) { toast.error(formatUserError(e)) }
         }}>Save matrix ({cpuRules.length} rules)</button>
       </MacGlassPanel>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

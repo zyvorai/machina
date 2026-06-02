@@ -662,6 +662,12 @@ pub async fn ws_auth_middleware(
     mut req: Request<Body>,
     next: Next,
 ) -> Response {
+    let path = req.uri().path();
+    // Platform VNC uses controller-issued tokens; machina-controller validates them.
+    if path.starts_with("/platform/vnc/") {
+        return next.run(req).await;
+    }
+
     // Extract token from query string
     let token = req.uri().query().and_then(|q| {
         q.split('&')

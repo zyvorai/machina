@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Disc, Plus, RefreshCw, ShieldAlert, ShieldCheck, X } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformFilterPills from '../../components/platform/PlatformFilterPills'
-import { MacSectionTitle, MacSheet, MacStatWidget, gradientForName } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import { MacSheet, MacStatWidget, gradientForName } from '../../components/platform/mac/PlatformMacUi'
 import {
   approveContentImage,
   createContentImage,
@@ -112,17 +112,24 @@ export default function PlatformContent() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <MacSectionTitle title="Content Library" subtitle="ISO grid with approval inbox — upload golden images for templates." />
-        <div className="flex gap-2 items-center">
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/resources" label="Resources" />}
+      title="Content Library"
+      subtitle="ISO grid with approval inbox — upload golden images for templates."
+      icon={<Disc className="w-6 h-6 text-slate-400" />}
+      actions={
+        <>
           {pending.length > 0 && (
             <span className={`px-2 py-1 rounded-full text-xs border ${statusBadgeClasses('warn')}`}>{pending.length} pending</span>
           )}
-          <button type="button" onClick={() => void load()} className="btn-secondary"><RefreshCw className="w-4 h-4" /></button>
+          <PlatformRefreshButton onClick={() => void load()} />
           <button type="button" className="btn-primary flex items-center gap-2" onClick={() => setSheetOpen(true)}><Plus className="w-4 h-4" /> Upload</button>
-        </div>
-      </header>
+        </>
+      }
+      contentClassName="space-y-4"
+    >
 
       {pending.length > 0 && (
         <section className={`card p-4 ${statusSurfaceClasses('warn')}`}>
@@ -229,6 +236,6 @@ export default function PlatformContent() {
           <button type="button" className="btn-primary w-full" onClick={async () => { await add(); setSheetOpen(false) }}>Submit for approval</button>
         </div>
       </MacSheet>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -813,6 +813,27 @@ export async function mockPlatformApi(page: Page, opts?: {
         },
       })
     }
+    if (url.match(/\/vms\/[^/]+\/ha/)) {
+      return route.fulfill({ json: { vm_id: 'v1', enabled: false, restart_policy: 'restart' } })
+    }
+    if (url.match(/\/vms\/[^/]+\/spec/)) {
+      return route.fulfill({ json: { domain: { name: 'vm-1' } } })
+    }
+    if (url.match(/\/vms\/[^/]+\/snapshots/)) {
+      return route.fulfill({ json: [] })
+    }
+    if (url.match(/\/vms\/[^/]+\/backups/)) {
+      return route.fulfill({ json: [] })
+    }
+    if (url.match(/\/vms\/[^/]+\/disks/)) {
+      return route.fulfill({ json: [] })
+    }
+    if (url.match(/\/vms\/[^/]+\/metrics/)) {
+      return route.fulfill({ json: { cpu_percent: 12, memory_percent: 40 } })
+    }
+    if (url.match(/\/vms\/[^/]+\/migrations/)) {
+      return route.fulfill({ json: [] })
+    }
     if (url.match(/\/vms\/[^/]+(\?|$)/) || url.match(/\/vms\/[^/]+$/)) {
       return route.fulfill({ json: sampleVm })
     }

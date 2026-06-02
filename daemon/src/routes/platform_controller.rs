@@ -16,7 +16,7 @@ use machina_core::{LibvirtError, LibvirtManager};
 
 use crate::error::AppError;
 
-fn controller_base() -> String {
+pub(crate) fn controller_base() -> String {
     std::env::var("MACHINA_PLATFORM_CONTROLLER_URL")
         .unwrap_or_else(|_| "http://127.0.0.1:5093".into())
         .trim_end_matches('/')

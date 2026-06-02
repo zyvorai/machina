@@ -32,7 +32,7 @@ import {
 } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
-import { hubLinkClasses } from '../../utils/semanticColors'
+import { hubLinkClasses, statusPillClasses, vmStateTone } from '../../utils/semanticColors'
 
 type ViewMode = 'launchpad' | 'list' | 'columns'
 
@@ -350,7 +350,10 @@ export default function PlatformVms() {
 
   const inspector = selectedVm ? (
     <div className="p-4 space-y-3 h-full overflow-y-auto">
-      <h3 className="font-semibold text-white">{selectedVm.name}</h3>
+      <div className="flex items-center gap-2 flex-wrap">
+        <h3 className="font-semibold text-white">{selectedVm.name}</h3>
+        <span className={statusPillClasses(vmStateTone(selectedVm.observed_state))}>{selectedVm.observed_state}</span>
+      </div>
       <dl className="grid grid-cols-2 gap-2 text-xs">
         <div><dt className="text-white/40">Source</dt><dd className="capitalize text-white">{selectedVm.inventory_source ?? 'libvirt'}</dd></div>
         <div><dt className="text-white/40">State</dt><dd className="capitalize text-white">{selectedVm.observed_state}{selectedVm.observed_state === 'missing' ? ' (missing from inventory)' : ''}</dd></div>
@@ -369,12 +372,22 @@ export default function PlatformVms() {
   ) : null
 
   return (
-    <PageLayout hideHeader compact contentClassName="space-y-4">
-      {finder && <p className="text-sm text-white/45">{finder.summary}</p>}
+    <PageLayout
+      compact
+      title="Virtual Machines"
+      subtitle={finder ? `${finder.summary} · ${filteredVms.length} shown` : undefined}
+      icon={<Monitor className="w-6 h-6 text-slate-400" />}
+      actions={
+        <button type="button" className="btn-primary text-sm inline-flex items-center gap-1" onClick={() => { setWizardInitial(undefined); setWizardOpen(true) }}>
+          <Plus className="w-4 h-4" /> New VM
+        </button>
+      }
+      contentClassName="space-y-4"
+    >
       {error && <StructuredErrorBanner error={error} />}
 
       <FinderView
-        title="Finder"
+        title="Inventory"
         search={search}
         onSearchChange={setSearch}
         searchPlaceholder="Search VMs…"

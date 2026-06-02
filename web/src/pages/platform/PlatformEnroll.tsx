@@ -1,9 +1,8 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
-import { KeyRound, Copy } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import { Copy, KeyRound } from 'lucide-react'
+import PlatformPageChrome, { PlatformBackLink } from '../../components/platform/PlatformPageChrome'
 import CopyButton from '../../components/CopyButton'
 import { createEnrollmentToken, listEnrollmentTokens, revokeEnrollmentToken, type EnrollmentToken, type EnrollmentTokenRow } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
@@ -36,8 +35,13 @@ export default function PlatformEnroll() {
   }
 
   return (
-    <PageLayout hideHeader>
-      <MacSectionTitle title="Host Enrollment" subtitle="Join new KVM nodes to the control plane" />
+    <PlatformPageChrome
+      prepend={<PlatformBackLink to="/platform/hosts" label="Hosts" />}
+      title="Host Enrollment"
+      subtitle="Join new KVM nodes to the control plane"
+      icon={<KeyRound className="w-6 h-6 text-slate-400" />}
+      contentClassName="space-y-4"
+    >
       <button type="button" className="btn-primary" disabled={busy} onClick={() => void generate()}>Generate join token</button>
       {token && (
         <div className="card p-4 space-y-4">
@@ -72,6 +76,6 @@ export default function PlatformEnroll() {
           ))}</ul>
         </section>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

@@ -2,11 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
-import { Cloud, GitBranch, HardDrive, Network, Server, Shield, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Cloud, GitBranch, HardDrive, Network, RefreshCw, Server, Shield, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import {
   LaunchpadAppIcon,
   MacGlassPanel,
-  MacSectionTitle,
   MacStatWidget,
   gradientForName,
 } from '../../../components/platform/mac/PlatformMacUi'
@@ -32,7 +31,7 @@ import {
 } from '../../../api/zeusFirewall'
 import { useToastContext } from '../../../contexts/ToastContext'
 import { formatUserError } from '../../../utils/apiError'
-import { hubLinkClasses, riskTone, statusBgClass, statusToneClass } from '../../../utils/semanticColors'
+import { hubLinkClasses, riskTone, statusBgClass, statusPillClasses, statusToneClass } from '../../../utils/semanticColors'
 
 type KindFilter = 'all' | 'host' | 'bare_metal'
 
@@ -122,17 +121,36 @@ export default function PlatformFirewallOverview() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle
-        title="Zeus Firewall"
-        subtitle="System Settings-style machine protection for hosts and bare metal"
-      />
-      {statusLine && (
-        <p className="text-sm text-slate-400 flex items-center gap-2">
-          <Shield className={`w-4 h-4 ${hubLinkClasses()}`} />
-          {statusLine}
-        </p>
-      )}
+    <PageLayout
+      compact
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Security Center
+        </Link>
+      }
+      title="Zeus Firewall"
+      subtitle={
+        <span className="flex flex-wrap items-center gap-2 text-sm">
+          {overview && (
+            <>
+              <span className={statusPillClasses(overview.critical_count > 0 ? 'error' : 'ok')}>
+                {overview.critical_count} critical
+              </span>
+              <span className="text-slate-400">{overview.targets.length} machines</span>
+            </>
+          )}
+          {statusLine && <span className="text-slate-500">{statusLine}</span>}
+        </span>
+      }
+      icon={<Shield className="w-6 h-6 text-slate-400" />}
+      actions={
+        <button type="button" className="btn-secondary" onClick={() => void load()} aria-label="Refresh">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      }
+      contentClassName="space-y-4"
+    >
       {overview && (
         <>
           <PlatformFilterPills

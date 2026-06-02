@@ -2,9 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { Activity, RefreshCw } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
+import { Activity } from 'lucide-react'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import {
   getClusterSettings,
   getHaStatus,
@@ -83,18 +82,23 @@ export default function PlatformPlacement() {
   }, [load])
 
   return (
-    <PageLayout hideHeader error={error}>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <MacSectionTitle title="Placement & HA" subtitle="DRS-style recommendations and high-availability status" />
-        <div className="flex gap-2">
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Placement & HA"
+      subtitle="DRS-style recommendations and high-availability status"
+      icon={<Activity className="w-6 h-6 text-slate-400" />}
+      actions={
+        <>
           <button type="button" className="btn-secondary text-xs" onClick={async () => {
             try { setRows(await refreshPlacement()) } catch (e: unknown) { setError(formatUserError(e)) }
           }}>Recompute</button>
-          <button type="button" className="btn-secondary flex items-center gap-2" onClick={() => void load()}>
-            <RefreshCw className="w-4 h-4" /> Refresh
-          </button>
-        </div>
-      </header>
+          <PlatformRefreshButton onClick={() => void load()} />
+        </>
+      }
+      contentClassName="space-y-4"
+    >
       {settings && (
         <section className="card p-4 flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -175,6 +179,6 @@ export default function PlatformPlacement() {
           </ul>
         </section>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

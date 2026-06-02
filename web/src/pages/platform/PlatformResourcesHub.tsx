@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { HardDrive, Cpu, Layers, Network, Package } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
-import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
+import PlatformPageChrome, { PlatformBackLink, platformStatSubtitle } from '../../components/platform/PlatformPageChrome'
 import PlatformHubLaunchpad from '../../components/platform/tahoe/PlatformHubLaunchpad'
 import { getNetworkSegmentsOverview, getStorageTiersOverview } from '../../api/platform'
 
@@ -22,22 +21,25 @@ export default function PlatformResourcesHub({ embedded }: { embedded?: boolean 
   }, [])
 
   return (
-    <PageLayout hideHeader compact={embedded}>
-      {!embedded && (
-        <PlatformTahoeHero
-          compact
-          eyebrow="Platform"
-          title="Resources"
-          subtitle="Storage, networks, images, and templates — macOS Utility folder for your fleet."
-          icon={HardDrive}
-          stats={[
-            { label: 'Storage tiers', value: poolCount != null ? String(poolCount) : '—', tone: 'sky' },
-            { label: 'Network segments', value: segmentCount != null ? String(segmentCount) : '—', tone: 'violet' },
-          ]}
-        />
-      )}
-
-      <div className="tahoe-content">
+    <PlatformPageChrome
+      compact={embedded}
+      hideHeader={embedded}
+      prepend={embedded ? undefined : <PlatformBackLink to="/platform" label="Platform" />}
+      title={embedded ? undefined : 'Resources'}
+      subtitle={
+        embedded ? undefined : (
+          <span className="flex flex-col gap-1">
+            <span className="text-slate-400">Storage, networks, images, and templates</span>
+            {platformStatSubtitle([
+              { label: 'Storage tiers', value: poolCount != null ? String(poolCount) : '—' },
+              { label: 'Network segments', value: segmentCount != null ? String(segmentCount) : '—' },
+            ])}
+          </span>
+        )
+      }
+      icon={embedded ? undefined : <HardDrive className="w-6 h-6 text-slate-400" />}
+      contentClassName="space-y-4"
+    >
         <PlatformHubLaunchpad
           groups={[
             {
@@ -53,7 +55,6 @@ export default function PlatformResourcesHub({ embedded }: { embedded?: boolean 
             },
           ]}
         />
-      </div>
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

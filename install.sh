@@ -27,10 +27,14 @@ for _pkg_ui in "${INSTALLER_ROOT}/scripts/lib/package-ui.sh" "${INSTALLER_ROOT}/
     fi
 done
 
+# shellcheck source=scripts/lib/disable-firewalld.sh
+source "${INSTALLER_ROOT}/scripts/lib/disable-firewalld.sh"
+
 BIND_HOST=""
 BIND_EXPLICIT=false
 REMOTE_HOST=""
 OPEN_FIREWALL=false
+DISABLE_FIREWALL=false
 NO_TESTS=false
 BUNDLE_INSTALL=false
 MACHINA_PORT=5092
@@ -1108,6 +1112,19 @@ EOF
 
 # ── Firewall ─────────────────────────────────────────────────────────
 
+configure_host_firewall() {
+    if $DISABLE_FIREWALL; then
+        step "Disabling host firewall (firewalld/ufw)"
+        if disable_firewalld "$LOG_FILE"; then
+            ok "Host firewall stopped and disabled"
+        else
+            info "No active firewalld/ufw service — ports should be reachable"
+        fi
+        return
+    fi
+    $OPEN_FIREWALL && open_firewall
+}
+
 open_firewall() {
     step "Configuring firewall"
 
@@ -1319,6 +1336,7 @@ remote_deploy() {
     local remote_args=""
     [ -n "$BIND_HOST" ] && remote_args="--bind $BIND_HOST"
     $OPEN_FIREWALL && remote_args="$remote_args --open-firewall"
+    $DISABLE_FIREWALL && remote_args="$remote_args --disable-firewalld"
 
     # Skip curl/API verification on the hypervisor — run locally if needed.
     ssh "$remote" "cd ~/.deployment/machina && sudo bash install.sh --no-tests $remote_args" || fail "Remote install failed"
@@ -1450,6 +1468,7 @@ MACHINA_BANNER
             --no-start)      no_start=true ;;
             --no-tests)      NO_TESTS=true ;;
             --open-firewall) OPEN_FIREWALL=true ;;
+            --disable-firewalld) DISABLE_FIREWALL=true ;;
             --bind|--remote) prev_arg="$arg" ;;
             --help|-h)
                 cat <<'HELPEOF'
@@ -1471,6 +1490,7 @@ Install options:
                        other machines on the network.
   --open-firewall      Open port 5092 in the active firewall.
                        Supports firewalld, ufw, and iptables.
+  --disable-firewalld  Stop and disable firewalld/ufw (remote lab / E2E hosts).
   --no-start           Build and install but don't start the daemon.
                        Useful when you want to edit the config first.
   --no-tests           Skip post-install HTTPS/API verification (curl checks).
@@ -1601,9 +1621,7 @@ HELPEOF
     fi
     ensure_tls_for_https
 
-    if $OPEN_FIREWALL; then
-        open_firewall
-    fi
+    configure_host_firewall
 
     if $no_start; then
         ok "Installed but not started. Run: sudo systemctl start machina-daemon"

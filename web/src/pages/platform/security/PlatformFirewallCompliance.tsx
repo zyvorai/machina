@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { MacGlassPanel, MacSectionTitle } from '../../../components/platform/mac/PlatformMacUi'
+import { ArrowLeft, CheckCircle2, RefreshCw, Shield } from 'lucide-react'
+import { MacGlassPanel } from '../../../components/platform/mac/PlatformMacUi'
 import PageLayout from '../../../components/PageLayout'
 import {
   getFirewallCompliance,
@@ -85,10 +86,25 @@ export default function PlatformFirewallCompliance() {
   useEffect(() => { void loadPacketwolf() }, [loadPacketwolf])
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Firewall Compliance" subtitle="Production exposure, approvals, Packetwolf anomalies, and GitOps policy sync" />
+    <PageLayout
+      compact
+      error={error}
+      prepend={
+        <Link to="/platform/zeus/security/firewall" className={`text-sm inline-flex items-center gap-1 ${hubLinkClasses()}`}>
+          <ArrowLeft className="w-4 h-4" /> Firewall
+        </Link>
+      }
+      title="Firewall Compliance"
+      subtitle="Production exposure, approvals, Packetwolf anomalies, and GitOps policy sync"
+      icon={<CheckCircle2 className="w-6 h-6 text-slate-400" />}
+      actions={
+        <button type="button" className="btn-secondary" onClick={() => void load()} aria-label="Refresh">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      }
+      contentClassName="space-y-4"
+    >
       <div className="flex flex-wrap gap-3 text-sm">
-        <Link to="/platform/zeus/security/firewall" className={hubLinkClasses()}>← Firewall overview</Link>
         <Link to="/platform/placement" className={hubLinkClasses()}>HA & fence events →</Link>
       </div>
       <MacGlassPanel title="Pending approvals" action={

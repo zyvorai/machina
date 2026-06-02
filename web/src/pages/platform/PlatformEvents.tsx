@@ -4,10 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { AlertTriangle, RefreshCw, ScrollText, Terminal } from 'lucide-react'
 import {
   MacGlassPanel,
-  MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import PageLayout from '../../components/PageLayout'
+import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import { getFleetConsole, listAuditLogs, type AuditLog, type FleetConsoleEntry, type FleetConsoleOverview } from '../../api/platform'
 import { formatUserError } from '../../utils/apiError'
 import { statusBadgeClasses, statusBorderClass } from '../../utils/semanticColors'
@@ -94,21 +93,17 @@ export default function PlatformEvents({ embedded }: { embedded?: boolean } = {}
   }, [fleet, source, query])
 
   return (
-    <PageLayout hideHeader compact={embedded} error={error}>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        {!embedded && (
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Console</p>
-            <MacSectionTitle
-              title="Logs & Audit"
-              subtitle="Unified fleet log tail — audit trail, platform events, and task failures in one stream."
-            />
-          </div>
-        )}
-        <button type="button" className="btn-secondary flex items-center gap-2" onClick={() => void load()}>
-          <RefreshCw className="w-4 h-4" /> Refresh
-        </button>
-      </header>
+    <PlatformPageChrome
+      hideHeader={embedded}
+      compact={embedded}
+      error={error}
+      onErrorRetry={() => void load()}
+      title={embedded ? undefined : 'Logs & Audit'}
+      subtitle={embedded ? undefined : 'Unified fleet log tail — audit trail, platform events, and task failures in one stream.'}
+      icon={embedded ? undefined : <Terminal className="w-6 h-6 text-slate-400" />}
+      actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
 
       {fleet && (
         <>
@@ -178,6 +173,6 @@ export default function PlatformEvents({ embedded }: { embedded?: boolean } = {}
           </div>
         </MacGlassPanel>
       )}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }

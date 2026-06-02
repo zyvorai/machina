@@ -1,5 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { Search, Sparkles } from 'lucide-react'
 import { useAi } from '../../contexts/AiContext'
@@ -16,14 +18,19 @@ export default function PlatformMacDock() {
   const toast = useToastContext()
   const { openCopilot } = useAi()
   const dockItems = usePlatformDockItems()
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const isActive = (path: string) => {
     if (path === '/platform') return location.pathname === '/platform'
     return location.pathname === path || location.pathname.startsWith(`${path}/`)
   }
 
-  return (
-    <footer className="mac-dock hidden lg:flex" role="navigation" aria-label="Platform dock">
+  const dock = (
+    <footer className="mac-dock flex" role="navigation" aria-label="Platform dock">
       <div className="mac-dock-inner mac-dock-inner-scroll">
         {dockItems.map((item) => {
           const Icon = item.icon
@@ -91,4 +98,7 @@ export default function PlatformMacDock() {
       </div>
     </footer>
   )
+
+  if (!mounted) return null
+  return createPortal(dock, document.body)
 }

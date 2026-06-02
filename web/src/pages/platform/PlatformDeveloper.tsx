@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Code2, Package, Terminal } from 'lucide-react'
-import PageLayout from '../../components/PageLayout'
 import PlatformApiConsole from '../../components/platform/PlatformApiConsole'
-import { MacGlassPanel, MacSectionTitle, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
+import DetailTabs from '../../components/platform/DetailTabs'
+import { MacGlassPanel, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
+import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import {
   getDeveloperOverview,
   getTerraformSchema,
@@ -37,25 +38,24 @@ export default function PlatformDeveloper() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <PageLayout hideHeader error={error}>
-      <MacSectionTitle title="Developer" subtitle="TypeScript SDK, OpenAPI console, and Terraform schemas." />
-      <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
-        {([
-          ['sdk', 'SDK & Terraform', Package],
-          ['console', 'API Console', Terminal],
-        ] as const).map(([id, label, Icon]) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setTab(id)}
-            className={`px-4 py-2 text-sm rounded-t-lg flex items-center gap-2 transition ${
-              tab === id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Icon className="w-4 h-4" /> {label}
-          </button>
-        ))}
-      </div>
+    <PlatformPageChrome
+      error={error}
+      onErrorRetry={() => void load()}
+      prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
+      title="Developer"
+      subtitle="TypeScript SDK, OpenAPI console, and Terraform schemas."
+      icon={<Code2 className="w-6 h-6 text-slate-400" />}
+      actions={<PlatformRefreshButton onClick={() => void load()} />}
+      contentClassName="space-y-4"
+    >
+      <DetailTabs
+        primary={[
+          { id: 'sdk', label: 'SDK & Terraform' },
+          { id: 'console', label: 'API Console' },
+        ]}
+        active={tab}
+        onChange={setTab}
+      />
       {tab === 'console' ? (
         <PlatformApiConsole />
       ) : overview ? (
@@ -111,6 +111,6 @@ export default function PlatformDeveloper() {
           </MacGlassPanel>
         </>
       ) : null}
-    </PageLayout>
+    </PlatformPageChrome>
   )
 }
