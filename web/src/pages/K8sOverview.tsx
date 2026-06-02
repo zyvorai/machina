@@ -9,6 +9,7 @@ import CollapsibleCodeBlock from '../components/CollapsibleCodeBlock'
 import JsonInspector, { asArray, asRecord } from '../components/platform/JsonInspector'
 import { AlertTriangle, CheckCircle2, Download, LayoutGrid, Loader2, Puzzle, RefreshCw, ShieldAlert, Server, Package,
 } from 'lucide-react'
+import PageLayout from '../components/PageLayout'
 import K8sConnectionErrorBanner from '../components/K8sConnectionErrorBanner'
 import EmptyState from '../components/EmptyState'
 import { summarizeK8sClientError } from '../utils/k8sErrors'
@@ -537,20 +538,13 @@ export default function K8sOverviewPage() {
     return [...base, ...tail]
   }, [overview])
 
-  if (loading) {
-    return <div className="flex items-center justify-center h-36"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
-  }
-
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Server className={`w-6 h-6 ${statusToneClass('info')}`} /> Kubernetes Cluster</h1>
-          <p className="text-sm text-slate-400 mt-0.5">
-            Auto-detects distro (k3s, RKE2, cloud, kind, …), host agents, and expands resource counts. Safe kubectl node actions below.
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
+    <PageLayout
+      title="Kubernetes Cluster"
+      subtitle="Auto-detects distro (k3s, RKE2, cloud, kind, …), host agents, and expands resource counts. Safe kubectl node actions below."
+      icon={<Server className={`w-6 h-6 ${statusToneClass('info')}`} />}
+      actions={
+        <>
           {fleetMode && (
             <>
               <Link to="/platform" className="px-3 py-2 rounded-lg text-xs font-medium border border-orange-500/40 text-orange-200 hover:bg-orange-500/10 inline-flex items-center gap-1.5">
@@ -584,9 +578,10 @@ export default function K8sOverviewPage() {
           <button onClick={() => void load(true)} className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Refresh">
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
-        </div>
-      </div>
-
+        </>
+      }
+      contentLoading={loading}
+    >
       {loadError && (
         <div className="sticky top-2 z-30">
           <K8sConnectionErrorBanner
@@ -1615,6 +1610,6 @@ export default function K8sOverviewPage() {
           <code className={`text-xs break-all ${statusToneClass('ok')}`}>{lastCommand}</code>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

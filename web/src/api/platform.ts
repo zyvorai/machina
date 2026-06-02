@@ -158,6 +158,9 @@ export interface PlatformVm {
   ha_enabled?: boolean
   project?: string | null
   tags?: string[]
+  inventory_source?: string
+  k8s_namespace?: string | null
+  last_seen_at?: string | null
 }
 
 export interface PlatformTask {
@@ -207,6 +210,7 @@ export const listPlatformVms = (params?: {
   managed?: boolean
   tag?: string
   folder?: string
+  source?: string
 }) => {
   const q = new URLSearchParams()
   if (params?.project) q.set('project', params.project)
@@ -214,6 +218,7 @@ export const listPlatformVms = (params?: {
   if (params?.managed !== undefined) q.set('managed', String(params.managed))
   if (params?.tag) q.set('tag', params.tag)
   if (params?.folder) q.set('folder', params.folder)
+  if (params?.source) q.set('source', params.source)
   const qs = q.toString()
   return platformFetch<PlatformVm[]>(`/api/v1/vms${qs ? `?${qs}` : ''}`)
 }

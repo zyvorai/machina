@@ -6,12 +6,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Cloud, Server, HardDrive, Plus, GitBranch, Upload, Download, ArrowRight, Globe, Camera } from 'lucide-react'
 import Hero from '../components/Hero'
+import PageLayout from '../components/PageLayout'
 import OpenStackSetupPanel from '../components/OpenStackSetupPanel'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackStatusBar from '../components/OpenStackStatusBar'
 import OpenStackUnreachablePanel from '../components/OpenStackUnreachablePanel'
 import OpenStackFooter from '../components/OpenStackFooter'
-import ErrorBanner from '../components/ErrorBanner'
 import { usePlatformInfo } from '../contexts/PlatformInfoContext'
 import { useOpenStackConnection } from '../hooks/useOpenStackConnection'
 import { listOpenStackImages, listOpenStackInstances } from '../api/openstack'
@@ -126,7 +126,16 @@ function OpenStackLiveOverview() {
   }, [probeApis])
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout
+      hideHeader
+      error={probeError}
+      errorTitle="OpenStack API errors"
+      errorHints={probeError ? openStackErrorHints(probeError) : undefined}
+      technicalDetail={probeError}
+      errorTone="red"
+      onErrorRetry={() => void probeApis()}
+      onErrorDismiss={() => setProbeError(null)}
+    >
       <Hero
         title="OpenStack"
         subtitle={`Cloud ${cloudName || '—'} · Nova instances & Glance images without Horizon.`}
@@ -144,17 +153,6 @@ function OpenStackLiveOverview() {
       <OpenStackSubNav />
       <OpenStackStatusBar />
 
-      {probeError && (
-        <ErrorBanner
-          title="OpenStack API errors"
-          headline={probeError}
-          hints={openStackErrorHints(probeError)}
-          technicalDetail={probeError}
-          tone="red"
-          onRetry={() => void probeApis()}
-          onDismiss={() => setProbeError(null)}
-        />
-      )}
       {probing && !probeError && (
         <p className="text-xs text-slate-500">Checking Nova/Glance APIs…</p>
       )}
@@ -199,7 +197,7 @@ function OpenStackLiveOverview() {
       </section>
 
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }
 
@@ -208,15 +206,22 @@ export default function OpenStackOverviewPage() {
 
   if (configured && loading) {
     return (
-      <div className="flex items-center justify-center h-40">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500" />
-      </div>
+      <PageLayout hideHeader>
+        <Hero
+          title="OpenStack"
+          subtitle="Nova & Glance on this hypervisor — wire Keystone once, manage from Machina."
+          icon={<Cloud className="w-6 h-6" />}
+        />
+        <div className="flex items-center justify-center h-40">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-sky-500" />
+        </div>
+      </PageLayout>
     )
   }
 
   if (phase === 'off' || phase === 'needsWire') {
     return (
-      <div className="space-y-6 animate-fade-in">
+      <PageLayout hideHeader>
         <Hero
           title="OpenStack"
           subtitle="Nova & Glance on this hypervisor — wire Keystone once, manage from Machina."
@@ -225,13 +230,13 @@ export default function OpenStackOverviewPage() {
         <OpenStackSubNav />
         <OpenStackStatusBar />
         <OpenStackSetupPanel />
-      </div>
+      </PageLayout>
     )
   }
 
   if (phase === 'unreachable') {
     return (
-      <div className="space-y-6 animate-fade-in">
+      <PageLayout hideHeader>
         <Hero
           title="OpenStack"
           subtitle={`Cloud ${cloudName || '—'} is configured but Keystone/API is not reachable.`}
@@ -240,7 +245,7 @@ export default function OpenStackOverviewPage() {
         <OpenStackSubNav />
         <OpenStackStatusBar />
         <OpenStackUnreachablePanel />
-      </div>
+      </PageLayout>
     )
   }
 

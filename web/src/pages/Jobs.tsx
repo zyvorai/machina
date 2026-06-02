@@ -17,7 +17,7 @@ import {
 } from '../utils/buildProgress'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
-import ErrorBanner from '../components/ErrorBanner'
+import PageLayout from '../components/PageLayout'
 import { jobStatusTone, statusSurfaceClasses, statusToneClass } from '../utils/semanticColors'
 
 function statusBadge(status: string) {
@@ -101,42 +101,40 @@ export default function JobsPage() {
   }, [selectedId, detail?.status, refreshDetail])
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 animate-fade-in px-4">
-      <div className="flex items-center gap-4 flex-wrap">
-        <Link to="/" className="p-2 hover:bg-slate-700 rounded transition" aria-label="Dashboard">
-          <ChevronLeft className="w-5 h-5" />
-        </Link>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Activity className={`w-7 h-7 ${statusToneClass('warn')}`} aria-hidden />
-          Jobs
-        </h1>
-        <button
-          type="button"
-          onClick={() => {
-            refreshList()
-            refreshDetail()
-          }}
-          className="btn-secondary text-sm inline-flex items-center gap-1.5"
-        >
-          <RefreshCw className="w-4 h-4" aria-hidden />
-          Refresh
-        </button>
-        <p className="text-sm text-slate-400 w-full md:w-auto">
+    <PageLayout
+      className="mx-auto max-w-6xl px-4"
+      title="Jobs"
+      icon={<Activity className={`w-7 h-7 ${statusToneClass('warn')}`} />}
+      subtitle={
+        <>
           Monitor <strong className="text-slate-300">virt-image-build</strong>,{' '}
           <strong className="text-slate-300">Golden Forge</strong> (Packer qcow2), and{' '}
           <strong className="text-slate-300">Create VM</strong> progress after you navigate away. Logs update automatically while a job is running.
-        </p>
-      </div>
-
-      {loadError && (
-        <ErrorBanner
-          title="Could not load jobs"
-          headline={loadError}
-          hints={['Confirm machina-daemon is running.', 'Jobs require a valid session with operator or admin role.']}
-          onRetry={() => void refreshList()}
-        />
-      )}
-
+        </>
+      }
+      actions={
+        <>
+          <Link to="/" className="p-2 hover:bg-slate-700 rounded transition" aria-label="Dashboard" title="Back to dashboard">
+            <ChevronLeft className="w-5 h-5" />
+          </Link>
+          <button
+            type="button"
+            onClick={() => {
+              refreshList()
+              refreshDetail()
+            }}
+            className="btn-secondary text-sm inline-flex items-center gap-1.5"
+          >
+            <RefreshCw className="w-4 h-4" aria-hidden />
+            Refresh
+          </button>
+        </>
+      }
+      error={loadError}
+      errorTitle="Could not load jobs"
+      errorHints={['Confirm machina-daemon is running.', 'Jobs require a valid session with operator or admin role.']}
+      onErrorRetry={() => void refreshList()}
+    >
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card p-4">
           <h2 className="text-lg font-semibold text-[var(--text-primary)] mb-3">Recent jobs</h2>
@@ -215,6 +213,6 @@ export default function JobsPage() {
           )}
         </div>
       </div>
-    </div>
+    </PageLayout>
   )
 }

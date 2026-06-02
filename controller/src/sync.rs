@@ -24,6 +24,9 @@ pub fn spawn_periodic(state: AppState) {
                 if let Err(e) = sync_all_hosts(&state).await {
                     tracing::warn!("periodic host sync: {e:#}");
                 }
+                if let Err(e) = sync_kubevirt_inventory(&state).await {
+                    tracing::warn!("periodic kubevirt inventory: {e:#}");
+                }
                 tokio::time::sleep(Duration::from_secs(interval_secs as u64)).await;
             } else {
                 tokio::time::sleep(Duration::from_secs(30)).await;
@@ -48,5 +51,24 @@ async fn sync_all_hosts(state: &AppState) -> anyhow::Result<()> {
         )
         .await;
     }
+    Ok(())
+}
+
+async fn sync_kubevirt_inventory(state: &AppState) -> anyhow::Result<()> {
+    let cluster_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
+        .fetch_optional(&state.pool)
+        .await?;
+    let Some(cluster_id) = cluster_id else {
+        return Ok(());
+    };
+    let _ = enqueue_task(
+        state,
+        "kubevirt.inventory",
+        serde_json::json!({ "cluster_id": cluster_id.to_string() }),
+        Some("cluster"),
+        Some(cluster_id),
+        None,
+    )
+    .await;
     Ok(())
 }

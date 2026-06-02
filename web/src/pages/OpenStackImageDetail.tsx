@@ -7,6 +7,7 @@ import { getOpenStackImage, type OpenStackImage } from '../api/openstack'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import OpenStackImageSharingModal from '../components/OpenStackImageSharingModal'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
@@ -66,8 +67,11 @@ function OpenStackImageDetailContent() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <OpenStackSubNav />
+    <PageLayout
+      hideHeader
+      className="max-w-3xl"
+      prepend={<><OpenStackSubNav /></>}
+    >
       <Link to="/openstack/images" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm">
         <ArrowLeft className="w-4 h-4" /> Glance images
       </Link>
@@ -89,6 +93,6 @@ function OpenStackImageDetailContent() {
       </button>
       <OpenStackImageSharingModal image={shareOpen ? image : null} onClose={() => setShareOpen(false)} />
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

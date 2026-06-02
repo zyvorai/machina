@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { RefreshCw, Server, Wrench } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
 import FinderView, { type FinderViewMode } from '../../components/platform/mac/FinderView'
@@ -194,7 +194,7 @@ export default function PlatformHosts() {
   )
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <PlatformTahoeHero
         title={filterOffline ? 'Offline hosts' : 'Hosts'}
         subtitle="Hypervisors enrolled in this fleet — sync, validate, and open host detail."
@@ -207,8 +207,6 @@ export default function PlatformHosts() {
       />
 
       <div className="tahoe-content space-y-4">
-      {error && <ErrorBanner message={error} />}
-
       <FinderView
         title="Hosts"
         search={search}
@@ -236,6 +234,6 @@ export default function PlatformHosts() {
         }
       />
       </div>
-    </div>
+    </PageLayout>
   )
 }

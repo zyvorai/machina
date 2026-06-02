@@ -30,6 +30,8 @@
 | [KubeVirt Migration](kubevirt-migration.md) | Optional Kubernetes integration guide |
 | [Guacamole Integration](guacamole-integration.md) | HTML5 gateway integration (optional) |
 | [OIDC & local Linux user](oidc-effective-linux-user.md) | Session vs NSS mapping, defaults, run-as-user boundary |
+| [UX wiring & QA](ux.md) | Cross-shell UX, login variants, manual QA matrix, E2E pointers |
+| [Operator runbook](runbook.md) | Health, backup, remote access, web login troubleshooting |
 
 ---
 

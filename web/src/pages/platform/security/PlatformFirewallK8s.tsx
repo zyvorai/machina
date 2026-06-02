@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { CheckCircle2, XCircle } from 'lucide-react'
 import { MacGlassPanel, MacSectionTitle, MacSheet } from '../../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../../components/ErrorBanner'
+import PageLayout from '../../../components/PageLayout'
 import CopyButton from '../../../components/CopyButton'
 import { getK8sFirewallStatus, planK8sFirewall, applyK8sFirewall } from '../../../api/zeusFirewall'
 import { formatUserError } from '../../../utils/apiError'
@@ -31,10 +31,9 @@ export default function PlatformFirewallK8s() {
   }, [])
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Kubernetes Firewall" subtitle="NetworkPolicy and Cilium from Zeus profiles" />
       <Link to="/platform/zeus/security/firewall" className={`text-sm ${hubLinkClasses()}`}>← Firewall overview</Link>
-      {error && <ErrorBanner message={error} />}
       <MacGlassPanel title="Cluster">
         <div className="flex items-center gap-3">
           {ready ? (
@@ -89,6 +88,6 @@ export default function PlatformFirewallK8s() {
           <p className="text-sm text-slate-500">No manifests generated — choose a namespace and profile, then Preview manifests.</p>
         )}
       </MacSheet>
-    </div>
+    </PageLayout>
   )
 }

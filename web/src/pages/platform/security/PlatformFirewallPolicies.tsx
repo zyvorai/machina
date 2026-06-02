@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import ErrorBanner from '../../../components/ErrorBanner'
+import PageLayout from '../../../components/PageLayout'
 import { MacGlassPanel, MacListRow, MacSectionTitle, MacSheet } from '../../../components/platform/mac/PlatformMacUi'
 import {
   createFirewallPolicy,
@@ -74,10 +74,9 @@ export default function PlatformFirewallPolicies() {
   }
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Policy Studio" subtitle="Create, simulate, and manage Zeus firewall policies." />
       <Link to="/platform/zeus/security/firewall" className={`text-sm ${hubLinkClasses()}`}>← Firewall overview</Link>
-      {error && <ErrorBanner message={error} />}
       <MacGlassPanel title="New policy">
         <div className="grid gap-3 max-w-lg">
           <input className="input text-sm" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
@@ -116,6 +115,6 @@ export default function PlatformFirewallPolicies() {
       <MacSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Simulation result" wide>
         {simResult ? <JsonInspector data={simResult} /> : <p className="text-sm text-slate-500">—</p>}
       </MacSheet>
-    </div>
+    </PageLayout>
   )
 }

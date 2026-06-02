@@ -54,10 +54,10 @@ export default function MissionControlOverlay() {
     setError(null)
     try {
       const [h, v, t, c, m, n, cost, cap, comp, sre, zeus] = await Promise.all([
-        listPlatformHosts(),
-        listPlatformVms(),
-        listPlatformTasks(),
-        getClusterSummary(),
+        listPlatformHosts().catch(() => []),
+        listPlatformVms().catch(() => []),
+        listPlatformTasks().catch(() => []),
+        getClusterSummary().catch(() => null),
         getFleetMission().catch(() => null),
         listNotifications(true).catch(() => []),
         getAiCost().catch(() => null),

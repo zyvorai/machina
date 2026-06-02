@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../../components/platform/mac/PlatformMacUi'
 import PlatformFilterPills from '../../../components/platform/PlatformFilterPills'
-import ErrorBanner from '../../../components/ErrorBanner'
+import PageLayout from '../../../components/PageLayout'
 import { explainFirewall, getFirewallOverview, getFirewallPorts, type OpenPort } from '../../../api/zeusFirewall'
 import { formatUserError } from '../../../utils/apiError'
 import { hubLinkClasses, riskTone, statusBadgeClasses } from '../../../utils/semanticColors'
@@ -45,10 +45,9 @@ export default function PlatformFirewallPorts() {
   })
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Open Ports" subtitle="Listening services across the fleet" />
       <Link to="/platform/zeus/security/firewall" className={`text-sm ${hubLinkClasses()}`}>← Firewall overview</Link>
-      {error && <ErrorBanner message={error} />}
       {explain && (
         <MacGlassPanel title="Zeus insight" subtitle="Exposure recommendation">
           <p className="text-sm text-slate-300">{explain}</p>
@@ -84,6 +83,6 @@ export default function PlatformFirewallPorts() {
           </div>
         )}
       </MacGlassPanel>
-    </div>
+    </PageLayout>
   )
 }

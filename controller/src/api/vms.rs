@@ -33,6 +33,9 @@ pub struct VmRow {
     pub ha_enabled: bool,
     pub project: Option<String>,
     pub tags: Vec<String>,
+    pub inventory_source: String,
+    pub k8s_namespace: Option<String>,
+    pub last_seen_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -47,6 +50,8 @@ pub struct VmListQuery {
     pub tag: Option<String>,
     #[serde(default)]
     pub folder: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 pub async fn list_vms(
@@ -59,18 +64,22 @@ pub async fn list_vms(
                 COALESCE(v.last_error, '') AS last_error,
                 COALESCE(v.managed, TRUE) AS managed,
                 v.uuid, v.vcpus, v.memory_mib,
-                COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '{}') AS tags
+                COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '{}') AS tags,
+                COALESCE(v.inventory_source, 'libvirt') AS inventory_source,
+                v.k8s_namespace, v.last_seen_at
          FROM vms v LEFT JOIN ha_policies hp ON hp.vm_id = v.id
          LEFT JOIN vm_metrics m ON m.vm_id = v.id
          WHERE ($1::text IS NULL OR v.project = $1)
            AND ($2::uuid IS NULL OR v.host_id = $2)
            AND ($3::bool IS NULL OR v.managed = $3)
            AND ($4::text IS NULL OR $4 = ANY(v.tags))
+           AND ($6::text IS NULL OR v.inventory_source = $6)
            AND (
              $5::text IS NULL
              OR ($5 = 'running' AND v.observed_state = 'running')
-             OR ($5 = 'stopped' AND v.observed_state != 'running')
+             OR ($5 = 'stopped' AND v.observed_state NOT IN ('running', 'missing'))
              OR ($5 = 'discovered' AND v.managed = FALSE)
+             OR ($5 = 'missing' AND v.observed_state = 'missing')
              OR ($5 = 'untagged' AND (v.tags IS NULL OR v.tags = '{}'))
              OR ($5 = 'high_cpu' AND m.cpu_percent > 85)
              OR ($5 = 'unprotected' AND NOT EXISTS (
@@ -88,6 +97,7 @@ pub async fn list_vms(
     .bind(q.managed)
     .bind(q.tag.as_deref())
     .bind(q.folder.as_deref())
+    .bind(q.source.as_deref())
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(rows))
@@ -103,7 +113,9 @@ pub async fn get_vm(
                 COALESCE(v.last_error, '') AS last_error,
                 COALESCE(v.managed, TRUE) AS managed,
                 v.uuid, v.vcpus, v.memory_mib,
-                COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '{}') AS tags
+                COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '{}') AS tags,
+                COALESCE(v.inventory_source, 'libvirt') AS inventory_source,
+                v.k8s_namespace, v.last_seen_at
          FROM vms v LEFT JOIN ha_policies hp ON hp.vm_id = v.id
          WHERE v.id = $1",
     )
@@ -455,10 +467,25 @@ async fn power_action(
     action: &str,
     operation: &str,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
-        .bind(vm_id)
-        .fetch_one(&state.pool)
-        .await?;
+    let meta: (Option<Uuid>, String, String) = sqlx::query_as(
+        "SELECT host_id, COALESCE(inventory_source, 'libvirt'), observed_state FROM vms WHERE id = $1",
+    )
+    .bind(vm_id)
+    .fetch_one(&state.pool)
+    .await?;
+    if meta.1 == "kubevirt" {
+        return Err(ApiError::bad_request(
+            "Power actions apply to libvirt VMs only — use Kubernetes / KubeVirt tools for cluster guests",
+        ));
+    }
+    if meta.2 == "missing" {
+        return Err(ApiError::bad_request(
+            "VM is missing from hypervisor inventory — sync hosts or remove the stale record",
+        ));
+    }
+    let host_id = meta
+        .0
+        .ok_or_else(|| ApiError::bad_request("VM has no host assigned"))?;
 
     let task_id = enqueue_task(
         state,
@@ -469,7 +496,7 @@ async fn power_action(
         }),
         Some("vm"),
         Some(vm_id),
-        host_id,
+        Some(host_id),
     )
     .await?;
 
@@ -659,10 +686,35 @@ pub async fn adopt_vm(
     if managed {
         return Err(ApiError::bad_request("VM is already managed"));
     }
-    sqlx::query(
-        "UPDATE vms SET managed = TRUE, desired_state = $1, updated_at = NOW() WHERE id = $2",
+    let source: String = sqlx::query_scalar(
+        "SELECT COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
     )
-    .bind(if observed == "running" { "running" } else { "stopped" })
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    let desired = if source == "kubevirt" {
+        if observed == "running" {
+            "running"
+        } else if observed == "stopped" {
+            "stopped"
+        } else {
+            "unknown"
+        }
+    } else if observed == "running" {
+        "running"
+    } else {
+        "stopped"
+    };
+    let lifecycle = match desired {
+        "running" => crate::engine::vm_lifecycle::PHASE_RUNNING,
+        "stopped" => crate::engine::vm_lifecycle::PHASE_STOPPED,
+        _ => crate::engine::vm_lifecycle::PHASE_IDLE,
+    };
+    sqlx::query(
+        "UPDATE vms SET managed = TRUE, desired_state = $1, lifecycle_phase = $2, last_error = '', updated_at = NOW() WHERE id = $3",
+    )
+    .bind(desired)
+    .bind(lifecycle)
     .bind(id)
     .execute(&state.pool)
     .await?;
@@ -677,6 +729,33 @@ pub async fn adopt_vm(
     .await?;
     state.emit_event("vm.adopt", format!("VM {id} adopted into platform inventory"));
     get_vm(State(state), Path(id)).await
+}
+
+#[derive(Debug, Serialize)]
+pub struct PruneMissingResponse {
+    pub deleted: u64,
+}
+
+pub async fn prune_missing_vms(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+) -> Result<Json<PruneMissingResponse>, ApiError> {
+    if actor.role != "admin" {
+        return Err(ApiError::bad_request("admin role required"));
+    }
+    let result = sqlx::query(
+        "DELETE FROM vms WHERE observed_state = 'missing' RETURNING id",
+    )
+    .execute(&state.pool)
+    .await?;
+    let deleted = result.rows_affected();
+    if deleted > 0 {
+        state.emit_event(
+            "vm.pruned",
+            format!("Pruned {deleted} missing VM record(s) from inventory"),
+        );
+    }
+    Ok(Json(PruneMissingResponse { deleted }))
 }
 
 #[derive(Debug, Deserialize)]

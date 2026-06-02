@@ -8,6 +8,8 @@ import { listPools, listVolumes, startPool, stopPool, refreshPool, deleteVolume,
 import { getPoolXml, resizeVolume, cloneVolume } from '../api/advanced'
 import { useToastContext } from '../contexts/ToastContext'
 import ConfirmDialog from '../components/ConfirmDialog'
+import PageLayout from '../components/PageLayout'
+import EmptyState from '../components/EmptyState'
 import { formatUserError } from '../utils/apiError'
 import { poolStateBadgeClasses, statusActionLinkClasses, statusBgClass, statusToneClass, utilizationTone } from '../utils/semanticColors'
 import {
@@ -107,44 +109,55 @@ export default function StoragePoolDetail() {
     toast.success('XML downloaded')
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
-  if (!pool) return <div className="text-center text-slate-500 py-12">Storage pool not found</div>
+  if (!loading && !pool) {
+    return (
+      <EmptyState
+        title="Storage pool not found"
+        description={poolName ? `No pool named '${poolName}' on this host.` : 'Pool name missing from URL.'}
+        primaryAction={
+          <Link to="/storage" className="btn-primary text-sm inline-flex items-center gap-2">
+            <ArrowLeft className="w-4 h-4" /> Back to Storage
+          </Link>
+        }
+      />
+    )
+  }
 
-  const usagePct = pool.capacity_gb > 0 ? (pool.allocation_gb / pool.capacity_gb * 100) : 0
+  const usagePct = pool && pool.capacity_gb > 0 ? (pool.allocation_gb / pool.capacity_gb * 100) : 0
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link to="/storage" className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Back to Storage"><ArrowLeft className="w-5 h-5" /></Link>
-        <div className="flex-1">
-          <div className="flex items-center gap-3">
-            <HardDrive className="w-6 h-6 text-cyan-500" />
-            <h1 className="text-2xl font-bold">{pool.name}</h1>
+    <PageLayout
+      title={pool?.name ?? poolName ?? 'Storage pool'}
+      subtitle={pool ? <span className="font-mono">{pool.uuid}</span> : undefined}
+      icon={<HardDrive className="w-6 h-6 text-cyan-500" />}
+      actions={
+        pool ? (
+          <>
+            <Link to="/storage" className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Back to Storage"><ArrowLeft className="w-5 h-5" /></Link>
             <span className={`px-2 py-0.5 rounded text-xs font-medium ${poolStateBadgeClasses(pool.state)}`}>{pool.state}</span>
-          </div>
-          <div className="flex items-center gap-2 mt-1 text-sm text-slate-500">
-            <span className="font-mono">{pool.uuid}</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {pool.state !== 'running' && (
-            <button onClick={() => poolAction(startPool, 'Start pool')} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded-lg text-sm transition flex items-center gap-1"><Play className="w-4 h-4" /> Start</button>
-          )}
-          {pool.state === 'running' && (
-            <>
-              <button onClick={() => poolAction(refreshPool, 'Refresh pool')} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition flex items-center gap-1"><RefreshCw className="w-4 h-4" /> Refresh</button>
-              <button onClick={() => poolAction(stopPool, 'Stop pool')} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm transition flex items-center gap-1"><Square className="w-4 h-4" /> Stop</button>
-            </>
-          )}
-          <button onClick={toggleAutostart} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition flex items-center gap-1">
-            {pool.autostart ? <ToggleRight className={`w-4 h-4 ${statusToneClass('ok')}`} /> : <ToggleLeft className="w-4 h-4 text-slate-500" />}
-            Autostart
-          </button>
-          <button onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Reload"><RefreshCw className="w-4 h-4" /></button>
-        </div>
-      </div>
-
+            {pool.state !== 'running' && (
+              <button onClick={() => poolAction(startPool, 'Start pool')} className="px-3 py-1.5 bg-green-600 hover:bg-green-700 rounded-lg text-sm transition flex items-center gap-1"><Play className="w-4 h-4" /> Start</button>
+            )}
+            {pool.state === 'running' && (
+              <>
+                <button onClick={() => poolAction(refreshPool, 'Refresh pool')} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition flex items-center gap-1"><RefreshCw className="w-4 h-4" /> Refresh</button>
+                <button onClick={() => poolAction(stopPool, 'Stop pool')} className="px-3 py-1.5 bg-red-600 hover:bg-red-700 rounded-lg text-sm transition flex items-center gap-1"><Square className="w-4 h-4" /> Stop</button>
+              </>
+            )}
+            <button onClick={toggleAutostart} className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm transition flex items-center gap-1">
+              {pool.autostart ? <ToggleRight className={`w-4 h-4 ${statusToneClass('ok')}`} /> : <ToggleLeft className="w-4 h-4 text-slate-500" />}
+              Autostart
+            </button>
+            <button onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Reload"><RefreshCw className="w-4 h-4" /></button>
+          </>
+        ) : (
+          <Link to="/storage" className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Back to Storage"><ArrowLeft className="w-5 h-5" /></Link>
+        )
+      }
+      contentLoading={loading}
+    >
+      {pool && (
+      <>
       {/* Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-slate-800/50 rounded-xl p-5 border border-slate-700/50 text-center">
@@ -317,6 +330,8 @@ export default function StoragePoolDetail() {
           </div>
         </div>
       )}
-    </div>
+      </>
+      )}
+    </PageLayout>
   )
 }

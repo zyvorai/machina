@@ -6,6 +6,7 @@ import { ArrowLeft, Loader2, Plus, Scale, Trash2 } from 'lucide-react'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import PageSkeleton from '../components/PageSkeleton'
 import {
   createOpenStackLbHealthMonitor,
@@ -116,8 +117,11 @@ function OpenStackLoadBalancerDetailContent() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <OpenStackSubNav />
+    <PageLayout
+      hideHeader
+      className="max-w-4xl"
+      prepend={<><OpenStackSubNav /></>}
+    >
       <Link to="/openstack/load-balancers" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm">
         <ArrowLeft className="w-4 h-4" /> Load balancers
       </Link>
@@ -306,6 +310,6 @@ function OpenStackLoadBalancerDetailContent() {
         <Trash2 className="w-4 h-4" /> Delete load balancer
       </button>
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

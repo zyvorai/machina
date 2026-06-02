@@ -6,6 +6,7 @@ import { ArrowLeft, Layers, Loader2, Save, Trash2 } from 'lucide-react'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import {
   deleteOpenStackHeatStack,
   getOpenStackHeatStack,
@@ -106,8 +107,11 @@ function OpenStackHeatDetailContent() {
   ]
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <OpenStackSubNav />
+    <PageLayout
+      hideHeader
+      className="max-w-4xl"
+      prepend={<><OpenStackSubNav /></>}
+    >
       <Link to="/openstack/heat" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm">
         <ArrowLeft className="w-4 h-4" /> Heat stacks
       </Link>
@@ -240,6 +244,6 @@ function OpenStackHeatDetailContent() {
         <Trash2 className="w-4 h-4" /> Delete stack
       </button>
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

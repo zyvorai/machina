@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Webhook, Plus } from 'lucide-react'
 import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import {
   createWebhook,
   deleteWebhook,
@@ -43,9 +43,8 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className={embedded ? 'space-y-4' : 'space-y-6'}>
+    <PageLayout hideHeader compact={embedded} error={error}>
       {!embedded && <MacSectionTitle title="Webhooks" subtitle="Event notifications" />}
-      {error && <ErrorBanner message={error} />}
       <div className="card p-4 flex gap-3">
         <input className="input flex-1" value={url} onChange={(e) => setUrl(e.target.value)} />
         <button type="button" className="btn-primary flex items-center gap-2" onClick={async () => {
@@ -91,6 +90,6 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
           {deliveries.length === 0 && <li className="text-slate-500">No deliveries yet.</li>}
         </ul>
       </section>
-    </div>
+    </PageLayout>
   )
 }

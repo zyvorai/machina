@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { LifeBuoy, Download, RefreshCw } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
 import PlatformAboutHelp from '../../components/platform/PlatformAboutHelp'
 import { getSupportBundle } from '../../api/platform'
@@ -43,7 +44,7 @@ export default function PlatformSupport({ embedded }: { embedded?: boolean } = {
   }
 
   return (
-    <div className={`space-y-6 ${embedded ? 'max-w-none' : 'max-w-3xl'}`}>
+    <PageLayout hideHeader compact={embedded} className={embedded ? 'max-w-none' : 'max-w-3xl'}>
       {!embedded && <MacSectionTitle title="Support Assistant" subtitle="About Zyvor Platform, troubleshooting, and support bundle export." />}
 
       <PlatformAboutHelp />
@@ -73,6 +74,6 @@ export default function PlatformSupport({ embedded }: { embedded?: boolean } = {
           </article>
         ))}
       </section>
-    </div>
+    </PageLayout>
   )
 }

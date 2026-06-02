@@ -8,6 +8,15 @@ pub mod context;
 pub mod intent_router;
 pub mod llm;
 pub mod settings;
+pub mod providers;
+pub mod routing;
+pub mod agents;
+pub mod prompts;
+pub mod memory_store;
+pub mod actions;
+pub mod agent_marketplace;
+pub mod enterprise_zeus;
+pub mod autonomous;
 
 pub use intent_router::{SearchHit, SpotlightIntent, SpotlightResult};
 
@@ -31,8 +40,8 @@ pub async fn copilot_chat(
     let base = build_copilot_base(pool, cfg, message, vm_id, host_id).await?;
     let mut reply = base.reply;
 
-    let system = "You are Machina Copilot, an infrastructure assistant. Be concise. Use bullet points.";
-    if let Ok(Some(llm_text)) = llm::complete(
+    let system = "You are Zeus, an autonomous infrastructure engineer and cloud architect. Be concise. Use bullet points.";
+    if let Ok(Some(llm_text)) = llm::complete_simple(
         pool,
         system,
         &format!("Context: {}\nUser: {}", base.ctx_json, message),
@@ -177,7 +186,7 @@ pub async fn build_copilot_base(
         }
     } else {
         reply.push_str(&format!(
-            "Machina Copilot (advisor mode). Cluster: **{} VMs**, **{} hosts online**, **{} open recommendations**.\n\nAsk about VM health, capacity, cost, security, migrations, or network reachability.",
+            "Zeus (advisor mode). Cluster: **{} VMs**, **{} hosts online**, **{} open recommendations**.\n\nAsk about VM health, capacity, cost, security, migrations, or network reachability.",
             ctx.cluster_vms, ctx.cluster_hosts_online, ctx.recommendations_count
         ));
     }
@@ -236,13 +245,13 @@ pub async fn explain_screen(
         "storage" => "Storage pools are imported from libvirt on online hosts.".into(),
         "templates" => "Templates deploy golden images when disk readiness passes.".into(),
         "tasks" => "Tasks queue orchestration operations with progress and retry.".into(),
-        "vm_doctor" => "Machina Doctor scores VM health 0–100 with actionable fixes.".into(),
+        "vm_doctor" => "Zeus SRE scores VM health 0–100 with actionable fixes.".into(),
         "failed_task" => "Failed tasks include remediation via runbooks and retry.".into(),
         "notification" => "Alerts surface operational issues with Explain and Runbook actions.".into(),
         _ => format!("Screen: {screen}"),
     };
 
-    if let Ok(Some(llm)) = llm::complete(
+    if let Ok(Some(llm)) = llm::complete_simple(
         pool,
         "Explain infrastructure UI screens in plain language for operators.",
         &format!("Screen: {screen}\nRef: {object_ref}\nBase: {base}"),

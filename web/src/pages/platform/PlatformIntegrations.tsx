@@ -3,6 +3,7 @@
 import { Link } from 'react-router'
 import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusToneClass, taskStatusTone, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
 import { ExternalLink, Puzzle, Sparkles, Boxes } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import { LaunchpadAppIcon, MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
 import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
 import { usePlatformInfo } from '../../contexts/PlatformInfoContext'
@@ -20,7 +21,7 @@ export default function PlatformIntegrations({ embedded }: { embedded?: boolean 
   const enabledCount = cards.filter((c) => c.enabled).length
 
   return (
-    <div className={`space-y-6 ${embedded ? '' : 'animate-fade-in max-w-4xl'}`}>
+    <PageLayout hideHeader compact={embedded} className={embedded ? '' : 'max-w-4xl'}>
       {!embedded && (
         <PlatformTahoeHero
           eyebrow="Platform"
@@ -102,6 +103,6 @@ export default function PlatformIntegrations({ embedded }: { embedded?: boolean 
           </p>
         </MacGlassPanel>
       </div>
-    </div>
+    </PageLayout>
   )
 }

@@ -8,7 +8,7 @@
 |-------|--------|
 | Host | `212.8.252.194` |
 | User | `sus` |
-| UI | https://212.8.252.194:5092/ |
+| UI | https://212.8.252.194:5092/ (or `/login` — redirects to `/` after sign-in) |
 | Platform API | http://212.8.252.194:5093/api/v1/health |
 | Remote tree | `~/.deployment/machina` |
 

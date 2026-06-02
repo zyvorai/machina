@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
-import { Settings, Shield, Users, HardDrive, Network, RefreshCw, Key, LifeBuoy, Info, LayoutGrid, Lock, FileBarChart, Terminal, Plug, Workflow } from 'lucide-react'
+import { Settings, Shield, Users, HardDrive, Network, RefreshCw, Key, LifeBuoy, Info, LayoutGrid, Lock, FileBarChart, Terminal, Plug, Workflow, Sparkles } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import PlatformSettings from './PlatformSettings'
+import PlatformAiProviders from './PlatformAiProviders'
+import PlatformZeusSettings from './PlatformZeusSettings'
 import PlatformAppearanceSettings from '../../components/platform/PlatformAppearanceSettings'
 import PlatformUsers from './PlatformUsers'
 import PlatformPolicy from './PlatformPolicy'
@@ -34,6 +37,8 @@ import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusB
 
 type SettingsSection =
   | 'general'
+  | 'zeus'
+  | 'ai-providers'
   | 'security'
   | 'network'
   | 'updates'
@@ -52,6 +57,8 @@ type SettingsSection =
 
 const SETTINGS_SECTIONS: SettingsSection[] = [
   'general',
+  'zeus',
+  'ai-providers',
   'security',
   'network',
   'users',
@@ -83,6 +90,8 @@ function SettingsWorkspaceLink({ to, label }: { to: string; label: string }) {
 
 const SECTIONS: Array<{ id: SettingsSection; label: string; icon: React.ReactNode; fullPath?: string }> = [
   { id: 'general', label: 'General', icon: <Settings className="w-4 h-4" /> },
+  { id: 'zeus', label: 'Zeus', icon: <Sparkles className="w-4 h-4" /> },
+  { id: 'ai-providers', label: 'AI Providers', icon: <Plug className="w-4 h-4" /> },
   { id: 'security', label: 'Security', icon: <Shield className="w-4 h-4" /> },
   { id: 'network', label: 'Network', icon: <Network className="w-4 h-4" /> },
   { id: 'users', label: 'Users & Groups', icon: <Users className="w-4 h-4" />, fullPath: '/platform/users' },
@@ -225,6 +234,7 @@ export default function PlatformSettingsHub() {
   const adminMfaRequired = mfaPolicies.find((p) => p.role_name === 'admin')?.required ?? false
 
   return (
+    <PageLayout hideHeader>
     <MacSettingsPane
       title="Settings"
       sections={SECTIONS.map((s) => ({ id: s.id, label: s.label, icon: s.icon }))}
@@ -243,6 +253,10 @@ export default function PlatformSettingsHub() {
           <FleetSettingsPane kind="general" />
         </div>
       )}
+
+      {section === 'zeus' && <PlatformZeusSettings />}
+
+      {section === 'ai-providers' && <PlatformAiProviders />}
 
       {section === 'security' && (
         <div className="space-y-6">
@@ -592,5 +606,6 @@ export default function PlatformSettingsHub() {
         </div>
       )}
     </MacSettingsPane>
+    </PageLayout>
   )
 }

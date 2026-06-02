@@ -656,3 +656,135 @@ export const setBaremetalPower = (id: string, action: 'on' | 'off' | 'cycle', dr
     `/api/v1/baremetal/servers/${id}/power`,
     { method: 'POST', body: JSON.stringify({ action, dry_run: dryRun }) },
   )
+
+// --- Zeus AI redesign ---
+
+export interface AiProviderRow {
+  id: string
+  name: string
+  kind: string
+  base_url: string
+  org_id: string
+  deployment_name: string
+  api_key_configured: boolean
+  enabled: boolean
+  is_default: boolean
+}
+
+export interface AiModelRow {
+  id: string
+  provider_id: string
+  model_id: string
+  display_name: string
+  context_window: number
+  enabled: boolean
+}
+
+export interface ZeusAgentInfo {
+  id: string
+  name: string
+  description: string
+  task_class: string
+}
+
+export interface ZeusChatResponse {
+  reply: string
+  deterministic: boolean
+  agent_id: string
+  context_summary?: string
+}
+
+export interface AiPromptRow {
+  id: string
+  scope: string
+  title: string
+  body: string
+  tags: string[]
+  agent_id: string
+}
+
+export interface MemorySettings {
+  enabled: boolean
+  team_scope: boolean
+  project_scope: boolean
+  retention_days: number
+}
+
+export interface ZeusActionRow {
+  id: string
+  source: string
+  action_type: string
+  label: string
+  review: string
+  risk: string
+  status: string
+}
+
+export interface AgentPluginRow {
+  slug: string
+  name: string
+  description: string
+  agent_id: string
+  installed: boolean
+}
+
+export const listAiProviders = () => platformFetch<AiProviderRow[]>('/api/v1/ai/providers')
+export const createAiProvider = (body: Record<string, unknown>) =>
+  platformFetch<AiProviderRow>('/api/v1/ai/providers', { method: 'POST', body: JSON.stringify(body) })
+export const patchAiProvider = (id: string, body: Record<string, unknown>) =>
+  platformFetch<AiProviderRow>(`/api/v1/ai/providers/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+export const deleteAiProvider = (id: string) =>
+  platformFetch<{ deleted: boolean }>(`/api/v1/ai/providers/${id}`, { method: 'DELETE' })
+export const testAiProvider = (id: string) =>
+  platformFetch<{ ok: boolean }>(`/api/v1/ai/providers/${id}/test`, { method: 'POST' })
+export const listAiProviderModels = (id: string) =>
+  platformFetch<AiModelRow[]>(`/api/v1/ai/providers/${id}/models`)
+
+export const listZeusAgents = () => platformFetch<ZeusAgentInfo[]>('/api/v1/ai/agents')
+
+export const zeusChat = (body: {
+  message: string
+  agent?: string
+  vm_id?: string
+  host_id?: string
+  page_path?: string
+}) =>
+  platformFetch<ZeusChatResponse>('/api/v1/ai/zeus/chat', { method: 'POST', body: JSON.stringify(body) })
+
+export const listAiPrompts = () => platformFetch<AiPromptRow[]>('/api/v1/ai/prompts')
+export const createAiPrompt = (body: Record<string, unknown>) =>
+  platformFetch<AiPromptRow>('/api/v1/ai/prompts', { method: 'POST', body: JSON.stringify(body) })
+export const deleteAiPrompt = (id: string) =>
+  platformFetch<{ deleted: boolean }>(`/api/v1/ai/prompts/${id}`, { method: 'DELETE' })
+
+export const getMemorySettings = () => platformFetch<MemorySettings>('/api/v1/ai/memory/settings')
+export const patchMemorySettings = (body: Partial<MemorySettings>) =>
+  platformFetch<MemorySettings>('/api/v1/ai/memory/settings', { method: 'PATCH', body: JSON.stringify(body) })
+
+export const getZeusApprovalHub = () =>
+  platformFetch<{ zeus_actions: ZeusActionRow[]; total_pending: number; firewall_pending: number }>(
+    '/api/v1/ai/actions/hub',
+  )
+
+export const executeZeusAction = (id: string) =>
+  platformFetch<{ message?: string }>(`/api/v1/ai/actions/${id}/execute`, { method: 'POST' })
+export const rejectZeusAction = (id: string) =>
+  platformFetch<{ rejected: boolean }>(`/api/v1/ai/actions/${id}/reject`, { method: 'POST' })
+
+export const listAgentMarketplace = () => platformFetch<AgentPluginRow[]>('/api/v1/ai/marketplace/agents')
+export const installAgentMarketplace = (slug: string) =>
+  platformFetch<AgentPluginRow>(`/api/v1/ai/marketplace/agents/${encodeURIComponent(slug)}/install`, { method: 'POST' })
+export const uninstallAgentMarketplace = (slug: string) =>
+  platformFetch<AgentPluginRow>(`/api/v1/ai/marketplace/agents/${encodeURIComponent(slug)}/uninstall`, { method: 'POST' })
+
+export const zeusAutonomousPlan = (goal: string, simulate = true, agent?: string) =>
+  platformFetch<{ goal: string; agent_id: string; steps: Array<{ title: string; detail: string }> }>(
+    '/api/v1/ai/zeus/plan',
+    { method: 'POST', body: JSON.stringify({ goal, simulate, agent }) },
+  )
+
+export const zeusAutonomousExecute = (goal: string, agent?: string) =>
+  platformFetch<{ message: string }>('/api/v1/ai/zeus/execute', {
+    method: 'POST',
+    body: JSON.stringify({ goal, agent }),
+  })

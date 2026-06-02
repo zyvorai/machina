@@ -133,9 +133,9 @@ pub async fn explain_event(
     host_id: Option<&str>,
 ) -> anyhow::Result<serde_json::Value> {
     let mut out = explain_event_heuristic(event, host_id);
-    if let Ok(Some(llm)) = super::llm::complete(
+    if let Ok(Some(llm)) = super::llm::complete_simple(
         pool,
-        "You are a Machina Zeus security analyst. Explain Tetragon/eBPF security events for operators in 2-4 sentences. End with one concrete next step.",
+        "You are Zeus Security. Explain Tetragon/eBPF security events for operators in 2-4 sentences. End with one concrete next step.",
         &format!(
             "Host: {}\nEvent:\n{}",
             host_id.unwrap_or("unknown"),
@@ -198,7 +198,7 @@ pub async fn attack_reconstruct(
             format!("{ts} [{sev}] {summary}")
         })
         .collect();
-    if let Ok(Some(llm)) = super::llm::complete(
+    if let Ok(Some(llm)) = super::llm::complete_simple(
         pool,
         "You are a threat hunter. Given a security timeline, output a numbered attack chain (one step per line, max 8 steps) and a one-sentence summary on the last line prefixed with 'Summary: '.",
         &format!("Timeline events:\n{}", compact.join("\n")),
@@ -265,7 +265,7 @@ pub fn translate_nl_search(query: &str) -> String {
 }
 
 pub async fn translate_nl_search_async(pool: &PgPool, query: &str) -> (String, bool) {
-    if let Ok(Some(llm)) = super::llm::complete(
+    if let Ok(Some(llm)) = super::llm::complete_simple(
         pool,
         "Convert natural-language security hunt questions into concise keyword search terms for eBPF process/network/DNS logs. Reply with keywords only — no punctuation or explanation.",
         query,
@@ -358,9 +358,9 @@ pub async fn hunt_summary(
         .take(8)
         .map(|e| e.get("summary").and_then(|v| v.as_str()).unwrap_or("event").to_string())
         .collect();
-    if let Ok(Some(llm)) = super::llm::complete(
+    if let Ok(Some(llm)) = super::llm::complete_simple(
         pool,
-        "You are a SOC lead summarizing a threat hunt. Write 3-5 sentences: overall posture, top risks, and recommended next steps for a Machina operator.",
+        "You are Zeus Security lead summarizing a threat hunt. Write 3-5 sentences: overall posture, top risks, and recommended next steps for an operator.",
         &format!(
             "Correlations:\n{}\n\nRecent timeline:\n{}",
             corr_lines.join("\n"),

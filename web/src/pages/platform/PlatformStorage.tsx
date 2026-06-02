@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useSearchParams, Link } from 'react-router'
 import { AlertTriangle, Clock, HardDrive, Layers, Loader2, Plus, RefreshCw, Shield } from 'lucide-react'
 import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import { StructuredErrorBanner } from '../../components/StructuredErrorBanner'
 import { storageErrorPresentation } from '../../utils/storageErrorPresentation'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
@@ -180,7 +181,7 @@ export default function PlatformStorage() {
   const totalUsed = rows.reduce((s, p) => s + p.used_gib, 0)
 
   return (
-    <div className="space-y-6 animate-fade-in platform-readable">
+    <PageLayout hideHeader className="platform-readable">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Disk Utility</p>
@@ -542,6 +543,6 @@ export default function PlatformStorage() {
         </div>
       </MacSheet>
       {tab === 'disks' && <FleetSettingsPane kind="storage" />}
-    </div>
+    </PageLayout>
   )
 }

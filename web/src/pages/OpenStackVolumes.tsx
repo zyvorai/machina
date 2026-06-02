@@ -34,6 +34,7 @@ import { listOpenStackImages } from '../api/openstack'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import PageSkeleton from '../components/PageSkeleton'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
@@ -142,8 +143,11 @@ function OpenStackVolumesContent() {
   }
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <OpenStackSubNav />
+    <PageLayout
+      hideHeader
+      className="max-w-4xl"
+      prepend={<><OpenStackSubNav /></>}
+    >
       <h1 className="text-2xl font-semibold flex items-center gap-2">
         <HardDrive className="w-7 h-7 text-sky-400" />
         Cinder volumes
@@ -548,6 +552,6 @@ function OpenStackVolumesContent() {
         </>
       )}
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

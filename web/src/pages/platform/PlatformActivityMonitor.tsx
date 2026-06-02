@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Activity, Server, Terminal } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
 import { getFleetActivity, type FleetActivityOverview } from '../../api/platform'
@@ -46,7 +47,7 @@ export default function PlatformActivityMonitor() {
   const maxVmMem = Math.max(1, ...(data?.top_vms.map((v) => v.memory_used_mib) ?? [1]))
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle
         title="Activity Monitor"
         subtitle="Fleet-wide CPU, memory, and Linux PSI — macOS Activity Monitor for your hypervisors."
@@ -58,7 +59,6 @@ export default function PlatformActivityMonitor() {
         <Link to="/platform/integrations" className={hubLinkClasses()}>Classic tools →</Link>
       </div>
       {data && <p className="text-sm text-slate-400">{data.summary}</p>}
-      {error && <p className={`text-sm ${statusToneClass('error')}`}>{error}</p>}
 
       <div className="flex flex-wrap gap-2">
         {([
@@ -131,6 +131,6 @@ export default function PlatformActivityMonitor() {
           <PlatformEmptyState title="No hosts" subtitle="Enroll hypervisors to monitor fleet activity." />
         )
       )}
-    </div>
+    </PageLayout>
   )
 }

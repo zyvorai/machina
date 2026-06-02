@@ -12,6 +12,7 @@ import OpenStackUnreachablePanel from '../components/OpenStackUnreachablePanel'
 import { useToastContext } from '../contexts/ToastContext'
 import { RefreshCw, Cpu, Info, Cloud } from 'lucide-react'
 import OpenStackSetupPanel from '../components/OpenStackSetupPanel'
+import PageLayout from '../components/PageLayout'
 import { ChoiceCard, ChoiceCardGrid } from '../components/ChoiceCards'
 import SysinfoDisplay from '../components/SysinfoDisplay'
 import { formatUserError } from '../utils/apiError'
@@ -29,6 +30,7 @@ export default function CapabilitiesPage() {
 
   const load = useCallback(async () => {
     try {
+      setLoading(true)
       const [caps, sys, os] = await Promise.all([
         getCapabilities().catch(() => null),
         getSysinfo().catch(() => ''),
@@ -46,7 +48,7 @@ export default function CapabilitiesPage() {
 
   useEffect(() => { load() }, [load])
 
-  if (loading) return <div className="flex items-center justify-center h-32"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
+  if (loading) return <PageLayout title="Capabilities" icon={<Cpu className="w-6 h-6" />} contentLoading />
 
   const tabs = [
     { key: 'capabilities' as const, label: 'Capabilities', icon: <Cpu className="w-4 h-4" /> },
@@ -54,15 +56,16 @@ export default function CapabilitiesPage() {
   ]
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Cpu className="w-6 h-6" /> Capabilities</h1>
-          <p className="text-sm text-slate-400 mt-0.5 max-w-2xl">libvirt-reported guest architectures and host features for this QEMU/KVM worker.</p>
-        </div>
-        <button onClick={load} className="p-2 hover:bg-slate-700 rounded transition shrink-0" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
-      </div>
-
+    <PageLayout
+      title="Capabilities"
+      icon={<Cpu className="w-6 h-6" />}
+      subtitle="libvirt-reported guest architectures and host features for this QEMU/KVM worker."
+      actions={
+        <button onClick={load} className="p-2 hover:bg-slate-700 rounded transition shrink-0" title="Refresh" aria-label="Refresh">
+          <RefreshCw className="w-4 h-4" />
+        </button>
+      }
+    >
       <div>
         <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">View</h2>
         <ChoiceCardGrid>
@@ -156,6 +159,6 @@ export default function CapabilitiesPage() {
           <SysinfoDisplay xml={sysinfo} />
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

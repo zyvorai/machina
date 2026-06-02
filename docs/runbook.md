@@ -46,6 +46,23 @@ Hand off `dist/machina-*-linux-amd64.tar.gz` + `.sha256`.
 
 See [ldap-auth.md](ldap-auth.md). Map AD groups with `admin_group_substrings` / `operator_group_substrings`.
 
+## Web UI login
+
+- **Entry:** `https://HOST:5092/` or `https://HOST:5092/login` (both show the Machina login form when unauthenticated)
+- **After sign-in:** URL should be `/` (dashboard). If you see **404** with breadcrumb `login`, redeploy the web bundle (`./scripts/deploy-remote.sh USER HOST --quick`) — stale builds kept `/login` in the address bar after PAM login
+- **White screen after login:** ensure `AiProvider` is inside `BrowserRouter` in `web/src/App.tsx` (React Router hooks require a router ancestor)
+- **Verify PAM session:**
+
+```bash
+curl -sk -c /tmp/machina.jar -X POST https://127.0.0.1:5092/api/v1/auth/login \
+  -H 'Content-Type: application/json' -d '{"username":"USER","password":"PASS"}'
+curl -sk -b /tmp/machina.jar https://127.0.0.1:5092/api/v1/auth/session | jq
+```
+
+- **Logs:** `sudo journalctl -u machina-daemon -f` — look for `PAM login successful`
+
+See also [ux.md](ux.md) (login variants and QA matrix).
+
 ## Fleet
 
 See [fleet-ha.md](fleet-ha.md).

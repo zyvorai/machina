@@ -7,7 +7,7 @@ import {
   MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import { getFleetConsole, listAuditLogs, type AuditLog, type FleetConsoleEntry, type FleetConsoleOverview } from '../../api/platform'
 import { formatUserError } from '../../utils/apiError'
 import { statusBadgeClasses, statusBorderClass } from '../../utils/semanticColors'
@@ -94,7 +94,7 @@ export default function PlatformEvents({ embedded }: { embedded?: boolean } = {}
   }, [fleet, source, query])
 
   return (
-    <div className={embedded ? 'space-y-4' : 'space-y-6 animate-fade-in'}>
+    <PageLayout hideHeader compact={embedded} error={error}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         {!embedded && (
           <div>
@@ -109,8 +109,6 @@ export default function PlatformEvents({ embedded }: { embedded?: boolean } = {}
           <RefreshCw className="w-4 h-4" /> Refresh
         </button>
       </header>
-
-      {error && <ErrorBanner message={error} />}
 
       {fleet && (
         <>
@@ -180,6 +178,6 @@ export default function PlatformEvents({ embedded }: { embedded?: boolean } = {}
           </div>
         </MacGlassPanel>
       )}
-    </div>
+    </PageLayout>
   )
 }

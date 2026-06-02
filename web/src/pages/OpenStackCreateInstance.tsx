@@ -24,6 +24,7 @@ import { useOpenStackConnection } from '../hooks/useOpenStackConnection'
 import { ChoiceCard, ChoiceCardGrid } from '../components/ChoiceCards'
 import { ArrowLeft, Cloud, Disc, Loader2, Network, RefreshCw } from 'lucide-react'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackStatusBar from '../components/OpenStackStatusBar'
@@ -297,22 +298,32 @@ function OpenStackCreateInstanceContent() {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-3xl">
-        <OpenStackSubNav />
-        <OpenStackStatusBar />
-        <div className="text-slate-500 py-12 text-center flex flex-col items-center gap-3">
+      <PageLayout
+      hideHeader
+      className="max-w-3xl"
+      prepend={<><OpenStackSubNav /></>}
+    >
+      <div className="text-slate-500 py-12 text-center flex flex-col items-center gap-3">
           <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
           Loading OpenStack catalogs…
         </div>
-      </div>
+      </PageLayout>
     )
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <OpenStackSubNav />
-      <OpenStackStatusBar />
-
+    <PageLayout
+      className="max-w-3xl"
+      prepend={<><OpenStackSubNav /><OpenStackStatusBar /></>}
+      title="Create OpenStack instance"
+      icon={<Cloud className="w-7 h-7 text-sky-400" />}
+      actions={
+        <Link to="/openstack/instances" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm">
+          <ArrowLeft className="w-4 h-4" />
+          Instances
+        </Link>
+      }
+    >
       {!computeLive && connectionHint && (
         <div className={`rounded-xl px-4 py-3 text-sm ${statusSurfaceClasses('warn')}`}>
           {connectionHint}
@@ -345,16 +356,6 @@ function OpenStackCreateInstanceContent() {
           retryLabel="Reload catalogs"
         />
       )}
-
-      <Link to="/openstack/instances" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm">
-        <ArrowLeft className="w-4 h-4" />
-        Instances
-      </Link>
-
-      <h1 className="text-2xl font-semibold flex items-center gap-2">
-        <Cloud className="w-7 h-7 text-sky-400" />
-        Create OpenStack instance
-      </h1>
 
       <div className="flex gap-2 text-xs text-slate-500">
         {STEPS.map((label, i) => (
@@ -751,6 +752,6 @@ function OpenStackCreateInstanceContent() {
       </div>
 
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

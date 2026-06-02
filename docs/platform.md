@@ -86,7 +86,7 @@ export MACHINA_SKIP_AUTH=1   # dev only
 cargo run -p machina-controller
 ```
 
-**Web UI** — open the daemon UI, use the **Platform** nav group, set controller URL `http://127.0.0.1:5093` (or set `VITE_MACHINA_CONTROLLER_URL` at build time).
+**Web UI** — open the daemon UI at `https://HOST:5092/` or `/login`, sign in with PAM (or OIDC when enabled), then use the **Platform** nav group; set controller URL `http://127.0.0.1:5093` (or set `VITE_MACHINA_CONTROLLER_URL` at build time).
 
 ## Host enrollment
 

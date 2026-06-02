@@ -58,7 +58,7 @@ pub async fn recall(pool: &PgPool, limit: i64) -> anyhow::Result<InfrastructureM
     let runbook_hints = vec![
         "Storage full → expand pool, prune snapshots, migrate VMs off hot host.".into(),
         "Network change → run Network Lens reachability before closing incident.".into(),
-        "VM restart loop → Machina Doctor score + guest tools health.".into(),
+        "VM restart loop → Zeus SRE score + guest tools health.".into(),
     ];
 
     Ok(InfrastructureMemory {

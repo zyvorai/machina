@@ -25,6 +25,7 @@ import {
 } from 'lucide-react'
 import { getOpenStackInstanceStack, shelveOpenStackInstance, unshelveOpenStackInstance } from '../api/openstackExtras'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import OpenStackInstanceAdvanced from '../components/OpenStackInstanceAdvanced'
 import OpenStackExportModal from '../components/OpenStackExportModal'
 import OpenStackGate from '../components/OpenStackGate'
@@ -199,11 +200,18 @@ function OpenStackInstanceDetailContent() {
   const canUnshelve = statusUp.startsWith('SHELVED')
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <OpenStackSubNav />
-      <OpenStackStatusBar />
-
-      {inst.status.toUpperCase() === 'ERROR' && (
+    <PageLayout
+      hideHeader
+      className="max-w-4xl"
+      prepend={<><OpenStackSubNav /></>}
+      error={loadError}
+      errorTitle="Failed to load"
+      errorHints={loadError ? openStackErrorHints(loadError) : undefined}
+      technicalDetail={loadError}
+      errorTone="red"
+      onErrorRetry={() => void load()}
+      onErrorDismiss={() => setLoadError(null)}
+      >{inst.status.toUpperCase() === 'ERROR' && (
         <ErrorBanner
           title="Instance in ERROR state"
           headline="Nova reported ERROR for this server. Guest may not exist if compute uses fake.FakeDriver."
@@ -448,6 +456,6 @@ function OpenStackInstanceDetailContent() {
         onConfirm={handleForceDelete}
         onCancel={() => setForceDeleteOpen(false)}
       />
-    </div>
+    </PageLayout>
   )
 }

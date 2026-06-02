@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../../components/ErrorBanner'
+import PageLayout from '../../../components/PageLayout'
 import { getFirewallActivity, getFirewallOverview } from '../../../api/zeusFirewall'
 import { formatUserError } from '../../../utils/apiError'
 import { hubLinkClasses, statusToneClass } from '../../../utils/semanticColors'
@@ -70,10 +70,9 @@ export default function PlatformFirewallActivity() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Firewall Activity" subtitle="macOS-style blocked and allowed connections — process, domain, IP" />
       <Link to="/platform/zeus/security" className={`text-sm ${hubLinkClasses()}`}>← Security Center</Link>
-      {error && <ErrorBanner message={error} />}
       <MacGlassPanel title="Today" subtitle={note || 'PacketWolf provides live flows when connected'}>
         {blocked.length === 0 && allowed.length === 0 ? (
           <p className="text-sm text-slate-500">No connection events yet. Enable PacketWolf for live blocked flows.</p>
@@ -102,6 +101,6 @@ export default function PlatformFirewallActivity() {
           </div>
         )}
       </MacGlassPanel>
-    </div>
+    </PageLayout>
   )
 }

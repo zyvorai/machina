@@ -11,6 +11,7 @@ import {
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
 import { statusActionLinkClasses, statusDestructiveButtonClasses, statusToneClass } from '../utils/semanticColors'
@@ -44,8 +45,11 @@ function OpenStackVolumeSnapshotsContent() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <OpenStackSubNav />
+    <PageLayout
+      hideHeader
+      className="max-w-4xl"
+      prepend={<><OpenStackSubNav /></>}
+    >
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <Camera className="w-7 h-7 text-sky-400" />
@@ -107,6 +111,6 @@ function OpenStackVolumeSnapshotsContent() {
         </div>
       )}
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { Cpu, Search, Server, Shield, Workflow } from 'lucide-react'
 import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformZeusHubLaunchpad from '../../components/platform/tahoe/PlatformZeusHubLaunchpad'
@@ -188,12 +188,11 @@ export default function PlatformZeusOs() {
   ]
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle
         title="Machina Zeus OS"
         subtitle="Fleet intelligence · AI security graph · knowledge engine · service fabric · bare metal"
       />
-      {error && <ErrorBanner message={error} />}
       {loading && tab === 'fleet' && !heatmap && <PageSkeleton />}
       {zeusSummary && <p className="text-sm text-orange-200/90">{zeusSummary}</p>}
       {hubSummary && (
@@ -435,6 +434,6 @@ export default function PlatformZeusOs() {
           </MacGlassPanel>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

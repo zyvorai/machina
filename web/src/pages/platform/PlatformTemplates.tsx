@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import PageLayout from '../../components/PageLayout'
 import { AlertTriangle, CheckCircle2, Layers, Loader2, Package, Plus, RefreshCw, Sparkles, Star, Puzzle } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { MacGlassPanel, MacSectionTitle, MacSheet } from '../../components/platform/mac/PlatformMacUi'
@@ -221,7 +221,7 @@ export default function PlatformTemplates() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <PageLayout hideHeader error={error} contentClassName="space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">App Store</p>
@@ -266,8 +266,6 @@ export default function PlatformTemplates() {
           </button>
         ))}
       </div>
-
-      {error && <ErrorBanner message={error} />}
 
       {tab === 'templates' && (
         <>
@@ -474,7 +472,7 @@ export default function PlatformTemplates() {
           <button type="button" className="btn-primary md:col-span-2" onClick={() => void publishPlugin()}>Publish</button>
         </div>
       </MacSheet>
-    </div>
+    </PageLayout>
   )
 }
 

@@ -1,0 +1,178 @@
+/* Zeus OS — Secure Dark Professional login variant (minimal blur, enterprise trust) */
+
+.login-page-secure {
+  --login-secure-bg: #0a0e14;
+  --login-secure-panel: #0d1118;
+  --login-secure-card: #121820;
+  --login-secure-border: rgba(140, 160, 190, 0.18);
+  --login-secure-text: #eef3f8;
+  --login-secure-muted: #94a3b8;
+  --login-secure-accent: #f97316;
+  --login-secure-focus: rgba(59, 130, 246, 0.55);
+  --login-secure-focus-ring: rgba(59, 130, 246, 0.18);
+}
+
+.login-page-secure .login-hero {
+  background: linear-gradient(155deg, #0a0e14 0%, #121820 45%, #0f172a 100%);
+  background-size: auto;
+  animation: none;
+}
+
+.login-page-secure .login-hero::before {
+  opacity: 0.35;
+}
+
+.login-page-secure .login-hero-mesh {
+  opacity: 0.5;
+  mask-image: radial-gradient(ellipse 85% 75% at 35% 25%, black 15%, transparent 72%);
+}
+
+.login-page-secure .login-spotlight {
+  display: none;
+}
+
+.login-page-secure .login-panel {
+  background-color: var(--login-secure-panel);
+  background-image:
+    radial-gradient(ellipse 70% 45% at 50% 0%, rgba(59, 130, 246, 0.06), transparent),
+    linear-gradient(180deg, var(--login-secure-panel) 0%, var(--login-secure-bg) 100%);
+}
+
+.login-page-secure .login-panel-grid {
+  opacity: 0.025;
+}
+
+.login-page-secure .login-panel-glow {
+  display: none;
+}
+
+.login-page-secure .login-secure-card {
+  background: var(--login-secure-card);
+  border: 1px solid var(--login-secure-border);
+  border-radius: 12px;
+  box-shadow:
+    0 24px 48px rgba(0, 0, 0, 0.45),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+.login-page-secure .login-secure-card::before {
+  display: none;
+}
+
+.login-page-secure .login-logo-ring {
+  animation: none;
+  box-shadow: none;
+  border-radius: 12px;
+}
+
+.login-page-secure .login-input {
+  background: rgba(10, 14, 20, 0.85);
+  border: 1px solid rgba(140, 160, 190, 0.22);
+  border-radius: 10px;
+  color: var(--login-secure-text);
+  padding-top: 0.8125rem;
+  padding-bottom: 0.8125rem;
+}
+
+.login-page-secure .login-input:focus {
+  border-color: var(--login-secure-focus);
+  box-shadow: 0 0 0 3px var(--login-secure-focus-ring);
+}
+
+.login-page-secure .group:focus-within .login-field-icon {
+  color: #60a5fa;
+}
+
+.login-page-secure .login-btn-primary,
+.login-page-secure .login-secure-btn {
+  margin-top: 1.25rem;
+  border-radius: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 16px rgba(37, 99, 235, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: none;
+}
+
+.login-page-secure .login-btn-primary::after,
+.login-page-secure .login-secure-btn::after {
+  display: none;
+}
+
+.login-page-secure .login-btn-primary:hover:not(:disabled),
+.login-page-secure .login-secure-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px rgba(37, 99, 235, 0.35);
+}
+
+.login-page-secure .login-btn-secondary {
+  border-radius: 10px;
+  background: rgba(18, 24, 32, 0.9);
+  border-color: var(--login-secure-border);
+}
+
+.login-page-secure .login-stat-pill {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: var(--login-secure-border);
+  color: var(--login-secure-muted);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.login-page-secure .login-stat-pill-glow {
+  border-color: rgba(249, 115, 22, 0.35);
+  box-shadow: none;
+}
+
+.login-page-secure .login-text-gradient {
+  background: linear-gradient(135deg, #e2e8f0 0%, #93c5fd 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.login-page-secure .login-feature-card {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--login-secure-border);
+  border-radius: 10px;
+}
+
+.login-page-secure .login-feature-card:hover {
+  transform: none;
+  border-color: rgba(140, 160, 190, 0.28);
+}
+
+.login-page-secure .login-feature-card-highlight {
+  background: rgba(249, 115, 22, 0.06);
+  border-color: rgba(249, 115, 22, 0.25);
+  box-shadow: none;
+}
+
+.login-page-secure .login-trust-line {
+  font-size: 0.6875rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--login-secure-muted);
+}
+
+.login-page-secure .login-btn-secondary {
+  width: 100%;
+  margin-top: 1rem;
+}
+
+.login-page-secure .relative.py-3 span {
+  background: var(--login-secure-card);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-page-secure .login-fade-in,
+  .login-page-secure .login-fade-in-d1,
+  .login-page-secure .login-fade-in-d2,
+  .login-page-secure .login-fade-in-d3,
+  .login-page-secure .login-fade-in-d4 {
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}

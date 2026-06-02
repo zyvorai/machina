@@ -1,5 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
+use std::collections::HashSet;
+
 use machina_spec::VirtualMachine;
 use sqlx::PgPool;
 use tokio::sync::mpsc;
@@ -35,6 +37,7 @@ async fn process_one(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
         "vm.migrate" => vm_migrate(state, msg).await?,
         "vm.clone" => vm_clone(state, msg).await?,
         "host.inventory" => host_inventory(state, msg).await?,
+        "kubevirt.inventory" => kubevirt_inventory_task(state, msg).await?,
         "host.maintenance" => host_maintenance(state, msg).await?,
         "host.validate" => host_validate_task(state, msg).await?,
         "host.tetragon.install" => host_tetragon_install(state, msg).await?,
@@ -186,13 +189,22 @@ async fn vm_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("vm_id missing"))?;
     vm_lifecycle::set_vm_phase(&state.pool, vm_id, vm_lifecycle::PHASE_DELETING).await?;
 
-    let row: (String, Option<Uuid>) =
-        sqlx::query_as("SELECT name, host_id FROM vms WHERE id = $1")
-            .bind(vm_id)
-            .fetch_one(&state.pool)
-            .await?;
+    let row: (String, Option<Uuid>, String, Option<String>) = sqlx::query_as(
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), k8s_namespace FROM vms WHERE id = $1",
+    )
+    .bind(vm_id)
+    .fetch_one(&state.pool)
+    .await?;
 
-    if let Some(host_id) = row.1 {
+    if row.2 == "kubevirt" {
+        let ns = row.3.unwrap_or_else(|| "default".into());
+        crate::engine::kubevirt_inventory::delete_kubevirt_vm(
+            &state.config.daemon_base_url,
+            &ns,
+            &row.0,
+        )
+        .await?;
+    } else if let Some(host_id) = row.1 {
         let agent_addr = host_agent_addr(&state.pool, host_id).await?;
         let mut client = agent_client::connect(&agent_addr).await?;
         agent_client::delete_vm(&mut client, &row.0).await?;
@@ -244,9 +256,13 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
         .fetch_one(&state.pool)
         .await?;
 
+    let mut seen_names: HashSet<String> = HashSet::new();
+
     for vm in list.vms {
+        seen_names.insert(vm.name.clone());
         let existing: Option<(Uuid, bool)> = sqlx::query_as(
-            "SELECT id, managed FROM vms WHERE cluster_id = $1 AND name = $2",
+            "SELECT id, managed FROM vms
+             WHERE cluster_id = $1 AND name = $2 AND inventory_source = 'libvirt'",
         )
         .bind(cluster_id)
         .bind(&vm.name)
@@ -255,9 +271,10 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
 
         if let Some((id, _managed)) = existing {
             sqlx::query(
-                "UPDATE vms SET observed_state = $1, uuid = COALESCE(NULLIF($2, ''), uuid),
-                 vcpus = $3, memory_mib = $4, updated_at = NOW() WHERE id = $5",
+                "UPDATE vms SET host_id = $1, observed_state = $2, uuid = COALESCE(NULLIF($3, ''), uuid),
+                 vcpus = $4, memory_mib = $5, last_seen_at = NOW(), updated_at = NOW() WHERE id = $6",
             )
+            .bind(host_id)
             .bind(&vm.state)
             .bind(&vm.uuid)
             .bind(vm.vcpus as i32)
@@ -310,6 +327,14 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
             );
         }
     }
+
+    crate::engine::vm_inventory::reconcile_libvirt_host(
+        state,
+        host_id,
+        cluster_id,
+        &seen_names,
+    )
+    .await?;
 
     let agent_addr = host_agent_addr(&state.pool, host_id).await?;
     if let Err(e) = crate::engine::network_sync::sync_host_networks(&state.pool, host_id, &agent_addr).await {
@@ -1016,12 +1041,51 @@ async fn host_validate_task(state: &AppState, msg: &TaskMessage) -> anyhow::Resu
     update_task_progress(&state.pool, msg.task_id, 10, "running validation checklist").await?;
     let report = crate::engine::host_validate::validate_host(&state.pool, host_id).await?;
     crate::engine::host_validate::persist_validation(&state.pool, host_id, &report).await?;
+    if report.ok {
+        let _ = enqueue_task(
+            state,
+            "host.inventory",
+            serde_json::json!({ "host_id": host_id.to_string() }),
+            Some("host"),
+            Some(host_id),
+            Some(host_id),
+        )
+        .await;
+    }
     let summary = if report.ok {
         "validation passed"
     } else {
         "validation failed — see host detail"
     };
     update_task_progress(&state.pool, msg.task_id, 100, summary).await?;
+    Ok(())
+}
+
+async fn kubevirt_inventory_task(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
+    let cluster_id: Uuid = msg.payload["cluster_id"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .or_else(|| {
+            msg.payload["host_id"]
+                .as_str()
+                .and_then(|s| Uuid::parse_str(s).ok())
+        })
+        .unwrap_or_else(|| {
+            // fallback: first cluster
+            Uuid::nil()
+        });
+
+    let cluster_id = if cluster_id.is_nil() {
+        sqlx::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("no cluster configured"))?
+    } else {
+        cluster_id
+    };
+
+    crate::engine::kubevirt_inventory::sync_cluster(state, cluster_id).await?;
+    update_task_progress(&state.pool, msg.task_id, 100, "kubevirt inventory synced").await?;
     Ok(())
 }
 

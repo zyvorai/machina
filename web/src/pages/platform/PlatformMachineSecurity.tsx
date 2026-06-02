@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import PageLayout from '../../components/PageLayout'
 import { Link, useParams } from 'react-router'
 import { ArrowLeft, Bot, Radar } from 'lucide-react'
 import {
@@ -8,7 +9,6 @@ import {
   MacListRow,
   MacSettingsPane,
 } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
 import PageSkeleton from '../../components/PageSkeleton'
 import ProcessGraphCanvas from '../../components/platform/ProcessGraphCanvas'
 import ContainerHierarchyPanel from '../../components/platform/ContainerHierarchyPanel'
@@ -147,11 +147,10 @@ export default function PlatformMachineSecurity() {
     : 'Agent fabric status unavailable'
 
   return (
-    <div className="space-y-4">
+    <PageLayout hideHeader compact contentClassName="space-y-4" error={error}>
       <Link to="/platform/zeus/security" className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}>
         <ArrowLeft className="w-4 h-4" /> Security Center
       </Link>
-      {error && <ErrorBanner message={error} />}
       {loading && !summary && <PageSkeleton />}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -243,6 +242,6 @@ export default function PlatformMachineSecurity() {
           ))}
         </MacGlassPanel>
       )}
-    </div>
+    </PageLayout>
   )
 }

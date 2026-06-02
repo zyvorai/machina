@@ -16,6 +16,7 @@ import {
   Wrench,
   Workflow,
 } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
 import PlatformHubLaunchpad from '../../components/platform/tahoe/PlatformHubLaunchpad'
 import { listNotifications, listPlatformTasks } from '../../api/platform'
@@ -35,7 +36,7 @@ export default function PlatformOperationsHub() {
   }, [])
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader>
       <PlatformTahoeHero
         compact
         eyebrow="Platform"
@@ -84,6 +85,6 @@ export default function PlatformOperationsHub() {
           ]}
         />
       </div>
-    </div>
+    </PageLayout>
   )
 }

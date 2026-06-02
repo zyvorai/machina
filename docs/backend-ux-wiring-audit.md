@@ -148,6 +148,13 @@ cd web && npm test
 cd web && npm run build && npm run test:e2e -- e2e/platform-full.spec.ts e2e/shell-bridge.spec.ts
 ```
 
+### P15 — Auth shell routing (shipped)
+
+- [x] [`App.tsx`](../web/src/App.tsx) — `AiProvider` inside `BrowserRouter` (fixes post-login white screen from `useLocation` outside router)
+- [x] [`AuthContext.tsx`](../web/src/contexts/AuthContext.tsx) + authenticated `/login` → `/` [`Navigate`](../web/src/App.tsx) (fixes 404 when signing in at `/login`)
+- [x] Machina macOS login — [`Login.tsx`](../web/src/pages/Login.tsx), [`zyvor-macos-login.css`](../web/src/styles/zyvor-macos-login.css), optional [`variant="secure"`](../web/src/styles/zyvor-secure-login.css)
+- [x] Playwright [`smoke.spec.ts`](../web/e2e/smoke.spec.ts) — `authenticated /login redirects to dashboard`
+
 ## How to measure progress
 
 ```bash

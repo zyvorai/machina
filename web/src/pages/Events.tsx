@@ -16,7 +16,7 @@ import {
   ChevronRight,
 } from 'lucide-react'
 import { downloadJSON, downloadCSV } from '../utils/export'
-import ErrorBanner from '../components/ErrorBanner'
+import PageLayout from '../components/PageLayout'
 import { formatUserError } from '../utils/apiError'
 import { statusActionLinkClasses, statusBgClass, statusToneClass, utilizationTone } from '../utils/semanticColors'
 import { libvirtErrorHints } from '../utils/libvirtHints'
@@ -222,27 +222,19 @@ export default function EventsPage() {
     boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)',
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-32">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
-      </div>
-    )
-  }
-
   return (
-    <div className="space-y-6 animate-fade-in min-w-0">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Activity className={`w-6 h-6 ${statusToneClass('info')}`} /> Live Metrics
-          </h1>
-          <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-            Running guests from libvirt. Throughput and CPU % use deltas between polls (~
-            {POLL_MS / 1000}s); cumulative disk/net counters match VM detail views.
-          </p>
-        </div>
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+    <PageLayout
+      className="min-w-0"
+      title="Live Metrics"
+      icon={<Activity className={`w-6 h-6 ${statusToneClass('info')}`} />}
+      subtitle={
+        <>
+          Running guests from libvirt. Throughput and CPU % use deltas between polls (~
+          {POLL_MS / 1000}s); cumulative disk/net counters match VM detail views.
+        </>
+      }
+      actions={
+        <>
           <button
             type="button"
             onClick={() => downloadJSON(metrics, 'metrics.json')}
@@ -262,19 +254,16 @@ export default function EventsPage() {
           <button type="button" onClick={load} className="p-2 hover:bg-slate-700 rounded transition">
             <RefreshCw className="w-4 h-4" />
           </button>
-        </div>
-      </div>
-
-      {loadError && (
-        <ErrorBanner
-          title="Could not load metrics"
-          headline={loadError}
-          hints={libvirtErrorHints(loadError)}
-          onRetry={load}
-        />
-      )}
-
-      {metrics.length === 0 ? (
+        </>
+      }
+      error={loadError}
+      errorTitle="Could not load metrics"
+      errorHints={loadError ? libvirtErrorHints(loadError) : undefined}
+      onErrorRetry={load}
+      contentLoading={loading}
+      contentClassName="space-y-6"
+    >
+      {!loading && metrics.length === 0 ? (
         <div className="bg-slate-800/50 rounded-lg border border-slate-700/50 p-12 text-center text-slate-500">
           No running VMs with metrics.
         </div>
@@ -664,6 +653,6 @@ export default function EventsPage() {
           </div>
         </>
       )}
-    </div>
+    </PageLayout>
   )
 }

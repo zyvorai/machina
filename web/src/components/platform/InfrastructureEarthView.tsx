@@ -54,8 +54,12 @@ function LivingHostCard({ host }: { host: MissionHost }) {
   )
 }
 
+function isMissionOverview(value: FleetMissionOverview | null): value is FleetMissionOverview {
+  return Boolean(value && Array.isArray(value.sites) && Array.isArray(value.unassigned_hosts))
+}
+
 export default function InfrastructureEarthView({ mission }: { mission: FleetMissionOverview | null }) {
-  if (!mission) {
+  if (!isMissionOverview(mission)) {
     return <p className="text-sm text-slate-500 px-2">Loading infrastructure map…</p>
   }
 

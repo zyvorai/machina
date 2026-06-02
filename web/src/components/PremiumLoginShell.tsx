@@ -3,7 +3,8 @@
 // https://zyvor.dev · info@zyvor.dev
 
 /**
- * Machina-style premium login shell — aurora, particles, split hero + glass panel.
+ * Premium login shell — split hero + form panel.
+ * `variant="macos"`: Machina — macOS Tahoe liquid glass split login.
  */
 import type { CSSProperties, ReactNode } from 'react';
 import { AlertCircle, Sparkles } from 'lucide-react';
@@ -58,7 +59,10 @@ const PARTICLE_SEEDS = Array.from({ length: 28 }, (_, i) => ({
   size: 2 + (i % 3),
 }));
 
+export type LoginShellVariant = 'premium' | 'secure' | 'macos';
+
 export type PremiumLoginShellProps = {
+  variant?: LoginShellVariant;
   accent?: LoginAccent;
   pageThemeClass?: string;
   heroWidth?: '55' | '58';
@@ -78,10 +82,13 @@ export type PremiumLoginShellProps = {
   panelHint?: ReactNode;
   footer?: ReactNode;
   formClassName?: string;
+  /** Shown above panel title on desktop when `variant="secure"` (e.g. ZyvorAI wordmark). */
+  panelLogo?: ReactNode;
   children: ReactNode;
 };
 
 export function PremiumLoginShell({
+  variant = 'premium',
   accent = 'blue',
   pageThemeClass = '',
   heroWidth = '58',
@@ -101,19 +108,37 @@ export function PremiumLoginShell({
   panelHint,
   footer,
   formClassName = '',
+  panelLogo,
   children,
 }: PremiumLoginShellProps) {
+  const isSecure = variant === 'secure';
+  const isMacos = variant === 'macos';
   const accentClass = accent === 'blue' ? '' : `login-accent-${accent}`;
   const heroClass = heroWidth === '55' ? 'lg:w-[55%]' : 'lg:w-[58%]';
   const beamClass = heroWidth === '55' ? 'login-beam-w55' : 'login-beam-w58';
+  const pageClass = [
+    'login-page',
+    'flex-1 flex flex-col lg:flex-row relative overflow-hidden',
+    accentClass,
+    isSecure ? 'login-page-secure' : '',
+    isMacos ? 'login-page-macos' : '',
+    pageThemeClass,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const cardClass = isSecure
+    ? 'login-secure-card p-8'
+    : 'login-glass login-glass-border liquid-glass-login-panel rounded-liquid-lg p-8 shadow-2xl';
 
   return (
     <div className="min-h-screen flex flex-col">
-      <div
-        className={`login-page flex-1 flex flex-col lg:flex-row relative overflow-hidden ${accentClass} ${pageThemeClass}`.trim()}
-      >
-        <div className="login-aurora" aria-hidden />
-        <div className="login-scanline" aria-hidden />
+      <div className={pageClass}>
+        {!isSecure ? (
+          <>
+            <div className="login-aurora" aria-hidden />
+            {!isMacos ? <div className="login-scanline" aria-hidden /> : null}
+          </>
+        ) : null}
 
         {themeSwitcher}
 
@@ -121,40 +146,44 @@ export function PremiumLoginShell({
           className={`login-hero hidden lg:flex ${heroClass} flex-col justify-between p-10 xl:p-12 overflow-hidden relative`}
         >
           <div className="login-hero-mesh" aria-hidden />
-          <div className="login-spotlight" aria-hidden />
+          {!isSecure ? <div className="login-spotlight" aria-hidden /> : null}
 
-          {orbs.map((orb, i) => (
-            <div
-              key={i}
-              className={`login-orb login-orb-${orb.hue ?? 'blue'}`}
-              style={
-                {
-                  width: orb.size,
-                  height: orb.size,
-                  top: orb.top,
-                  left: orb.left,
-                  '--login-delay': orb.delay,
-                  '--login-duration': orb.duration,
-                } as CSSProperties
-              }
-            />
-          ))}
+          {!isSecure
+            ? orbs.map((orb, i) => (
+                <div
+                  key={i}
+                  className={`login-orb login-orb-${orb.hue ?? 'blue'}`}
+                  style={
+                    {
+                      width: orb.size,
+                      height: orb.size,
+                      top: orb.top,
+                      left: orb.left,
+                      '--login-delay': orb.delay,
+                      '--login-duration': orb.duration,
+                    } as CSSProperties
+                  }
+                />
+              ))
+            : null}
 
-          <div className="login-particles" aria-hidden>
-            {PARTICLE_SEEDS.map((p) => (
-              <span
-                key={p.id}
-                className="login-particle"
-                style={{
-                  left: p.left,
-                  top: p.top,
-                  width: p.size,
-                  height: p.size,
-                  animationDelay: p.delay,
-                }}
-              />
-            ))}
-          </div>
+          {!isSecure && !isMacos ? (
+            <div className="login-particles" aria-hidden>
+              {PARTICLE_SEEDS.map((p) => (
+                <span
+                  key={p.id}
+                  className="login-particle"
+                  style={{
+                    left: p.left,
+                    top: p.top,
+                    width: p.size,
+                    height: p.size,
+                    animationDelay: p.delay,
+                  }}
+                />
+              ))}
+            </div>
+          ) : null}
 
           <div className="relative z-10">
             <div className="login-fade-in flex items-center gap-4 mb-8">
@@ -162,7 +191,11 @@ export function PremiumLoginShell({
               <div>
                 <span className="text-4xl font-bold tracking-tight text-white block">{productName}</span>
                 {productSubtitle ? (
-                  <span className="text-xs font-medium uppercase tracking-[0.28em] text-sky-300/80 mt-0.5 block">
+                  <span
+                    className={`text-xs font-medium uppercase tracking-[0.28em] mt-0.5 block ${
+                      isSecure ? 'text-slate-400' : 'text-sky-300/80'
+                    }`}
+                  >
                     {productSubtitle}
                   </span>
                 ) : null}
@@ -225,29 +258,34 @@ export function PremiumLoginShell({
           {heroFooter ? <div className="relative z-10 login-fade-in login-fade-in-d4">{heroFooter}</div> : null}
         </aside>
 
-        <div className={`login-beam hidden lg:block ${beamClass}`} aria-hidden />
+        {!isSecure ? <div className={`login-beam hidden lg:block ${beamClass}`} aria-hidden /> : null}
 
         <main className="login-panel flex-1 flex items-center justify-center relative px-6 py-12 min-h-screen lg:min-h-0">
           <div className="login-panel-grid" aria-hidden />
-          <div className="login-panel-glow" aria-hidden />
+          {!isSecure ? <div className="login-panel-glow" aria-hidden /> : null}
           <div className="w-full max-w-[420px] relative z-10">
             <div className="lg:hidden text-center mb-8">
-              <div className="login-logo-ring inline-block mb-4">{logo}</div>
+              <div className="login-logo-ring inline-block mb-4">{panelLogo ?? logo}</div>
               <h1 className="text-2xl font-bold text-white">{productName}</h1>
               <p className="text-sm mt-1 text-slate-400">{mobileSubtitle ?? productSubtitle ?? panelSubtitle}</p>
             </div>
 
             <div className="hidden lg:block mb-8">
+              {isSecure && panelLogo ? <div className="mb-6">{panelLogo}</div> : null}
               <h2 className="text-2xl font-bold mb-1 text-white">{panelTitle}</h2>
               <p className="text-sm text-slate-400">{panelSubtitle}</p>
             </div>
 
-            <div className={`login-glass login-glass-border liquid-glass-login-panel rounded-liquid-lg p-8 shadow-2xl ${formClassName}`.trim()}>
-              {children}
-            </div>
+            <div className={`${cardClass} ${formClassName}`.trim()}>{children}</div>
 
             {panelHint ? (
-              <p className="text-xs text-center mt-4 max-w-sm mx-auto leading-relaxed text-slate-500">{panelHint}</p>
+              <p
+                className={`text-center mt-4 max-w-sm mx-auto leading-relaxed ${
+                  isSecure ? 'login-trust-line' : 'text-xs text-slate-500'
+                }`}
+              >
+                {panelHint}
+              </p>
             ) : null}
           </div>
         </main>
@@ -290,14 +328,17 @@ export function LoginSubmit({
   disabled,
   children,
   className = '',
+  secondary = false,
 }: {
   loading?: boolean;
   disabled?: boolean;
   children: ReactNode;
   className?: string;
+  secondary?: boolean;
 }) {
+  const base = secondary ? 'login-btn-secondary' : 'login-btn-primary group';
   return (
-    <button type="submit" disabled={disabled || loading} className={`login-btn-primary group ${className}`.trim()}>
+    <button type="submit" disabled={disabled || loading} className={`${base} ${className}`.trim()}>
       {children}
     </button>
   );

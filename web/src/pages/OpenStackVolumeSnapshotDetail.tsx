@@ -12,6 +12,7 @@ import {
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
 
@@ -58,8 +59,11 @@ function OpenStackVolumeSnapshotDetailContent() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <OpenStackSubNav />
+    <PageLayout
+      hideHeader
+      className="max-w-3xl"
+      prepend={<><OpenStackSubNav /></>}
+    >
       <Link to="/openstack/volume-snapshots" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm">
         <ArrowLeft className="w-4 h-4" /> Volume snapshots
       </Link>
@@ -102,6 +106,6 @@ function OpenStackVolumeSnapshotDetailContent() {
           } catch (e: unknown) { toast.error(formatUserError(e)) }
         }}>Delete snapshot</button>
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

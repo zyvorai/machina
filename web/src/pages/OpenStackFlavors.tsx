@@ -11,6 +11,7 @@ import {
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
 import { statusActionLinkClasses, statusDestructiveButtonClasses, statusToneClass } from '../utils/semanticColors'
@@ -75,8 +76,11 @@ function OpenStackFlavorsContent() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <OpenStackSubNav />
+    <PageLayout
+      hideHeader
+      className="max-w-3xl"
+      prepend={<><OpenStackSubNav /></>}
+    >
       <h1 className="text-2xl font-semibold flex items-center gap-2">
         <Cpu className="w-7 h-7 text-sky-400" />
         Nova flavors
@@ -151,6 +155,6 @@ function OpenStackFlavorsContent() {
         </div>
       )}
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

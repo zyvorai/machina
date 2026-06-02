@@ -11,7 +11,7 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import { Play, Square, Trash2, ToggleLeft, ToggleRight, RefreshCw, Plus, Network, Wifi, X, Pencil } from 'lucide-react'
 import { formatUserError } from '../utils/apiError'
 import { statusBadgeClasses, statusSurfaceClasses, statusToneClass } from '../utils/semanticColors'
-import ErrorBanner from '../components/ErrorBanner'
+import PageLayout from '../components/PageLayout'
 import { libvirtErrorHints } from '../utils/libvirtHints'
 
 export default function NetworksPage() {
@@ -34,6 +34,7 @@ export default function NetworksPage() {
   const toast = useToastContext()
 
   const load = useCallback(async () => {
+    setLoading(true)
     const [nets, dhcp, lb] = await Promise.allSettled([
       listNetworks(),
       listDhcpLeases(),
@@ -126,27 +127,23 @@ export default function NetworksPage() {
     }
   }
 
-  if (loading) return <div className="flex items-center justify-center h-32"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
-
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Network className={`w-6 h-6 ${statusToneClass('info')}`} /> Networks</h1>
-        <div className="flex items-center gap-2">
+    <PageLayout
+      title="Networks"
+      icon={<Network className={`w-6 h-6 ${statusToneClass('info')}`} />}
+      actions={
+        <>
           <button onClick={() => setShowCreate(true)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition flex items-center gap-1"><Plus className="w-4 h-4" /> Create</button>
           <button onClick={load} className="p-2 hover:bg-slate-700 rounded transition" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
-        </div>
-      </div>
-
-      {loadError && (
-        <ErrorBanner
-          title="Could not load networks"
-          headline={loadError}
-          hints={libvirtErrorHints(loadError)}
-          onRetry={load}
-        />
-      )}
-
+        </>
+      }
+      error={loadError}
+      errorTitle="Could not load networks"
+      errorHints={loadError ? libvirtErrorHints(loadError) : undefined}
+      onErrorRetry={load}
+      contentLoading={loading}
+      contentClassName="space-y-6"
+    >
       {libvirtBoot?.needs_attention && libvirtBoot.detail && (
         <div className={`rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 ${statusSurfaceClasses('warn')}`}>
           <div className="min-w-0">
@@ -293,6 +290,6 @@ export default function NetworksPage() {
       )}
 
       <ConfirmDialog open={!!deleteTarget} title="Delete Network" message={`Delete network '${deleteTarget}'?`} confirmLabel="Delete" onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />
-    </div>
+    </PageLayout>
   )
 }

@@ -5,6 +5,7 @@
 import { useEffect, useState, useMemo } from 'react'
 import { Search, Play } from 'lucide-react'
 import { formatUserError } from '../utils/apiError'
+import PageLayout from '../components/PageLayout'
 
 interface PathItem {
   summary?: string
@@ -105,19 +106,23 @@ export default function ApiDocs() {
     } finally { setTryLoading(false) }
   }
 
-  if (error) return <div className="text-red-400 py-12 text-center">{error}</div>
-  if (!spec) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
-
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div>
-        <h1 className="text-2xl font-bold">{spec.info.title}</h1>
-        <p className="text-sm text-slate-500 mt-1">Version {spec.info.version}</p>
-        {spec.info.description && (
-          <p className="text-sm text-slate-400 mt-2 max-w-4xl leading-relaxed">{spec.info.description}</p>
-        )}
-      </div>
-
+    <PageLayout
+      title={spec?.info.title}
+      subtitle={
+        spec ? (
+          <>
+            <span className="text-slate-500">Version {spec.info.version}</span>
+            {spec.info.description && (
+              <span className="block mt-2 max-w-4xl leading-relaxed">{spec.info.description}</span>
+            )}
+          </>
+        ) : undefined
+      }
+      error={error || null}
+      contentLoading={!spec && !error}
+      contentClassName="space-y-6"
+    >
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
         <input
@@ -230,6 +235,6 @@ export default function ApiDocs() {
           <div className="px-6 py-8 text-center text-slate-500">No endpoints match your search</div>
         )}
       </div>
-    </div>
+    </PageLayout>
   )
 }

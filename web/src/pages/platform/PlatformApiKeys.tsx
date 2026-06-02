@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Key, Plus, Trash2 } from 'lucide-react'
 import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import { createApiKey, deleteApiKey, listApiKeys, type ApiKeyRow } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
@@ -25,9 +25,8 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className={embedded ? 'space-y-4' : 'space-y-6'}>
+    <PageLayout hideHeader compact={embedded} error={error}>
       {!embedded && <MacSectionTitle title="API keys" subtitle="Bearer tokens for automation (machina_*)" />}
-      {error && <ErrorBanner message={error} />}
       {newToken && (
         <div className={`card p-4 text-sm ${statusSurfaceClasses('warn')}`}>
           <p className={`mb-2 ${statusToneClass('warn')}`}>Copy this token now — it will not be shown again:</p>
@@ -67,6 +66,6 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
           ))}</tbody>
         </table>
       </div>
-    </div>
+    </PageLayout>
   )
 }

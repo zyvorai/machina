@@ -36,6 +36,7 @@ import { guestIpv4GatewayHints } from '../utils/guestIpv4GatewayHints'
 import { getSession, type SessionRole } from '../api/auth'
 import { snapshotForest, type SnapshotTreeNode } from '../utils/snapshotTree'
 import { deleteVmWithNvramRetry } from '../utils/deleteVmWithNvramRetry'
+import PageLayout from '../components/PageLayout'
 import ConfirmDialog from '../components/ConfirmDialog'
 import LibvirtOpenStackPushModal from '../components/LibvirtOpenStackPushModal'
 import { usePlatformInfo } from '../contexts/PlatformInfoContext'
@@ -44,7 +45,6 @@ import { ChoiceCard, ChoiceCardDenseGrid } from '../components/ChoiceCards'
 import { BrowseHostPathModal, isHostDiskImageFileName, isIsoFileName } from '../components/BrowseHostPathModal'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
-import ErrorBanner from '../components/ErrorBanner'
 import CollapsibleCodeBlock from '../components/CollapsibleCodeBlock'
 import GuacamoleConsoleLink from '../components/GuacamoleConsoleLink'
 import RdpConsoleLink from '../components/RdpConsoleLink'
@@ -1062,21 +1062,28 @@ export default function VMDetailsPage() {
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
   if (!vm) {
     return (
-      <div className="space-y-4 animate-fade-in">
+      <PageLayout
+        error={loadError}
+        errorTitle="Could not load VM"
+        errorHints={loadError ? libvirtErrorHints(loadError) : undefined}
+        onErrorRetry={load}
+        emptyState={
+          !loadError ? (
+            <div className="space-y-4">
+              <div className="text-center text-slate-500 py-12">VM not found</div>
+              <Link to="/vms" className={`inline-flex items-center gap-2 text-sm ${statusActionLinkClasses('info')}`}>
+                <ArrowLeft className="w-4 h-4" /> Back to VMs
+              </Link>
+            </div>
+          ) : undefined
+        }
+      >
         {loadError ? (
-          <ErrorBanner
-            title={`Could not load VM`}
-            headline={loadError}
-            hints={libvirtErrorHints(loadError)}
-            onRetry={load}
-          />
-        ) : (
-          <div className="text-center text-slate-500 py-12">VM not found</div>
-        )}
-        <Link to="/vms" className={`inline-flex items-center gap-2 text-sm ${statusActionLinkClasses('info')}`}>
-          <ArrowLeft className="w-4 h-4" /> Back to VMs
-        </Link>
-      </div>
+          <Link to="/vms" className={`inline-flex items-center gap-2 text-sm ${statusActionLinkClasses('info')}`}>
+            <ArrowLeft className="w-4 h-4" /> Back to VMs
+          </Link>
+        ) : null}
+      </PageLayout>
     )
   }
 
@@ -1092,7 +1099,7 @@ export default function VMDetailsPage() {
   ]
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader title={vm.name}>
       {/* Header + lifecycle actions (sticky while scrolling) */}
       <div className="sticky top-0 z-20 -mx-1 px-1 py-2 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 space-y-3">
       <div className="flex items-center gap-4">
@@ -1384,7 +1391,7 @@ export default function VMDetailsPage() {
 
           {platformDoctor && (
             <div className="rounded-xl p-4 border border-orange-500/30 bg-orange-950/20">
-              <div className="text-sm font-medium text-slate-100 mb-1">Machina Doctor</div>
+              <div className="text-sm font-medium text-slate-100 mb-1">Zeus SRE</div>
               <p className="text-xs text-slate-400">
                 Platform score: <span className="text-orange-300 font-semibold">{platformDoctor.score_numeric}/100</span>
                 {' · '}{platformDoctor.score_label}
@@ -3251,7 +3258,7 @@ export default function VMDetailsPage() {
         canSelectFile={isHostDiskImageFileName}
         onSelectPath={(p) => setAttachSource(p)}
       />
-    </div>
+    </PageLayout>
   )
 }
 

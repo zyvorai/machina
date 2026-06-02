@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Code2, Package, Terminal } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import PlatformApiConsole from '../../components/platform/PlatformApiConsole'
 import { MacGlassPanel, MacSectionTitle, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
 import {
@@ -37,7 +37,7 @@ export default function PlatformDeveloper() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Developer" subtitle="TypeScript SDK, OpenAPI console, and Terraform schemas." />
       <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
         {([
@@ -56,7 +56,6 @@ export default function PlatformDeveloper() {
           </button>
         ))}
       </div>
-      {error && <ErrorBanner message={error} />}
       {tab === 'console' ? (
         <PlatformApiConsole />
       ) : overview ? (
@@ -112,6 +111,6 @@ export default function PlatformDeveloper() {
           </MacGlassPanel>
         </>
       ) : null}
-    </div>
+    </PageLayout>
   )
 }

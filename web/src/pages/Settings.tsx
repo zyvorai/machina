@@ -31,6 +31,7 @@ import {
   Check, X, Shield, AlertCircle, Eye, Send, Camera, MessageSquare, Cloud, ExternalLink, Activity,
 } from 'lucide-react'
 import { ChoiceCard, ChoiceCardDenseGrid } from '../components/ChoiceCards'
+import PageLayout from '../components/PageLayout'
 import { formatUserError } from '../utils/apiError'
 import { notificationChannelTone, statusActionLinkClasses, statusBadgeClasses, statusSurfaceClasses, statusToneClass, userRoleTone } from '../utils/semanticColors'
 import {
@@ -170,17 +171,17 @@ export default function SettingsPage() {
     { key: 'snapshots', label: 'Snapshot Schedules', icon: <Camera className="w-4 h-4" /> },
   ]
 
-  if (loading) return <div className="flex items-center justify-center h-32"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
-
   return (
-    <div className="w-full min-w-0 max-w-full space-y-6 animate-fade-in">
-      <div className="flex flex-col gap-3 min-w-0 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Settings className={`w-6 h-6 shrink-0 ${statusToneClass('info')}`} /> Settings</h1>
-          <p className="text-sm text-slate-400 mt-0.5 max-w-2xl break-words">RBAC, tokens, alerts, and schedules for the hypervisor control plane on this host.</p>
-        </div>
-        <button type="button" onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition self-start shrink-0" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
-      </div>
+    <PageLayout
+      className="w-full min-w-0 max-w-full"
+      title="Settings"
+      subtitle="RBAC, tokens, alerts, and schedules for the hypervisor control plane on this host."
+      icon={<Settings className={`w-6 h-6 ${statusToneClass('info')}`} />}
+      actions={
+        <button type="button" onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
+      }
+      contentLoading={loading}
+    >
       <p className="text-xs text-slate-500 break-words">
         Libvirt secrets (Ceph, iSCSI, TLS, …) are managed on the{' '}
         <Link to="/secrets" className={`underline ${statusActionLinkClasses('info')}`}>Secrets</Link> page (define XML + optional base64 value).
@@ -1020,6 +1021,6 @@ export default function SettingsPage() {
           <p className="text-xs text-slate-500">Snapshots are taken automatically at the configured interval. Old snapshots beyond the retain count are pruned.</p>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

@@ -16,6 +16,7 @@ import {
   type HypersdkProviderVm,
 } from '../api/hypersdk'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import { usePlatformInfo } from '../contexts/PlatformInfoContext'
 import { useToastContext } from '../contexts/ToastContext'
 import OpenStackGate from '../components/OpenStackGate'
@@ -150,20 +151,18 @@ function OpenStackMigrationsContent() {
       : 'https://127.0.0.1:5080/web/dashboard/'
 
   return (
-    <div className="space-y-6">
-      <OpenStackSubNav />
-      <OpenStackStatusBar />
-      {loadError && (
-        <ErrorBanner
-          title="Failed to load HyperSDK migration data"
-          headline={loadError}
-          hints={openStackErrorHints(loadError)}
-          technicalDetail={loadError}
-          tone="red"
-          onRetry={() => void load()}
-          onDismiss={() => setLoadError(null)}
-        />
-      )}
+    <PageLayout
+      hideHeader
+      prepend={<>
+      </>}
+      error={loadError}
+      errorTitle="Failed to load"
+      errorHints={loadError ? openStackErrorHints(loadError) : undefined}
+      technicalDetail={loadError}
+      errorTone="red"
+      onErrorRetry={() => void load()}
+      onErrorDismiss={() => setLoadError(null)}
+    >
       <HypersdkStatusBanner />
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
@@ -394,6 +393,6 @@ function OpenStackMigrationsContent() {
       </section>
 
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

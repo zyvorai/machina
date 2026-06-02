@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Shield } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
 import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
 import { listPolicyRules, listProjectQuotas, upsertProjectQuota, type PolicyRule } from '../../api/platform'
@@ -47,9 +47,8 @@ export default function PlatformPolicy({ embedded }: { embedded?: boolean } = {}
   }
 
   return (
-    <div className={embedded ? 'space-y-4' : 'space-y-6 animate-fade-in'}>
+    <PageLayout hideHeader compact={embedded} error={error}>
       {!embedded && <MacSectionTitle title="Policy & Quotas" subtitle="Controller policy rules and per-project resource limits." />}
-      {error && <ErrorBanner message={error} />}
       <MacGlassPanel title="Policy rules">
         {rules.length === 0 ? (
           <p className="text-sm text-slate-400">No policy rules configured.</p>
@@ -91,6 +90,6 @@ export default function PlatformPolicy({ embedded }: { embedded?: boolean } = {}
         </ul>
       </MacGlassPanel>
       {!embedded && <FleetSettingsPane kind="general" />}
-    </div>
+    </PageLayout>
   )
 }

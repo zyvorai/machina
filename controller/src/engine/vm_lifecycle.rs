@@ -69,11 +69,11 @@ pub async fn sync_phase_from_observed(pool: &PgPool, vm_id: Uuid) -> anyhow::Res
         return Ok(());
     };
     let phase = match (desired.as_str(), observed.as_str()) {
-        ("running", "running") => PHASE_RUNNING,
-        ("running", _) if observed != "running" => PHASE_STARTING,
+        ("running", "running") | ("running", "blocked") => PHASE_RUNNING,
+        ("running", _) if !matches!(observed.as_str(), "running" | "blocked") => PHASE_STARTING,
         ("stopped", "shutoff") | ("stopped", "stopped") => PHASE_STOPPED,
         ("stopped", _) => PHASE_STOPPING,
-        (_, "running") => PHASE_RUNNING,
+        (_, "running") | (_, "blocked") => PHASE_RUNNING,
         _ => PHASE_IDLE,
     };
     set_vm_phase(pool, vm_id, phase).await

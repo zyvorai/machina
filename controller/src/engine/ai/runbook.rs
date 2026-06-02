@@ -23,7 +23,7 @@ pub async fn generate(pool: &PgPool, incident: &str, context: &serde_json::Value
         summary: None,
     };
 
-    if let Ok(Some(llm)) = super::llm::complete(
+    if let Ok(Some(llm)) = super::llm::complete_simple(
         pool,
         "Write a short customer-friendly incident summary for IT operators.",
         &format!("Incident: {incident}\nContext: {context}"),

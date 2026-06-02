@@ -18,6 +18,7 @@ import {
   MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
+import PageLayout from '../../components/PageLayout'
 import ErrorBanner from '../../components/ErrorBanner'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
@@ -165,7 +166,7 @@ export default function PlatformMaintenance() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Software Update</p>
@@ -199,7 +200,6 @@ export default function PlatformMaintenance() {
         ))}
       </div>
 
-      {error && <ErrorBanner message={error} />}
       {actionError && <ErrorBanner message={actionError} />}
       {pageLoading && <PageSkeleton />}
 
@@ -484,6 +484,6 @@ export default function PlatformMaintenance() {
         </>
       )}
       {tab === 'updates' && <FleetSettingsPane kind="updates" />}
-    </div>
+    </PageLayout>
   )
 }

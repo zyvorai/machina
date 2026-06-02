@@ -37,7 +37,7 @@ export default function PlatformAboutHelp({ compact = false }: { compact?: boole
         Migration Assistant, Control Center, Settings hub, and one-click Fix It actions instead of XML and virsh.
         <span className="block mt-2 text-slate-500">
           Runs on <span className="text-orange-300/90 font-medium">{ZEUS_OS_HELP.name}</span> — {ZEUS_OS_HELP.tagline}.
-          <span className="text-slate-300"> Machina Zeus OS</span> adds Digital Twin, Root Cause, intent-based environments, and Machina AI in Settings.
+          <span className="text-slate-300"> Machina Zeus OS</span> adds Digital Twin, Root Cause, intent-based environments, and Zeus AI in Settings.
         </span>
       </p>
       <ul className="space-y-1.5 text-sm">

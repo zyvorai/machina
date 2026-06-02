@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, Gauge, Timer } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import PageSkeleton from '../../components/PageSkeleton'
 import { MacGlassPanel, MacSectionTitle, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
 import {
@@ -75,10 +75,9 @@ export default function PlatformObservability() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Observability" subtitle="SLO dashboards and API trace inventory." />
       {loading && !overview && !error && <PageSkeleton />}
-      {error && <ErrorBanner message={error} />}
       {overview && (
         <>
           <p className="text-sm text-slate-400">{overview.summary}</p>
@@ -141,6 +140,6 @@ export default function PlatformObservability() {
           </MacGlassPanel>
         </>
       )}
-    </div>
+    </PageLayout>
   )
 }

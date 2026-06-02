@@ -6,9 +6,17 @@ import { useEffect, useState, useCallback } from 'react'
 import { listNwfilters, deleteNwfilter, defineNwfilter, getNwfilterXml, NwfilterInfo } from '../api/advanced'
 import { useToastContext } from '../contexts/ToastContext'
 import ConfirmDialog from '../components/ConfirmDialog'
+import EmptyState from '../components/EmptyState'
+import PageLayout from '../components/PageLayout'
 import { Shield, Trash2, RefreshCw, Search, Code, X, Plus } from 'lucide-react'
 import { formatUserError } from '../utils/apiError'
 import { statusToneClass } from '../utils/semanticColors'
+
+const DEFAULT_FILTER_XML = `<filter name='my-filter' chain='root'>
+  <rule action='accept' direction='in'>
+    <tcp dstportstart='22'/>
+  </rule>
+</filter>`
 
 export default function NWFiltersPage() {
   const [filters, setFilters] = useState<NwfilterInfo[]>([])
@@ -18,16 +26,19 @@ export default function NWFiltersPage() {
   const [xmlContent, setXmlContent] = useState<string | null>(null)
   const [xmlName, setXmlName] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [newFilterXml, setNewFilterXml] = useState(`<filter name='my-filter' chain='root'>
-  <rule action='accept' direction='in'>
-    <tcp dstportstart='22'/>
-  </rule>
-</filter>`)
+  const [newFilterXml, setNewFilterXml] = useState(DEFAULT_FILTER_XML)
   const [creating, setCreating] = useState(false)
   const toast = useToastContext()
 
   const load = useCallback(async () => {
-    try { setFilters(await listNwfilters()) } catch (e: unknown) { toast.error(`${formatUserError(e)}`) } finally { setLoading(false) }
+    try {
+      setLoading(true)
+      setFilters(await listNwfilters())
+    } catch (e: unknown) {
+      toast.error(`${formatUserError(e)}`)
+    } finally {
+      setLoading(false)
+    }
   }, [toast])
 
   useEffect(() => { load() }, [load])
@@ -49,11 +60,7 @@ export default function NWFiltersPage() {
       const result = await defineNwfilter(newFilterXml)
       toast.success(`Filter '${result.name}' created`)
       setShowCreate(false)
-      setNewFilterXml(`<filter name='my-filter' chain='root'>
-  <rule action='accept' direction='in'>
-    <tcp dstportstart='22'/>
-  </rule>
-</filter>`)
+      setNewFilterXml(DEFAULT_FILTER_XML)
       load()
     } catch (e: unknown) { toast.error(`${formatUserError(e)}`) }
     finally { setCreating(false) }
@@ -61,45 +68,64 @@ export default function NWFiltersPage() {
 
   const filtered = filters.filter(f => search === '' || f.name.toLowerCase().includes(search.toLowerCase()))
 
-  if (loading) return <div className="flex items-center justify-center h-32"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
-
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Shield className="w-6 h-6" /> Network Filters ({filters.length})</h1>
-        <div className="flex items-center gap-2">
+    <PageLayout
+      title="Network Filters"
+      icon={<Shield className="w-6 h-6" />}
+      subtitle={`${filters.length} libvirt nwfilters`}
+      actions={
+        <>
           <button onClick={() => setShowCreate(true)} className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition"><Plus className="w-4 h-4" />Create Filter</button>
-          <button onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition"><RefreshCw className="w-4 h-4" /></button>
-        </div>
-      </div>
-
+          <button onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition" title="Refresh" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
+        </>
+      }
+    >
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
         <input type="text" placeholder="Search filters..." value={search} onChange={(e) => setSearch(e.target.value)}
           className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
       </div>
 
-      <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-        <table className="w-full">
-          <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400">
-            <th className="px-6 py-3">Name</th><th className="px-6 py-3 hidden md:table-cell">UUID</th><th className="px-6 py-3 text-right">Actions</th>
-          </tr></thead>
-          <tbody className="divide-y divide-slate-700/30">
-            {filtered.map(f => (
-              <tr key={f.name} className="table-row-hover">
-                <td className="px-6 py-3 font-medium">{f.name}</td>
-                <td className="px-6 py-3 text-xs font-mono text-slate-500 hidden md:table-cell">{f.uuid}</td>
-                <td className="px-6 py-3 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    <button onClick={() => showXml(f.name)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="View XML"><Code className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
-                    <button onClick={() => setDeleteTarget(f.name)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {loading ? (
+        <div className="flex items-center justify-center h-32" aria-busy="true" aria-label="Loading network filters">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={<Shield className="w-6 h-6" />}
+          title="No network filters"
+          description={search ? 'Try a different search term.' : 'Create an nwfilter to apply iptables-style rules to VM interfaces.'}
+          primaryAction={
+            !search ? (
+              <button type="button" onClick={() => setShowCreate(true)} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium">
+                Create filter
+              </button>
+            ) : undefined
+          }
+        />
+      ) : (
+        <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
+          <table className="w-full">
+            <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400">
+              <th className="px-6 py-3">Name</th><th className="px-6 py-3 hidden md:table-cell">UUID</th><th className="px-6 py-3 text-right">Actions</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-700/30">
+              {filtered.map(f => (
+                <tr key={f.name} className="table-row-hover">
+                  <td className="px-6 py-3 font-medium">{f.name}</td>
+                  <td className="px-6 py-3 text-xs font-mono text-slate-500 hidden md:table-cell">{f.uuid}</td>
+                  <td className="px-6 py-3 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => showXml(f.name)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="View XML"><Code className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
+                      <button onClick={() => setDeleteTarget(f.name)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <ConfirmDialog open={!!deleteTarget} title="Delete Network Filter" message={`Delete filter '${deleteTarget}'?`} confirmLabel="Delete" onConfirm={handleDelete} onCancel={() => setDeleteTarget(null)} />
 
@@ -141,6 +167,6 @@ export default function NWFiltersPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

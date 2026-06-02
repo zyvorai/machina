@@ -7,6 +7,7 @@ import { Link } from 'react-router'
 import { useSearchParams } from 'react-router'
 import { Boxes, Cloud, ClipboardList, FolderOpen, HardDrive, RefreshCw, Trash2 } from 'lucide-react'
 import Hero from '../components/Hero'
+import PageLayout from '../components/PageLayout'
 import KubeVirtQcow2Modal from '../components/KubeVirtQcow2Modal'
 import OpenStackImageUploadModal from '../components/OpenStackImageUploadModal'
 import { usePlatformInfo } from '../contexts/PlatformInfoContext'
@@ -26,7 +27,6 @@ import { BuildStepTimeline } from '../components/BuildStepTimeline'
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToastContext } from '../contexts/ToastContext'
 import { computeVirtImageBuildTimeline, VIRT_IMAGE_TIMELINE_LABELS } from '../utils/buildProgress'
-import ErrorBanner from '../components/ErrorBanner'
 import { formatUserError } from '../utils/apiError'
 import { libvirtErrorHints } from '../utils/libvirtHints'
 import { statusDestructiveButtonClasses, statusSurfaceClasses, statusToneClass } from '../utils/semanticColors'
@@ -233,7 +233,16 @@ export default function DiskImagesPage() {
   const totalBytes = images.reduce((s, i) => s + i.size_bytes, 0)
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout
+      hideHeader
+      error={loadError}
+      errorTitle="Failed to load disk images"
+      errorHints={loadError ? libvirtErrorHints(loadError) : undefined}
+      technicalDetail={loadError}
+      errorTone="red"
+      onErrorRetry={() => void load()}
+      onErrorDismiss={() => setLoadError(null)}
+    >
       <Hero
         title="Disk Images"
         subtitle={
@@ -252,18 +261,6 @@ export default function DiskImagesPage() {
           </button>
         }
       />
-
-      {loadError && (
-        <ErrorBanner
-          title="Failed to load disk images"
-          headline={loadError}
-          hints={libvirtErrorHints(loadError)}
-          technicalDetail={loadError}
-          tone="red"
-          onRetry={() => void load()}
-          onDismiss={() => setLoadError(null)}
-        />
-      )}
 
       {openstackUploadAvailable && (
         <p className="inline-flex items-center gap-2 text-xs text-sky-300 border border-sky-500/30 bg-sky-500/10 rounded-lg px-3 py-2">
@@ -554,6 +551,6 @@ export default function DiskImagesPage() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmPath(null)}
       />
-    </div>
+    </PageLayout>
   )
 }

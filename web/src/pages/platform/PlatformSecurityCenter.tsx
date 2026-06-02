@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { AlertTriangle, Radar, RefreshCw, Shield, ShieldAlert } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import {
   MacGlassPanel,
   MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import SecurityTimelinePanel from '../../components/platform/SecurityTimelinePanel'
@@ -117,13 +117,12 @@ export default function PlatformSecurityCenter() {
   const critical = threat?.critical_events ?? []
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle
         title="Security Center"
         subtitle="PacketWolf eBPF fabric — observe, understand, secure"
       />
       <Link to="/platform/zeus" className={`text-sm ${hubLinkClasses()}`}>← Machina Zeus OS</Link>
-      {error && <ErrorBanner message={error} />}
       {loading && !threat && <PageSkeleton />}
 
       {status && !status.fabric_reachable && status.packetwolf.enabled && (
@@ -277,6 +276,6 @@ export default function PlatformSecurityCenter() {
           </button>
         </>
       )}
-    </div>
+    </PageLayout>
   )
 }

@@ -15,6 +15,7 @@ import { createOpenStackFloatingIp } from '../api/openstackExtras'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
 import { statusActionLinkClasses, statusDestructiveButtonClasses, statusToneClass } from '../utils/semanticColors'
@@ -66,8 +67,11 @@ function OpenStackFloatingIpsContent() {
   }, [load])
 
   return (
-    <div className="space-y-6 max-w-4xl">
-      <OpenStackSubNav />
+    <PageLayout
+      hideHeader
+      className="max-w-4xl"
+      prepend={<><OpenStackSubNav /></>}
+    >
       <h1 className="text-2xl font-semibold flex items-center gap-2">
         <Globe className="w-7 h-7 text-sky-400" />
         Floating IPs
@@ -180,6 +184,6 @@ function OpenStackFloatingIpsContent() {
         </div>
       )}
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

@@ -6,6 +6,7 @@ import { Loader2, Plus, Scale, Trash2 } from 'lucide-react'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import EmptyState from '../components/EmptyState'
 import {
   createOpenStackLoadBalancer,
@@ -54,9 +55,11 @@ function OpenStackLoadBalancersContent() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className="space-y-6">
-      <OpenStackSubNav />
-      <h1 className="text-2xl font-semibold flex items-center gap-2">
+    <PageLayout
+      hideHeader
+      prepend={<>
+      </>}
+      ><h1 className="text-2xl font-semibold flex items-center gap-2">
         <Scale className={`w-7 h-7 ${statusToneClass('ok')}`} /> Octavia load balancers
       </h1>
       <p className="text-slate-400 text-sm">Requires Octavia (load-balancer) in the service catalog.</p>
@@ -135,6 +138,6 @@ function OpenStackLoadBalancersContent() {
         </div>
       )}
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

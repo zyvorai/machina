@@ -6,6 +6,7 @@ import { Layers, Loader2, Plus, Trash2 } from 'lucide-react'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import EmptyState from '../components/EmptyState'
 import {
   createOpenStackHeatStack,
@@ -57,9 +58,11 @@ function OpenStackHeatContent() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className="space-y-6">
-      <OpenStackSubNav />
-      <h1 className="text-2xl font-semibold flex items-center gap-2">
+    <PageLayout
+      hideHeader
+      prepend={<>
+      </>}
+      ><h1 className="text-2xl font-semibold flex items-center gap-2">
         <Layers className="w-7 h-7 text-violet-400" /> Heat stacks
       </h1>
       <p className="text-slate-400 text-sm">Orchestration stacks via Heat API. Requires Heat in the cloud catalog.</p>
@@ -153,6 +156,6 @@ function OpenStackHeatContent() {
         </div>
       )}
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

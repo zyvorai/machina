@@ -6,6 +6,7 @@ import { Globe, Loader2, Network } from 'lucide-react'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import ErrorBanner from '../components/ErrorBanner'
 import {
   getOpenStackNetworkTopology,
@@ -86,22 +87,23 @@ function OpenStackTopologyContent() {
   const maxY = Math.max(200, ...laid.map((n) => n.y + 48))
 
   return (
-    <div className="space-y-6">
-      <OpenStackSubNav />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold flex items-center gap-2">
-          <Globe className="w-7 h-7 text-sky-400" /> Neutron topology
-        </h1>
+    <PageLayout
+      prepend={<OpenStackSubNav />}
+      title="Neutron topology"
+      icon={<Globe className="w-7 h-7 text-sky-400" />}
+      error={error}
+      errorTitle="Failed to load topology"
+      errorHints={error ? openStackErrorHints(error) : undefined}
+      errorTone="red"
+      onErrorRetry={() => void load()}
+      contentLoading={loading}
+      actions={
         <Link to="/openstack/networking" className="text-sm text-sky-400 hover:underline inline-flex items-center gap-1">
           <Network className="w-4 h-4" /> Networking lab
         </Link>
-      </div>
-      {error && (
-        <ErrorBanner title="Failed to load topology" headline={error} hints={openStackErrorHints(error)} tone="red" onRetry={() => void load()} />
-      )}
-      {loading ? (
-        <Loader2 className="w-8 h-8 animate-spin text-sky-400 mx-auto py-12" />
-      ) : (
+      }
+    >
+      {!loading && (
         <div className="rounded-xl border border-slate-700 bg-slate-950/40 p-4 overflow-x-auto">
           <svg width="960" height={maxY} className="w-full min-w-[640px]" viewBox={`0 0 960 ${maxY}`}>
             {edges.map((e, i) => {
@@ -124,6 +126,6 @@ function OpenStackTopologyContent() {
         </div>
       )}
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

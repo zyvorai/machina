@@ -18,6 +18,7 @@ import {
 import ConfirmDialog from '../components/ConfirmDialog'
 import { useToastContext } from '../contexts/ToastContext'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackStatusBar from '../components/OpenStackStatusBar'
@@ -86,22 +87,18 @@ function OpenStackSecurityGroupsContent() {
   const active = detail ?? groups.find((g) => g.id === selectedId) ?? null
 
   return (
-    <div className="space-y-6 max-w-5xl">
-      <OpenStackSubNav />
-      <OpenStackStatusBar />
-
-      {loadError && (
-        <ErrorBanner
-          title="Security groups unavailable"
-          headline={loadError}
-          hints={openStackErrorHints(loadError)}
-          technicalDetail={loadError}
-          tone="red"
-          onRetry={() => void load()}
-          retryLabel="Retry"
-        />
-      )}
-
+    <PageLayout
+      hideHeader
+      className="max-w-5xl"
+      prepend={<><OpenStackSubNav /></>}
+      error={loadError}
+      errorTitle="Failed to load"
+      errorHints={loadError ? openStackErrorHints(loadError) : undefined}
+      technicalDetail={loadError}
+      errorTone="red"
+      onErrorRetry={() => void load()}
+      onErrorDismiss={() => setLoadError(null)}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold flex items-center gap-2">
           <Shield className="w-7 h-7 text-sky-400" />
@@ -299,6 +296,6 @@ function OpenStackSecurityGroupsContent() {
           }
         }}
       />
-    </div>
+    </PageLayout>
   )
 }

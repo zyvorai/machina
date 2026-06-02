@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { Key, Lock, Shield, Users } from 'lucide-react'
 import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import { MacGlassPanel, MacListRow, MacSectionTitle, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
 import {
   getEnterpriseSecurityOverview,
@@ -125,7 +126,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
   ]
 
   return (
-    <div className={embedded ? 'space-y-4' : 'space-y-6 animate-fade-in'}>
+    <PageLayout hideHeader compact={embedded} error={error}>
       {!embedded && (
         <header>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Keychain Access</p>
@@ -135,7 +136,6 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
           />
         </header>
       )}
-      {error && <ErrorBanner message={error} />}
       {actionError && <ErrorBanner message={actionError} />}
       {(keychain?.summary || overview?.summary) && tab !== 'keychain' && (
         <p className="text-sm text-slate-400">{overview?.summary}</p>
@@ -313,6 +313,6 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
           </table>
         </MacGlassPanel>
       )}
-    </div>
+    </PageLayout>
   )
 }

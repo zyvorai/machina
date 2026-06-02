@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
+import PageLayout from '../../components/PageLayout'
 import { Cable, Layers, Link2, Loader2, Network, Plus, RefreshCw, Router, Shield, Wifi } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
@@ -248,7 +248,7 @@ export default function PlatformNetworks() {
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <PageLayout hideHeader error={error} contentClassName="space-y-8">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Network</p>
@@ -294,7 +294,6 @@ export default function PlatformNetworks() {
         ))}
       </div>
 
-      {error && <ErrorBanner message={error} />}
       {loading && rows.length === 0 && !discovering && !error && <PageSkeleton />}
 
       {tab === 'networks' && (
@@ -720,6 +719,6 @@ export default function PlatformNetworks() {
         )}
       </MacSheet>
       {tab === 'networks' && <FleetSettingsPane kind="network" />}
-    </div>
+    </PageLayout>
   )
 }

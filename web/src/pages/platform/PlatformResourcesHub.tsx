@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { HardDrive, Cpu, Layers, Network, Package } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
 import PlatformHubLaunchpad from '../../components/platform/tahoe/PlatformHubLaunchpad'
 import { getNetworkSegmentsOverview, getStorageTiersOverview } from '../../api/platform'
@@ -21,7 +22,7 @@ export default function PlatformResourcesHub({ embedded }: { embedded?: boolean 
   }, [])
 
   return (
-    <div className={embedded ? 'space-y-4' : 'space-y-6 animate-fade-in'}>
+    <PageLayout hideHeader compact={embedded}>
       {!embedded && (
         <PlatformTahoeHero
           compact
@@ -53,6 +54,6 @@ export default function PlatformResourcesHub({ embedded }: { embedded?: boolean 
           ]}
         />
       </div>
-    </div>
+    </PageLayout>
   )
 }

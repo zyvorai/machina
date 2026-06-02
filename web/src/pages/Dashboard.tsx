@@ -23,7 +23,7 @@ import { useOpenStackConnection } from '../hooks/useOpenStackConnection'
 import { useHypersdkConnection } from '../hooks/useHypersdkConnection'
 import { getK8sEnvironment, getK8sOverview, type K8sEnvironment, type K8sOverview } from '../api/k8s'
 import Hero from '../components/Hero'
-import ErrorBanner from '../components/ErrorBanner'
+import PageLayout from '../components/PageLayout'
 import { formatUserError } from '../utils/apiError'
 import { libvirtErrorHints } from '../utils/libvirtHints'
 import { integrationPhaseTone, sessionBadgeClasses, statusActionLinkClasses, statusBadgeClasses, statusBgClass, statusBorderClass, statusSurfaceClasses, statusToneClass, utilizationTone } from '../utils/semanticColors'
@@ -165,7 +165,14 @@ export default function Dashboard() {
   if (loading) return <DashboardSkeleton />
 
   return (
-    <div className="space-y-6 animate-fade-in min-w-0">
+    <PageLayout
+      hideHeader
+      className="min-w-0"
+      error={loadError}
+      errorTitle="Could not load VMs"
+      errorHints={loadError ? libvirtErrorHints(loadError) : undefined}
+      onErrorRetry={loadData}
+    >
       <Hero
         title={`Dashboard${node?.hostname ? ` · ${node.hostname}` : ''}`}
         subtitle="Live virtualization, network, storage, and KubeVirt status from this hypervisor."
@@ -180,15 +187,6 @@ export default function Dashboard() {
           </Link>
         }
       />
-
-      {loadError && (
-        <ErrorBanner
-          title="Could not load VMs"
-          headline={loadError}
-          hints={libvirtErrorHints(loadError)}
-          onRetry={loadData}
-        />
-      )}
 
       {platformEnabled && (
         <div className="rounded-xl border border-violet-500/30 bg-violet-950/20 px-4 py-3 flex flex-wrap items-center justify-between gap-3">
@@ -645,7 +643,7 @@ export default function Dashboard() {
           </div>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }
 

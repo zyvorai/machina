@@ -19,6 +19,7 @@ import { getSession, type SessionRole } from '../api/auth'
 import { getK8sEnvironment, postKataDeploy, type KataDeployAction, type K8sActionResult } from '../api/k8s'
 import { useK8sContext } from '../hooks/useK8sContext'
 import { formatUserError } from '../utils/apiError'
+import PageLayout from '../components/PageLayout'
 import { prereqTone, statusActionLinkClasses, statusSurfaceClasses, statusToneClass } from '../utils/semanticColors'
 
 function prereqChip(ok: boolean | null, missing: 'warn' | 'error' | 'neutral' = 'warn') {
@@ -278,12 +279,12 @@ function KataAutomateSection() {
 
 export default function KataContainersPage() {
   return (
-    <div className="space-y-8 animate-fade-in max-w-4xl">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Package className="w-7 h-7 text-cyan-400" /> Kata Containers on Kubernetes
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
+    <PageLayout
+      className="max-w-4xl"
+      contentClassName="space-y-8"
+      title="Kata Containers on Kubernetes"
+      subtitle={
+        <>
           Install <strong className="text-slate-300">kata-deploy</strong> with the{' '}
           <a href="https://kata-containers.github.io/kata-containers/installation/" className={statusActionLinkClasses('info')} target="_blank" rel="noreferrer">
             upstream Helm chart
@@ -298,9 +299,10 @@ export default function KataContainersPage() {
             Cloud Hypervisor <ExternalLink className="w-3 h-3" />
           </a>
           . The automation panel runs the same allowlisted <code className="text-slate-500">helm</code> / <code className="text-slate-500">kubectl</code> commands on the daemon host.
-        </p>
-      </div>
-
+        </>
+      }
+      icon={<Package className="w-7 h-7 text-cyan-400" />}
+    >
       <KataAutomateSection />
 
       <section className="space-y-3">
@@ -428,6 +430,6 @@ export default function KataContainersPage() {
           K8s workloads
         </Link>
       </div>
-    </div>
+    </PageLayout>
   )
 }

@@ -21,6 +21,7 @@ For Zeus CloudOS (`ui/`) and PacketWolf pro UI (`web-ui/`), see [Out of repo](#o
 | **Batch 65 Infrastructure OS Big Sweep** | `0a8da81` | Maintenance Mission 7-step timeline + `GET /api/v1/fleet/maintenance-mission`; Infrastructure DNA + `GET /api/v1/fleet/dna`; +3 e2e (81 total) |
 | **Batch 66 Full Jarvis shell** | `46f9dd9` | `GET /api/v1/ai/jarvis/landing`; intent-first dashboard + minimal sidebar (Normal); +3 e2e (84 total) |
 | **Batch 67 Earth globe + Enterprise UX** | `8afe5cb` | Canvas Infrastructure Earth globe v1; Enterprise security strip + vault ErrorBanner; +3 e2e (87 total) |
+| **Batch 68 Infrastructure Earth v2** | `05620b4` | Globe site legend → Machine Finder; globe on Finder; Mission Control load resilience + timeline mock fixes |
 
 **Verification baseline**
 
@@ -40,6 +41,8 @@ After Batch 65: **81 local e2e** (+ maintenance-mission, infrastructure-dna).
 After Batch 66: **84 local e2e** (+ jarvis-shell).
 
 After Batch 67: **87 local e2e** (+ enterprise, infrastructure-earth strip).
+
+After Batch 68: **87 local e2e** (earth-globe legend on Machine Finder; bundle unchanged).
 
 ---
 
@@ -71,7 +74,7 @@ Cross-shell Tracks A–E remain **shipped** (Batch 62). Next in-repo themes:
 | **D — E2E matrix** | Shipped — 71 tests in verification bundle |
 | **E — Backend ops hooks** | N/A — UI CTAs already wired; defer Vault/MFA per [`enterprise-backlog.md`](enterprise-backlog.md) |
 
-**Intentional exclusions (no change):** `ChoiceCards` wizard palette, ApiDocs HTTP badges, Login orange branding, GuestKit/Platform discovery orange panels, primary CTAs (`bg-emerald-600`, `bg-blue-600`).
+**Intentional exclusions (no change):** `ChoiceCards` wizard palette, ApiDocs HTTP badges, legacy login aurora/orb palette (Machina macOS login is intentional), GuestKit/Platform discovery orange panels, primary CTAs (`bg-emerald-600`, `bg-blue-600`).
 
 **Out of repo next:** macOS Tahoe in `ui/`, PacketWolf tokens in `web-ui/` — see [Out of repo](#out-of-repo).
 

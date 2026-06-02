@@ -1,6 +1,6 @@
 # Machina Zeus OS — AI-Native Infrastructure Operating System
 
-**Machina** manages physical infrastructure (hosts, VMs, storage, BMC). **Zeus OS** runs the cloud layer (K8s, KubeVirt, apps). **Machina Intelligence** is the operator layer across both — Copilot, SRE forecast, Mission Control, Jarvis briefing.
+**Machina** manages physical infrastructure (hosts, VMs, storage, BMC). **Zeus OS** runs the cloud layer (K8s, KubeVirt, apps). **Zeus AI** is the intelligent operating layer across both — assistant, SRE forecast, Mission Control, Jarvis briefing.
 
 **Scope:** Machina Intelligence vs Zeus OS boundaries are documented in [`machina-infrastructure-vision.md`](machina-infrastructure-vision.md). Zeus Firewall, K8s workloads, and app fabric are Zeus-owned; host geography, Living Server cards, and fleet patching are Machina-owned.
 

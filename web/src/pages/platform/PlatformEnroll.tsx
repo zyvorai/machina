@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { KeyRound, Copy } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
 import CopyButton from '../../components/CopyButton'
 import { createEnrollmentToken, listEnrollmentTokens, revokeEnrollmentToken, type EnrollmentToken, type EnrollmentTokenRow } from '../../api/platform'
@@ -35,7 +36,7 @@ export default function PlatformEnroll() {
   }
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader>
       <MacSectionTitle title="Host Enrollment" subtitle="Join new KVM nodes to the control plane" />
       <button type="button" className="btn-primary" disabled={busy} onClick={() => void generate()}>Generate join token</button>
       {token && (
@@ -71,6 +72,6 @@ export default function PlatformEnroll() {
           ))}</ul>
         </section>
       )}
-    </div>
+    </PageLayout>
   )
 }

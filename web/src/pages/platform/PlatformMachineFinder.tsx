@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
 import { MapPin, RefreshCw, Server } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
+import InfrastructureEarthGlobe from '../../components/platform/InfrastructureEarthGlobe'
 import MachineFinderGeography, { UNASSIGNED_SITE } from '../../components/platform/MachineFinderGeography'
 import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
 import FinderView from '../../components/platform/mac/FinderView'
@@ -117,7 +118,7 @@ export default function PlatformMachineFinder() {
   )
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error} onErrorRetry={() => void load()}>
       <PlatformTahoeHero
         title="Machine Finder"
         subtitle="Browse datacenter geography — site, rack, host, and VM — aligned with Mission Control."
@@ -129,8 +130,11 @@ export default function PlatformMachineFinder() {
         ] : []}
       />
 
+      {!loading && mission && (
+        <InfrastructureEarthGlobe mission={mission} className="mx-0" />
+      )}
+
       <div className="tahoe-content space-y-4">
-        {error && <ErrorBanner message={error} onRetry={() => void load()} />}
         {loading && <PageSkeleton />}
 
         {!loading && !error && !hasGeography && (
@@ -179,6 +183,6 @@ export default function PlatformMachineFinder() {
           />
         )}
       </div>
-    </div>
+    </PageLayout>
   )
 }

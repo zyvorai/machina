@@ -54,8 +54,8 @@ import { serviceAction } from '../api/extras'
 import { formatUserError } from '../utils/apiError'
 import { statusBadgeClasses, statusBgClass, statusBorderClass, statusSurfaceClasses, statusToneClass, utilizationTone } from '../utils/semanticColors'
 import { libvirtErrorHints } from '../utils/libvirtHints'
+import PageLayout from '../components/PageLayout'
 import ErrorBanner from '../components/ErrorBanner'
-import PageSkeleton from '../components/PageSkeleton'
 import EmptyState from '../components/EmptyState'
 
 interface StatsPoint { time: string; cpu: number; mem: number; disk: number; load: number }
@@ -497,8 +497,7 @@ export default function NodeInfoPage() {
     return () => clearInterval(interval)
   }, [load])
 
-  if (loading) return <PageSkeleton />
-  if (!node) {
+  if (!loading && !node) {
     return (
       <EmptyState
         title="Could not load host info"
@@ -523,15 +522,17 @@ export default function NodeInfoPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Server className={`w-6 h-6 ${statusToneClass('info')}`} /> Host overview</h1>
-          <p className="text-sm text-slate-400 mt-0.5 max-w-2xl">{node.hostname} — hypervisor worker: usage, mounts, top processes, and libvirt health (read-only)</p>
-        </div>
+    <PageLayout
+      loading={loading}
+      title="Host overview"
+      subtitle={node ? `${node.hostname} — hypervisor worker: usage, mounts, top processes, and libvirt health (read-only)` : undefined}
+      icon={<Server className={`w-6 h-6 ${statusToneClass('info')}`} />}
+      actions={
         <button onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
-      </div>
-
+      }
+    >
+      {node && (
+      <>
       {libvirtBoot?.needs_attention && libvirtBoot.detail && (
         <div className={`rounded-xl px-4 py-3 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 ${statusSurfaceClasses('warn')}`}>
           <div className="min-w-0">
@@ -1649,7 +1650,9 @@ export default function NodeInfoPage() {
           <ChoiceLinkCard to="/k8s/kata" icon={<Package className="w-4 h-4" />} title="Kata / Cloud Hypervisor" description="Install kata-deploy and use runtimeClassName kata-clh on your cluster." />
         </ChoiceCardGrid>
       </div>
-    </div>
+      </>
+      )}
+    </PageLayout>
   )
 }
 

@@ -6,6 +6,8 @@ import { useEffect, useState, useCallback } from 'react'
 import { listSecrets, deleteSecret, getSecretXml, defineSecret, SecretInfo } from '../api/advanced'
 import { useToastContext } from '../contexts/ToastContext'
 import ConfirmDialog from '../components/ConfirmDialog'
+import EmptyState from '../components/EmptyState'
+import PageLayout from '../components/PageLayout'
 import { Shield, Trash2, RefreshCw, Search, Code, X, Plus } from 'lucide-react'
 import { formatUserError } from '../utils/apiError'
 import { statusToneClass } from '../utils/semanticColors'
@@ -25,7 +27,14 @@ export default function SecretsPage() {
   const toast = useToastContext()
 
   const load = useCallback(async () => {
-    try { setSecrets(await listSecrets()) } catch (e: unknown) { toast.error(`${formatUserError(e)}`) } finally { setLoading(false) }
+    try {
+      setLoading(true)
+      setSecrets(await listSecrets())
+    } catch (e: unknown) {
+      toast.error(`${formatUserError(e)}`)
+    } finally {
+      setLoading(false)
+    }
   }, [toast])
 
   useEffect(() => { load() }, [load])
@@ -73,26 +82,41 @@ export default function SecretsPage() {
     s.usage_id.toLowerCase().includes(search.toLowerCase())
   )
 
-  if (loading) return <div className="flex items-center justify-center h-32"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
-
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Shield className="w-6 h-6" /> Secrets ({secrets.length})</h1>
-        <div className="flex items-center gap-2">
+    <PageLayout
+      title="Secrets"
+      icon={<Shield className="w-6 h-6" />}
+      subtitle={`${secrets.length} libvirt secrets`}
+      actions={
+        <>
           <button type="button" onClick={() => setDefineOpen(true)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium transition flex items-center gap-1"><Plus className="w-4 h-4" /> Define secret</button>
-          <button onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
-        </div>
-      </div>
-
+          <button onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition" title="Refresh" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
+        </>
+      }
+    >
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
         <input type="text" placeholder="Search secrets..." value={search} onChange={(e) => setSearch(e.target.value)}
           className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
       </div>
 
-      {filtered.length === 0 ? (
-        <div className="text-center py-12 text-slate-400">No secrets found.</div>
+      {loading ? (
+        <div className="flex items-center justify-center h-32" aria-busy="true" aria-label="Loading secrets">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <EmptyState
+          icon={<Shield className="w-6 h-6" />}
+          title="No secrets found"
+          description={search ? 'Try a different search term.' : 'Define a libvirt secret for encrypted storage pools (Ceph, iSCSI, etc.).'}
+          primaryAction={
+            !search ? (
+              <button type="button" onClick={() => setDefineOpen(true)} className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium">
+                Define secret
+              </button>
+            ) : undefined
+          }
+        />
       ) : (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
           <table className="w-full">
@@ -157,6 +181,6 @@ export default function SecretsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

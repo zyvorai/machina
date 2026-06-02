@@ -1,8 +1,16 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
-// Phase 58 v1 — canvas Infrastructure Earth globe (WebGL deferred).
+// Phase 58 — canvas Infrastructure Earth globe (WebGL deferred).
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { Link } from 'react-router'
 import type { FleetMissionOverview } from '../../api/platform'
+import { statusChipClasses } from '../../utils/semanticColors'
+
+function healthTone(pct: number): 'ok' | 'warn' | 'error' {
+  if (pct >= 90) return 'ok'
+  if (pct >= 70) return 'warn'
+  return 'error'
+}
 
 type GlobeSite = {
   name: string
@@ -22,7 +30,7 @@ function hashSite(name: string): { lat: number; lng: number } {
   return { lat, lng }
 }
 
-function sitesFromMission(mission: FleetMissionOverview): GlobeSite[] {
+export function sitesFromMission(mission: FleetMissionOverview): GlobeSite[] {
   const sites: GlobeSite[] = mission.sites.map((site) => {
     const hosts = site.racks.flatMap((r) => r.hosts)
     const online = hosts.filter((h) => h.state === 'online' && !h.maintenance_mode).length
@@ -45,6 +53,13 @@ function sitesFromMission(mission: FleetMissionOverview): GlobeSite[] {
   return sites
 }
 
+function finderHref(siteName: string): string {
+  if (siteName === 'Unassigned') {
+    return '/platform/hosts/finder?site=__unassigned__'
+  }
+  return `/platform/hosts/finder?site=${encodeURIComponent(siteName)}`
+}
+
 function healthColor(pct: number): string {
   if (pct >= 90) return 'rgba(52, 211, 153, 0.95)'
   if (pct >= 70) return 'rgba(251, 191, 36, 0.95)'
@@ -58,7 +73,7 @@ type Props = {
 
 export default function InfrastructureEarthGlobe({ mission, className = '' }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const markerCount = sitesFromMission(mission).length
+  const globeSites = useMemo(() => sitesFromMission(mission), [mission])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -66,7 +81,6 @@ export default function InfrastructureEarthGlobe({ mission, className = '' }: Pr
     const ctx = canvas.getContext('2d')
     if (!ctx) return undefined
 
-    const globeSites = sitesFromMission(mission)
     let frame = 0
     let raf = 0
 
@@ -88,7 +102,6 @@ export default function InfrastructureEarthGlobe({ mission, className = '' }: Pr
       const radius = Math.min(w, h) * 0.38
       const rot = frame * 0.004
 
-      // Globe wireframe
       ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)'
       ctx.lineWidth = 1
       for (let latDeg = -60; latDeg <= 60; latDeg += 30) {
@@ -126,7 +139,6 @@ export default function InfrastructureEarthGlobe({ mission, className = '' }: Pr
         ctx.stroke()
       }
 
-      // Site markers
       for (const site of globeSites) {
         const x3 = Math.cos(site.lat) * Math.cos(site.lng + rot)
         const y3 = Math.sin(site.lat)
@@ -150,17 +162,37 @@ export default function InfrastructureEarthGlobe({ mission, className = '' }: Pr
 
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
-  }, [mission])
+  }, [globeSites])
 
   return (
     <div
-      className={`relative overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-b from-slate-950 to-sky-950/40 ${className}`}
+      className={`overflow-hidden rounded-2xl border border-white/[0.08] bg-gradient-to-b from-slate-950 to-sky-950/40 ${className}`}
       data-testid="infrastructure-earth-globe"
     >
-      <canvas ref={canvasRef} className="w-full h-[220px] sm:h-[260px]" aria-label="Infrastructure Earth globe" />
-      <p className="absolute bottom-2 left-3 text-[10px] text-slate-500">
-        Canvas globe v1 · {markerCount} site marker{markerCount === 1 ? '' : 's'}
-      </p>
+      <div className="relative">
+        <canvas ref={canvasRef} className="w-full h-[220px] sm:h-[260px]" aria-label="Infrastructure Earth globe" />
+        <p className="absolute bottom-2 left-3 text-[10px] text-slate-500">
+          Canvas globe v2 · {globeSites.length} site marker{globeSites.length === 1 ? '' : 's'}
+        </p>
+      </div>
+      {globeSites.length > 0 && (
+        <div
+          className="flex flex-wrap gap-2 border-t border-white/[0.06] px-3 py-3"
+          data-testid="infrastructure-earth-legend"
+        >
+          {globeSites.map((site) => (
+            <Link
+              key={site.name}
+              to={finderHref(site.name)}
+              className={`inline-flex items-center gap-1.5 rounded-lg border border-white/[0.06] px-2.5 py-1.5 text-xs text-slate-200 transition hover:border-white/[0.12] hover:bg-white/[0.04] ${statusChipClasses(healthTone(site.healthPct))}`}
+              title={`${site.hosts} host(s) · ${site.healthPct}% healthy`}
+            >
+              <span className="font-medium">{site.name}</span>
+              <span className="text-slate-500">{site.hosts} · {site.healthPct}%</span>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

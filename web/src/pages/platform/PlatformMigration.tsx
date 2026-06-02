@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router'
+import PageLayout from '../../components/PageLayout'
 import { ArrowRightLeft, CheckCircle2, AlertTriangle, XCircle, ExternalLink, Play, Loader2 } from 'lucide-react'
 import { MacSectionTitle, MacGlassPanel, MacListRow } from '../../components/platform/mac/PlatformMacUi'
 import { getHypersdkStatus, listHypersdkProviders, listHypersdkProviderVms, submitHypersdkMigration, hypersdkProxyGet } from '../../api/hypersdk'
@@ -141,7 +142,7 @@ export default function PlatformMigration() {
   }, [tab, guestkit])
 
   return (
-    <div className="space-y-8 max-w-4xl animate-fade-in">
+    <PageLayout hideHeader contentClassName="space-y-8 max-w-4xl">
       <MacSectionTitle title="Migration Radar" subtitle="Machina Migration Radar — HyperSDK scan + GuestKit offline assurance." />
 
       <div className="flex gap-2 border-b border-white/[0.06] pb-1">
@@ -373,6 +374,6 @@ export default function PlatformMigration() {
       </section>
       </>
       )}
-    </div>
+    </PageLayout>
   )
 }

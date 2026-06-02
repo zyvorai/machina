@@ -57,9 +57,9 @@ test('show offline hosts command navigates to filtered hosts', async ({ page }) 
   await page.locator('.tahoe-context-bar').click()
   await page.keyboard.press('Control+k')
   const spotlight = page.locator('.liquid-glass-modal-backdrop').filter({
-    has: page.getByPlaceholder(/Machina Spotlight/i),
+    has: page.getByPlaceholder(/Zeus/i),
   })
-  await spotlight.getByPlaceholder(/Machina Spotlight/i).fill('show offline hosts')
+  await spotlight.getByPlaceholder(/Zeus/i).fill('show offline hosts')
   await spotlight.getByRole('button', { name: /Show offline hosts/i }).click()
   await expect(spotlight.getByText('Review command')).toBeVisible()
   await spotlight.getByRole('button', { name: /Confirm/i }).click()

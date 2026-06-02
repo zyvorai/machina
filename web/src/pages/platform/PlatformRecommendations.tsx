@@ -3,10 +3,10 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { Workflow } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
 import RemediateChips from '../../components/platform/RemediateChips'
-import ErrorBanner from '../../components/ErrorBanner'
 import { createVmBackup, listPlatformRecommendations, setVmHa, type PlatformRecommendation } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
@@ -49,10 +49,9 @@ export default function PlatformRecommendations() {
   }
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <PageLayout hideHeader error={error} contentClassName="max-w-3xl">
       <MacSectionTitle title="Recommendations" subtitle="Live analysis from your cluster — not static placeholders." />
       <RemediateChips />
-      {error && <ErrorBanner message={error} />}
       <ul className="space-y-4">
         {rows.map((r) => (
           <li key={r.id} className="card p-5 space-y-2">
@@ -69,6 +68,6 @@ export default function PlatformRecommendations() {
           <PlatformEmptyState title="No recommendations" subtitle="Your estate looks good — check back after changes to hosts or VMs." />
         )}
       </ul>
-    </div>
+    </PageLayout>
   )
 }

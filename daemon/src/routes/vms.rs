@@ -206,9 +206,16 @@ fn kubevirt_bundle_for_deploy(
     )?)
 }
 
+fn emit_kubevirt(bus: &Arc<EventBus>, kind: &str, target: &str, status: &str, message: &str) {
+    let mut ev = MachinaEvent::now(kind, target, status);
+    ev.message = message.chars().take(512).collect();
+    bus.emit(ev);
+}
+
 async fn kubevirt_apply_handler(
     Path(name): Path<String>,
     State(manager): State<LibvirtManager>,
+    Extension(bus): Extension<Arc<EventBus>>,
     Json(params): Json<KubeVirtBundleParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let cfg = MachinaConfig::load();
@@ -241,6 +248,13 @@ async fn kubevirt_apply_handler(
     let _ = std::fs::remove_file(&tmp);
     let audit = if code == 0 { "ok" } else { "error" };
     log_audit("kubevirt-apply", &name, audit);
+    emit_kubevirt(
+        &bus,
+        "kubevirt.apply",
+        &name,
+        audit,
+        &bundle.virtual_machine_name,
+    );
     Ok(Json(serde_json::json!({
         "exit_code": code,
         "stdout": stdout,
@@ -251,6 +265,7 @@ async fn kubevirt_apply_handler(
 async fn kubevirt_upload_handler(
     Path(name): Path<String>,
     State(manager): State<LibvirtManager>,
+    Extension(bus): Extension<Arc<EventBus>>,
     Json(params): Json<KubeVirtBundleParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let cfg = MachinaConfig::load();
@@ -275,6 +290,13 @@ async fn kubevirt_upload_handler(
     .map_err(AppError::from)?;
     let audit = if code == 0 { "ok" } else { "error" };
     log_audit("kubevirt-upload", &name, audit);
+    emit_kubevirt(
+        &bus,
+        "kubevirt.upload",
+        &name,
+        audit,
+        &bundle.datavolume_name,
+    );
     Ok(Json(serde_json::json!({
         "exit_code": code,
         "stdout": stdout,
@@ -437,6 +459,7 @@ fn validate_qcow2_allowed(path: &str, allowed_prefixes: &[String]) -> Result<(),
 async fn kubevirt_start_handler(
     Path(name): Path<String>,
     State(manager): State<LibvirtManager>,
+    Extension(bus): Extension<Arc<EventBus>>,
     Json(params): Json<KubeVirtBundleParams>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let cfg = MachinaConfig::load();
@@ -455,6 +478,13 @@ async fn kubevirt_start_handler(
             .map_err(AppError::from)?;
     let audit = if code == 0 { "ok" } else { "error" };
     log_audit("kubevirt-start", &name, audit);
+    emit_kubevirt(
+        &bus,
+        "kubevirt.start",
+        &name,
+        audit,
+        &bundle.virtual_machine_name,
+    );
     Ok(Json(serde_json::json!({
         "exit_code": code,
         "stdout": stdout,

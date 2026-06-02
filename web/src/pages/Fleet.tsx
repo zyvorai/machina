@@ -5,8 +5,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Server, RefreshCw, Play, Square, Power, BarChart3 } from 'lucide-react'
-import ErrorBanner from '../components/ErrorBanner'
-import PageSkeleton from '../components/PageSkeleton'
+import PageLayout from '../components/PageLayout'
 import EmptyState from '../components/EmptyState'
 import CopyButton from '../components/CopyButton'
 import {
@@ -93,18 +92,15 @@ export default function FleetPage() {
   }
 
   return (
-    <div className="space-y-6">
-      {loading && <PageSkeleton />}
-      {!loading && (
-      <>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Server className="w-8 h-8" />
-            {t('fleet.title')}
-          </h1>
-          <p className="text-sm text-slate-400 mt-0.5 max-w-2xl">{t('fleet.subtitle')}</p>
-        </div>
+    <PageLayout
+      title={t('fleet.title')}
+      subtitle={t('fleet.subtitle')}
+      icon={<Server className="w-8 h-8" />}
+      loading={loading}
+      error={loadError}
+      errorTitle={t('fleet.title')}
+      onErrorRetry={() => void load()}
+      actions={
         <button
           type="button"
           onClick={() => void load()}
@@ -114,16 +110,8 @@ export default function FleetPage() {
           <RefreshCw className="w-4 h-4" />
           {t('common.refresh')}
         </button>
-      </div>
-
-      {loadError ? (
-        <ErrorBanner
-          title={t('fleet.title')}
-          headline={loadError}
-          onRetry={() => void load()}
-        />
-      ) : null}
-
+      }
+    >
       {!enabled ? (
         <div className="rounded-xl border border-slate-700/50 bg-slate-800/40 px-4 py-3 space-y-2">
           <p className="text-slate-400 text-sm">{t('fleet.disabledHint')}</p>
@@ -504,8 +492,6 @@ export default function FleetPage() {
           ) : null}
         </div>
       </section>
-      </>
-      )}
-    </div>
+    </PageLayout>
   )
 }

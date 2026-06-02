@@ -63,7 +63,7 @@ export default function MachinaDoctorPanel({ vmId, report, loading, onRefresh, o
   return (
     <div className="platform-mac-stat rounded-2xl border border-white/[0.06] bg-slate-900/50 p-5 space-y-4">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="font-semibold">Machina Doctor</h3>
+        <h3 className="font-semibold">Zeus SRE</h3>
         <button type="button" className="btn-secondary text-xs" disabled={loading} onClick={onRefresh}>
           {loading ? 'Scanning…' : 'Run scan'}
         </button>

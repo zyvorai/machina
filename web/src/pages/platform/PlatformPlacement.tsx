@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Activity, RefreshCw } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
 import {
   getClusterSettings,
   getHaStatus,
@@ -83,7 +83,7 @@ export default function PlatformPlacement() {
   }, [load])
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <MacSectionTitle title="Placement & HA" subtitle="DRS-style recommendations and high-availability status" />
         <div className="flex gap-2">
@@ -95,7 +95,6 @@ export default function PlatformPlacement() {
           </button>
         </div>
       </header>
-      {error && <ErrorBanner message={error} />}
       {settings && (
         <section className="card p-4 flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -176,6 +175,6 @@ export default function PlatformPlacement() {
           </ul>
         </section>
       )}
-    </div>
+    </PageLayout>
   )
 }

@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Settings } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import { MacSectionTitle, MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
 import {
   getClusterSummary,
   getClusterLeadership,
@@ -76,11 +76,10 @@ export default function PlatformSettings({ embedded }: { embedded?: boolean }) {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader compact={embedded} error={error}>
       {!embedded && (
         <MacSectionTitle title="Platform settings" subtitle="Cluster name, OIDC, CPU compatibility, HA" />
       )}
-      {error && <ErrorBanner message={error} />}
       {leadership && (
         <MacGlassPanel title="Controller leadership">
           <div className="space-y-2 text-sm">
@@ -151,10 +150,10 @@ export default function PlatformSettings({ embedded }: { embedded?: boolean }) {
           } catch (e: unknown) { toast.error(formatUserError(e)) }
         }}>Save quota</button>
       </MacGlassPanel>
-      <MacGlassPanel title="Machina AI (BYOK)" subtitle="Deterministic engines work with AI disabled. Optional LLM improves NL parsing and explanations.">
+      <MacGlassPanel title="Zeus AI (BYOK)" subtitle="Deterministic engines work with AI disabled. Optional LLM improves NL parsing and explanations. Configure providers under Settings → AI Providers.">
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={ai.enabled} onChange={(e) => setAi({ ...ai, enabled: e.target.checked })} />
-          Enable Machina AI
+          Enable Zeus AI
         </label>
         <label className="text-sm block">
           Mode
@@ -195,7 +194,7 @@ export default function PlatformSettings({ embedded }: { embedded?: boolean }) {
           </label>
         )}
         <label className="text-sm block">
-          Fleet peer controller URLs (one per line, for multi-cluster Machina AI summary)
+          Fleet peer controller URLs (one per line, for multi-cluster Zeus summary)
           <textarea
             className="input mt-1 block w-full max-w-lg min-h-20 font-mono text-xs"
             placeholder="https://controller-site-b.example.com"
@@ -240,6 +239,6 @@ export default function PlatformSettings({ embedded }: { embedded?: boolean }) {
           } catch (e: unknown) { toast.error(formatUserError(e)) }
         }}>Save matrix ({cpuRules.length} rules)</button>
       </MacGlassPanel>
-    </div>
+    </PageLayout>
   )
 }

@@ -2,7 +2,7 @@
 // Proprietary software — see LICENSE in the repository root.
 // https://zyvor.dev · info@zyvor.dev
 
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router'
+import { BrowserRouter, Routes, Route, useNavigate, useLocation, Navigate } from 'react-router'
 import { ZyvorFooter } from './components/ZyvorBrand';
 import { Suspense, lazy, useState, useCallback, useMemo, useEffect } from 'react'
 import { ToastProvider } from './contexts/ToastContext'
@@ -15,8 +15,9 @@ import ShellBridgeBar from './components/ShellBridgeBar'
 import NotFound from './pages/NotFound'
 import LoginPage from './pages/Login'
 import CommandPalette from './components/CommandPalette'
-import MachinaSpotlight from './components/ai/MachinaSpotlight'
-import MachinaCopilot from './components/ai/MachinaCopilot'
+import ZeusSpotlight from './components/ai/ZeusSpotlight'
+import ZeusAssistant from './components/ai/ZeusAssistant'
+import ZeusAmbientBar from './components/ai/ZeusAmbientBar'
 import Breadcrumb from './components/Breadcrumb'
 import HelpDialog, { type HelpTab } from './components/HelpDialog'
 import { OPEN_HELP_EVENT } from './utils/openHelp'
@@ -261,11 +262,11 @@ function AuthenticatedShell() {
   return (
     <WebSocketProvider>
       <PlatformInfoProvider>
-        <AiProvider>
-          <BrowserRouter>
+        <BrowserRouter>
+          <AiProvider>
             <AuthenticatedShellRoutes />
-          </BrowserRouter>
-        </AiProvider>
+          </AiProvider>
+        </BrowserRouter>
       </PlatformInfoProvider>
     </WebSocketProvider>
   )
@@ -298,8 +299,9 @@ function AuthenticatedShellRoutes() {
           <div className={`${shellClass} flex flex-col min-h-screen`}>
             {!isPlatformRoute && <Navbar onOpenHelp={openHelp} />}
             {!isPlatformRoute && <ShellBridgeBar />}
-            <MachinaSpotlight onOpenHelp={openHelp} />
-            <MachinaCopilot />
+            <ZeusSpotlight onOpenHelp={openHelp} />
+            <ZeusAssistant />
+            <ZeusAmbientBar />
             <GlobalShortcuts
               helpOpen={helpOpen}
               helpTab={helpTab}
@@ -319,6 +321,7 @@ function AuthenticatedShellRoutes() {
               {!isPlatformRoute && <Breadcrumb />}
               <Suspense fallback={<PageSkeleton />}>
                 <Routes>
+                <Route path="/login" element={<Navigate to="/" replace />} />
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/vms" element={<VMList />} />
                 <Route path="/vms/:name" element={<VMDetails />} />

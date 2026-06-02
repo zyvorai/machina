@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Shield, ShieldBan, Server, Ban } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import {
   MacGlassPanel,
   MacListRow,
   MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
 import PageSkeleton from '../../components/PageSkeleton'
 import {
   applyEnforcementPolicy,
@@ -80,13 +80,12 @@ export default function PlatformRuntimeEnforcement() {
   }
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle
         title="Runtime enforcement"
         subtitle="eBPF deny rules — process · DNS · port · IP via Tetragon TracingPolicy"
       />
       <Link to="/platform/zeus/security" className={`text-sm ${hubLinkClasses()}`}>← Security Center</Link>
-      {error && <ErrorBanner message={error} />}
       {loading && !status && <PageSkeleton />}
 
       {status && (
@@ -158,6 +157,6 @@ export default function PlatformRuntimeEnforcement() {
           {agentBundle && <p className="text-sm text-slate-400">{agentBundle}</p>}
         </div>
       </MacGlassPanel>
-    </div>
+    </PageLayout>
   )
 }

@@ -10,7 +10,7 @@ import {
   MacStatWidget,
   NewLaunchpadCard,
 } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
 import {
   createBlueprint,
@@ -95,7 +95,7 @@ export default function PlatformBlueprints() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <header>
         <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Shortcuts</p>
         <MacSectionTitle
@@ -103,7 +103,6 @@ export default function PlatformBlueprints() {
           subtitle="macOS Shortcuts-style Launchpad — tap a blueprint to run automation across VM sets."
         />
       </header>
-      {error && <ErrorBanner message={error} />}
       {fleet && <p className="text-sm text-slate-400">{fleet.summary}</p>}
 
       {fleet && tab === 'launchpad' && (
@@ -211,6 +210,6 @@ export default function PlatformBlueprints() {
         </>
       )}
       <FleetSettingsPane kind="shortcuts" />
-    </div>
+    </PageLayout>
   )
 }

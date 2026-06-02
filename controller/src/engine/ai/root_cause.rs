@@ -246,7 +246,7 @@ fn infer_root_cause(
     }
 
     if vm_scoped {
-        actions.push("Open Machina Doctor for VM health score.".into());
+        actions.push("Open Zeus SRE for VM health score.".into());
         return (
             "No dominant correlation — review timeline and VM metrics for gradual degradation."
                 .into(),

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import ExplainButton from '../../components/ai/ExplainButton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformFilterPills from '../../components/platform/PlatformFilterPills'
@@ -43,12 +43,11 @@ export default function PlatformTasks() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <MacSectionTitle title="Tasks" subtitle="Orchestration queue — like Activity Monitor for your datacenter." />
         <button type="button" className="btn-secondary" onClick={() => void load()}><RefreshCw className="w-4 h-4" /></button>
       </header>
-      {error && <ErrorBanner message={error} />}
       <PlatformFilterPills
         value={filter}
         onChange={setFilter}
@@ -99,6 +98,6 @@ export default function PlatformTasks() {
           ))}
         </ul>
       )}
-    </div>
+    </PageLayout>
   )
 }

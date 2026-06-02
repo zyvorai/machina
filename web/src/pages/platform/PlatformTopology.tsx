@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Cable, GitBranch, Layers, RefreshCw } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import { MacSectionTitle, MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { formatUserError } from '../../utils/apiError'
@@ -82,7 +82,7 @@ export default function PlatformTopology() {
   }, [graph])
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error} onErrorRetry={() => void load()}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <MacSectionTitle title="Topology" subtitle="Digital twin graph — hosts, VMs, overlay segments, and LLDP uplinks" />
         <button type="button" className="btn-secondary text-xs flex items-center gap-2" disabled={loading} onClick={() => void load()}>
@@ -90,7 +90,6 @@ export default function PlatformTopology() {
           Refresh LLDP
         </button>
       </div>
-      {error && <ErrorBanner message={error} />}
       {loading && !graph && <PageSkeleton />}
       {!loading && graph && graph.nodes.length === 0 && (
         <PlatformEmptyState
@@ -232,6 +231,6 @@ export default function PlatformTopology() {
         )}
         </div>
       </MacGlassPanel>
-    </div>
+    </PageLayout>
   )
 }

@@ -10,6 +10,8 @@ import { useToastContext } from '../contexts/ToastContext'
 import { listAdminSessions, revokeAdminSession, AdminSessionsResponse } from '../api/adminSessions'
 import { logout as apiLogout } from '../api/auth'
 import { formatUserError } from '../utils/apiError'
+import EmptyState from '../components/EmptyState'
+import PageLayout from '../components/PageLayout'
 import { statusActionLinkClasses, statusBadgeClasses, statusToneClass } from '../utils/semanticColors'
 
 export default function AdminSessionsPage() {
@@ -47,20 +49,18 @@ export default function AdminSessionsPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-5xl">
-      <div className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Users className={`w-7 h-7 ${statusToneClass('info')}`} />
-          Web sessions
-        </h1>
+    <PageLayout
+      className="max-w-5xl"
+      title="Web sessions"
+      icon={<Users className={`w-7 h-7 ${statusToneClass('info')}`} />}
+      subtitle="In-memory browser logins for this machina daemon (not API bearer tokens). Revoking a session invalidates that cookie; the user must sign in again."
+      actions={
         <button type="button" onClick={() => void load()} className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Refresh" title="Refresh">
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
         </button>
-      </div>
-      <p className="text-sm text-slate-400">
-        In-memory browser logins for this machina daemon (not API bearer tokens). Revoking a session invalidates that cookie; the user must sign in again.
-      </p>
-
+      }
+      contentLoading={loading && !data}
+    >
       {data && (
         <div className="grid gap-4 sm:grid-cols-3">
           <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
@@ -82,6 +82,9 @@ export default function AdminSessionsPage() {
         </div>
       )}
 
+      {!loading && data && data.sessions.length === 0 ? (
+        <EmptyState title="No active sessions" description="No browser sessions are currently tracked by the daemon." />
+      ) : (
       <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
@@ -132,11 +135,9 @@ export default function AdminSessionsPage() {
             ))}
           </tbody>
         </table>
-        {!loading && (data?.sessions.length ?? 0) === 0 && (
-          <div className="px-4 py-10 text-center text-slate-500">No active sessions.</div>
-        )}
       </div>
-    </div>
+      )}
+    </PageLayout>
   )
 }
 

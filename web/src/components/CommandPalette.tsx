@@ -40,7 +40,7 @@ import { groupSpotlightByZone, spotlightNavForTier, spotlightPathSetForTier, spo
 
 interface CommandPaletteProps {
   onOpenHelp?: (tab?: HelpTab) => void
-  /** When true, show Machina Spotlight branding (⌘Space primary). */
+  /** When true, show Zeus Spotlight branding (⌘Space primary). */
   spotlight?: boolean
 }
 
@@ -487,7 +487,7 @@ export default function CommandPalette({ onOpenHelp, spotlight = false }: Comman
       id: `ai-intent-${intent.id}`,
       icon: <Terminal className="w-4 h-4 text-orange-400" />,
       label: intent.label,
-      sublabel: intent.review || 'Machina Spotlight',
+      sublabel: intent.review || 'Zeus Spotlight',
       action: () => {
         if (intent.navigate) {
           go(intent.navigate)
@@ -512,7 +512,7 @@ export default function CommandPalette({ onOpenHelp, spotlight = false }: Comman
           })
         }
       },
-      category: 'Machina Spotlight',
+      category: 'Zeus Spotlight',
     })
   }
 
@@ -548,7 +548,7 @@ export default function CommandPalette({ onOpenHelp, spotlight = false }: Comman
     'Recent pages',
     'Recent',
     'Pinned',
-    'Machina Spotlight',
+    'Zeus Spotlight',
     'Platform Commands',
     ...spotlightZoneOrder(),
     'Platform Actions',
@@ -627,7 +627,7 @@ export default function CommandPalette({ onOpenHelp, spotlight = false }: Comman
               type="text"
               value={query}
               onChange={e => setQuery(e.target.value)}
-              placeholder={spotlight ? 'Machina Spotlight — search or ask…' : 'Search or type > import networks…'}
+              placeholder={spotlight ? 'Zeus — search or ask…' : 'Search or type > import networks…'}
               className="flex-1 py-3.5 bg-transparent text-sm text-white placeholder-slate-500 focus:outline-none"
             />
             {spotlight ? (

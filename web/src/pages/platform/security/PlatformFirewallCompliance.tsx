@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { MacGlassPanel, MacSectionTitle } from '../../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../../components/ErrorBanner'
+import PageLayout from '../../../components/PageLayout'
 import {
   getFirewallCompliance,
   exportFirewallSiem,
@@ -85,13 +85,12 @@ export default function PlatformFirewallCompliance() {
   useEffect(() => { void loadPacketwolf() }, [loadPacketwolf])
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Firewall Compliance" subtitle="Production exposure, approvals, Packetwolf anomalies, and GitOps policy sync" />
       <div className="flex flex-wrap gap-3 text-sm">
         <Link to="/platform/zeus/security/firewall" className={hubLinkClasses()}>← Firewall overview</Link>
         <Link to="/platform/placement" className={hubLinkClasses()}>HA & fence events →</Link>
       </div>
-      {error && <ErrorBanner message={error} />}
       <MacGlassPanel title="Pending approvals" action={
         <button type="button" className={`text-xs ${hubLinkClasses()}`} onClick={() => void loadApprovals()}>
           Refresh
@@ -231,6 +230,6 @@ export default function PlatformFirewallCompliance() {
           </JsonInspector>
         </MacGlassPanel>
       )}
-    </div>
+    </PageLayout>
   )
 }

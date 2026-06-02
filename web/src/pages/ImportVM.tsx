@@ -17,6 +17,7 @@ import { usePlatformInfo } from '../contexts/PlatformInfoContext'
 import { useOpenStackConnection } from '../hooks/useOpenStackConnection'
 import { Cloud } from 'lucide-react'
 import WizardStepper from '../components/WizardStepper'
+import PageLayout from '../components/PageLayout'
 
 const IMPORT_STEPS = ['Import disk', 'Configure VM'] as const
 
@@ -102,15 +103,16 @@ export default function ImportVMPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 animate-fade-in">
-      <div className="flex items-center gap-4">
+    <PageLayout
+      className="max-w-3xl mx-auto"
+      title="Import guest VM"
+      subtitle="Bring a disk image onto this hypervisor host and define a libvirt domain—useful for bare-metal lab or worker pools before optional KubeVirt migration."
+      icon={<Upload className="w-6 h-6 text-cyan-400" />}
+      actions={
         <Link to="/vms" className="p-2 hover:bg-slate-700 rounded transition" aria-label="Back"><ArrowLeft className="w-5 h-5" /></Link>
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Upload className="w-6 h-6 text-cyan-400" /> Import guest VM</h1>
-          <p className="text-sm text-slate-400 mt-1 max-w-2xl">Bring a disk image onto this hypervisor host and define a libvirt domain—useful for bare-metal lab or worker pools before optional KubeVirt migration.</p>
-        </div>
-      </div>
-
+      }
+      contentClassName="space-y-6"
+    >
       <WizardStepper
         steps={IMPORT_STEPS}
         current={step === 'import' ? 0 : 1}
@@ -250,6 +252,6 @@ export default function ImportVMPage() {
         canSelectFile={isHostDiskImageFileName}
         onSelectPath={(p) => setSource(p)}
       />
-    </div>
+    </PageLayout>
   )
 }

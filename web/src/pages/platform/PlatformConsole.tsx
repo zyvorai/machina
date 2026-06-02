@@ -1,9 +1,9 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useEffect, useRef, useState } from 'react'
+import PageLayout from '../../components/PageLayout'
 import { Link, useLocation, useParams } from 'react-router'
 import { ArrowLeft, ExternalLink } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
 import { getVmConsole, platformVncWsUrl } from '../../api/platform'
 import { formatUserError } from '../../utils/apiError'
 import AiTerminalCompanion from '../../components/ai/AiTerminalCompanion'
@@ -58,7 +58,13 @@ export default function PlatformConsole() {
   }, [id])
 
   return (
-    <div className={`space-y-4 ${isPopout ? 'h-[calc(100vh-3rem)] flex flex-col' : ''}`}>
+    <PageLayout
+      hideHeader
+      compact
+      error={error}
+      className={isPopout ? 'h-[calc(100vh-3rem)] flex flex-col' : ''}
+      contentClassName={`space-y-4 ${isPopout ? 'flex flex-col flex-1 min-h-0' : ''}`}
+    >
       {!isPopout && (
         <div className="flex items-center justify-between gap-2">
           <Link to={`/platform/vms/${id}`} className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}>
@@ -73,13 +79,12 @@ export default function PlatformConsole() {
           </button>
         </div>
       )}
-      {error && <ErrorBanner message={error} />}
       <div className="text-sm text-white/50">Status: {status}</div>
       <div
         ref={containerRef}
         className={`w-full bg-black rounded-lg overflow-hidden flex-1 ${isPopout ? 'min-h-0' : 'min-h-[480px]'}`}
       />
       {id && !isPopout && <AiTerminalCompanion vmName={id} vmId={id} />}
-    </div>
+    </PageLayout>
   )
 }

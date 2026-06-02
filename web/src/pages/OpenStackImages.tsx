@@ -15,7 +15,7 @@ import GlancePullModal from '../components/GlancePullModal'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackStatusBar from '../components/OpenStackStatusBar'
-import ErrorBanner from '../components/ErrorBanner'
+import PageLayout from '../components/PageLayout'
 import { formatUserError } from '../utils/apiError'
 import { statusActionLinkClasses, statusDestructiveButtonClasses, statusToneClass } from '../utils/semanticColors'
 import { openStackErrorHints } from '../utils/openstackHints'
@@ -88,28 +88,19 @@ function OpenStackImagesContent() {
   const uploadEnabled = Boolean(info?.openstack?.upload_enabled)
 
   return (
-    <div className="space-y-6">
-      <OpenStackSubNav />
-      <OpenStackStatusBar />
-      {loadError && (
-        <ErrorBanner
-          title="Failed to load Glance images"
-          headline={loadError}
-          hints={openStackErrorHints(loadError)}
-          technicalDetail={loadError}
-          tone="red"
-          onRetry={() => void load()}
-          onDismiss={() => setLoadError(null)}
-        />
-      )}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <Cloud className="w-7 h-7 text-sky-400" />
-            Glance Images
-          </h1>
-          <p className="text-slate-400 text-sm mt-1">Images in the connected OpenStack project.</p>
-        </div>
+    <PageLayout
+      prepend={<><OpenStackSubNav /><OpenStackStatusBar /></>}
+      title="Glance Images"
+      subtitle="Images in the connected OpenStack project."
+      icon={<Cloud className="w-7 h-7 text-sky-400" />}
+      error={loadError}
+      errorTitle="Failed to load Glance images"
+      errorHints={loadError ? openStackErrorHints(loadError) : undefined}
+      technicalDetail={loadError}
+      errorTone="red"
+      onErrorRetry={() => void load()}
+      onErrorDismiss={() => setLoadError(null)}
+      actions={
         <div className="flex gap-2 flex-wrap">
           {uploadEnabled && (
             <Link
@@ -135,7 +126,8 @@ function OpenStackImagesContent() {
             Refresh
           </button>
         </div>
-      </div>
+      }
+    >
 
       <div className="overflow-x-auto rounded-xl border border-slate-700/80">
         <table className="w-full text-sm">
@@ -224,6 +216,6 @@ function OpenStackImagesContent() {
         onConfirm={handleDelete}
         onCancel={() => setDeleteTarget(null)}
       />
-    </div>
+    </PageLayout>
   )
 }

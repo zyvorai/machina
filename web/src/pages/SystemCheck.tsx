@@ -22,6 +22,7 @@ import { useToastContext } from '../contexts/ToastContext'
 import { useOpenStackConnection } from '../hooks/useOpenStackConnection'
 import ConfirmDialog from '../components/ConfirmDialog'
 import ErrorBanner from '../components/ErrorBanner'
+import PageLayout from '../components/PageLayout'
 import { openStackErrorHints } from '../utils/openstackHints'
 import { libvirtErrorHints } from '../utils/libvirtHints'
 import {
@@ -248,19 +249,18 @@ export default function SystemCheckPage() {
   const openstackConfigured = Boolean(platform?.openstack?.enabled && platform?.openstack?.configured)
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-4xl">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Stethoscope className="w-7 h-7 text-sky-400" />
-            System Check
-          </h1>
-          <p className="text-sm text-slate-400 mt-1 max-w-2xl">
-            Auto-runs read-only diagnostics (API, host, libvirt, OpenStack, Kubernetes, services).
-            Same coverage as <code className="text-slate-500">e2e-test.sh</code> preflight — from the UI.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+    <PageLayout
+      className="max-w-4xl"
+      title="System Check"
+      icon={<Stethoscope className="w-7 h-7 text-sky-400" />}
+      subtitle={
+        <>
+          Auto-runs read-only diagnostics (API, host, libvirt, OpenStack, Kubernetes, services).
+          Same coverage as <code className="text-slate-500">e2e-test.sh</code> preflight — from the UI.
+        </>
+      }
+      actions={
+        <>
           <button
             type="button"
             disabled={busy}
@@ -290,9 +290,10 @@ export default function SystemCheckPage() {
               Deep smoke
             </button>
           )}
-        </div>
-      </div>
-
+        </>
+      }
+      contentClassName="space-y-6"
+    >
       {(running || deepRunning) && progressLabel && (
         <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-sky-500/30 bg-sky-950/25 text-sm text-sky-200">
           <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
@@ -382,6 +383,6 @@ export default function SystemCheckPage() {
         onConfirm={() => void runDeepSmoke()}
         onCancel={() => setDeepOpen(false)}
       />
-    </div>
+    </PageLayout>
   )
 }

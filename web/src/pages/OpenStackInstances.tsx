@@ -22,7 +22,7 @@ import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackStatusBar from '../components/OpenStackStatusBar'
 import { useOpenStackConnection } from '../hooks/useOpenStackConnection'
 import EmptyState from '../components/EmptyState'
-import ErrorBanner from '../components/ErrorBanner'
+import PageLayout from '../components/PageLayout'
 import { formatUserError } from '../utils/apiError'
 import { openStackErrorHints } from '../utils/openstackHints'
 import { openstackStatusTone, statusBadgeClasses, statusBorderClass, statusSurfaceClasses, statusToneClass } from '../utils/semanticColors'
@@ -142,34 +142,27 @@ function OpenStackInstancesContent() {
     : `Page ${markerStack.length + 1}${hasMore ? '+' : ''} · ${instances.length} row${instances.length === 1 ? '' : 's'}`
 
   return (
-    <div className="space-y-6">
-      <OpenStackSubNav />
-      <OpenStackStatusBar />
-      {loadError && (
-        <ErrorBanner
-          title="Failed to load instances"
-          headline={loadError}
-          hints={openStackErrorHints(loadError)}
-          technicalDetail={loadError}
-          tone="red"
-          onRetry={() => void load()}
-          onDismiss={() => setLoadError(null)}
-        />
-      )}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold flex items-center gap-2">
-            <Cloud className="w-7 h-7 text-sky-400" />
-            OpenStack Instances
-          </h1>
-          <p className="text-slate-400 text-sm mt-1">
-            Nova instances for cloud{' '}
-            <span className="text-slate-200">{status?.cloud_name || '—'}</span>
-            {status?.connected && status.instance_count != null && (
-              <> · {status.instance_count} in project</>
-            )}
-          </p>
-        </div>
+    <PageLayout
+      prepend={<><OpenStackSubNav /><OpenStackStatusBar /></>}
+      title="OpenStack Instances"
+      subtitle={
+        <>
+          Nova instances for cloud{' '}
+          <span className="text-slate-200">{status?.cloud_name || '—'}</span>
+          {status?.connected && status.instance_count != null && (
+            <> · {status.instance_count} in project</>
+          )}
+        </>
+      }
+      icon={<Cloud className="w-7 h-7 text-sky-400" />}
+      error={loadError}
+      errorTitle="Failed to load instances"
+      errorHints={loadError ? openStackErrorHints(loadError) : undefined}
+      technicalDetail={loadError}
+      errorTone="red"
+      onErrorRetry={() => void load()}
+      onErrorDismiss={() => setLoadError(null)}
+      actions={
         <div className="flex gap-2">
           <Link
             to="/openstack/images"
@@ -193,7 +186,8 @@ function OpenStackInstancesContent() {
             Refresh
           </button>
         </div>
-      </div>
+      }
+    >
 
       {status?.error && (
         <div className={`p-3 rounded-lg text-sm ${statusSurfaceClasses('warn')}`}>
@@ -355,6 +349,6 @@ function OpenStackInstancesContent() {
       )}
 
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

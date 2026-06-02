@@ -24,6 +24,7 @@ import {
   ArrowRight, Monitor, Wifi, Cable, X, Sliders, Copy, Check, Search, Route,
 } from 'lucide-react'
 import { ChoiceCard, ChoiceCardDenseGrid } from '../components/ChoiceCards'
+import PageLayout from '../components/PageLayout'
 import { formatUserError } from '../utils/apiError'
 import { statusBgClass, statusSurfaceClasses, statusToneClass } from '../utils/semanticColors'
 
@@ -369,18 +370,17 @@ export default function HostNetworkingPage() {
     }
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" /></div>
-
   return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Network className={`w-6 h-6 ${statusToneClass('info')}`} /> Host Networking</h1>
-          <p className="text-sm text-slate-400 mt-0.5 max-w-2xl">{hostIfaces.length} physical interfaces, {networks.length} libvirt-defined networks — bridges, NAT, DHCP, port forwards, kernel routing tables, and firewall context on this worker host.</p>
-        </div>
+    <PageLayout
+      title="Host Networking"
+      icon={<Network className={`w-6 h-6 ${statusToneClass('info')}`} />}
+      subtitle={`${hostIfaces.length} physical interfaces, ${networks.length} libvirt-defined networks — bridges, NAT, DHCP, port forwards, kernel routing tables, and firewall context on this worker host.`}
+      actions={
         <button onClick={load} className="p-2 hover:bg-slate-700 rounded-lg transition" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
-      </div>
-
+      }
+      contentLoading={loading}
+      contentClassName="space-y-6"
+    >
       <div>
         <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-2">View</h2>
         <ChoiceCardDenseGrid>
@@ -1015,6 +1015,6 @@ export default function HostNetworkingPage() {
           )}
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

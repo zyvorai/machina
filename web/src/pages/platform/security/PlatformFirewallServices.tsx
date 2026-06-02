@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { MacGlassPanel, MacSectionTitle } from '../../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../../components/ErrorBanner'
+import PageLayout from '../../../components/PageLayout'
 import { getFirewallOverview, getFirewallServices, type AllowedService } from '../../../api/zeusFirewall'
 import { formatUserError } from '../../../utils/apiError'
 import { firewallRiskClass, formatAllowedFrom } from '../../../utils/firewallDisplay'
@@ -58,10 +58,9 @@ export default function PlatformFirewallServices() {
   }, [services, filter])
 
   return (
-    <div className="space-y-6 platform-readable">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Allowed Apps & Services" subtitle="Service-centric firewall view — deduplicated rules per host." />
       <Link to="/platform/zeus/security/firewall" className="text-sm text-sky-400 hover:underline">← Firewall overview</Link>
-      {error && <ErrorBanner message={error} />}
       <MacGlassPanel title="Allowed services">
         <div className="flex flex-wrap gap-2 mb-4">
           <input
@@ -102,6 +101,6 @@ export default function PlatformFirewallServices() {
           )}
         </div>
       </MacGlassPanel>
-    </div>
+    </PageLayout>
   )
 }

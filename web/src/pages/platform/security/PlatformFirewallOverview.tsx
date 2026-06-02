@@ -12,7 +12,7 @@ import {
 } from '../../../components/platform/mac/PlatformMacUi'
 import JsonInspector, { asRecord, recordEntries } from '../../../components/platform/JsonInspector'
 import PlatformFilterPills from '../../../components/platform/PlatformFilterPills'
-import ErrorBanner from '../../../components/ErrorBanner'
+import PageLayout from '../../../components/PageLayout'
 import {
   getFirewallOverview,
   getBaremetalFirewallOverview,
@@ -122,12 +122,11 @@ export default function PlatformFirewallOverview() {
   }
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle
         title="Zeus Firewall"
         subtitle="System Settings-style machine protection for hosts and bare metal"
       />
-      {error && <ErrorBanner message={error} />}
       {statusLine && (
         <p className="text-sm text-slate-400 flex items-center gap-2">
           <Shield className={`w-4 h-4 ${hubLinkClasses()}`} />
@@ -292,6 +291,6 @@ export default function PlatformFirewallOverview() {
           </MacGlassPanel>
         </>
       )}
-    </div>
+    </PageLayout>
   )
 }

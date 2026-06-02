@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Bot, Sparkles } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import { MacGlassPanel, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
 import SecurityTimelinePanel from '../../components/platform/SecurityTimelinePanel'
 import {
   getFleetSecurityTimeline,
@@ -120,10 +120,9 @@ export default function PlatformThreatHunting() {
   }
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Threat hunting" subtitle="Search · timeline · graph · evidence · AI summary" />
       <Link to="/platform/zeus/security" className={`text-sm ${hubLinkClasses()}`}>← Security Center</Link>
-      {error && <ErrorBanner message={error} />}
       {huntQueries.length > 0 && (
         <MacGlassPanel title="Saved hunt queries" subtitle="OpenSearch-backed SOC playbooks">
           <div className="flex flex-wrap gap-2">
@@ -265,6 +264,6 @@ export default function PlatformThreatHunting() {
           </ol>
         </MacGlassPanel>
       )}
-    </div>
+    </PageLayout>
   )
 }

@@ -89,6 +89,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/hosts/{id}/diagnose", post(host_os::diagnose_host))
         .route("/api/v1/hosts/{id}/maintenance", post(hosts::host_maintenance))
         .route("/api/v1/vms", get(vms::list_vms).post(vms::create_vm))
+        .route("/api/v1/vms/prune-missing", post(vms::prune_missing_vms))
         .route(
             "/api/v1/enrollment/tokens/{token}",
             delete(enrollment::revoke_enrollment_token),
@@ -149,6 +150,39 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/ai/knowledge/runbook", post(ai::knowledge_runbook))
         .route("/api/v1/ai/cost/budget", get(ai::cost_budget))
         .route("/api/v1/ai/mission/stack/status", get(ai::mission_stack_status))
+        .route("/api/v1/ai/providers", get(ai::list_ai_providers).post(ai::create_ai_provider))
+        .route(
+            "/api/v1/ai/providers/{id}",
+            patch(ai::patch_ai_provider).delete(ai::delete_ai_provider),
+        )
+        .route("/api/v1/ai/providers/{id}/models", get(ai::list_ai_provider_models))
+        .route("/api/v1/ai/providers/{id}/test", post(ai::test_ai_provider))
+        .route("/api/v1/ai/routing/rules", get(ai::list_routing_rules))
+        .route("/api/v1/ai/agents", get(ai::list_zeus_agents))
+        .route("/api/v1/ai/zeus/chat", post(ai::zeus_chat))
+        .route("/api/v1/ai/prompts", get(ai::list_ai_prompts).post(ai::create_ai_prompt))
+        .route(
+            "/api/v1/ai/prompts/{id}",
+            patch(ai::patch_ai_prompt).delete(ai::delete_ai_prompt),
+        )
+        .route("/api/v1/ai/memory/settings", get(ai::get_memory_settings).patch(ai::patch_memory_settings))
+        .route("/api/v1/ai/memory", delete(ai::purge_memory))
+        .route("/api/v1/ai/actions/hub", get(ai::zeus_approval_hub))
+        .route("/api/v1/ai/actions", post(ai::create_zeus_action))
+        .route("/api/v1/ai/actions/{id}/execute", post(ai::execute_zeus_action))
+        .route("/api/v1/ai/actions/{id}/reject", post(ai::reject_zeus_action))
+        .route("/api/v1/ai/marketplace/agents", get(ai::list_agent_marketplace))
+        .route(
+            "/api/v1/ai/marketplace/agents/{slug}/install",
+            post(ai::install_agent_marketplace),
+        )
+        .route(
+            "/api/v1/ai/marketplace/agents/{slug}/uninstall",
+            post(ai::uninstall_agent_marketplace),
+        )
+        .route("/api/v1/ai/enterprise/zeus", get(ai::zeus_enterprise_overview))
+        .route("/api/v1/ai/zeus/plan", post(ai::zeus_autonomous_plan))
+        .route("/api/v1/ai/zeus/execute", post(ai::zeus_autonomous_execute))
         .route("/api/v1/baremetal/servers", get(baremetal::list_servers).post(baremetal::register_server))
         .route("/api/v1/baremetal/servers/{id}/power", post(baremetal::server_power))
         .route("/api/v1/baremetal/servers/{id}/provision", get(baremetal::server_provision))

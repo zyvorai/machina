@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Bell } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
 import { createVmBackup, listNotifications, markNotificationDelivered, markAllNotificationsDelivered, type NotificationRow } from '../../api/platform'
@@ -53,7 +53,7 @@ export default function PlatformNotifications() {
   const unread = rows.filter((n) => !n.delivered).length
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <MacSectionTitle title="Alerts" subtitle="Notification Center — actionable alerts, not just log lines." />
         {unread > 0 && (
@@ -74,7 +74,6 @@ export default function PlatformNotifications() {
           </div>
         )}
       </header>
-      {error && <ErrorBanner message={error} />}
       <label className="flex items-center gap-2 text-sm text-slate-400">
         <input type="checkbox" checked={undeliveredOnly} onChange={(e) => setUndeliveredOnly(e.target.checked)} />
         Undelivered only
@@ -133,6 +132,6 @@ export default function PlatformNotifications() {
           </div>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

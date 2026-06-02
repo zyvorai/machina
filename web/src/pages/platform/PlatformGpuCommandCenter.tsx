@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Cpu, Monitor, RefreshCw, Server } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
@@ -78,7 +78,7 @@ export default function PlatformGpuCommandCenter() {
   useEffect(() => { void loadPlacement() }, [loadPlacement])
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error} onErrorRetry={() => void load()}>
       <PlatformTahoeHero
         title="GPU Command Center"
         subtitle="MIG, vGPU, and CUDA placement — inventory from host tags plus AI placement advisor."
@@ -91,7 +91,6 @@ export default function PlatformGpuCommandCenter() {
       />
 
       <div className="tahoe-content space-y-4">
-        {error && <ErrorBanner message={error} onRetry={() => void load()} />}
         {loading && <PageSkeleton />}
 
         {!loading && overview && overview.gpu_host_count === 0 && (
@@ -215,6 +214,6 @@ export default function PlatformGpuCommandCenter() {
           </>
         )}
       </div>
-    </div>
+    </PageLayout>
   )
 }

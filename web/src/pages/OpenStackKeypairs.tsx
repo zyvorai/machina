@@ -8,6 +8,7 @@ import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
+import PageLayout from '../components/PageLayout'
 import { statusActionLinkClasses, statusDestructiveButtonClasses, statusToneClass } from '../utils/semanticColors'
 import { Key, Loader2, RefreshCw } from 'lucide-react'
 
@@ -43,12 +44,13 @@ function OpenStackKeypairsContent() {
   }, [load])
 
   return (
-    <div className="space-y-6 max-w-3xl">
-      <OpenStackSubNav />
-      <h1 className="text-2xl font-semibold flex items-center gap-2">
-        <Key className="w-7 h-7 text-sky-400" />
-        SSH keypairs
-      </h1>
+    <PageLayout
+      className="max-w-3xl"
+      prepend={<OpenStackSubNav />}
+      title="SSH keypairs"
+      icon={<Key className="w-7 h-7 text-sky-400" />}
+      contentLoading={loading && keys.length === 0}
+    >
       <div className="rounded-xl border border-slate-700 p-4 space-y-3">
         <div className="flex flex-wrap gap-2">
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name"
@@ -80,9 +82,7 @@ function OpenStackKeypairsContent() {
         className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-600 text-sm">
         <RefreshCw className="w-4 h-4" /> Refresh
       </button>
-      {loading ? (
-        <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
-      ) : (
+      {!loading && (
         <ul className="rounded-xl border border-slate-700 divide-y divide-slate-800">
           {keys.map((k) => (
             <li key={k.name} className="px-4 py-3 flex justify-between items-center text-sm">
@@ -104,6 +104,6 @@ function OpenStackKeypairsContent() {
         </ul>
       )}
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

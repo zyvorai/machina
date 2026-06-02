@@ -119,6 +119,19 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
+    if (ql.contains("kubevirt") || ql.contains("kubernetes vm"))
+        && (ql.contains("discover") || ql.contains("inventory"))
+    {
+        intents.push(intent(
+            "discovered-kubevirt-vms",
+            "Discovered KubeVirt VMs",
+            "Unmanaged KubeVirt guests in platform inventory.",
+            "navigate",
+            None,
+            Some("/platform/vms?managed=false&source=kubevirt".into()),
+            None,
+        ));
+    }
     if ql.contains("infrastructure health") || ql.contains("fleet health") {
         intents.push(intent(
             "infrastructure-health",
@@ -789,7 +802,7 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
     if ql.contains("zeus") && (ql.contains("summary") || ql.contains("status")) {
         intents.push(intent(
             "zeus-summary",
-            "Machina Zeus OS summary",
+            "Zeus OS summary",
             "Unified infrastructure OS health strip.",
             "navigate",
             None,
@@ -1158,7 +1171,7 @@ pub fn jarvis_landing_intents(online_hosts: i64) -> SpotlightResult {
         intent(
             "jarvis-mission-control",
             "Mission Control",
-            "Open Infrastructure Earth — site, rack, and host geography.",
+            "Canvas Infrastructure Earth globe, site legend, and rack geography.",
             "navigate",
             None,
             Some("/platform?mission=1".into()),

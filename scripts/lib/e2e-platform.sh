@@ -200,28 +200,4 @@ except Exception:
   e2e_platform_hdr "PLATFORM: OIDC SETTINGS (read)"
   http="$(e2e_platform_http_code "${E2E_PLATFORM_BASE}/api/v1/auth/oidc")"
   e2e_platform_assert_http "$http" "200" "oidc settings GET"
-
-  e2e_platform_hdr "PLATFORM: CLEANUP"
-  if [[ -n "$clone_name" ]]; then
-    clone_id="$(e2e_platform_curl "${E2E_PLATFORM_BASE}/api/v1/vms" | python3 -c "
-import json, sys
-for v in json.load(sys.stdin):
-    if v.get('name') == '$clone_name':
-        print(v.get('id',''))
-        break
-" 2>/dev/null)"
-    if [[ -n "$clone_id" ]]; then
-      e2e_platform_curl -X POST "${E2E_PLATFORM_BASE}/api/v1/vms/${clone_id}/delete" >/dev/null || true
-      e2e_platform_wait_task "vm.delete" 120 || true
-    fi
-  fi
-  if [[ -n "$vm_id" ]]; then
-    e2e_platform_curl -X DELETE "${E2E_PLATFORM_BASE}/api/v1/vms/${vm_id}/snapshots/${snap_name}" >/dev/null 2>&1 || true
-    e2e_platform_wait_task "vm.snapshot.delete" 120 || true
-    e2e_platform_curl -X POST "${E2E_PLATFORM_BASE}/api/v1/vms/${vm_id}/delete" >/dev/null || true
-    e2e_platform_wait_task "vm.delete" 120 || true
-  fi
-  [[ -n "$webhook_id" ]] && e2e_platform_curl -X DELETE "${E2E_PLATFORM_BASE}/api/v1/webhooks/${webhook_id}" >/dev/null || true
-  [[ -n "$api_key_id" ]] && e2e_platform_curl -X DELETE "${E2E_PLATFORM_BASE}/api/v1/api-keys/${api_key_id}" >/dev/null || true
-  e2e_platform_ok "cleanup attempted"
 }

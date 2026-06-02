@@ -241,20 +241,29 @@ impl LibvirtCtx {
     pub fn power(&self, name: &str, action: &str) -> Result<String, LibvirtError> {
         let dom = Domain::lookup_by_name(&self.conn, name)
             .map_err(|e| LibvirtError::NotFound(format!("VM '{name}': {e}")))?;
+        let active = dom.is_active().unwrap_or(false);
         match action {
             "start" => {
-                dom.create().map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                if !active {
+                    dom.create().map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                }
             }
             "stop" => {
-                dom.destroy().map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                if active {
+                    dom.destroy().map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                }
             }
             "reboot" => {
-                dom.reboot(0).map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                if active {
+                    dom.reboot(0).map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                } else {
+                    dom.create().map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                }
             }
             _ => return Err(LibvirtError::Invalid(format!("unknown power action: {action}"))),
         }
         let info = dom.get_info().map_err(|e| LibvirtError::Operation(e.to_string()))?;
-        Ok(format!("{:?}", info.state).to_ascii_lowercase())
+        Ok(machina_core::libvirt::metrics::domain_state_label(info.state).to_string())
     }
 
     pub fn delete(&self, name: &str) -> Result<(), LibvirtError> {

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Check, Disc, Plus, RefreshCw, ShieldAlert, ShieldCheck, X } from 'lucide-react'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformFilterPills from '../../components/platform/PlatformFilterPills'
 import { MacSectionTitle, MacSheet, MacStatWidget, gradientForName } from '../../components/platform/mac/PlatformMacUi'
@@ -112,7 +112,7 @@ export default function PlatformContent() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <PageLayout hideHeader error={error}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <MacSectionTitle title="Content Library" subtitle="ISO grid with approval inbox — upload golden images for templates." />
         <div className="flex gap-2 items-center">
@@ -123,7 +123,6 @@ export default function PlatformContent() {
           <button type="button" className="btn-primary flex items-center gap-2" onClick={() => setSheetOpen(true)}><Plus className="w-4 h-4" /> Upload</button>
         </div>
       </header>
-      {error && <ErrorBanner message={error} />}
 
       {pending.length > 0 && (
         <section className={`card p-4 ${statusSurfaceClasses('warn')}`}>
@@ -230,6 +229,6 @@ export default function PlatformContent() {
           <button type="button" className="btn-primary w-full" onClick={async () => { await add(); setSheetOpen(false) }}>Submit for approval</button>
         </div>
       </MacSheet>
-    </div>
+    </PageLayout>
   )
 }

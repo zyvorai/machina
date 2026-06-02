@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams, useLocation } from 'react-router'
 import { ArrowLeft, ExternalLink, Network, Shield, Server, Activity, FileWarning, Bot } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import OsDiagnosePanel from '../../components/platform/OsDiagnosePanel'
 import {
   MacSettingsPane,
@@ -171,7 +172,7 @@ export default function PlatformHostDetailPage() {
   const ioPsi = (linuxObs?.pressure?.io?.some ?? 0) * 100
 
   return (
-    <div className="space-y-4">
+    <PageLayout hideHeader compact contentClassName="space-y-4">
       <Link to="/platform/hosts" className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}>
         <ArrowLeft className="w-4 h-4" /> Hosts
       </Link>
@@ -480,6 +481,6 @@ export default function PlatformHostDetailPage() {
           </MacSettingsPane>
         </>
       )}
-    </div>
+    </PageLayout>
   )
 }

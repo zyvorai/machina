@@ -60,7 +60,7 @@ pub async fn scan(pool: &PgPool) -> anyhow::Result<ComplianceFrameworksReport> {
             _ => 45,
         },
         detail: format!(
-            "Machina AI Security Sentinel: {} risk ({} findings)",
+            "Zeus Security Sentinel: {} risk ({} findings)",
             security.risk_level,
             security.findings.len()
         ),

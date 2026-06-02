@@ -10,6 +10,7 @@ import {
   Server,
   Tag,
 } from 'lucide-react'
+import PageLayout from '../../components/PageLayout'
 import { StructuredErrorBanner } from '../../components/StructuredErrorBanner'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import FinderView, { type FinderViewMode } from '../../components/platform/mac/FinderView'
@@ -78,6 +79,7 @@ export default function PlatformVms() {
   const folder = searchParams.get('folder') || 'all'
   const tag = searchParams.get('tag') || ''
   const project = searchParams.get('project') || ''
+  const source = searchParams.get('source') || ''
 
   const [vms, setVms] = useState<PlatformVm[]>([])
   const [finder, setFinder] = useState<FleetFinderOverview | null>(null)
@@ -111,13 +113,21 @@ export default function PlatformVms() {
 
   const selectedVm = filteredVms.find((v) => v.id === selectedVmId) ?? filteredVms[0] ?? null
 
-  const setFilter = useCallback((next: { folder?: string; tag?: string; project?: string }) => {
+  const setFilter = useCallback((next: { folder?: string; tag?: string; project?: string; source?: string }) => {
     const p = new URLSearchParams(searchParams)
+    if (next.source !== undefined) {
+      if (next.source) p.set('source', next.source)
+      else p.delete('source')
+      p.delete('folder')
+      p.delete('tag')
+      p.delete('project')
+    }
     if (next.folder !== undefined) {
       if (next.folder === 'all') p.delete('folder')
       else p.set('folder', next.folder)
       p.delete('tag')
       p.delete('project')
+      p.delete('source')
     }
     if (next.tag !== undefined) {
       if (next.tag) p.set('tag', next.tag)
@@ -138,6 +148,7 @@ export default function PlatformVms() {
     setError(null)
     try {
       const listParams: Parameters<typeof listPlatformVms>[0] = {}
+      if (source) listParams.source = source
       if (tag) listParams.tag = tag
       else if (project) listParams.project = project
       else if (folder && folder !== 'all') listParams.folder = folder
@@ -158,7 +169,7 @@ export default function PlatformVms() {
         remediation: err.remediation,
       })
     }
-  }, [folder, tag, project])
+  }, [folder, tag, project, source])
 
   useEffect(() => { void load() }, [load])
 
@@ -297,6 +308,7 @@ export default function PlatformVms() {
         <thead>
           <tr className="text-left text-slate-400 border-b border-white/[0.04]">
             <th className="p-3">Name</th>
+            <th className="p-3">Source</th>
             <th className="p-3">State</th>
             <th className="p-3">Tags</th>
             <th className="p-3">Host</th>
@@ -312,9 +324,21 @@ export default function PlatformVms() {
               onClick={() => setSelectedVmId(v.id)}
             >
               <td className="p-3"><Link to={`/platform/vms/${v.id}`} className={`hover:underline ${hubLinkClasses()}`} onClick={(e) => e.stopPropagation()}>{v.name}</Link></td>
-              <td className="p-3 capitalize">{v.observed_state}</td>
+              <td className="p-3 text-xs text-slate-500 capitalize">{v.inventory_source ?? 'libvirt'}</td>
+              <td className="p-3 capitalize">
+                {v.observed_state}
+                {v.observed_state === 'missing' && (
+                  <span className="ml-1 text-[10px] text-amber-400/90">(missing)</span>
+                )}
+              </td>
               <td className="p-3 text-xs text-slate-500">{(v.tags ?? []).join(', ') || '—'}</td>
-              <td className="p-3 text-slate-500">{v.host_id ? hostMap.get(v.host_id) : '—'}</td>
+              <td className="p-3 text-slate-500">
+                {v.inventory_source === 'kubevirt'
+                  ? (v.k8s_namespace ? `${v.k8s_namespace}/` : 'k8s/')
+                  : v.host_id
+                    ? hostMap.get(v.host_id)
+                    : '—'}
+              </td>
               <td className="p-3">{v.vcpus}</td>
               <td className="p-3">{Math.round(v.memory_mib / 1024)} Gi</td>
             </tr>
@@ -328,8 +352,9 @@ export default function PlatformVms() {
     <div className="p-4 space-y-3 h-full overflow-y-auto">
       <h3 className="font-semibold text-white">{selectedVm.name}</h3>
       <dl className="grid grid-cols-2 gap-2 text-xs">
-        <div><dt className="text-white/40">State</dt><dd className="capitalize text-white">{selectedVm.observed_state}</dd></div>
-        <div><dt className="text-white/40">Host</dt><dd className="text-white">{selectedVm.host_id ? hostMap.get(selectedVm.host_id) : '—'}</dd></div>
+        <div><dt className="text-white/40">Source</dt><dd className="capitalize text-white">{selectedVm.inventory_source ?? 'libvirt'}</dd></div>
+        <div><dt className="text-white/40">State</dt><dd className="capitalize text-white">{selectedVm.observed_state}{selectedVm.observed_state === 'missing' ? ' (missing from inventory)' : ''}</dd></div>
+        <div><dt className="text-white/40">Host</dt><dd className="text-white">{selectedVm.inventory_source === 'kubevirt' ? (selectedVm.k8s_namespace ?? 'default') : selectedVm.host_id ? hostMap.get(selectedVm.host_id) : '—'}</dd></div>
         <div><dt className="text-white/40">vCPU</dt><dd className="text-white">{selectedVm.vcpus}</dd></div>
         <div><dt className="text-white/40">Memory</dt><dd className="text-white">{Math.round(selectedVm.memory_mib / 1024)} Gi</dd></div>
       </dl>
@@ -344,7 +369,7 @@ export default function PlatformVms() {
   ) : null
 
   return (
-    <div className="space-y-4 animate-fade-in">
+    <PageLayout hideHeader compact contentClassName="space-y-4">
       {finder && <p className="text-sm text-white/45">{finder.summary}</p>}
       {error && <StructuredErrorBanner error={error} />}
 
@@ -394,8 +419,18 @@ export default function PlatformVms() {
                 </p>
                 <div className="space-y-0.5">
                   {(finder?.smart_folders ?? []).map((f) => (
-                    <SidebarRow key={f.id} active={!tag && !project && folder === f.id} label={f.label} count={f.count} onClick={() => setFilter({ folder: f.id })} />
+                    <SidebarRow key={f.id} active={!tag && !project && !source && folder === f.id} label={f.label} count={f.count} onClick={() => setFilter({ folder: f.id })} />
                   ))}
+                </div>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40 mb-2">Inventory</p>
+                <div className="space-y-0.5">
+                  <SidebarRow active={!source && !tag && !project && folder === 'all'} label="All sources" count={vms.length} onClick={() => { const p = new URLSearchParams(searchParams); p.delete('source'); setSearchParams(p, { replace: true }) }} />
+                  <SidebarRow active={source === 'libvirt'} label="Libvirt" count={vms.filter((v) => (v.inventory_source ?? 'libvirt') === 'libvirt').length} onClick={() => { const p = new URLSearchParams(searchParams); p.set('source', 'libvirt'); p.delete('folder'); setSearchParams(p, { replace: true }) }} />
+                  <SidebarRow active={source === 'kubevirt'} label="KubeVirt" count={vms.filter((v) => v.inventory_source === 'kubevirt').length} onClick={() => { const p = new URLSearchParams(searchParams); p.set('source', 'kubevirt'); p.delete('folder'); setSearchParams(p, { replace: true }) }} />
+                  <SidebarRow active={folder === 'discovered'} label="Discovered" count={vms.filter((v) => v.managed === false).length} onClick={() => setFilter({ folder: 'discovered' })} />
+                  <SidebarRow active={folder === 'missing'} label="Missing" count={vms.filter((v) => v.observed_state === 'missing').length} onClick={() => setFilter({ folder: 'missing' })} />
                 </div>
               </div>
               {(finder?.tags.length ?? 0) > 0 && (
@@ -461,6 +496,6 @@ export default function PlatformVms() {
           onDone={() => { toast.success('Migration queued'); void load() }}
         />
       )}
-    </div>
+    </PageLayout>
   )
 }

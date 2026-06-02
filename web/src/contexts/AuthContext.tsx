@@ -26,6 +26,13 @@ const AuthContext = createContext<AuthContextType>({
   logout: async () => {},
 })
 
+/** Login page is outside the router; normalize URL before mounting the authenticated shell. */
+function clearLoginPathFromUrl() {
+  if (window.location.pathname === '/login') {
+    window.history.replaceState(null, '', '/')
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [username, setUsername] = useState('')
@@ -36,6 +43,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     getSession()
       .then((session) => {
+        if (session.authenticated) clearLoginPathFromUrl()
         setIsAuthenticated(session.authenticated)
         setUsername(session.username || '')
         setSessionId(typeof session.session_id === 'string' ? session.session_id : '')
@@ -50,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (user: string, pass: string) => {
     await apiLogin(user, pass)
     const session = await getSession()
+    clearLoginPathFromUrl()
     setIsAuthenticated(session.authenticated)
     setUsername(session.username || user)
     setSessionId(typeof session.session_id === 'string' ? session.session_id : '')

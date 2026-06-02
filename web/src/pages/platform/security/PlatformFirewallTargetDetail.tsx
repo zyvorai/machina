@@ -13,7 +13,7 @@ import {
   MacSheet,
   MacToggle,
 } from '../../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../../components/ErrorBanner'
+import PageLayout from '../../../components/PageLayout'
 import JsonInspector from '../../../components/platform/JsonInspector'
 import { formatAllowedFrom } from '../../../utils/firewallDisplay'
 import {
@@ -125,11 +125,10 @@ export default function PlatformFirewallTargetDetail() {
   const isMetal = detail?.target.kind === 'bare_metal'
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <Link to="/platform/zeus/security/firewall" className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}>
         <ArrowLeft className="w-4 h-4" /> Firewall
       </Link>
-      {error && <ErrorBanner message={error} />}
       {detail && inv && (
         <>
           <MacSectionTitle
@@ -466,6 +465,6 @@ export default function PlatformFirewallTargetDetail() {
           }
         })()}
       </MacSheet>
-    </div>
+    </PageLayout>
   )
 }

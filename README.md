@@ -106,7 +106,7 @@ The Machina web UI uses a **Liquid Glass** design system inspired by macOS Tahoe
 - **Reusable components** — `GlassCard`, `GlassButton`, `GlassModal`, `GlassInput`, `GlassTabs` in `web/src/components/glass/`
 - **Steel / Aurora** themes remain available via the navbar theme picker
 
-- **Premium login page** — split-screen layout with animated gradient background, floating orbs, feature showcase cards, glassmorphism form
+- **Machina login page** — macOS Tahoe liquid-glass split layout ([`PremiumLoginShell`](web/src/components/PremiumLoginShell.tsx) `variant="macos"`), libvirt/OpenStack hero copy; entry at `/` or `/login`; after sign-in the URL normalizes to `/` (dashboard)
 - **Command palette** — `Ctrl+K` / `Cmd+K` to search VMs, networks, storage pools, snapshots, navigate pages, and run quick actions with keyboard navigation
 - **Notification bell** — global notification center in navbar with badge count, showing real-time VM state changes, additions, and removals
 - **Breadcrumb navigation** — auto-generated from route path on every page
@@ -779,6 +779,9 @@ All endpoints are prefixed with `/api/v1`. Responses are JSON unless noted. XML 
 | `POST` | `/api/v1/auth/login` | Login with PAM credentials |
 | `POST` | `/api/v1/auth/logout` | Logout and clear session |
 | `GET` | `/api/v1/auth/session` | Get current session info (`username`, `session_id` for admin revoke) |
+
+**Browser UI:** open `https://HOST:5092/` or `https://HOST:5092/login` when unauthenticated. Both show the Machina login form. After PAM or OIDC success the SPA replaces `/login` with `/` so the authenticated shell never 404s on a stale login path.
+
 | `POST` | `/api/v1/ws-token` | Get short-lived WebSocket authentication token |
 | `GET` | `/terminal/targets` | List configured SSH terminal targets (`id`, `host`, `default_ssh_user`) |
 | `POST` | `/terminal/sessions` | Create one-time SSH terminal session (`target_id` **or** ad-hoc `host` + `ssh_user`); returns `session_id` for `/ws/v1/terminal/{session_id}` (browser sessions only — API tokens rejected) |

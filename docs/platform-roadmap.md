@@ -141,6 +141,13 @@ Presentation-only sweep documented in [`next-big-sweep.md`](next-big-sweep.md):
 - **UI:** [`PlatformJarvisBriefing`](../web/src/components/platform/PlatformJarvisBriefing.tsx) intent-first landing (all tiers); [`platformJarvisShell.ts`](../web/src/utils/platformJarvisShell.ts) hides sidebar on Normal tier; Control Center toggle; Spotlight open event from Jarvis search
 - **E2e:** [`platform-jarvis-shell.spec.ts`](../web/e2e/platform-jarvis-shell.spec.ts); **84/84** local bundle green
 
+## Batch 68 deliverables (Infrastructure Earth v2 — shipped)
+
+- **Globe site legend:** clickable site chips on [`InfrastructureEarthGlobe`](../web/src/components/platform/InfrastructureEarthGlobe.tsx) deep-link to Machine Finder (`?site=…`)
+- **Machine Finder:** globe + legend above geography columns on [`PlatformMachineFinder`](../web/src/pages/platform/PlatformMachineFinder.tsx)
+- **Mission Control:** resilient parallel load (`.catch` on inventory fetches); incident analyze + mission-stack mocks in e2e
+- **E2e:** [`platform-infrastructure-earth-globe.spec.ts`](../web/e2e/platform-infrastructure-earth-globe.spec.ts) (Finder legend); **87/87** local bundle green
+
 ## Batch 67 deliverables (Infrastructure Earth globe + Enterprise UX — shipped)
 
 - **Phase 58 v1:** [`InfrastructureEarthGlobe`](../web/src/components/platform/InfrastructureEarthGlobe.tsx) canvas wireframe globe with site health markers in [`InfrastructureEarthView`](../web/src/components/platform/InfrastructureEarthView.tsx) / Mission Control

@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { MacGlassPanel, MacListRow, MacSectionTitle, MacStatWidget } from '../../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../../components/ErrorBanner'
+import PageLayout from '../../../components/PageLayout'
 import { getCloudFirewallOverview } from '../../../api/zeusFirewall'
 import { formatUserError } from '../../../utils/apiError'
 import { hubLinkClasses, statusSurfaceClasses, statusToneClass } from '../../../utils/semanticColors'
@@ -36,10 +36,9 @@ export default function PlatformFirewallCloud() {
   }, [])
 
   return (
-    <div className="space-y-6">
+    <PageLayout hideHeader error={error}>
       <MacSectionTitle title="Cloud Security Groups" subtitle="AWS · Azure · GCP edge inventory" />
       <Link to="/platform/zeus/security/firewall" className={`text-sm ${hubLinkClasses()}`}>← Firewall overview</Link>
-      {error && <ErrorBanner message={error} />}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <MacStatWidget label="Provider" value={provider} icon={<span className="text-lg">☁</span>} />
         <MacStatWidget label="Rules" value={String(rules.length)} icon={<span className="text-lg">#</span>} tone={reachable ? 'ok' : 'warn'} />
@@ -65,6 +64,6 @@ export default function PlatformFirewallCloud() {
           </div>
         )}
       </MacGlassPanel>
-    </div>
+    </PageLayout>
   )
 }

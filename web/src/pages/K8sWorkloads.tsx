@@ -40,6 +40,7 @@ import { useToastContext } from '../contexts/ToastContext'
 import { usePlatformInfo } from '../contexts/PlatformInfoContext'
 import { summarizeK8sClientError } from '../utils/k8sErrors'
 import Hero from '../components/Hero'
+import PageLayout from '../components/PageLayout'
 import EmptyState from '../components/EmptyState'
 import PageSkeleton from '../components/PageSkeleton'
 import JsonInspector, { asArray, asRecord } from '../components/platform/JsonInspector'
@@ -135,6 +136,11 @@ export default function K8sWorkloadsPage() {
     if (lastEvent.kind.startsWith('kubevirt.')) void load(true)
   }, [refreshKey, lastEvent, load])
 
+  useEffect(() => {
+    const t = window.setInterval(() => void load(true), 30_000)
+    return () => window.clearInterval(t)
+  }, [load])
+
   const copyText = useCallback((label: string, text: string) => {
     void navigator.clipboard.writeText(text).then(() => {
       toast.success(`${label} copied`)
@@ -193,7 +199,7 @@ export default function K8sWorkloadsPage() {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in relative">
+    <PageLayout hideHeader className="relative">
       <Hero
         title="Kubernetes Workloads"
         subtitle="Pods show node + host IP; KubeVirt VMs merge VMI guest/pod IP & node InternalIP. Use Console / VNC to copy virtctl commands."
@@ -781,6 +787,6 @@ export default function K8sWorkloadsPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageLayout>
   )
 }

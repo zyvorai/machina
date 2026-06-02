@@ -46,7 +46,7 @@ export default function ExplainButton({
       {open && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50" onClick={() => setOpen(false)}>
           <div className="max-w-lg w-full rounded-2xl bg-slate-900 border border-white/10 p-5" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-semibold mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4 text-orange-400" /> Machina Explain</h3>
+            <h3 className="font-semibold mb-2 flex items-center gap-2"><Sparkles className="w-4 h-4 text-orange-400" /> Zeus Explain</h3>
             <p className="text-sm text-slate-300 whitespace-pre-wrap">{busy ? 'Analyzing…' : text}</p>
             <button type="button" className="btn-secondary mt-4 w-full" onClick={() => setOpen(false)}>Close</button>
           </div>

@@ -6,6 +6,7 @@ import { KeyRound, Loader2, Plus, Users } from 'lucide-react'
 import OpenStackGate from '../components/OpenStackGate'
 import OpenStackSubNav from '../components/OpenStackSubNav'
 import OpenStackFooter from '../components/OpenStackFooter'
+import PageLayout from '../components/PageLayout'
 import EmptyState from '../components/EmptyState'
 import {
   createOpenStackIdentityProject,
@@ -60,9 +61,11 @@ function OpenStackIdentityContent() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <div className="space-y-6">
-      <OpenStackSubNav />
-      <h1 className="text-2xl font-semibold flex items-center gap-2">
+    <PageLayout
+      hideHeader
+      prepend={<>
+      </>}
+      ><h1 className="text-2xl font-semibold flex items-center gap-2">
         <KeyRound className={`w-7 h-7 ${statusToneClass('warn')}`} /> Keystone identity
       </h1>
       <p className="text-slate-400 text-sm">Projects, users, and role assignments. Writes require admin credentials on the daemon.</p>
@@ -167,6 +170,6 @@ function OpenStackIdentityContent() {
         </div>
       )}
       <OpenStackFooter />
-    </div>
+    </PageLayout>
   )
 }

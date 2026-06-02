@@ -25,6 +25,8 @@ pub struct ControllerConfig {
     pub packetwolf_base_url: String,
     pub packetwolf_api_key: Option<String>,
     pub packetwolf_insecure_tls: bool,
+    /// Co-located machina-daemon base URL for KubeVirt inventory sync.
+    pub daemon_base_url: String,
 }
 
 impl Default for ControllerConfig {
@@ -69,6 +71,8 @@ impl Default for ControllerConfig {
             packetwolf_insecure_tls: std::env::var("PACKETWOLF_INSECURE_TLS")
                 .map(|v| matches!(v.to_lowercase().as_str(), "1" | "true" | "yes"))
                 .unwrap_or(true),
+            daemon_base_url: std::env::var("MACHINA_DAEMON_URL")
+                .unwrap_or_else(|_| "http://127.0.0.1:5092".into()),
         }
     }
 }

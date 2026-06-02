@@ -8,7 +8,7 @@ import {
   MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
 import { getFleetSpaces, type FleetSpacesOverview } from '../../api/platform'
 import { useActiveWorkspace } from '../../hooks/useActiveWorkspace'
@@ -84,7 +84,7 @@ export default function PlatformProjects({ embedded }: { embedded?: boolean } = 
   }
 
   return (
-    <div className={embedded ? 'space-y-4' : 'space-y-6 animate-fade-in'}>
+    <PageLayout hideHeader compact={embedded} error={error}>
       {!embedded && (
         <header>
           <p className="text-xs font-semibold uppercase tracking-wider text-violet-400/80">Stage Manager</p>
@@ -94,7 +94,6 @@ export default function PlatformProjects({ embedded }: { embedded?: boolean } = 
           />
         </header>
       )}
-      {error && <ErrorBanner message={error} />}
       {fleet && <p className="text-sm text-slate-400">{fleet.summary}</p>}
 
       {fleet && (
@@ -189,6 +188,6 @@ export default function PlatformProjects({ embedded }: { embedded?: boolean } = 
         </div>
       )}
       <FleetSettingsPane kind="spaces" />
-    </div>
+    </PageLayout>
   )
 }

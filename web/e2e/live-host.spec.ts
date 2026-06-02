@@ -3,6 +3,7 @@
 // https://zyvor.dev · info@zyvor.dev
 
 import { test, expect } from '@playwright/test'
+import { liveCredentials, loginAtMachinaLoginPage } from './helpers/liveAuth'
 
 /** Smoke against a running daemon (set PLAYWRIGHT_LIVE_URL, e.g. https://212.8.252.194:5092). */
 const live = process.env.PLAYWRIGHT_LIVE_URL?.replace(/\/$/, '')
@@ -29,4 +30,15 @@ test('language switcher on login', async ({ page }) => {
   await page.goto(`${live}/login`)
   await page.getByLabel('Language').selectOption('es')
   await expect(page.getByLabel('Usuario')).toBeVisible()
+})
+
+test('PAM login at /login reaches dashboard', async ({ page }) => {
+  test.skip(!liveCredentials(), 'Set PLAYWRIGHT_LIVE_USER/PASS')
+  const errors: string[] = []
+  page.on('pageerror', (err) => errors.push(err.message))
+  await loginAtMachinaLoginPage(page, live!)
+  await expect(page).toHaveURL(`${live}/`)
+  await expect(page.locator('#main-content')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('Page not found')).not.toBeVisible()
+  expect(errors).toEqual([])
 })

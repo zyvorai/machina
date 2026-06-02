@@ -3,6 +3,7 @@
 // https://zyvor.dev · info@zyvor.dev
 
 use axum::extract::{DefaultBodyLimit, Extension, Query};
+use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use machina_core::config::K8sInventoryHistoryConfig;
@@ -350,6 +351,9 @@ struct K8sListQuery {
     /// Optional `kubectl --context` (must match a context name in the merged kubeconfig).
     #[serde(default)]
     context: Option<String>,
+    /// When true, return `{ rows, kubevirt_available, list_error }` for platform inventory sync.
+    #[serde(default)]
+    meta: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -2956,7 +2960,7 @@ async fn k8s_kubevirt_virtualmachines(
 async fn k8s_kubevirt_vm_summary(
     Extension(actor): Extension<RequestActor>,
     Query(q): Query<K8sListQuery>,
-) -> Result<Json<Vec<KubeVirtVmSummaryRow>>, AppError> {
+) -> Result<axum::response::Response, AppError> {
     require_browser_session_for_host_insight(&actor)?;
     let ctx = q.context.as_deref();
     if let Some(c) = ctx {
@@ -2975,12 +2979,31 @@ async fn k8s_kubevirt_vm_summary(
         vm_args.push(ns);
     }
 
+    let meta = q.meta.unwrap_or(false);
     let vm_json = match run_kubectl_json_timeout(&vm_args, KUBECTL_TIMEOUT_SECS, ctx).await {
         Ok(v) => v,
         Err(e) if kubevirt_vm_list_unavailable(&e) => {
-            return Ok(Json(vec![]));
+            if meta {
+                return Ok(axum::Json(serde_json::json!({
+                    "rows": [],
+                    "kubevirt_available": false,
+                    "list_error": e.to_string(),
+                }))
+                .into_response());
+            }
+            return Ok(axum::Json(Vec::<KubeVirtVmSummaryRow>::new()).into_response());
         }
-        Err(e) => return Err(e.into()),
+        Err(e) => {
+            if meta {
+                return Ok(axum::Json(serde_json::json!({
+                    "rows": [],
+                    "kubevirt_available": true,
+                    "list_error": e.to_string(),
+                }))
+                .into_response());
+            }
+            return Err(e.into());
+        }
     };
 
     let mut vmi_args = vec!["get".into(), "virtualmachineinstances.kubevirt.io".into()];
@@ -3087,7 +3110,50 @@ async fn k8s_kubevirt_vm_summary(
         });
     }
 
-    Ok(Json(rows))
+    if meta {
+        Ok(axum::Json(serde_json::json!({
+            "rows": rows,
+            "kubevirt_available": true,
+            "list_error": null,
+        }))
+        .into_response())
+    } else {
+        Ok(axum::Json(rows).into_response())
+    }
+}
+
+async fn k8s_kubevirt_delete_vm(
+    Extension(actor): Extension<RequestActor>,
+    axum::extract::Path((namespace, name)): axum::extract::Path<(String, String)>,
+    Query(q): Query<K8sOverviewQuery>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    require_browser_session_for_host_insight(&actor)?;
+    let ctx = q.context.as_deref();
+    if let Some(c) = ctx {
+        ensure_k8s_context_name(c)?;
+    }
+    ensure_safe_name(&namespace, "namespace")?;
+    ensure_safe_name(&name, "name")?;
+    let mut args = vec![
+        "delete".into(),
+        "virtualmachine.kubevirt.io".into(),
+        name.clone(),
+        "-n".into(),
+        namespace.clone(),
+        "--wait=false".into(),
+    ];
+    let res = run_kubectl_timeout(&args, KUBECTL_TIMEOUT_SECS, ctx).await?;
+    if !res.ok {
+        return Err(AppError::from(LibvirtError::Operation(format!(
+            "kubectl delete virtualmachine failed (exit {}): {}{}",
+            res.exit_code, res.stderr, res.stdout
+        ))));
+    }
+    Ok(Json(serde_json::json!({
+        "deleted": true,
+        "namespace": namespace,
+        "name": name,
+    })))
 }
 
 async fn k8s_overview(
@@ -3822,6 +3888,10 @@ pub fn k8s_routes() -> Router<LibvirtManager> {
             get(k8s_kubevirt_virtualmachines),
         )
         .route("/k8s/kubevirt/vm-summary", get(k8s_kubevirt_vm_summary))
+        .route(
+            "/k8s/kubevirt/virtualmachines/{namespace}/{name}",
+            axum::routing::delete(k8s_kubevirt_delete_vm),
+        )
         .route("/k8s/action", post(k8s_action))
         .route("/k8s/kata-deploy", post(k8s_kata_deploy))
         .route("/k8s/k3s/install", post(k8s_k3s_install))

@@ -53,7 +53,7 @@ import {
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { formatUserError } from '../utils/apiError'
-import ErrorBanner from '../components/ErrorBanner'
+import PageLayout from '../components/PageLayout'
 import { libvirtErrorHints } from '../utils/libvirtHints'
 import { statusToneClass } from '../utils/semanticColors'
 
@@ -619,34 +619,29 @@ export default function CreateVMPage() {
   ]
 
   return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-fade-in pb-8">
-      <div className="flex items-center gap-4">
+    <PageLayout
+      className="max-w-4xl mx-auto pb-8"
+      contentClassName="space-y-8"
+      title="Create new guest VM"
+      subtitle={
+        <>
+          Define a QEMU/KVM guest on this hypervisor host via libvirt—the same <code className="text-slate-400">virt-install</code> style as{' '}
+          <span className="text-slate-400">Cockpit Machines</span>: install from media, or clone many identical workers from a Packer golden qcow2. Optional KubeVirt YAML and cluster actions are on the VM&apos;s details page when enabled.
+        </>
+      }
+      icon={<Boxes className="w-6 h-6 text-cyan-400" />}
+      actions={
         <Link to="/vms" className="p-2 hover:bg-slate-700 rounded transition" aria-label="Back">
           <ArrowLeft className="w-5 h-5" />
         </Link>
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Boxes className="w-6 h-6 text-cyan-400" />
-            Create new guest VM
-          </h1>
-          <p className="text-sm text-slate-500 mt-1 max-w-2xl">
-            Define a QEMU/KVM guest on this hypervisor host via libvirt—the same <code className="text-slate-400">virt-install</code> style as{' '}
-            <span className="text-slate-400">Cockpit Machines</span>: install from media, or clone many identical workers from a Packer golden qcow2. Optional KubeVirt YAML and cluster actions are on the VM&apos;s details page when enabled.
-          </p>
-        </div>
-      </div>
-
-      {catalogWarning && (
-        <ErrorBanner
-          title="Some catalogs could not be loaded"
-          headline={catalogWarning}
-          hints={libvirtErrorHints(catalogWarning)}
-          technicalDetail={catalogWarning}
-          tone="amber"
-          onDismiss={() => setCatalogWarning(null)}
-        />
-      )}
-
+      }
+      error={catalogWarning}
+      errorTitle="Some catalogs could not be loaded"
+      errorHints={catalogWarning ? libvirtErrorHints(catalogWarning) : undefined}
+      technicalDetail={catalogWarning}
+      errorTone="amber"
+      onErrorDismiss={() => setCatalogWarning(null)}
+    >
       <div>
         <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wide mb-3">How do you want to create this VM?</h2>
         <ChoiceCardGrid>
@@ -1730,6 +1725,6 @@ export default function CreateVMPage() {
           setBackingBrowseOpen(false)
         }}
       />
-    </div>
+    </PageLayout>
   )
 }

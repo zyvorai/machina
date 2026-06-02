@@ -63,7 +63,7 @@ pub async fn diagnose(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeDia
                 title: "Hotspot VMs consuming CPU".into(),
                 confidence: 0.65,
                 evidence: format!("{high_cpu_vms} VM(s) above 85% CPU"),
-                action: "Open Machina Doctor on top consumers; consider rebalance.".into(),
+                action: "Open Zeus SRE on top consumers; consider rebalance.".into(),
             });
         }
     }

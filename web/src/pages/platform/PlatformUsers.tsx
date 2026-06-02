@@ -9,7 +9,7 @@ import {
   MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import ErrorBanner from '../../components/ErrorBanner'
+import PageLayout from '../../components/PageLayout'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
 import {
   createUser,
@@ -70,7 +70,7 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
   }
 
   return (
-    <div className={embedded ? 'space-y-4' : 'space-y-6 animate-fade-in'}>
+    <PageLayout hideHeader compact={embedded} error={error}>
       {!embedded && (
         <header>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Users & Groups</p>
@@ -80,7 +80,6 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
           />
         </header>
       )}
-      {error && <ErrorBanner message={error} />}
       {me && <p className="text-sm text-slate-400">Signed in as <strong className="text-slate-200">{me.username}</strong> ({me.role})</p>}
       {fleet && <p className="text-sm text-slate-400">{fleet.summary}</p>}
 
@@ -210,6 +209,6 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
         </MacGlassPanel>
       )}
       <FleetSettingsPane kind="users" />
-    </div>
+    </PageLayout>
   )
 }

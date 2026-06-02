@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "./platform-tahoe.css";
+@import "./zyvor-secure-login.css";
+@import "./zyvor-macos-login.css";
 
 @theme inline {
   --radius-liquid: 22px;

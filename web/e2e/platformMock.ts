@@ -112,7 +112,7 @@ const fleetDna = {
 
 const jarvisLanding = {
   intents: [
-    { id: 'jarvis-mission-control', label: 'Mission Control', review: 'Infrastructure Earth', action: 'navigate', navigate: '/platform?mission=1' },
+    { id: 'jarvis-mission-control', label: 'Mission Control', review: 'Infrastructure Earth globe', action: 'navigate', navigate: '/platform?mission=1' },
     { id: 'jarvis-maintenance-mission', label: 'Maintenance Mission', review: 'Patch timeline', action: 'navigate', navigate: '/platform/maintenance?tab=mission' },
     { id: 'jarvis-machine-finder', label: 'Machine Finder', review: 'Geography', action: 'navigate', navigate: '/platform/hosts/finder' },
     { id: 'jarvis-enterprise', label: 'Enterprise Keychain', review: 'Vault and MFA inventory', action: 'navigate', navigate: '/platform/enterprise?tab=keychain' },
@@ -318,6 +318,7 @@ export async function mockPlatformApi(page: Page, opts?: {
   await page.addInitScript((t) => {
     localStorage.setItem('zyvor-platform-welcome-done', '1')
     localStorage.setItem('machina-platform-desktop-tier', t)
+    localStorage.removeItem('machina_platform_controller')
   }, tier)
 
   await page.route('**/api/v1/**', async (route) => {
@@ -355,6 +356,19 @@ export async function mockPlatformApi(page: Page, opts?: {
     }
     if (url.includes('/ai/jarvis/landing')) {
       return route.fulfill({ json: jarvisLanding })
+    }
+    if (url.includes('/ai/incidents/analyze')) {
+      return route.fulfill({
+        json: {
+          root_cause: 'No critical incidents in the selected window.',
+          confidence: 0.72,
+          suggested_actions: ['Review host pressure metrics', 'Open Mission Control'],
+          events: [],
+        },
+      })
+    }
+    if (url.includes('/ai/mission/stack/status')) {
+      return route.fulfill({ json: { summary: 'No active mission stack', status: 'idle' } })
     }
     if (url.includes('/enterprise/security/overview')) {
       return route.fulfill({ json: enterpriseSecurity })
@@ -941,5 +955,10 @@ export async function mockPlatformApi(page: Page, opts?: {
       })
     }
     return route.fulfill({ json: [] })
+  })
+
+  // Registered after the catch-all api handler so Playwright matches this route first.
+  await page.route('**/fleet/mission**', async (route) => {
+    await route.fulfill({ json: fleetMission })
   })
 }

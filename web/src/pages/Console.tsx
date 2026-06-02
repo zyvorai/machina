@@ -16,6 +16,7 @@ import {
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
 import AiTerminalCompanion from '../components/ai/AiTerminalCompanion'
+import PageLayout from '../components/PageLayout'
 import { statusBadgeClasses } from '../utils/semanticColors'
 
 interface ConsoleInfo {
@@ -81,57 +82,57 @@ export default function ConsolePage() {
   const spicePort = consoleInfo?.console_type === 'spice' ? (consoleInfo?.port ?? -1) : -1
 
   return (
-    <div className="space-y-4 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Link to={conn ? `/vms/${encodeURIComponent(name)}?connection=${encodeURIComponent(conn)}` : `/vms/${encodeURIComponent(name)}`} className="p-2 hover:bg-slate-700 rounded transition">
+    <PageLayout
+      compact
+      title={`Console: ${name}`}
+      actions={
+        <>
+          <Link to={conn ? `/vms/${encodeURIComponent(name)}?connection=${encodeURIComponent(conn)}` : `/vms/${encodeURIComponent(name)}`} className="p-2 hover:bg-slate-700 rounded transition" aria-label="Back">
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <h1 className="text-2xl font-bold">Console: {name}</h1>
-        </div>
-
-        <div className="flex flex-col items-stretch sm:items-end gap-2 min-w-0 max-w-xl">
-          {consoleInfo && consoleInfo.port > 0 && (
-            <span className="text-xs text-slate-500 sm:text-right">
-              {(consoleInfo.console_type ?? 'unknown').toUpperCase()} port {consoleInfo.port}
-            </span>
-          )}
-          <ChoiceCardGrid className="sm:max-w-lg">
-            {vncPort > 0 && (
+          <div className="flex flex-col items-stretch sm:items-end gap-2 min-w-0 max-w-xl">
+            {consoleInfo && consoleInfo.port > 0 && (
+              <span className="text-xs text-slate-500 sm:text-right">
+                {(consoleInfo.console_type ?? 'unknown').toUpperCase()} port {consoleInfo.port}
+              </span>
+            )}
+            <ChoiceCardGrid className="sm:max-w-lg">
+              {vncPort > 0 && (
+                <ChoiceCard
+                  compact
+                  tone="blue"
+                  selected={mode === 'vnc'}
+                  onClick={() => setMode('vnc')}
+                  icon={<Monitor className="w-4 h-4" />}
+                  title="VNC"
+                  description="Graphical console in the browser."
+                />
+              )}
+              {spicePort > 0 && (
+                <ChoiceCard
+                  compact
+                  tone="purple"
+                  selected={mode === 'spice'}
+                  onClick={() => setMode('spice')}
+                  icon={<Monitor className="w-4 h-4" />}
+                  title="SPICE"
+                  description="Graphical SPICE session."
+                />
+              )}
               <ChoiceCard
                 compact
-                tone="blue"
-                selected={mode === 'vnc'}
-                onClick={() => setMode('vnc')}
-                icon={<Monitor className="w-4 h-4" />}
-                title="VNC"
-                description="Graphical console in the browser."
+                tone="slate"
+                selected={mode === 'serial'}
+                onClick={() => setMode('serial')}
+                icon={<TerminalIcon className="w-4 h-4" />}
+                title="Serial"
+                description="Text console over WebSocket."
               />
-            )}
-            {spicePort > 0 && (
-              <ChoiceCard
-                compact
-                tone="purple"
-                selected={mode === 'spice'}
-                onClick={() => setMode('spice')}
-                icon={<Monitor className="w-4 h-4" />}
-                title="SPICE"
-                description="Graphical SPICE session."
-              />
-            )}
-            <ChoiceCard
-              compact
-              tone="slate"
-              selected={mode === 'serial'}
-              onClick={() => setMode('serial')}
-              icon={<TerminalIcon className="w-4 h-4" />}
-              title="Serial"
-              description="Text console over WebSocket."
-            />
-          </ChoiceCardGrid>
-        </div>
-      </div>
-
+            </ChoiceCardGrid>
+          </div>
+        </>
+      }
+    >
       {(mode === 'vnc' || mode === 'spice') && (
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -190,6 +191,6 @@ export default function ConsolePage() {
         )}
       </div>
       {name && <AiTerminalCompanion vmName={name} libvirtConnection={conn} />}
-    </div>
+    </PageLayout>
   )
 }

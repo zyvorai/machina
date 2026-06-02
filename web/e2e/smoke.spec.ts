@@ -144,6 +144,13 @@ test('login page shows PAM form when OIDC is off', async ({ page }) => {
   await expect(page.getByLabel('Username')).toBeVisible()
 })
 
+test('authenticated /login redirects to dashboard', async ({ page }) => {
+  await mockAuthenticatedApi(page)
+  await page.goto('/login')
+  await expect(page).toHaveURL('/', { timeout: 15_000 })
+  await expect(page.locator('#main-content')).toBeVisible({ timeout: 15_000 })
+})
+
 test('VM list shows empty state when authenticated', async ({ page }) => {
   await mockAuthenticatedApi(page)
   await page.goto('/vms')

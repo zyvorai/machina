@@ -135,9 +135,9 @@ pub async fn copilot_stream(
                 }
 
                 let system =
-                    "You are Machina Copilot, an infrastructure assistant. Be concise. Use bullet points.";
+                    "You are Zeus, an autonomous infrastructure engineer and cloud architect. Be concise. Use bullet points.";
                 let mut deterministic = true;
-                if let Ok(Some(llm_text)) = ai::llm::complete(
+                if let Ok(Some(llm_text)) = ai::llm::complete_simple(
                     &pool,
                     system,
                     &format!("Context: {}\nUser: {}", base.ctx_json, message),
@@ -924,6 +924,292 @@ pub async fn mission_stack_status(
     State(state): State<AppState>,
 ) -> Result<Json<ai::mission_stack_status::MissionStackStatus>, ApiError> {
     ai::mission_stack_status::status(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+// --- Zeus AI redesign APIs ---
+
+pub async fn list_ai_providers(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ai::providers::AiProviderRow>>, ApiError> {
+    ai::providers::list_providers(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn create_ai_provider(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Json(body): Json<ai::providers::CreateProviderBody>,
+) -> Result<Json<ai::providers::AiProviderRow>, ApiError> {
+    crate::auth::require_admin(&actor)?;
+    ai::providers::create_provider(&state.pool, &body)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn patch_ai_provider(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+    Json(body): Json<ai::providers::PatchProviderBody>,
+) -> Result<Json<ai::providers::AiProviderRow>, ApiError> {
+    crate::auth::require_admin(&actor)?;
+    ai::providers::patch_provider(&state.pool, id, &body)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn delete_ai_provider(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    crate::auth::require_admin(&actor)?;
+    let ok = ai::providers::delete_provider(&state.pool, id)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(Json(serde_json::json!({ "deleted": ok })))
+}
+
+pub async fn list_ai_provider_models(
+    State(state): State<AppState>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> Result<Json<Vec<ai::providers::AiModelRow>>, ApiError> {
+    ai::providers::list_models(&state.pool, id)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn test_ai_provider(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    crate::auth::require_admin(&actor)?;
+    ai::providers::test_provider(&state.pool, id)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn list_routing_rules(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ai::routing::RoutingRuleRow>>, ApiError> {
+    ai::routing::list_rules(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn list_zeus_agents(
+    State(_state): State<AppState>,
+) -> Result<Json<Vec<ai::agents::ZeusAgentInfo>>, ApiError> {
+    Ok(Json(ai::agents::catalog()))
+}
+
+pub async fn zeus_chat(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Json(body): Json<ai::agents::ZeusChatBody>,
+) -> Result<Json<ai::agents::ZeusChatResponse>, ApiError> {
+    ai::agents::chat(&state.pool, &state.config, &body, Some(&actor.username))
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn list_ai_prompts(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+) -> Result<Json<Vec<ai::prompts::PromptRow>>, ApiError> {
+    ai::prompts::list_prompts(&state.pool, &actor.username)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn create_ai_prompt(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Json(body): Json<ai::prompts::CreatePromptBody>,
+) -> Result<Json<ai::prompts::PromptRow>, ApiError> {
+    ai::prompts::create_prompt(&state.pool, &actor.username, &body)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn patch_ai_prompt(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+    Json(body): Json<ai::prompts::PatchPromptBody>,
+) -> Result<Json<ai::prompts::PromptRow>, ApiError> {
+    let _ = actor;
+    ai::prompts::patch_prompt(&state.pool, id, &body)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn delete_ai_prompt(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let _ = actor;
+    let ok = ai::prompts::delete_prompt(&state.pool, id)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(Json(serde_json::json!({ "deleted": ok })))
+}
+
+pub async fn get_memory_settings(
+    State(state): State<AppState>,
+) -> Result<Json<ai::memory_store::MemorySettings>, ApiError> {
+    ai::memory_store::get_settings(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn patch_memory_settings(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Json(body): Json<ai::memory_store::MemorySettingsPatch>,
+) -> Result<Json<ai::memory_store::MemorySettings>, ApiError> {
+    crate::auth::require_admin(&actor)?;
+    ai::memory_store::patch_settings(&state.pool, &body)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MemoryPurgeQuery {
+    pub scope: String,
+}
+
+pub async fn purge_memory(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Query(q): Query<MemoryPurgeQuery>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    crate::auth::require_admin(&actor)?;
+    let deleted = ai::memory_store::purge(&state.pool, &q.scope, Some(&actor.username))
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(Json(serde_json::json!({ "deleted": deleted })))
+}
+
+pub async fn zeus_approval_hub(
+    State(state): State<AppState>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ai::actions::approval_hub(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn create_zeus_action(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Json(body): Json<ai::actions::CreateActionBody>,
+) -> Result<Json<ai::actions::ZeusActionRow>, ApiError> {
+    ai::actions::create_action(&state.pool, &body, &actor.username)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn execute_zeus_action(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ai::actions::approve_and_execute(&state, id, &actor)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn reject_zeus_action(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let ok = ai::actions::reject(&state.pool, id, &actor.username)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(Json(serde_json::json!({ "rejected": ok })))
+}
+
+pub async fn list_agent_marketplace(
+    State(state): State<AppState>,
+) -> Result<Json<Vec<ai::agent_marketplace::AgentPluginRow>>, ApiError> {
+    ai::agent_marketplace::list_agents(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn install_agent_marketplace(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    axum::extract::Path(slug): axum::extract::Path<String>,
+) -> Result<Json<ai::agent_marketplace::AgentPluginRow>, ApiError> {
+    crate::auth::require_admin(&actor)?;
+    ai::agent_marketplace::install(&state.pool, &slug)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn uninstall_agent_marketplace(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    axum::extract::Path(slug): axum::extract::Path<String>,
+) -> Result<Json<ai::agent_marketplace::AgentPluginRow>, ApiError> {
+    crate::auth::require_admin(&actor)?;
+    ai::agent_marketplace::uninstall(&state.pool, &slug)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn zeus_enterprise_overview(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+) -> Result<Json<ai::enterprise_zeus::ZeusEnterpriseOverview>, ApiError> {
+    ai::enterprise_zeus::overview(&state.pool, &actor.username)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn zeus_autonomous_plan(
+    State(state): State<AppState>,
+    Json(body): Json<ai::autonomous::AutonomousPlanBody>,
+) -> Result<Json<ai::autonomous::AutonomousPlanResult>, ApiError> {
+    ai::autonomous::plan(&state.pool, &state.config, &body)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
+pub async fn zeus_autonomous_execute(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Json(body): Json<ai::autonomous::AutonomousExecuteBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    ai::autonomous::execute_approved_plan(&state.pool, &state.config, &state, &actor, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
         .map(Json)

@@ -30,7 +30,7 @@ export default function MachinaInfrastructureTimeline({ hours = 4 }: { hours?: n
           <Sparkles className="w-4 h-4" /> AI Root Cause ({Math.round(analysis.confidence * 100)}% confidence)
         </p>
         <p className="text-slate-300 mt-1">{analysis.root_cause}</p>
-        {analysis.suggested_actions.slice(0, 2).map((a) => (
+        {(analysis.suggested_actions ?? []).slice(0, 2).map((a) => (
           <p key={a} className={`text-xs mt-1 ${hubLinkClasses()}`}>→ {a}</p>
         ))}
       </div>
