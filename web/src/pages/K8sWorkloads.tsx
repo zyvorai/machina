@@ -42,7 +42,6 @@ import { summarizeK8sClientError } from '../utils/k8sErrors'
 import Hero from '../components/Hero'
 import PageLayout from '../components/PageLayout'
 import EmptyState from '../components/EmptyState'
-import PageSkeleton from '../components/PageSkeleton'
 import JsonInspector, { asArray, asRecord } from '../components/platform/JsonInspector'
 import { formatUserError } from '../utils/apiError'
 import { statusBadgeClasses, statusPillClasses, statusToneClass } from '../utils/semanticColors'
@@ -194,12 +193,8 @@ export default function K8sWorkloadsPage() {
     return m
   }, [deployments, pods, services, kubevirtRows])
 
-  if (loading) {
-    return <PageSkeleton />
-  }
-
   return (
-    <PageLayout hideHeader className="relative">
+    <PageLayout hideHeader className="relative" contentLoading={loading}>
       <Hero
         title="Kubernetes Workloads"
         subtitle="Pods show node + host IP; KubeVirt VMs merge VMI guest/pod IP & node InternalIP. Use Console / VNC to copy virtctl commands."

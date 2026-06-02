@@ -38,7 +38,6 @@ import PageLayout from '../components/PageLayout'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
 import { statusActionLinkClasses, statusDestructiveButtonClasses, statusToneClass } from '../utils/semanticColors'
-import PageSkeleton from '../components/PageSkeleton'
 import { Loader2, Network, Plus, RefreshCw } from 'lucide-react'
 
 export default function OpenStackNetworkingPage() {
@@ -113,6 +112,7 @@ function OpenStackNetworkingContent() {
       hideHeader
       className="max-w-5xl"
       prepend={<><OpenStackSubNav /></>}
+      contentLoading={loading}
     >
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold flex items-center gap-2">
@@ -399,10 +399,7 @@ function OpenStackNetworkingContent() {
         </div>
       </div>
 
-      {loading ? (
-        <PageSkeleton />
-      ) : (
-        <div className="grid lg:grid-cols-2 gap-4">
+      <div className="grid lg:grid-cols-2 gap-4">
           <Section title={`Networks (${networks.length})`}>
             <ul className="text-sm space-y-1 font-mono">
               {networks.map((n) => (
@@ -550,7 +547,6 @@ function OpenStackNetworkingContent() {
             </ul>
           </Section>
         </div>
-      )}
       <OpenStackFooter />
     </PageLayout>
   )

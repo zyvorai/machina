@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import PageLayout from '../../components/PageLayout'
 import { AlertTriangle, CheckCircle2, Layers, Loader2, Package, Plus, RefreshCw, Sparkles, Star, Puzzle } from 'lucide-react'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { MacGlassPanel, MacSectionTitle, MacSheet } from '../../components/platform/mac/PlatformMacUi'
 import {
@@ -221,7 +220,7 @@ export default function PlatformTemplates() {
   }
 
   return (
-    <PageLayout hideHeader error={error} contentClassName="space-y-8">
+    <PageLayout hideHeader error={error} contentClassName="space-y-8" contentLoading={loading && rows.length === 0}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">App Store</p>
@@ -269,8 +268,6 @@ export default function PlatformTemplates() {
 
       {tab === 'templates' && (
         <>
-      {loading && rows.length === 0 && <PageSkeleton />}
-
       {!loading && rows.length === 0 && (
         <PlatformEmptyState
           icon={Package}
