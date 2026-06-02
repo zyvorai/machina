@@ -547,7 +547,6 @@ function OpenStackVolumesContent() {
             </div>
           )}
         </>
-      )}
       <OpenStackFooter />
     </PageLayout>
   )
