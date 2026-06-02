@@ -9,7 +9,6 @@ import {
   MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import SecurityTimelinePanel from '../../components/platform/SecurityTimelinePanel'
 import {
@@ -117,13 +116,12 @@ export default function PlatformSecurityCenter() {
   const critical = threat?.critical_events ?? []
 
   return (
-    <PageLayout hideHeader error={error}>
+    <PageLayout hideHeader error={error} contentLoading={loading && !threat && !error}>
       <MacSectionTitle
         title="Security Center"
         subtitle="PacketWolf eBPF fabric — observe, understand, secure"
       />
       <Link to="/platform/zeus" className={`text-sm ${hubLinkClasses()}`}>← Machina Zeus OS</Link>
-      {loading && !threat && <PageSkeleton />}
 
       {status && !status.fabric_reachable && status.packetwolf.enabled && (
         <PlatformEmptyState

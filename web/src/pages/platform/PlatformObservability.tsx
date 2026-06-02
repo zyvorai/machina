@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Activity, Gauge, Timer } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
-import PageSkeleton from '../../components/PageSkeleton'
 import { MacGlassPanel, MacSectionTitle, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
 import {
   getObservabilityOverview,
@@ -75,9 +74,8 @@ export default function PlatformObservability() {
   useEffect(() => { void load() }, [load])
 
   return (
-    <PageLayout hideHeader error={error}>
+    <PageLayout hideHeader error={error} contentLoading={loading && !overview && !error}>
       <MacSectionTitle title="Observability" subtitle="SLO dashboards and API trace inventory." />
-      {loading && !overview && !error && <PageSkeleton />}
       {overview && (
         <>
           <p className="text-sm text-slate-400">{overview.summary}</p>

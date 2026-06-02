@@ -5,7 +5,6 @@ import { Link, useSearchParams } from 'react-router'
 import { Cpu, Search, Server, Shield, Workflow } from 'lucide-react'
 import { MacGlassPanel, MacListRow, MacSectionTitle } from '../../components/platform/mac/PlatformMacUi'
 import PageLayout from '../../components/PageLayout'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformZeusHubLaunchpad from '../../components/platform/tahoe/PlatformZeusHubLaunchpad'
 import { formatUserError } from '../../utils/apiError'
@@ -188,12 +187,11 @@ export default function PlatformZeusOs() {
   ]
 
   return (
-    <PageLayout hideHeader error={error}>
+    <PageLayout hideHeader error={error} contentLoading={loading && tab === 'fleet' && !heatmap}>
       <MacSectionTitle
         title="Machina Zeus OS"
         subtitle="Fleet intelligence · AI security graph · knowledge engine · service fabric · bare metal"
       />
-      {loading && tab === 'fleet' && !heatmap && <PageSkeleton />}
       {zeusSummary && <p className="text-sm text-orange-200/90">{zeusSummary}</p>}
       {hubSummary && (
         <MacGlassPanel title="Remediation hub" subtitle="SRE · compliance · fleet power — unified review queue">

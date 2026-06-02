@@ -17,7 +17,6 @@ import { formatUserError } from '../../utils/apiError'
 import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusSurfaceClasses, statusToneClass, taskStatusTone, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
 import { usePlatformDesktopTier } from '../../hooks/usePlatformDesktopTier'
 import { tasksHubHref } from '../../utils/platformHubLinks'
-import PageSkeleton from '../../components/PageSkeleton'
 
 const SOURCES = [
   { id: 'vcenter', label: 'VMware vCenter', desc: 'Scan via HyperSDK when enabled' },
@@ -142,7 +141,7 @@ export default function PlatformMigration() {
   }, [tab, guestkit])
 
   return (
-    <PageLayout hideHeader contentClassName="space-y-8 max-w-4xl">
+    <PageLayout hideHeader contentClassName="space-y-8 max-w-4xl" contentLoading={tab === 'radar' && loading && scan.length === 0}>
       <MacSectionTitle title="Migration Radar" subtitle="Machina Migration Radar — HyperSDK scan + GuestKit offline assurance." />
 
       <div className="flex gap-2 border-b border-white/[0.06] pb-1">
@@ -220,7 +219,6 @@ export default function PlatformMigration() {
 
       {tab === 'radar' && (
       <>
-      {loading && scan.length === 0 && <PageSkeleton />}
       <div className="grid gap-3 sm:grid-cols-3">
         {openstack && openstackConn.phase !== 'live' && (
           <div className="sm:col-span-3">

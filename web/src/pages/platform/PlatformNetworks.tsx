@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import PageLayout from '../../components/PageLayout'
 import { Cable, Layers, Link2, Loader2, Network, Plus, RefreshCw, Router, Shield, Wifi } from 'lucide-react'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
 import { PlatformOpenStackNetworkLink } from '../../components/platform/PlatformCrossLinks'
@@ -248,7 +247,7 @@ export default function PlatformNetworks() {
   }
 
   return (
-    <PageLayout hideHeader error={error} contentClassName="space-y-8">
+    <PageLayout hideHeader error={error} contentClassName="space-y-8" contentLoading={loading && rows.length === 0 && !discovering && !error}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Network</p>
@@ -293,8 +292,6 @@ export default function PlatformNetworks() {
           </button>
         ))}
       </div>
-
-      {loading && rows.length === 0 && !discovering && !error && <PageSkeleton />}
 
       {tab === 'networks' && (
         <>
