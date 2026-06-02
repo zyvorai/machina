@@ -106,13 +106,26 @@ function OpenStackLoadBalancerDetailContent() {
     if (expandedPool) void loadPoolDetails(expandedPool)
   }, [expandedPool, loadPoolDetails])
 
-  if (loading) return <PageSkeleton />
+  if (loading) {
+    return (
+      <PageLayout
+        hideHeader
+        className="max-w-4xl"
+        prepend={<OpenStackSubNav />}
+        contentLoading
+      />
+    )
+  }
+
   if (!lb || !id) {
     return (
-      <div className="space-y-4">
-        <OpenStackSubNav />
+      <PageLayout
+        hideHeader
+        className="max-w-4xl"
+        prepend={<OpenStackSubNav />}
+      >
         <Link to="/openstack/load-balancers" className="text-sky-400 hover:underline">Back</Link>
-      </div>
+      </PageLayout>
     )
   }
 
@@ -120,7 +133,7 @@ function OpenStackLoadBalancerDetailContent() {
     <PageLayout
       hideHeader
       className="max-w-4xl"
-      prepend={<><OpenStackSubNav /></>}
+      prepend={<OpenStackSubNav />}
     >
       <Link to="/openstack/load-balancers" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm">
         <ArrowLeft className="w-4 h-4" /> Load balancers

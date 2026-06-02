@@ -164,34 +164,34 @@ function OpenStackInstanceDetailContent() {
   }
 
   if (loading) {
-    return <PageSkeleton />
-  }
-  if (loadError) {
     return (
-      <div className="space-y-4 max-w-4xl">
-        <OpenStackSubNav />
-        <OpenStackStatusBar />
-        <ErrorBanner
-          title="Could not load instance"
-          headline={loadError}
-          hints={openStackErrorHints(loadError)}
-          onRetry={() => {
-            setLoading(true)
-            void load()
-          }}
-        />
+      <PageLayout
+        hideHeader
+        className="max-w-4xl"
+        prepend={<OpenStackSubNav />}
+        contentLoading
+      />
+    )
+  }
+
+  if (loadError || !inst) {
+    return (
+      <PageLayout
+        hideHeader
+        className="max-w-4xl"
+        prepend={<OpenStackSubNav />}
+        error={loadError ?? 'Instance not found.'}
+        errorTitle={loadError ? 'Could not load instance' : 'Instance not found'}
+        errorHints={loadError ? openStackErrorHints(loadError) : undefined}
+        onErrorRetry={loadError ? () => {
+          setLoading(true)
+          void load()
+        } : undefined}
+      >
         <Link to="/openstack/instances" className="text-sky-400 hover:underline inline-flex items-center gap-1">
           <ArrowLeft className="w-4 h-4" /> Back to instances
         </Link>
-      </div>
-    )
-  }
-  if (!inst) {
-    return (
-      <div className="space-y-4">
-        <p className="text-slate-400">Instance not found.</p>
-        <Link to="/openstack/instances" className="text-sky-400 hover:underline">Back to list</Link>
-      </div>
+      </PageLayout>
     )
   }
 

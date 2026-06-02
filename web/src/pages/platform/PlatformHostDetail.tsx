@@ -172,7 +172,7 @@ export default function PlatformHostDetailPage() {
   const ioPsi = (linuxObs?.pressure?.io?.some ?? 0) * 100
 
   return (
-    <PageLayout hideHeader compact contentClassName="space-y-4">
+    <PageLayout hideHeader compact contentClassName="space-y-4" contentLoading={loading && !host}>
       <Link to="/platform/hosts" className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}>
         <ArrowLeft className="w-4 h-4" /> Hosts
       </Link>
@@ -188,7 +188,6 @@ export default function PlatformHostDetailPage() {
           <Link to="/node" className={hubLinkClasses()}>Classic node tools</Link>
         </p>
       )}
-      {loading && !host && <PageSkeleton />}
       {host && (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">

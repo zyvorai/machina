@@ -147,6 +147,7 @@ function OpenStackVolumesContent() {
       hideHeader
       className="max-w-4xl"
       prepend={<><OpenStackSubNav /></>}
+      contentLoading={loading}
     >
       <h1 className="text-2xl font-semibold flex items-center gap-2">
         <HardDrive className="w-7 h-7 text-sky-400" />
@@ -377,10 +378,7 @@ function OpenStackVolumesContent() {
         </div>
       </div>
 
-      {loading ? (
-        <PageSkeleton />
-      ) : (
-        <>
+      <>
           <div className="rounded-xl border border-slate-700 overflow-hidden">
             <div className="px-3 py-2 bg-slate-900 text-xs text-slate-500 uppercase">Volumes</div>
             <table className="w-full text-sm">
