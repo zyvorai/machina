@@ -19,7 +19,6 @@ import {
 import { usePlatformInfo } from '../contexts/PlatformInfoContext'
 import { useToastContext } from '../contexts/ToastContext'
 import ConfirmDialog from '../components/ConfirmDialog'
-import PageSkeleton from '../components/PageSkeleton'
 import {
   ArrowLeft, Play, Square, RotateCcw, Trash2, Camera, Copy, Cloud, HardDrive, Layers, Lock, Network, Archive,
 } from 'lucide-react'
@@ -163,39 +162,12 @@ function OpenStackInstanceDetailContent() {
     }
   }
 
-  if (loading) {
-    return (
-      <PageLayout
-        hideHeader
-        className="max-w-4xl"
-        prepend={<OpenStackSubNav />}
-        contentLoading
-      />
-    )
-  }
+  const hasLoadError = !!loadError
+  const isEmptyInstance = !loading && !loadError && !inst
+  const showError = hasLoadError || isEmptyInstance
+  const errorMessage = loadError ?? (isEmptyInstance ? 'Instance not found.' : null)
 
-  if (loadError || !inst) {
-    return (
-      <PageLayout
-        hideHeader
-        className="max-w-4xl"
-        prepend={<OpenStackSubNav />}
-        error={loadError ?? 'Instance not found.'}
-        errorTitle={loadError ? 'Could not load instance' : 'Instance not found'}
-        errorHints={loadError ? openStackErrorHints(loadError) : undefined}
-        onErrorRetry={loadError ? () => {
-          setLoading(true)
-          void load()
-        } : undefined}
-      >
-        <Link to="/openstack/instances" className="text-sky-400 hover:underline inline-flex items-center gap-1">
-          <ArrowLeft className="w-4 h-4" /> Back to instances
-        </Link>
-      </PageLayout>
-    )
-  }
-
-  const statusUp = inst.status.toUpperCase()
+  const statusUp = inst?.status.toUpperCase() ?? ''
   const canShelve = ['ACTIVE', 'SHUTOFF', 'PAUSED'].includes(statusUp)
   const canUnshelve = statusUp.startsWith('SHELVED')
 
@@ -204,13 +176,32 @@ function OpenStackInstanceDetailContent() {
       hideHeader
       className="max-w-4xl"
       prepend={<><OpenStackSubNav /></>}
-      error={loadError}
-      errorTitle="Failed to load"
-      errorHints={loadError ? openStackErrorHints(loadError) : undefined}
-      technicalDetail={loadError}
-      errorTone="red"
-      onErrorRetry={() => void load()}
-      onErrorDismiss={() => setLoadError(null)}
+      contentLoading={loading}
+      error={showError ? errorMessage : undefined}
+      errorTitle={hasLoadError ? 'Could not load instance' : isEmptyInstance ? 'Instance not found' : undefined}
+      errorHints={hasLoadError ? openStackErrorHints(loadError) : undefined}
+      technicalDetail={hasLoadError ? loadError : undefined}
+      errorTone={hasLoadError ? 'red' : undefined}
+      onErrorRetry={hasLoadError ? () => {
+        setLoading(true)
+        void load()
+      } : undefined}
+      onErrorDismiss={hasLoadError ? () => setLoadError(null) : undefined}
+    >
+      {showError ? (
+        <Link to="/openstack/instances" className="text-sky-400 hover:underline inline-flex items-center gap-1">
+          <ArrowLeft className="w-4 h-4" /> Back to instances
+        </Link>
+      ) : null}
+
+      {!loading && inst ? (
+        <>
+          <Link to="/openstack/instances" className="inline-flex items-center gap-2 text-slate-400 hover:text-slate-200 text-sm">
+            <ArrowLeft className="w-4 h-4" />
+            Instances
+          </Link>
+
+          <div className="flex flex-wrap items-start justify-between gap-4">
       >{inst.status.toUpperCase() === 'ERROR' && (
         <ErrorBanner
           title="Instance in ERROR state"
