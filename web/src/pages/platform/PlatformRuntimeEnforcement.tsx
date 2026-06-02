@@ -10,7 +10,6 @@ import {
   MacSectionTitle,
   MacStatWidget,
 } from '../../components/platform/mac/PlatformMacUi'
-import PageSkeleton from '../../components/PageSkeleton'
 import {
   applyEnforcementPolicy,
   createEnforcementPolicy,
@@ -80,13 +79,12 @@ export default function PlatformRuntimeEnforcement() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
+    <PageLayout hideHeader error={error} contentLoading={loading}>
       <MacSectionTitle
         title="Runtime enforcement"
         subtitle="eBPF deny rules — process · DNS · port · IP via Tetragon TracingPolicy"
       />
       <Link to="/platform/zeus/security" className={`text-sm ${hubLinkClasses()}`}>← Security Center</Link>
-      {loading && !status && <PageSkeleton />}
 
       {status && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

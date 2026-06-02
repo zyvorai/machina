@@ -5,7 +5,6 @@ import { Link } from 'react-router'
 import { Cable, GitBranch, Layers, RefreshCw } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
 import { MacSectionTitle, MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { formatUserError } from '../../utils/apiError'
 import { statusSurfaceClasses, statusToneClass, hubLinkClasses } from '../../utils/semanticColors'
@@ -82,7 +81,7 @@ export default function PlatformTopology() {
   }, [graph])
 
   return (
-    <PageLayout hideHeader error={error} onErrorRetry={() => void load()}>
+    <PageLayout hideHeader error={error} onErrorRetry={() => void load()} contentLoading={loading && !graph}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <MacSectionTitle title="Topology" subtitle="Digital twin graph — hosts, VMs, overlay segments, and LLDP uplinks" />
         <button type="button" className="btn-secondary text-xs flex items-center gap-2" disabled={loading} onClick={() => void load()}>
@@ -90,7 +89,6 @@ export default function PlatformTopology() {
           Refresh LLDP
         </button>
       </div>
-      {loading && !graph && <PageSkeleton />}
       {!loading && graph && graph.nodes.length === 0 && (
         <PlatformEmptyState
           icon={GitBranch}

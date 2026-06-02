@@ -9,7 +9,6 @@ import {
   MacListRow,
   MacSettingsPane,
 } from '../../components/platform/mac/PlatformMacUi'
-import PageSkeleton from '../../components/PageSkeleton'
 import ProcessGraphCanvas from '../../components/platform/ProcessGraphCanvas'
 import ContainerHierarchyPanel from '../../components/platform/ContainerHierarchyPanel'
 import JsonInspector from '../../components/platform/JsonInspector'
@@ -147,11 +146,10 @@ export default function PlatformMachineSecurity() {
     : 'Agent fabric status unavailable'
 
   return (
-    <PageLayout hideHeader compact contentClassName="space-y-4" error={error}>
+    <PageLayout hideHeader compact contentClassName="space-y-4" error={error} contentLoading={loading && !summary && !error}>
       <Link to="/platform/zeus/security" className={`text-sm flex items-center gap-1 ${hubLinkClasses()}`}>
         <ArrowLeft className="w-4 h-4" /> Security Center
       </Link>
-      {loading && !summary && <PageSkeleton />}
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>

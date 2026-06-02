@@ -12,7 +12,6 @@ import {
   MacListRow,
 } from '../../components/platform/mac/PlatformMacUi'
 import ErrorBanner from '../../components/ErrorBanner'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { StructuredErrorBanner } from '../../components/StructuredErrorBanner'
 import { hostErrorPresentation } from '../../utils/hostErrorPresentation'

@@ -20,7 +20,6 @@ import {
 } from '../../components/platform/mac/PlatformMacUi'
 import PageLayout from '../../components/PageLayout'
 import ErrorBanner from '../../components/ErrorBanner'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import FleetSettingsPane from '../../components/platform/FleetSettingsPane'
 import { BuildStepTimeline } from '../../components/BuildStepTimeline'
@@ -166,7 +165,7 @@ export default function PlatformMaintenance() {
   }
 
   return (
-    <PageLayout hideHeader error={error}>
+    <PageLayout hideHeader error={error} contentLoading={pageLoading}>
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80">Software Update</p>
@@ -201,7 +200,6 @@ export default function PlatformMaintenance() {
       </div>
 
       {actionError && <ErrorBanner message={actionError} />}
-      {pageLoading && <PageSkeleton />}
 
       {!pageLoading && tab === 'mission' && mission && (
         <div className="space-y-4">

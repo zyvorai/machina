@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { Cpu, Monitor, RefreshCw, Server } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformTahoeHero from '../../components/platform/tahoe/PlatformTahoeHero'
 import { MacGlassPanel, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
@@ -78,7 +77,7 @@ export default function PlatformGpuCommandCenter() {
   useEffect(() => { void loadPlacement() }, [loadPlacement])
 
   return (
-    <PageLayout hideHeader error={error} onErrorRetry={() => void load()}>
+    <PageLayout hideHeader error={error} onErrorRetry={() => void load()} contentLoading={loading}>
       <PlatformTahoeHero
         title="GPU Command Center"
         subtitle="MIG, vGPU, and CUDA placement — inventory from host tags plus AI placement advisor."
@@ -91,8 +90,6 @@ export default function PlatformGpuCommandCenter() {
       />
 
       <div className="tahoe-content space-y-4">
-        {loading && <PageSkeleton />}
-
         {!loading && overview && overview.gpu_host_count === 0 && (
           <PlatformEmptyState
             icon={Cpu}

@@ -5,7 +5,6 @@ import { useSearchParams } from 'react-router'
 import { BookOpen, DollarSign, FolderKanban, PieChart } from 'lucide-react'
 import ErrorBanner from '../../components/ErrorBanner'
 import PageLayout from '../../components/PageLayout'
-import PageSkeleton from '../../components/PageSkeleton'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { MacGlassPanel, MacSectionTitle, MacStatWidget } from '../../components/platform/mac/PlatformMacUi'
 import {
@@ -124,7 +123,7 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
   }
 
   return (
-    <PageLayout hideHeader compact={embedded} error={error} onErrorRetry={() => void load()}>
+    <PageLayout hideHeader compact={embedded} error={error} onErrorRetry={() => void load()} contentLoading={loading}>
       {!embedded && <MacSectionTitle title="Reports" subtitle="Cost Guardian, FinOps, operations runbooks, and compliance showback." />}
       <div className="flex flex-wrap gap-2">
         {([
@@ -144,7 +143,6 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
           </button>
         ))}
       </div>
-      {loading && <PageSkeleton />}
 
       {!loading && tab === 'runbooks' && (
         <>
