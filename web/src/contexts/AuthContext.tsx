@@ -2,7 +2,7 @@
 // Proprietary software — see LICENSE in the repository root.
 // https://zyvor.dev · info@zyvor.dev
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react'
 import { login as apiLogin, logout as apiLogout, getSession, exchangeTokenForSession } from '../api/auth'
 
 interface AuthContextType {
@@ -99,8 +99,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionId('')
   }, [])
 
+  const value = useMemo(
+    () => ({
+      isAuthenticated,
+      username,
+      isRoot: username === 'root',
+      sessionId,
+      loading,
+      login,
+      exchangeToken,
+      logout,
+    }),
+    [isAuthenticated, username, sessionId, loading, login, exchangeToken, logout],
+  )
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated, username, isRoot: username === 'root', sessionId, loading, login, exchangeToken, logout }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   )

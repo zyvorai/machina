@@ -11,6 +11,8 @@ Enterprise Linux hypervisor management platform
 | Observability | [observability.md](guides/observability.md) |
 | OpenStack | [openstack.md](openstack.md) |
 | **User journeys & acceptance criteria** | [User Stories](USER_STORIES.md) |
+| **Multi-user performance (100+ concurrent)** | [performance-multi-user.md](performance-multi-user.md) |
+| **Multi-user performance (100+ concurrent)** | [performance-multi-user.md](performance-multi-user.md) |
 
 ## User Stories
 

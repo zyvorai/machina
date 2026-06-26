@@ -30,6 +30,7 @@ mod systemd;
 mod terminal;
 mod virt_image_validate;
 mod vm_events;
+mod vm_watch;
 
 use clap::Parser;
 use machina_core::{LibvirtManager, MachinaConfig};

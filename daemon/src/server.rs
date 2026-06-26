@@ -18,6 +18,7 @@ use tower_http::trace::TraceLayer;
 
 use crate::auth::{self, SessionStore};
 use crate::daemon_stats::DaemonStats;
+use crate::vm_watch::VmWatchCoordinator;
 use crate::http_metrics::{self, HttpMetrics};
 use crate::job_registry::JobRegistry;
 use crate::metrics_history::MetricsHistoryStore;
@@ -82,11 +83,13 @@ pub fn create_app(manager: LibvirtManager, config: MachinaConfig) -> Router {
 
     // WebSocket routes use single-use token auth via ?token= query parameter.
     // Clients first POST /api/v1/ws-token to get a short-lived token.
+    let vm_watch = VmWatchCoordinator::spawn(manager.clone());
     let ws = routes::websocket_routes()
         .route_layer(middleware::from_fn_with_state(
             session_store.clone(),
             auth::ws_auth_middleware,
         ))
+        .layer(Extension(vm_watch))
         .layer(Extension(terminal_store))
         .layer(Extension(ssh_terminal_cfg))
         .with_state(manager);

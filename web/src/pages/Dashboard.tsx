@@ -124,7 +124,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadData(); loadMetrics()
-    const interval = setInterval(() => { loadData(); loadMetrics() }, 10000)
+    const interval = setInterval(() => { loadData(); loadMetrics() }, 30_000)
     return () => clearInterval(interval)
   }, [loadData, loadMetrics])
 

@@ -2,8 +2,6 @@
 // Proprietary software — see LICENSE in the repository root.
 // https://zyvor.dev · info@zyvor.dev
 
-use std::collections::HashMap;
-
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Extension, Path, Query, State};
 use axum::http::StatusCode;
@@ -12,19 +10,13 @@ use axum::routing::get;
 use axum::Router;
 use futures_util::{SinkExt, StreamExt};
 use machina_core::libvirt::domain;
-use machina_core::{LibvirtManager, SshTerminalConfig, VmInfo};
+use machina_core::{LibvirtManager, SshTerminalConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::time::{interval, Duration};
+use tokio::sync::broadcast;
 use tracing::{info, warn};
 
-fn vm_watch_key(vm: &VmInfo) -> String {
-    match &vm.libvirt_connection {
-        Some(c) => format!("{c}/{}", vm.name),
-        None => vm.name.clone(),
-    }
-}
-
 use crate::auth::RequestActor;
+use crate::vm_watch::VmWatchCoordinator;
 use crate::conn_query::{spawn_libvirt_actor, ConnQuery};
 use crate::kubevirt_k8s_ws_proxy;
 use crate::terminal::{run_ssh_terminal, TerminalSessionStore};
@@ -63,87 +55,33 @@ async fn kubevirt_console_ws_handler(
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(manager): State<LibvirtManager>,
+    Extension(watch): Extension<VmWatchCoordinator>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| handle_socket(socket, manager))
+    ws.on_upgrade(move |socket| handle_watch_socket(socket, watch))
 }
 
-async fn handle_socket(mut socket: WebSocket, manager: LibvirtManager) {
-    info!("WebSocket client connected");
-
-    let mut tick = interval(Duration::from_secs(2));
-    let mut prev_states: HashMap<String, String> = HashMap::new();
+async fn handle_watch_socket(mut socket: WebSocket, watch: VmWatchCoordinator) {
+    info!(
+        "WebSocket watch client connected ({} subscribers)",
+        watch.subscriber_count()
+    );
+    let mut rx = watch.subscribe();
 
     loop {
-        tick.tick().await;
-
-        // Never call libvirt from the async runtime thread: list_vms can block for a long time
-        // (e.g. while another thread holds the connection mutex during destroy/undefine). Blocking
-        // the executor starves HTTP/WebSocket work and can look like a daemon "crash".
-        let manager2 = manager.clone();
-        let current = match tokio::task::spawn_blocking(move || manager2.list_all_vms()).await {
-            Ok(Ok(vms)) => vms,
-            Ok(Err(e)) => {
-                warn!("Failed to list VMs for watch: {}", e);
-                Vec::new()
+        let payload = match rx.recv().await {
+            Ok(msg) => msg,
+            Err(broadcast::error::RecvError::Lagged(_)) => {
+                serde_json::json!({ "event": "heartbeat", "vm_count": 0 }).to_string()
             }
-            Err(e) => {
-                warn!("Watch list_vms task join error: {}", e);
-                Vec::new()
-            }
-        };
-
-        let mut changes = Vec::new();
-        let mut current_names: HashMap<String, String> = HashMap::with_capacity(current.len());
-
-        for vm in &current {
-            let key = vm_watch_key(vm);
-            match prev_states.get(&key) {
-                Some(old_state) if *old_state != vm.state => {
-                    changes.push(serde_json::json!({
-                        "event": "state_change",
-                        "name": vm.name,
-                        "libvirt_connection": vm.libvirt_connection,
-                        "old_state": old_state,
-                        "new_state": vm.state,
-                    }));
-                }
-                None => {
-                    changes.push(serde_json::json!({
-                        "event": "vm_added",
-                        "name": vm.name,
-                        "libvirt_connection": vm.libvirt_connection,
-                        "state": vm.state,
-                    }));
-                }
-                _ => {}
-            }
-            current_names.insert(key, vm.state.clone());
-        }
-
-        for name in prev_states.keys() {
-            if !current_names.contains_key(name) {
-                changes.push(serde_json::json!({
-                    "event": "vm_removed",
-                    "name": name,
-                }));
-            }
-        }
-
-        prev_states = current_names;
-
-        let msg = if changes.is_empty() {
-            serde_json::json!({ "event": "heartbeat", "vm_count": current.len() })
-        } else {
-            serde_json::json!({ "event": "changes", "changes": changes })
+            Err(broadcast::error::RecvError::Closed) => break,
         };
 
         if socket
-            .send(Message::Text(msg.to_string().into()))
+            .send(Message::Text(payload.into()))
             .await
             .is_err()
         {
-            info!("WebSocket client disconnected");
+            info!("WebSocket watch client disconnected");
             break;
         }
     }

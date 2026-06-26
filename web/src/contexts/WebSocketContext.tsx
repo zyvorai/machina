@@ -2,7 +2,7 @@
 // Proprietary software — see LICENSE in the repository root.
 // https://zyvor.dev · info@zyvor.dev
 
-import { createContext, useContext, useEffect, useState, useRef, useCallback, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, useRef, useCallback, useMemo, ReactNode } from 'react'
 import { getWsToken } from '../api/client'
 
 interface WSMessage {
@@ -136,8 +136,13 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
     return () => { subscribersRef.current.delete(callback) }
   }, [])
 
+  const value = useMemo(
+    () => ({ isConnected, connection, subscribe, events }),
+    [isConnected, connection, subscribe, events],
+  )
+
   return (
-    <WebSocketContext.Provider value={{ isConnected, connection, subscribe, events }}>
+    <WebSocketContext.Provider value={value}>
       {children}
     </WebSocketContext.Provider>
   )

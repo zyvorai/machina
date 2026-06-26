@@ -49,7 +49,7 @@ export default function MissionControlOverlay() {
   const [sreForecasts, setSreForecasts] = useState<SreForecast[]>([])
   const [zeusStatus, setZeusStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const { desktop, linuxHealth } = useFleetDesktop(open, 120_000)
+  const { desktop, linuxHealth } = useFleetDesktop(open)
   const [tier] = usePlatformDesktopTier()
   const fleetTitle = useMemo(
     () => formatFleetDisplayTitle(cluster, hosts),

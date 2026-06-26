@@ -57,7 +57,7 @@ export default function PlatformControlCenter() {
   const [tier] = usePlatformDesktopTier()
   const { info } = usePlatformInfo()
   const [open, setOpen] = useState(false)
-  const { desktop, linuxHealth } = useFleetDesktop(open, 0)
+  const { desktop, linuxHealth } = useFleetDesktop(open)
   const [hosts, setHosts] = useState<PlatformHost[]>([])
   const [vms, setVms] = useState<{ observed_state: string }[]>([])
   const [tasks, setTasks] = useState<PlatformTask[]>([])

@@ -6,6 +6,8 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime};
 use std::sync::Mutex;
 
 use crate::LibvirtError;
@@ -170,11 +172,49 @@ fn tokens_path() -> String {
     format!("{DATA_DIR}/api-tokens.json")
 }
 
-pub fn load_tokens() -> TokenMap {
+struct TokenCacheEntry {
+    map: TokenMap,
+    loaded_at: Instant,
+    mtime: Option<SystemTime>,
+}
+
+static TOKEN_CACHE: OnceLock<Mutex<Option<TokenCacheEntry>>> = OnceLock::new();
+
+const TOKEN_CACHE_TTL: Duration = Duration::from_secs(30);
+
+fn token_cache() -> &'static Mutex<Option<TokenCacheEntry>> {
+    TOKEN_CACHE.get_or_init(|| Mutex::new(None))
+}
+
+pub fn invalidate_token_cache() {
+    if let Ok(mut guard) = token_cache().lock() {
+        *guard = None;
+    }
+}
+
+fn read_tokens_from_disk() -> TokenMap {
     match std::fs::read_to_string(tokens_path()) {
         Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
         Err(_) => HashMap::new(),
     }
+}
+
+pub fn load_tokens() -> TokenMap {
+    let path = tokens_path();
+    let mtime = std::fs::metadata(&path).ok().and_then(|m| m.modified().ok());
+    let mut guard = token_cache().lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref entry) = *guard {
+        if entry.mtime == mtime && entry.loaded_at.elapsed() < TOKEN_CACHE_TTL {
+            return entry.map.clone();
+        }
+    }
+    let map = read_tokens_from_disk();
+    *guard = Some(TokenCacheEntry {
+        map: map.clone(),
+        loaded_at: Instant::now(),
+        mtime,
+    });
+    map
 }
 
 fn save_tokens(tokens: &TokenMap) -> Result<(), LibvirtError> {
@@ -183,6 +223,7 @@ fn save_tokens(tokens: &TokenMap) -> Result<(), LibvirtError> {
         .map_err(|e| LibvirtError::Operation(format!("Serialize tokens: {e}")))?;
     std::fs::write(tokens_path(), data)
         .map_err(|e| LibvirtError::Operation(format!("Write tokens: {e}")))?;
+    invalidate_token_cache();
     Ok(())
 }
 

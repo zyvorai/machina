@@ -19,7 +19,7 @@ function islandTone(state: 'ok' | 'warn' | 'notify' | 'alert' | 'zeus'): 'ok' | 
 }
 
 export default function PlatformDynamicIsland() {
-  const { desktop, linuxHealth } = useFleetDesktop(true, 60_000)
+  const { desktop, linuxHealth } = useFleetDesktop()
   const [tier] = usePlatformDesktopTier()
   const { openCopilot } = useAi()
   const [expanded, setExpanded] = useState(false)

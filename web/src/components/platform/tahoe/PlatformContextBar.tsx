@@ -54,7 +54,7 @@ function ContextPill({ item, pathname, search }: { item: ContextNavItem; pathnam
 export default function PlatformContextBar() {
   const location = useLocation()
   const [tier] = usePlatformDesktopTier()
-  const { desktop } = useFleetDesktop(true, 90_000)
+  const { desktop } = useFleetDesktop()
   const ctx = contextNavForPath(location.pathname, tier)
   const AppIcon = ctx?.appIcon
   const [moreOpen, setMoreOpen] = useState(false)

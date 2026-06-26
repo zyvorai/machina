@@ -7,9 +7,7 @@ import {
   getCapacityReport,
   getClusterSummary,
   getFleetFinder,
-  listMissingTemplateImages,
   listPlatformHosts,
-  listPlatformTasks,
   listPlatformVms,
   vmPower,
   type CapacityReport,
@@ -52,8 +50,6 @@ export function useMissionControlFleet() {
         getFleetFinder().catch(() => null),
         getClusterSummary().catch(() => null),
         getCapacityReport().catch(() => null),
-        listPlatformTasks().catch(() => []),
-        listMissingTemplateImages().catch(() => ({ missing: [], count: 0, auto_fetch_count: 0, summary: '' })),
       ])
       setHosts(Array.isArray(h) ? h : [])
       setVms(Array.isArray(v) ? v : [])

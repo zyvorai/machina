@@ -28,7 +28,7 @@ export default function PlatformMacDock() {
   const { closeMissionControl } = useMissionControl()
   const dockItems = usePlatformDockItems()
   const launchpadFavorites = useLaunchpadDockApps(4)
-  const { desktop } = useFleetDesktop(isPlatformShell(location.pathname), 90_000)
+  const { desktop } = useFleetDesktop()
   const [mounted, setMounted] = useState(false)
   const [dockVisible, setDockVisible] = useState(true)
   const [attentionByPath, setAttentionByPath] = useState<Record<string, number>>({})

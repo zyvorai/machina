@@ -41,7 +41,7 @@ export default function PlatformJarvisBriefing() {
   const navigate = useNavigate()
   const [tier] = usePlatformDesktopTier()
   const showPower = tierAtLeast(tier, 'power')
-  const { desktop } = useFleetDesktop(true, 90_000)
+  const { desktop } = useFleetDesktop()
   const [rawIntents, setRawIntents] = useState<SpotlightIntent[]>([])
   const [query, setQuery] = useState('')
 

@@ -20,7 +20,7 @@ use rand::Rng;
 use serde::Deserialize;
 use serde::Serialize;
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 use std::time::Instant;
 use tracing::{info, warn};
 
@@ -80,7 +80,7 @@ pub fn require_browser_session_for_host_insight(actor: &RequestActor) -> Result<
 /// Session store: token -> (username, created_at)
 #[derive(Clone)]
 pub struct SessionStore {
-    sessions: Arc<Mutex<HashMap<String, SessionData>>>,
+    sessions: Arc<RwLock<HashMap<String, SessionData>>>,
     ws_tokens: Arc<Mutex<HashMap<String, WsTokenData>>>,
     oidc_states: Arc<Mutex<HashMap<String, OidcStateData>>>,
     max_sessions_global: usize,
@@ -123,7 +123,7 @@ const OIDC_STATE_TTL_SECS: u64 = 300;
 impl SessionStore {
     pub fn new(max_sessions_global: usize, max_sessions_per_user: usize) -> Self {
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
             ws_tokens: Arc::new(Mutex::new(HashMap::new())),
             oidc_states: Arc::new(Mutex::new(HashMap::new())),
             max_sessions_global: max_sessions_global.max(1),
@@ -133,7 +133,7 @@ impl SessionStore {
 
     /// Active browser sessions for `username` (non-expired).
     pub fn active_sessions_for_user(&self, username: &str) -> usize {
-        let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let sessions = self.sessions.read().unwrap_or_else(|e| e.into_inner());
         sessions
             .values()
             .filter(|d| {
@@ -144,7 +144,7 @@ impl SessionStore {
 
     /// Non-expired browser cookie sessions (API tokens are not counted).
     pub fn active_session_count(&self) -> usize {
-        let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let sessions = self.sessions.read().unwrap_or_else(|e| e.into_inner());
         sessions
             .values()
             .filter(|d| d.created_at.elapsed().as_secs() < SESSION_TTL_SECS)
@@ -158,7 +158,7 @@ impl SessionStore {
         let public_id_bytes: [u8; 16] = rng.gen();
         let public_id = hex::encode(public_id_bytes);
 
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sessions = self.sessions.write().unwrap_or_else(|e| e.into_inner());
 
         // Purge expired sessions
         sessions.retain(|_, data| data.created_at.elapsed().as_secs() < SESSION_TTL_SECS);
@@ -204,20 +204,19 @@ impl SessionStore {
     }
 
     fn validate_session(&self, token: &str) -> Option<RequestActor> {
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(data) = sessions.get(token) {
+        let sessions = self.sessions.read().unwrap_or_else(|e| e.into_inner());
+        sessions.get(token).and_then(|data| {
             if data.created_at.elapsed().as_secs() < SESSION_TTL_SECS {
-                return Some(data.actor.clone());
+                Some(data.actor.clone())
+            } else {
+                None
             }
-            // Session expired — remove it
-            sessions.remove(token);
-        }
-        None
+        })
     }
 
     /// Public id for the given session cookie token, if still valid.
     pub fn session_public_id(&self, token: &str) -> Option<String> {
-        let sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let sessions = self.sessions.read().unwrap_or_else(|e| e.into_inner());
         sessions.get(token).and_then(|data| {
             if data.created_at.elapsed().as_secs() < SESSION_TTL_SECS {
                 Some(data.public_id.clone())
@@ -229,7 +228,7 @@ impl SessionStore {
 
     /// All non-expired browser sessions (in-memory).
     pub fn list_browser_sessions(&self, current_public_id: Option<&str>) -> Vec<SessionListEntry> {
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sessions = self.sessions.write().unwrap_or_else(|e| e.into_inner());
         sessions.retain(|_, data| data.created_at.elapsed().as_secs() < SESSION_TTL_SECS);
         let mut out: Vec<SessionListEntry> = sessions
             .iter()
@@ -251,7 +250,7 @@ impl SessionStore {
 
     /// Revoke a session by its public id. Returns false if not found.
     pub fn revoke_session_by_public_id(&self, public_id: &str) -> bool {
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sessions = self.sessions.write().unwrap_or_else(|e| e.into_inner());
         let token = sessions
             .iter()
             .find(|(_, d)| d.public_id == public_id)
@@ -264,7 +263,7 @@ impl SessionStore {
     }
 
     pub fn remove_session(&self, token: &str) {
-        let mut sessions = self.sessions.lock().unwrap_or_else(|e| e.into_inner());
+        let mut sessions = self.sessions.write().unwrap_or_else(|e| e.into_inner());
         sessions.remove(token);
     }
 

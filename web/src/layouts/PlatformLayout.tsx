@@ -12,6 +12,7 @@ import PlatformMacAppMenus from '../components/platform/mac/PlatformMacAppMenus'
 import PopoutTitleBar from '../components/platform/mac/PopoutTitleBar'
 import PlatformDynamicIsland from '../components/platform/mac/PlatformDynamicIsland'
 import MissionControlOverlay from '../components/platform/MissionControlOverlay'
+import { FleetDesktopProvider } from '../contexts/FleetDesktopContext'
 import {
   MissionControlProvider,
   OPEN_MISSION_CONTROL_EVENT,
@@ -203,10 +204,12 @@ function PlatformDesktopShell() {
 
 export default function PlatformLayout() {
   return (
-    <MissionControlProvider>
-      <PlatformMacDesktopProvider>
-        <PlatformDesktopShell />
-      </PlatformMacDesktopProvider>
-    </MissionControlProvider>
+    <FleetDesktopProvider>
+      <MissionControlProvider>
+        <PlatformMacDesktopProvider>
+          <PlatformDesktopShell />
+        </PlatformMacDesktopProvider>
+      </MissionControlProvider>
+    </FleetDesktopProvider>
   )
 }
