@@ -2,13 +2,13 @@
 // Proprietary software — see LICENSE in the repository root.
 // https://zyvor.dev · info@zyvor.dev
 
-use tracing::warn;
-use virt::connect::Connect;
-use virt::domain::Domain;
 use super::domain::lookup_domain;
 use crate::host_linux_obs;
 use crate::state::{VmBlockDeviceMetrics, VmMetrics, VmNetDeviceMetrics, VmVcpuMetrics};
 use crate::LibvirtError;
+use tracing::warn;
+use virt::connect::Connect;
+use virt::domain::Domain;
 
 // libvirt memory stat tag constants
 const VIR_DOMAIN_MEMORY_STAT_UNUSED: u32 = 4;
@@ -99,7 +99,7 @@ fn collect_domain_metrics(domain: &Domain, name: &str) -> Result<VmMetrics, Libv
     let state = domain_state_label(info.state).to_string();
     let cpu_time_ns = info.cpu_time;
 
-  // flags=0 — tag 8 is VIR_DOMAIN_MEMORY_STAT_ACTUAL_BALLOON, not a collection flag.
+    // flags=0 — tag 8 is VIR_DOMAIN_MEMORY_STAT_ACTUAL_BALLOON, not a collection flag.
     let mem_stats = match domain.memory_stats(0) {
         Ok(stats) => stats,
         Err(e) => {
@@ -142,7 +142,8 @@ fn collect_domain_metrics(domain: &Domain, name: &str) -> Result<VmMetrics, Libv
         0.0
     };
 
-    let (disks, disk_rd_bytes, disk_wr_bytes, disk_rd_ops, disk_wr_ops) = collect_block_stats(domain);
+    let (disks, disk_rd_bytes, disk_wr_bytes, disk_rd_ops, disk_wr_ops) =
+        collect_block_stats(domain);
     let (nets, net_rx_bytes, net_tx_bytes) = collect_net_stats(domain);
     let vcpus_detail = collect_vcpu_stats(name);
     let cgroup = {

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct ComplianceCheck {
@@ -22,17 +22,16 @@ pub struct ComplianceReport {
     pub finding_count: usize,
 }
 
-pub async fn generate(pool: &PgPool) -> anyhow::Result<ComplianceReport> {
-    let total_vms: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM vms WHERE COALESCE(managed, TRUE) = TRUE",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+pub async fn generate(pool: &SqlitePool) -> anyhow::Result<ComplianceReport> {
+    let total_vms: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE COALESCE(managed, TRUE) = TRUE")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
 
     let prod_vms: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM vms WHERE 'prod' = ANY(COALESCE(tags, '{}'))
-         OR 'production' = ANY(COALESCE(tags, '{}'))",
+        "SELECT COUNT(*) FROM vms WHERE EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value='prod')
+         OR EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value='production')",
     )
     .fetch_one(pool)
     .await
@@ -40,7 +39,7 @@ pub async fn generate(pool: &PgPool) -> anyhow::Result<ComplianceReport> {
 
     let prod_with_backup: i64 = sqlx::query_scalar(
         "SELECT COUNT(DISTINCT v.id) FROM vms v
-         WHERE ('prod' = ANY(COALESCE(v.tags, '{}')) OR 'production' = ANY(COALESCE(v.tags, '{}')))
+         WHERE (EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='prod') OR EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='production'))
            AND EXISTS (SELECT 1 FROM backup_records b WHERE b.vm_id = v.id AND b.status = 'completed')",
     )
     .fetch_one(pool)
@@ -48,16 +47,17 @@ pub async fn generate(pool: &PgPool) -> anyhow::Result<ComplianceReport> {
     .unwrap_or(0);
 
     let backup_pct = if prod_vms > 0 {
-        (prod_with_backup * 100 / prod_vms) as u8
+        (prod_with_backup * 100 / prod_vms).clamp(0, 100) as u8
     } else {
         100
     };
     let backup_passed = backup_pct >= 80;
 
-    let running: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
-        .fetch_one(pool)
-        .await
-        .unwrap_or(0);
+    let running: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
     let with_guest: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM vms WHERE observed_state = 'running'
          AND guest_tools_status NOT IN ('unknown', 'not_installed')",
@@ -66,7 +66,7 @@ pub async fn generate(pool: &PgPool) -> anyhow::Result<ComplianceReport> {
     .await
     .unwrap_or(0);
     let guest_pct = if running > 0 {
-        (with_guest * 100 / running) as u8
+        (with_guest * 100 / running).clamp(0, 100) as u8
     } else {
         100
     };
@@ -81,7 +81,7 @@ pub async fn generate(pool: &PgPool) -> anyhow::Result<ComplianceReport> {
         .await
         .unwrap_or(0);
     let host_pct = if hosts_total > 0 {
-        (hosts_online * 100 / hosts_total) as u8
+        (hosts_online * 100 / hosts_total).clamp(0, 100) as u8
     } else {
         100
     };
@@ -91,13 +91,13 @@ pub async fn generate(pool: &PgPool) -> anyhow::Result<ComplianceReport> {
         "SELECT COUNT(*) FROM vms v
          JOIN ha_policies hp ON hp.vm_id = v.id AND hp.enabled = TRUE
          WHERE v.observed_state = 'running'
-           AND ('prod' = ANY(COALESCE(v.tags, '{}')) OR 'production' = ANY(COALESCE(v.tags, '{}')))",
+           AND (EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='prod') OR EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='production'))",
     )
     .fetch_one(pool)
     .await
     .unwrap_or(0);
     let ha_pct = if prod_vms > 0 {
-        (prod_ha * 100 / prod_vms) as u8
+        (prod_ha * 100 / prod_vms).clamp(0, 100) as u8
     } else {
         100
     };
@@ -153,7 +153,11 @@ pub async fn generate(pool: &PgPool) -> anyhow::Result<ComplianceReport> {
         },
     ];
 
-    let score = (checks.iter().map(|c| c.score as u16).sum::<u16>() / checks.len() as u16) as u8;
+    let score = if checks.is_empty() {
+        0
+    } else {
+        (checks.iter().map(|c| c.score as u16).sum::<u16>() / checks.len() as u16) as u8
+    };
     let grade = if score >= 90 {
         "A"
     } else if score >= 75 {
@@ -165,8 +169,12 @@ pub async fn generate(pool: &PgPool) -> anyhow::Result<ComplianceReport> {
     };
 
     let mut markdown = String::from("# Machina Compliance Report\n\n");
-    markdown.push_str(&format!("**Overall score:** {score}/100 (Grade {grade})\n\n"));
-    markdown.push_str(&format!("**Cluster VMs:** {total_vms} total, {prod_vms} tagged production\n\n"));
+    markdown.push_str(&format!(
+        "**Overall score:** {score}/100 (Grade {grade})\n\n"
+    ));
+    markdown.push_str(&format!(
+        "**Cluster VMs:** {total_vms} total, {prod_vms} tagged production\n\n"
+    ));
     markdown.push_str("## Checks\n\n");
     for c in &checks {
         markdown.push_str(&format!(
@@ -180,7 +188,10 @@ pub async fn generate(pool: &PgPool) -> anyhow::Result<ComplianceReport> {
     if !security.findings.is_empty() {
         markdown.push_str("\n## Security findings\n\n");
         for f in &security.findings {
-            markdown.push_str(&format!("- **{}** ({}) — {}\n", f.title, f.severity, f.detail));
+            markdown.push_str(&format!(
+                "- **{}** ({}) — {}\n",
+                f.title, f.severity, f.detail
+            ));
         }
     }
     markdown.push_str("\n---\n_Generated by Machina Compliance — deterministic v1_\n");

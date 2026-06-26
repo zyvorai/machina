@@ -47,8 +47,16 @@ export default function NetworkServiceMapGraph({ nodes, edges, className = '' }:
       data-testid="network-service-map-graph"
     >
       {edges.slice(0, 24).map((e) => {
-        const from = positions.get(e.source) ?? positions.get(e.source.split('/').slice(-1)[0] ?? '')
-        const to = positions.get(e.target) ?? positions.get(e.target.split('/').slice(-1)[0] ?? '')
+        const sourceKey = e.source_key ?? e.source
+        const targetKey = e.target_key ?? e.target
+        const from =
+          positions.get(sourceKey)
+          ?? positions.get(e.source)
+          ?? positions.get(e.source.split('/').slice(-1)[0] ?? '')
+        const to =
+          positions.get(targetKey)
+          ?? positions.get(e.target)
+          ?? positions.get(e.target.split('/').slice(-1)[0] ?? '')
         if (!from || !to) return null
         const blocked = e.health === 'blocked' || (e.dropped_count ?? 0) > 0
         return (

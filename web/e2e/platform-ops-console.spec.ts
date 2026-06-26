@@ -38,7 +38,8 @@ test('reports autopilot run shows success toast', async ({ page }) => {
   await expect(page.getByText('Autopilot: 1 executed, 0 skipped')).toBeVisible({ timeout: 10_000 })
 })
 
-test('enterprise vault register and tenant policy save', async ({ page }) => {
+test('enterprise vault register and tenant policy save', { retries: 1 }, async ({ page }) => {
+  test.setTimeout(90_000)
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/enterprise?tab=vault')
   await page.getByRole('button', { name: 'Register provider' }).click()

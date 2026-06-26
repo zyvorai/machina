@@ -25,20 +25,27 @@ e2e_ui_platform_auth_curl() {
 
 e2e_ui_platform_assert_proxy_get() {
   local path="$1" label="$2"
-  local url http body
+  local url http body tmp attempt
   url="$(e2e_ui_platform_proxy_url "$path")"
-  http="$(e2e_ui_platform_auth_curl -o /dev/null -w '%{http_code}' "$url" --max-time 30)"
+  for attempt in 1 2 3; do
+    tmp="$(mktemp -t machina_e2e_proxy.XXXXXX)"
+    http="$(e2e_ui_platform_auth_curl -o "$tmp" -w '%{http_code}' "$url" --max-time 30)"
+    body="$(cat "$tmp" 2>/dev/null || true)"
+    rm -f "$tmp"
+    if [[ "$http" == "200" && -n "$body" ]]; then
+      e2e_ok "${label}"
+      return 0
+    fi
+    if [[ "$attempt" -lt 3 ]]; then
+      sleep 1
+    fi
+  done
   if [[ "$http" != "200" ]]; then
     e2e_fail "${label} — proxy GET HTTP ${http}"
-    return 1
-  fi
-  body="$(e2e_ui_platform_auth_curl "$url" --max-time 30)"
-  if [[ -z "$body" ]]; then
+  else
     e2e_fail "${label} — empty body"
-    return 1
   fi
-  e2e_ok "${label}"
-  return 0
+  return 1
 }
 
 e2e_ui_platform_run() {

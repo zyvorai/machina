@@ -7,7 +7,7 @@ use axum::Json;
 use serde::{Deserialize, Serialize};
 
 use crate::api::ApiError;
-use crate::auth::{require_admin, AuthUser};
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::oidc_flow;
 use crate::state::AppState;
 
@@ -51,7 +51,9 @@ pub struct OidcTokenResponse {
 
 pub async fn get_oidc_settings(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<OidcSettings>, ApiError> {
+    require_operator(&actor)?;
     let cfg = oidc_flow::load_config(&state.pool, &default_redirect(&state))
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -71,38 +73,43 @@ pub async fn patch_oidc_settings(
 ) -> Result<Json<OidcSettings>, ApiError> {
     require_admin(&actor)?;
     if let Some(v) = body.enabled {
-        sqlx::query("UPDATE clusters SET oidc_enabled = $1")
+        sqlx::query("UPDATE clusters SET oidc_enabled = ?")
             .bind(v)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = &body.issuer {
-        sqlx::query("UPDATE clusters SET oidc_issuer = $1")
+        if !v.is_empty() && !v.starts_with("https://") {
+            return Err(ApiError::bad_request(
+                "OIDC issuer must use HTTPS",
+            ));
+        }
+        sqlx::query("UPDATE clusters SET oidc_issuer = ?")
             .bind(v)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = &body.client_id {
-        sqlx::query("UPDATE clusters SET oidc_client_id = $1")
+        sqlx::query("UPDATE clusters SET oidc_client_id = ?")
             .bind(v)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = &body.client_secret {
         if !v.is_empty() && v != "***" {
-            sqlx::query("UPDATE clusters SET oidc_client_secret = $1")
+            sqlx::query("UPDATE clusters SET oidc_client_secret = ?")
                 .bind(v)
                 .execute(&state.pool)
                 .await?;
         }
     }
     if let Some(v) = &body.redirect_uri {
-        sqlx::query("UPDATE clusters SET oidc_redirect_uri = $1")
+        sqlx::query("UPDATE clusters SET oidc_redirect_uri = ?")
             .bind(v)
             .execute(&state.pool)
             .await?;
     }
-    get_oidc_settings(State(state)).await
+    get_oidc_settings(State(state), Extension(actor)).await
 }
 
 pub async fn oidc_login(
@@ -123,9 +130,7 @@ pub async fn oidc_login(
     }))
 }
 
-pub async fn oidc_login_redirect(
-    State(state): State<AppState>,
-) -> Result<Redirect, ApiError> {
+pub async fn oidc_login_redirect(State(state): State<AppState>) -> Result<Redirect, ApiError> {
     let cfg = oidc_flow::load_config(&state.pool, &default_redirect(&state))
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -156,6 +161,8 @@ pub async fn oidc_callback(
     .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
     let web = state.config.web_base_url.trim_end_matches('/');
+    let safe_user = html_escape(&username);
+    let safe_role = html_escape(&role);
     let html = format!(
         r#"<!DOCTYPE html><html><head><title>Machina login</title></head><body>
 <script>
@@ -163,13 +170,24 @@ localStorage.setItem('machina_platform_jwt', {token:?});
 localStorage.removeItem('machina_platform_basic');
 window.location.href = {web:?} + '/platform';
 </script>
-<p>Signing in as {username:?} ({role:?})…</p></body></html>"#
+<p>Signing in as {safe_user} ({safe_role})…</p></body></html>"#
     );
     Ok(Html(html).into_response())
 }
 
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
 fn default_redirect(state: &AppState) -> String {
-    format!("{}/api/v1/auth/oidc/callback", state.config.public_base_url.trim_end_matches('/'))
+    format!(
+        "{}/api/v1/auth/oidc/callback",
+        state.config.public_base_url.trim_end_matches('/')
+    )
 }
 
 fn mask_secret(s: &str) -> String {

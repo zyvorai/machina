@@ -21,6 +21,8 @@
 #
 # Env:
 #   VSPASS / E2E_PASSWORD — PAM password for daemon login
+#   E2E_AUTH_MODE — pam | ldap | oidc | auto (default auto)
+#   E2E_LDAP_USER / E2E_LDAP_PASS — Active Directory UPN login
 #   E2E_PLATFORM_USER/PASS — controller Basic auth (default admin/admin)
 #   E2E_PLATFORM_DIRECT    — override direct controller URL (default http://HOST:5093)
 #   E2E_INSTALL_REMOTE=1   — run install smoke via SSH to E2E_SSH_HOST
@@ -58,6 +60,7 @@ SKIP_PLATFORM_SMOKE=0
 SKIP_PLATFORM_LIFECYCLE=0
 PLATFORM_ONLY=0
 DAEMON_EXTRA=()
+E2E_AUTH_MODE="${E2E_AUTH_MODE:-auto}"
 
 usage() {
   sed -n '2,28p' "$0" | sed 's/^# \{0,1\}//'
@@ -79,6 +82,7 @@ while [[ $# -gt 0 ]]; do
     --openstack-flavor|--openstack-image|--openstack-network|--ssh-host)
       DAEMON_EXTRA+=("$1" "${2:?}"); shift ;;
     --skip-dhcp-check) DAEMON_EXTRA+=("$1") ;;
+    --auth) E2E_AUTH_MODE="${2:?}"; shift ;;
     --) shift; break ;;
     -*) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
     *) POSITIONAL+=("$1") ;;
@@ -96,6 +100,7 @@ if [[ -z "${E2E_PASSWORD}" ]]; then
   echo
 fi
 export E2E_PASSWORD
+export E2E_AUTH_MODE
 
 [[ -z "${E2E_SSH_HOST}" ]] && E2E_SSH_HOST="$(e2e_host_from_base)"
 E2E_PLATFORM_BASE="${E2E_PLATFORM_DIRECT:-http://${E2E_SSH_HOST}:5093}"
@@ -112,6 +117,7 @@ echo "════════════════════════�
 echo "  Machina Full E2E"
 echo "  Daemon:     ${E2E_BASE} (${E2E_USER})"
 echo "  Controller: ${E2E_PLATFORM_BASE}"
+e2e_auth_banner_line
 echo "══════════════════════════════════════════"
 
 # Phase 1: install smoke
@@ -137,9 +143,10 @@ fi
 # Phase 2: daemon E2E
 if [[ "$SKIP_DAEMON_E2E" -eq 0 ]]; then
   e2e_hdr "PHASE 2: DAEMON E2E"
-  if env VSPASS="$E2E_PASSWORD" E2E_SSH_HOST="$E2E_SSH_HOST" \
+  if env VSPASS="$E2E_PASSWORD" E2E_SSH_HOST="$E2E_SSH_HOST" E2E_AUTH_MODE="$E2E_AUTH_MODE" \
+    E2E_LDAP_USER="${E2E_LDAP_USER:-}" E2E_LDAP_PASS="${E2E_LDAP_PASS:-}" \
     "${SCRIPT_DIR}/e2e-test.sh" "$E2E_BASE" "$E2E_USER" "$E2E_PASSWORD" \
-    --ssh-host "$E2E_SSH_HOST" "${DAEMON_EXTRA[@]}"; then
+    --ssh-host "$E2E_SSH_HOST" --auth "$E2E_AUTH_MODE" "${DAEMON_EXTRA[@]}"; then
     phase_ok "daemon E2E"
   else
     phase_fail "daemon E2E"
@@ -179,6 +186,8 @@ if [[ "$SKIP_UI_PROXY" -eq 0 ]]; then
 fi
 
 # Phase 5: platform controller
+PLATFORM_FAIL_BASE=$E2E_FAIL
+PLATFORM_PASS_BASE=$E2E_PASS
 if [[ "$SKIP_PLATFORM_SMOKE" -eq 0 || "$SKIP_PLATFORM_LIFECYCLE" -eq 0 ]]; then
   e2e_hdr "PHASE 5: PLATFORM CONTROLLER"
 fi
@@ -196,9 +205,17 @@ if [[ "$SKIP_PLATFORM_LIFECYCLE" -eq 0 ]]; then
 fi
 
 if [[ "$SKIP_PLATFORM_SMOKE" -eq 0 || "$SKIP_PLATFORM_LIFECYCLE" -eq 0 ]]; then
-  if ! e2e_platform_summary; then
+  platform_new_fail=$((E2E_FAIL - PLATFORM_FAIL_BASE))
+  platform_new_pass=$((E2E_PASS - PLATFORM_PASS_BASE))
+  echo ""
+  echo "══════════════════════════════════════════"
+  echo "  Platform E2E: ${platform_new_pass} passed, ${platform_new_fail} failed"
+  echo "══════════════════════════════════════════"
+  if [[ "$platform_new_fail" -gt 0 ]]; then
+    echo "❌ ${platform_new_fail} platform test(s) FAILED"
     phase_fail "platform controller"
   else
+    echo "✅ All platform tests passed"
     phase_ok "platform controller"
   fi
 fi

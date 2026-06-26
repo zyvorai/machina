@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ZeusEnterpriseOverview {
@@ -14,7 +14,7 @@ pub struct ZeusEnterpriseOverview {
     pub sso_configured: bool,
 }
 
-pub async fn overview(pool: &PgPool, username: &str) -> anyhow::Result<ZeusEnterpriseOverview> {
+pub async fn overview(pool: &SqlitePool, username: &str) -> anyhow::Result<ZeusEnterpriseOverview> {
     let air_gap: bool = sqlx::query_scalar(
         "SELECT COALESCE(zeus_air_gap_llm, FALSE) FROM clusters ORDER BY created_at LIMIT 1",
     )
@@ -22,13 +22,13 @@ pub async fn overview(pool: &PgPool, username: &str) -> anyhow::Result<ZeusEnter
     .await
     .unwrap_or(false);
     let audit_events_24h: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM audit_logs WHERE action LIKE 'zeus.%' AND created_at > NOW() - INTERVAL '24 hours'",
+        "SELECT COUNT(*) FROM audit_logs WHERE action LIKE 'zeus.%' AND created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await
     .unwrap_or(0);
     let is_admin = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM users WHERE username = $1 AND role = 'admin'",
+        "SELECT COUNT(*) FROM users WHERE username = ? AND role = 'admin'",
     )
     .bind(username)
     .fetch_one(pool)
@@ -51,9 +51,9 @@ pub struct ZeusEnterprisePatch {
     pub air_gap_llm: Option<bool>,
 }
 
-pub async fn patch(pool: &PgPool, patch: &ZeusEnterprisePatch) -> anyhow::Result<()> {
+pub async fn patch(pool: &SqlitePool, patch: &ZeusEnterprisePatch) -> anyhow::Result<()> {
     if let Some(v) = patch.air_gap_llm {
-        sqlx::query("UPDATE clusters SET zeus_air_gap_llm = $1")
+        sqlx::query("UPDATE clusters SET zeus_air_gap_llm = ?")
             .bind(v)
             .execute(pool)
             .await?;
@@ -70,7 +70,7 @@ pub fn require_zeus_admin(actor: &crate::auth::AuthUser) -> Result<(), crate::ap
 }
 
 pub async fn audit_llm_call(
-    pool: &PgPool,
+    pool: &SqlitePool,
     actor: &str,
     provider_kind: &str,
     model: &str,
@@ -79,8 +79,9 @@ pub async fn audit_llm_call(
 ) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, detail)
-         VALUES (gen_random_uuid(), $1, 'zeus.llm.complete', 'zeus', $2)",
+         VALUES (?, ?, 'zeus.llm.complete', 'zeus', ?)",
     )
+    .bind(uuid::Uuid::new_v4())
     .bind(actor)
     .bind(serde_json::json!({
         "provider_kind": provider_kind,

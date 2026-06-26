@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
+import ConfirmDialog from '../../ConfirmDialog'
 import {
   createSocPlaybook,
   deleteSocPlaybook,
@@ -71,6 +72,7 @@ export default function SocPlaybookEditor({
   const [steps, setSteps] = useState<SocPlaybookStepDraft[]>(() => stepsFromPlaybook(playbook))
   const [webhookUrl, setWebhookUrl] = useState(globalWebhookUrl)
   const [saving, setSaving] = useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
     setName(playbook?.name ?? '')
@@ -121,15 +123,21 @@ export default function SocPlaybookEditor({
     }
   }
 
-  const removePlaybook = async () => {
+  const removePlaybook = () => {
     if (!playbook || isNew) return
-    if (!window.confirm(`Delete playbook "${playbook.name}"?`)) return
+    setShowDeleteConfirm(true)
+  }
+
+  const doDeletePlaybook = async () => {
+    if (!playbook) return
     try {
       await deleteSocPlaybook(playbook.id)
       toast.success('Playbook deleted')
       onDeleted()
     } catch (e: unknown) {
       toast.error(formatUserError(e))
+    } finally {
+      setShowDeleteConfirm(false)
     }
   }
 
@@ -196,6 +204,7 @@ export default function SocPlaybookEditor({
                 <li key={i} className="border border-white/10 rounded-lg p-2 space-y-2">
                   <div className="flex gap-2 items-center">
                     <select
+                      aria-label="Step type"
                       className="input text-sm flex-1"
                       value={step.type}
                       onChange={(e) => {
@@ -231,6 +240,7 @@ export default function SocPlaybookEditor({
                       </label>
                       {!step.useGlobalWebhook && (
                         <input
+                          aria-label="Webhook URL"
                           className="input w-full text-sm"
                           placeholder="https://..."
                           value={step.url}
@@ -272,6 +282,15 @@ export default function SocPlaybookEditor({
           </div>
         </div>
       </MacGlassPanel>
+      <ConfirmDialog
+        open={showDeleteConfirm}
+        title="Delete Playbook"
+        message={`Delete playbook "${playbook?.name}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setShowDeleteConfirm(false)}
+        onConfirm={() => void doDeletePlaybook()}
+      />
     </div>
   )
 }

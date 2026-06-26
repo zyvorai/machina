@@ -69,8 +69,18 @@ pub fn resolve_guest_os(
 
 fn looks_windows_name(s: &str) -> bool {
     const WIN: &[&str] = &[
-        "windows", "win-", "win_", "win2k", "w2k", "ws20", "ws19", "ws16", "win10", "win11",
-        "winserver", "hyper-v",
+        "windows",
+        "win-",
+        "win_",
+        "win2k",
+        "w2k",
+        "ws20",
+        "ws19",
+        "ws16",
+        "win10",
+        "win11",
+        "winserver",
+        "hyper-v",
     ];
     WIN.iter().any(|w| s.contains(w))
 }
@@ -248,7 +258,9 @@ fn build_bundle(input: BundleBuildInput<'_>) -> Result<KubeVirtBundle, LibvirtEr
     vm.push_str(&format!("          cores: {}\n", input.cores.max(1)));
     vm.push_str("        devices:\n          disks:\n            - name: rootdisk\n              disk:\n                bus: virtio\n");
     if input.include_virtio_cdrom {
-        vm.push_str("            - name: virtiocd\n              cdrom:\n                bus: sata\n");
+        vm.push_str(
+            "            - name: virtiocd\n              cdrom:\n                bus: sata\n",
+        );
     }
     vm.push_str("          interfaces:\n            - name: default\n              masquerade: {}\n              model: virtio\n");
     if matches!(input.guest, GuestOsFamily::Windows) {
@@ -295,10 +307,7 @@ fn build_bundle(input: BundleBuildInput<'_>) -> Result<KubeVirtBundle, LibvirtEr
     })
 }
 
-fn storage_class_line(
-    cfg: &KubeVirtConfig,
-    storage_class_override: Option<&str>,
-) -> String {
+fn storage_class_line(cfg: &KubeVirtConfig, storage_class_override: Option<&str>) -> String {
     let storage_class_effective = storage_class_override
         .filter(|s| !s.is_empty())
         .map(|s| s.to_string())
@@ -355,17 +364,13 @@ pub fn kubevirt_bundle_from_qcow2(
         .and_then(|s| s.to_str())
         .unwrap_or("disk");
     let guest = resolve_guest_os(guest_os, stem, path, None);
-    let virtio_cd = include_virtio_cdrom
-        .unwrap_or_else(|| default_include_virtio_cdrom(guest, false));
+    let virtio_cd =
+        include_virtio_cdrom.unwrap_or_else(|| default_include_virtio_cdrom(guest, false));
 
     let ns = namespace_override
         .filter(|s| !s.is_empty())
         .unwrap_or(cfg.default_namespace.as_str());
-    let vm_k8s = sanitize_k8s_label(
-        k8s_name_override
-            .filter(|s| !s.is_empty())
-            .unwrap_or(stem),
-    );
+    let vm_k8s = sanitize_k8s_label(k8s_name_override.filter(|s| !s.is_empty()).unwrap_or(stem));
     let dv_name = sanitize_k8s_label(
         datavolume_name_override
             .filter(|s| !s.is_empty())
@@ -373,8 +378,8 @@ pub fn kubevirt_bundle_from_qcow2(
     );
 
     let memory_mb = memory_mb_override.unwrap_or(4096);
-    let storage_gi =
-        storage_gi_override.unwrap_or_else(|| storage_gi_for_disk(path, memory_mb, cfg.datavolume_padding_gi));
+    let storage_gi = storage_gi_override
+        .unwrap_or_else(|| storage_gi_for_disk(path, memory_mb, cfg.datavolume_padding_gi));
     let cores = vcpus_override.unwrap_or(2).max(1);
     let mem_gi = ((memory_mb + 1023) / 1024).max(1);
     let sc_line = storage_class_line(cfg, storage_class_override);

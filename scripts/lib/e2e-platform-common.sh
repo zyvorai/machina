@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Shared helpers for Machina platform E2E (controller :5093).
 #
-# Defaults: E2E_PLATFORM_USER=machina-e2e (create operator in Platform → Users).
+# Defaults: E2E_PLATFORM_USER=admin (bootstrap default; override with E2E_PLATFORM_USER=machina-e2e if you created a dedicated operator).
 # On CI hosts set MACHINA_E2E_BYPASS_SECRET in /etc/default/machina-platform to skip rate limits.
 
 e2e_platform_ok()   { echo "  ✅ $*"; (( E2E_PASS++ )) || true; }
@@ -14,7 +14,7 @@ e2e_platform_host_from_base() {
 }
 
 e2e_platform_auth_header() {
-  local user="${E2E_PLATFORM_USER:-machina-e2e}"
+  local user="${E2E_PLATFORM_USER:-admin}"
   local pass="${E2E_PLATFORM_PASS:-admin}"
   printf 'Authorization: Basic %s' "$(printf '%s:%s' "$user" "$pass" | base64 | tr -d '\n')"
 }

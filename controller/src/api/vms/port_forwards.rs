@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Path, State};
+use axum::Extension;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -43,7 +45,7 @@ fn validate_vm_port_forward_fields(
 
 async fn vm_host_agent(state: &AppState, vm_id: Uuid) -> Result<(String, String), ApiError> {
     let row: (String, Option<Uuid>, String, Option<String>) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), guest_ip FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), guest_ip FROM vms WHERE id = ?",
     )
     .bind(vm_id)
     .fetch_one(&state.pool)
@@ -84,9 +86,11 @@ pub async fn list_vm_port_forwards(
 
 pub async fn create_vm_port_forward(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<CreateVmPortForwardBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let (guest_ip, agent_addr) = vm_host_agent(&state, id).await?;
     let guest_ip = guest_ip.trim().to_string();
     if guest_ip.is_empty() {
@@ -111,9 +115,11 @@ pub async fn create_vm_port_forward(
 
 pub async fn delete_vm_port_forward(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<DeleteVmPortForwardBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let (guest_ip, agent_addr) = vm_host_agent(&state, id).await?;
     let guest_ip = guest_ip.trim();
     if guest_ip.is_empty() {
@@ -153,7 +159,7 @@ pub async fn list_vm_port_forward_templates(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<PortForwardTemplateDto>>, ApiError> {
-    let spec: serde_json::Value = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = $1")
+    let spec: serde_json::Value = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await
@@ -163,16 +169,18 @@ pub async fn list_vm_port_forward_templates(
 
 pub async fn upsert_vm_port_forward_template(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<PortForwardTemplateDto>,
 ) -> Result<Json<Vec<PortForwardTemplateDto>>, ApiError> {
+    require_operator(&actor)?;
     if body.name.trim().is_empty() || body.id.trim().is_empty() {
         return Err(ApiError::bad_request("Template id and name are required"));
     }
     if body.vm_port <= 0 || body.host_port <= 0 {
         return Err(ApiError::bad_request("Ports must be positive"));
     }
-    let mut spec: serde_json::Value = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = $1")
+    let mut spec: serde_json::Value = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await
@@ -193,7 +201,7 @@ pub async fn upsert_vm_port_forward_template(
         "port_forward_templates".into(),
         serde_json::to_value(&templates).map_err(|e| ApiError::internal(e.to_string()))?,
     );
-    sqlx::query("UPDATE vms SET spec_json = $1, updated_at = NOW() WHERE id = $2")
+    sqlx::query("UPDATE vms SET spec_json = ?, updated_at = datetime('now') WHERE id = ?")
         .bind(&spec)
         .bind(id)
         .execute(&state.pool)

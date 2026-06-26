@@ -244,7 +244,7 @@ export async function platformFetch<T>(path: string, init?: RequestInit): Promis
     }
     throw parsed ?? new Error(body || `${res!.status} ${res!.statusText}`)
   }
-  if (res!.status === 204) return undefined as T
+  if (res!.status === 204) return null as T
   return (await res!.json()) as T
 }
 
@@ -272,14 +272,14 @@ export interface PlatformHost {
   maintenance_mode: boolean
   agent_grpc_addr: string
   vm_count: number
-  cpu_percent?: number
-  memory_used_mib?: number
-  memory_total_mib?: number
-  fenced?: boolean
-  validation_status?: string
+  cpu_percent: number
+  memory_used_mib: number
+  memory_total_mib: number
+  fenced: boolean
+  validation_status: string
   last_heartbeat_at?: string | null
-  site?: string
-  rack?: string
+  site: string
+  rack: string
   rack_u?: number | null
 }
 
@@ -291,7 +291,6 @@ export interface PlatformHostDetail extends PlatformHost {
   libvirt_version: string
   qemu_version: string
   notes: string
-  validation_status?: string
   validation_report?: Array<{ name: string; passed: boolean; message: string; remediation?: string }>
 }
 
@@ -301,16 +300,16 @@ export interface PlatformVm {
   host_id?: string | null
   desired_state: string
   observed_state: string
-  lifecycle_phase?: string
-  last_error?: string
-  managed?: boolean
+  lifecycle_phase: string
+  last_error: string
+  managed: boolean
   uuid?: string | null
   vcpus: number
   memory_mib: number
-  ha_enabled?: boolean
+  ha_enabled: boolean
   project?: string | null
-  tags?: string[]
-  inventory_source?: string
+  tags: string[]
+  inventory_source: string
   k8s_namespace?: string | null
   last_seen_at?: string | null
   guest_ip?: string | null
@@ -503,6 +502,9 @@ export interface EnrollmentToken {
 }
 
 export const listPlatformHosts = () => platformFetch<PlatformHost[]>('/api/v1/hosts')
+export const createPlatformHost = (body: { hostname: string; address?: string; agent_grpc_addr?: string; libvirt_uri?: string }) =>
+  platformFetch<PlatformHost>('/api/v1/hosts', { method: 'POST', body: JSON.stringify(body) })
+export const getPlatformHost = (id: string) => platformFetch<PlatformHost>(`/api/v1/hosts/${id}`)
 export const getPlatformHostDetail = (id: string) => platformFetch<PlatformHostDetail>(`/api/v1/hosts/${id}/detail`)
 export const syncAllHosts = () => platformFetch<{ task_id: string }[]>('/api/v1/hosts/sync-all', { method: 'POST' })
 export const deleteHost = (id: string) => platformFetch<{ deleted: boolean }>(`/api/v1/hosts/${id}`, { method: 'DELETE' })
@@ -827,6 +829,7 @@ export const listApiTraces = (limit = 50) =>
   platformFetch<ApiTraceSpan[]>(`/api/v1/observability/traces?limit=${limit}`)
 
 export const listPlatformNetworks = () => platformFetch<PlatformNetwork[]>('/api/v1/networks')
+export const getPlatformNetwork = (id: string) => platformFetch<PlatformNetwork>(`/api/v1/networks/${id}`)
 export const discoverPlatformNetworks = () =>
   platformFetch<{ imported: number; networks: PlatformNetwork[] }>('/api/v1/networks/discover', {
     method: 'POST',
@@ -1699,7 +1702,7 @@ export const adoptPlatformVm = (id: string) =>
   platformFetch<PlatformVm>(`/api/v1/vms/${id}/adopt`, { method: 'POST' })
 
 export const getPlatformVmMetrics = (id: string) =>
-  platformFetch<{ vm_id: string; cpu_percent: number; memory_used_mib: number; updated_at: string }>(
+  platformFetch<{ vm_id: string; cpu_percent: number; memory_used_mib: number; disk_read_iops: number; disk_write_iops: number; updated_at: string }>(
     `/api/v1/vms/${id}/metrics`,
   )
 
@@ -2203,7 +2206,7 @@ export const getAirGapBundle = (id: string) =>
 
 export const markAllNotificationsDelivered = async (limit = 200) => {
   const rows = await listNotifications(true)
-  const batch = rows.slice(0, limit)
+  const batch = (rows ?? []).slice(0, limit)
   await Promise.all(batch.map((r) => markNotificationDelivered(r.id)))
   return batch.length
 }
@@ -2473,12 +2476,12 @@ export interface BackupRecord {
   backup_type: string
   status: string
   message?: string | null
+  backup_path: string
   created_at: string
-  restore_status?: string
 }
 
 export const retryTask = (id: string) =>
-  platformFetch<{ task_id: string }>(`/api/v1/tasks/${id}/retry`, { method: 'POST' })
+  platformFetch<{ task_id: string; status: string; operation: string }>(`/api/v1/tasks/${id}/retry`, { method: 'POST' })
 
 export const patchVm = (id: string, body: { desired_state?: string; project?: string; tags?: string[]; description?: string }) =>
   platformFetch<PlatformVm>(`/api/v1/vms/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
@@ -2529,6 +2532,8 @@ export const listBackupTargets = () => platformFetch<BackupTarget[]>('/api/v1/ba
 
 export const createBackupTarget = (body: { name: string; kind?: string; config_json?: Record<string, unknown> }) =>
   platformFetch<BackupTarget>('/api/v1/backup-targets', { method: 'POST', body: JSON.stringify(body) })
+export const deleteBackupTarget = (id: string) =>
+  platformFetch<{ deleted: boolean }>(`/api/v1/backup-targets/${id}`, { method: 'DELETE' })
 
 export const upsertProjectQuota = (body: {
   project: string
@@ -2633,6 +2638,8 @@ export interface MaintenanceSchedule {
 export const listMaintenanceSchedules = () => platformFetch<MaintenanceSchedule[]>('/api/v1/maintenance/schedules')
 export const createMaintenanceSchedule = (body: { host_id: string; action?: string; evacuate?: boolean; run_at: string }) =>
   platformFetch<MaintenanceSchedule>('/api/v1/maintenance/schedules', { method: 'POST', body: JSON.stringify(body) })
+export const getMaintenanceSchedule = (id: string) =>
+  platformFetch<MaintenanceSchedule>(`/api/v1/maintenance/schedules/${id}`)
 export const deleteMaintenanceSchedule = (id: string) =>
   platformFetch<{ deleted: boolean }>(`/api/v1/maintenance/schedules/${id}`, { method: 'DELETE' })
 
@@ -2831,6 +2838,7 @@ export interface Blueprint {
 }
 
 export const listBlueprints = () => platformFetch<Blueprint[]>('/api/v1/blueprints')
+export const getBlueprint = (id: string) => platformFetch<Blueprint>(`/api/v1/blueprints/${id}`)
 
 export const createBlueprint = (body: { name: string; description?: string; actions: string[]; vm_ids: string[] }) =>
   platformFetch<Blueprint>('/api/v1/blueprints', { method: 'POST', body: JSON.stringify(body) })
@@ -2906,6 +2914,61 @@ export type {
 export { validateCloudInit } from './platformCloudInit'
 export type { CloudInitValidation } from './platformCloudInit'
 export { syncGitTemplates, approvePlatformTemplate, publishVmAsTemplate } from './platformTemplatesExtra'
+
+// ── Bare Metal ────────────────────────────────────────────────────────────────
+
+export interface BaremetalServer {
+  id: string
+  hostname: string
+  bmc_address: string
+  bmc_type: string
+  state: string
+  cpu_cores: number
+  memory_mib: number
+  firewall_profile: string
+  firewall_enabled: boolean
+  bmc_vlan: string
+  pxe_vlan: string
+  created_at: string
+}
+
+export interface RegisterBaremetalBody {
+  hostname: string
+  bmc_address: string
+  bmc_type?: string
+  cpu_cores?: number
+  memory_mib?: number
+  firewall_profile?: string
+  firewall_enabled?: boolean
+  bmc_vlan?: string
+  pxe_vlan?: string
+}
+
+export interface BmcPowerBody {
+  action: 'on' | 'off' | 'reset' | 'soft'
+}
+
+export interface BmcPowerResult {
+  server_id: string
+  action: string
+  success: boolean
+  message: string
+}
+
+export const listBaremetalServers = () =>
+  platformFetch<BaremetalServer[]>('/api/v1/baremetal/servers')
+
+export const registerBaremetalServer = (body: RegisterBaremetalBody) =>
+  platformFetch<BaremetalServer>('/api/v1/baremetal/servers', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const baremetalServerPower = (id: string, body: BmcPowerBody) =>
+  platformFetch<BmcPowerResult>(`/api/v1/baremetal/servers/${id}/power`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 export { retirePlatformVm, exportVmDisk, exportVmIac, downloadVmIacZip, downloadVmIacBundle } from './platformVmLifecycle'
 export type { VmIacExportBundle } from './platformVmLifecycle'
 export {

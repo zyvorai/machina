@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { Clock, History } from 'lucide-react'
+import ConfirmDialog from '../ConfirmDialog'
 import { Link } from 'react-router'
 import { MacGlassPanel } from '../platform/mac/PlatformMacUi'
 import {
@@ -23,6 +24,7 @@ export default function MachinaInfrastructureMemory() {
   const [changes, setChanges] = useState<Array<{ at: string; kind: string; summary: string; actor: string }>>([])
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -49,8 +51,31 @@ export default function MachinaInfrastructureMemory() {
     }
   }
 
+  const doClearMemory = async () => {
+    setShowClearConfirm(false)
+    setPurging(true)
+    try {
+      const r = await purgeMemory('all')
+      toast.success(`Cleared ${r.deleted} entries`)
+      await load()
+    } catch (e: unknown) {
+      toast.error(formatUserError(e))
+    } finally {
+      setPurging(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
+      <ConfirmDialog
+        open={showClearConfirm}
+        title="Clear Infrastructure Memory"
+        message="Clear all infrastructure memory entries? Persisted incidents and lessons from RCA will be permanently deleted."
+        confirmLabel="Clear all"
+        variant="danger"
+        onCancel={() => setShowClearConfirm(false)}
+        onConfirm={() => void doClearMemory()}
+      />
       <MacGlassPanel
         title="Infrastructure memory"
         subtitle="Persisted incidents and lessons from RCA"
@@ -59,19 +84,7 @@ export default function MachinaInfrastructureMemory() {
             type="button"
             className="btn-danger text-xs"
             disabled={purging}
-            onClick={async () => {
-              if (!window.confirm('Clear all infrastructure memory entries?')) return
-              setPurging(true)
-              try {
-                const r = await purgeMemory('all')
-                toast.success(`Cleared ${r.deleted} entries`)
-                await load()
-              } catch (e: unknown) {
-                toast.error(formatUserError(e))
-              } finally {
-                setPurging(false)
-              }
-            }}
+            onClick={() => setShowClearConfirm(true)}
           >
             {purging ? 'Clearing…' : 'Clear memory'}
           </button>

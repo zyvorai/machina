@@ -6,20 +6,28 @@ import { mockPlatformApi } from './platformMock'
 test('vm detail shows daily access strip with connect copy ports export', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/vms/v1')
-  await expect(page.getByRole('heading', { name: 'vm-1' })).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole('heading', { name: 'Daily access' })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Spec', exact: true })).toBeVisible()
-  await expect(page.getByRole('button', { name: 'XML', exact: true })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Console' }).first()).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'vm-1' }).first()).toBeVisible({ timeout: 15_000 })
+  // VmConnectHub renders a "Connect" h3 on the overview tab
+  await expect(page.getByRole('heading', { name: 'Connect' })).toBeVisible()
+  // Console is a primary tab
+  await expect(page.getByRole('tab', { name: 'Console' })).toBeVisible()
+  // Spec / Spec+XML export buttons live on the Access tab
+  await page.getByRole('tab', { name: 'Access' }).click()
+  await expect(page.getByRole('button', { name: 'Spec', exact: true }).first()).toBeVisible({ timeout: 5_000 })
+  await expect(page.getByRole('button', { name: 'Spec + XML', exact: true }).first()).toBeVisible()
 })
 
 test('vm detail shows lifecycle power actions and SSH when guest IP present', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/vms/v1')
-  await expect(page.getByRole('heading', { name: 'vm-1' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'vm-1' }).first()).toBeVisible({ timeout: 15_000 })
+  // Shutdown is the primary power button (always visible for running VMs)
   await expect(page.getByRole('button', { name: 'Shutdown' })).toBeVisible()
+  // Pause and Force stop live in the "Power & more" dropdown
+  await page.getByRole('button', { name: 'Power & more' }).click()
   await expect(page.getByRole('button', { name: 'Pause' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Force stop' })).toBeVisible()
+  await page.keyboard.press('Escape')
   await expect(page.getByText('ubuntu@192.168.122.50').first()).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('button', { name: 'SSH', exact: true }).first()).toBeVisible()
 })
@@ -62,6 +70,13 @@ test('machine finder delete from command center does not crash', async ({ page }
 
   let vmGone = false
   await mockPlatformApi(page, { tier: 'power' })
+  // after deletion, load() refetches the list — return empty list so the card disappears
+  await page.route('**/platform/controller/api/v1/vms?*', async (route) => {
+    if (vmGone && route.request().method() === 'GET') {
+      return route.fulfill({ json: [] })
+    }
+    await route.fallback()
+  })
   await page.route('**/platform/controller/api/v1/vms/v1', async (route) => {
     if (vmGone && route.request().method() === 'GET') {
       return route.fulfill({
@@ -84,14 +99,19 @@ test('machine finder delete from command center does not crash', async ({ page }
     timeout: 15_000,
   })
 
-  await page.getByTestId('machine-card-v1').click()
-  await expect(page.getByTestId('machine-finder-command-center')).toBeVisible()
+  // draggable divs swallow Playwright synthetic mouse events; dispatch a native DOM click instead
+  await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="machine-card-v1"]')
+    el?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
+  })
+  await expect(page.getByRole('heading', { name: 'Command Center' })).toBeVisible({ timeout: 15_000 })
 
-  page.once('dialog', (d) => d.accept())
   const deleteReq = page.waitForResponse(
     (r) => r.url().includes('/vms/v1/delete') && r.request().method() === 'POST',
   )
   await page.getByTestId('machine-finder-command-center').getByRole('button', { name: 'Delete' }).click()
+  // ConfirmDialog (React modal) replaces browser confirm — click the dialog's confirm button
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   expect((await deleteReq).ok()).toBeTruthy()
 
   await expect(page.getByTestId('machine-card-v1')).toHaveCount(0, { timeout: 10_000 })
@@ -123,13 +143,16 @@ test('delete vm returns to list without page crash', async ({ page }) => {
   })
 
   await page.goto('/platform/vms/v1')
-  await expect(page.getByRole('heading', { name: 'vm-1' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'vm-1' }).first()).toBeVisible({ timeout: 15_000 })
 
-  page.once('dialog', (d) => d.accept())
   const deleteReq = page.waitForResponse(
     (r) => r.url().includes('/vms/v1/delete') && r.request().method() === 'POST',
   )
-  await page.locator('button.btn-danger').filter({ hasText: 'Delete' }).click()
+  // Delete VM is in the "Power & more" dropdown
+  await page.getByRole('button', { name: 'Power & more' }).click()
+  await page.getByRole('button', { name: 'Delete VM' }).click()
+  // React ConfirmDialog — click the dialog's confirm button
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   expect((await deleteReq).ok()).toBeTruthy()
 
   await expect(page).toHaveURL(/\/platform\/vms\/?$/, { timeout: 15_000 })

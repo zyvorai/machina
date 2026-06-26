@@ -92,7 +92,7 @@ export default function PlatformIntegrationEmbeds() {
               </div>
             )}
             <div className="flex flex-wrap gap-2">
-              <Link to="/openstack/overview" className="tahoe-btn-ghost text-xs">Open overview</Link>
+              <Link to="/openstack" className="tahoe-btn-ghost text-xs">Open overview</Link>
               {openstack.phase === 'live' && (
                 <Link to="/openstack/instances" className="tahoe-btn-primary text-xs">Instances</Link>
               )}

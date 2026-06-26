@@ -42,7 +42,7 @@ export default function PlatformLaunchpad() {
       ])
       setCatalog(cat)
       setFavorites(fav)
-      setBroken(health.apps.filter((a) => a.status === 'broken' || a.status === 'degraded'))
+      setBroken((health.apps ?? []).filter((a) => a.status === 'broken' || a.status === 'degraded'))
     } catch (e: unknown) {
       setError(formatUserError(e))
     } finally {

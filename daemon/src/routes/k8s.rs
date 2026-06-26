@@ -22,8 +22,8 @@ use machina_core::{LibvirtError, LibvirtManager};
 
 use crate::auth::{require_browser_session_for_host_insight, RequestActor};
 use crate::cluster_bootstrap::{run_cluster_bootstrap, ClusterBootstrapParams};
-use crate::k8s_quantity::{parse_cpu_to_millicores, parse_memory_to_bytes};
 use crate::error::AppError;
+use crate::k8s_quantity::{parse_cpu_to_millicores, parse_memory_to_bytes};
 
 const KUBECTL_TIMEOUT_SECS: u64 = 30;
 const KUBECTL_PROBE_TIMEOUT_SECS: u64 = 8;
@@ -1114,7 +1114,10 @@ fn parse_k8s_node_item(item: &Value) -> Option<K8sNodeInfo> {
         .unwrap_or(false);
 
     let mut taints = Vec::new();
-    if let Some(arr) = spec.and_then(|sp| sp.get("taints")).and_then(|x| x.as_array()) {
+    if let Some(arr) = spec
+        .and_then(|sp| sp.get("taints"))
+        .and_then(|x| x.as_array())
+    {
         for t in arr {
             let key = t
                 .get("key")
@@ -1163,9 +1166,15 @@ fn parse_k8s_node_item(item: &Value) -> Option<K8sNodeInfo> {
     }
 
     let cpu_cap = capacity.get("cpu").and_then(|s| parse_cpu_to_millicores(s));
-    let cpu_alloc = allocatable.get("cpu").and_then(|s| parse_cpu_to_millicores(s));
-    let mem_cap = capacity.get("memory").and_then(|s| parse_memory_to_bytes(s));
-    let mem_alloc = allocatable.get("memory").and_then(|s| parse_memory_to_bytes(s));
+    let cpu_alloc = allocatable
+        .get("cpu")
+        .and_then(|s| parse_cpu_to_millicores(s));
+    let mem_cap = capacity
+        .get("memory")
+        .and_then(|s| parse_memory_to_bytes(s));
+    let mem_alloc = allocatable
+        .get("memory")
+        .and_then(|s| parse_memory_to_bytes(s));
 
     let metadata_uid = metadata
         .get("uid")
@@ -1277,14 +1286,20 @@ fn rollup_topology_zones_regions(
         let z = n
             .topology_hints
             .get("topology.kubernetes.io/zone")
-            .or_else(|| n.topology_hints.get("failure-domain.beta.kubernetes.io/zone"));
+            .or_else(|| {
+                n.topology_hints
+                    .get("failure-domain.beta.kubernetes.io/zone")
+            });
         if let Some(z) = z {
             *zones.entry(z.clone()).or_insert(0) += 1;
         }
         let r = n
             .topology_hints
             .get("topology.kubernetes.io/region")
-            .or_else(|| n.topology_hints.get("failure-domain.beta.kubernetes.io/region"));
+            .or_else(|| {
+                n.topology_hints
+                    .get("failure-domain.beta.kubernetes.io/region")
+            });
         if let Some(r) = r {
             *regions.entry(r.clone()).or_insert(0) += 1;
         }
@@ -1311,12 +1326,7 @@ fn taints_summary_by_plane(nodes: &[K8sNodeInfo]) -> BTreeMap<String, K8sTaintPl
 fn rollup_pods_for_inventory(
     pods: &Value,
     node_to_plane: &BTreeMap<String, String>,
-) -> (
-    BTreeMap<String, usize>,
-    usize,
-    usize,
-    usize,
-) {
+) -> (BTreeMap<String, usize>, usize, usize, usize) {
     let mut by_plane: BTreeMap<String, usize> = BTreeMap::new();
     let mut running_total = 0usize;
     let mut running_no_node = 0usize;
@@ -1545,12 +1555,7 @@ fn scan_control_plane_stack(
 fn kubelet_version_skew_lists(
     nodes: &[K8sNodeInfo],
     apiserver_git: &str,
-) -> (
-    Option<u32>,
-    Vec<String>,
-    Vec<String>,
-    Vec<String>,
-) {
+) -> (Option<u32>, Vec<String>, Vec<String>, Vec<String>) {
     let Some((am, im)) = k8s_git_major_minor_tuple(apiserver_git) else {
         return (None, Vec::new(), Vec::new(), Vec::new());
     };
@@ -2012,18 +2017,15 @@ async fn k8s_cluster_inventory(
         "-o".into(),
         "json".into(),
     ];
-    let args_ds = vec!["get".into(), "daemonsets".into(), "-A".into(), "-o".into(), "json".into()];
+    let args_ds = vec![
+        "get".into(),
+        "daemonsets".into(),
+        "-A".into(),
+        "-o".into(),
+        "json".into(),
+    ];
 
-    let (
-        nodes_res,
-        ver_res,
-        pods_res,
-        livez_res,
-        readyz_res,
-        vwc_res,
-        mwc_res,
-        ds_res,
-    ) = tokio::join!(
+    let (nodes_res, ver_res, pods_res, livez_res, readyz_res, vwc_res, mwc_res, ds_res) = tokio::join!(
         run_kubectl_json_ctx(&args_nodes, KUBECTL_TIMEOUT_SECS, ctx),
         run_kubectl_json_ctx(&args_ver, KUBECTL_TIMEOUT_SECS, ctx),
         run_kubectl_json_ctx(&args_pods, KUBECTL_TIMEOUT_SECS, ctx),
@@ -2115,8 +2117,10 @@ async fn k8s_cluster_inventory(
         }
     }
 
-    let node_to_plane: BTreeMap<String, String> =
-        nodes.iter().map(|n| (n.name.clone(), n.plane.clone())).collect();
+    let node_to_plane: BTreeMap<String, String> = nodes
+        .iter()
+        .map(|n| (n.name.clone(), n.plane.clone()))
+        .collect();
 
     let (
         running_pods_by_plane,
@@ -2135,20 +2139,19 @@ async fn k8s_cluster_inventory(
     let (topology_nodes_by_zone, topology_nodes_by_region) = rollup_topology_zones_regions(&nodes);
     let taints_by_plane = taints_summary_by_plane(&nodes);
 
-    let (etcd_placement_pods, control_plane_stack_pods, upgrade_insights) =
-        match pods_res.as_ref() {
-            Ok(pj) => {
-                let (etcd, cp) = scan_control_plane_stack(pj, &node_to_plane);
-                let insights =
-                    build_upgrade_insights(&nodes, &apiserver_git_version, &etcd, &cp, true);
-                (etcd, cp, insights)
-            }
-            Err(_) => (
-                Vec::new(),
-                Vec::new(),
-                build_upgrade_insights(&nodes, &apiserver_git_version, &[], &[], false),
-            ),
-        };
+    let (etcd_placement_pods, control_plane_stack_pods, upgrade_insights) = match pods_res.as_ref()
+    {
+        Ok(pj) => {
+            let (etcd, cp) = scan_control_plane_stack(pj, &node_to_plane);
+            let insights = build_upgrade_insights(&nodes, &apiserver_git_version, &etcd, &cp, true);
+            (etcd, cp, insights)
+        }
+        Err(_) => (
+            Vec::new(),
+            Vec::new(),
+            build_upgrade_insights(&nodes, &apiserver_git_version, &[], &[], false),
+        ),
+    };
 
     let (etcd_out, etcd_err) = try_etcdctl_member_list(ctx, &etcd_placement_pods).await;
 
@@ -2179,8 +2182,12 @@ async fn k8s_cluster_inventory(
         operator_alerts,
     };
 
-    let (totals_all_nodes, by_plane, combined_control_plane_and_mixed, combined_worker_dataplane_and_mixed) =
-        rollup_cluster_views(&nodes);
+    let (
+        totals_all_nodes,
+        by_plane,
+        combined_control_plane_and_mixed,
+        combined_worker_dataplane_and_mixed,
+    ) = rollup_cluster_views(&nodes);
 
     let resp = K8sClusterInventoryResponse {
         collected_at_rfc3339: chrono::Utc::now().to_rfc3339(),
@@ -3646,13 +3653,10 @@ async fn run_k3s_install_script(req: &K3sInstallRequest) -> Result<KubectlResult
         command_text.push_str(&format!(" (INSTALL_K3S_EXEC {} bytes)", e.len()));
     }
 
-    let output = timeout(
-        Duration::from_secs(K3S_INSTALL_TIMEOUT_SECS),
-        cmd.output(),
-    )
-    .await
-    .map_err(|_| LibvirtError::Operation("k3s install timed out".into()))?
-    .map_err(|e| LibvirtError::Operation(format!("failed to run k3s install: {e}")))?;
+    let output = timeout(Duration::from_secs(K3S_INSTALL_TIMEOUT_SECS), cmd.output())
+        .await
+        .map_err(|_| LibvirtError::Operation("k3s install timed out".into()))?
+        .map_err(|e| LibvirtError::Operation(format!("failed to run k3s install: {e}")))?;
 
     Ok(KubectlResult {
         command: command_text,
@@ -3759,7 +3763,10 @@ async fn k8s_k3s_install(
     let res = run_k3s_install_script(&req).await?;
     if !res.ok {
         let msg = if res.stderr.trim().is_empty() {
-            format!("k3s install failed (exit {}): {}", res.exit_code, res.command)
+            format!(
+                "k3s install failed (exit {}): {}",
+                res.exit_code, res.command
+            )
         } else {
             res.stderr.clone()
         };

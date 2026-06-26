@@ -244,13 +244,11 @@ impl PowerMode {
 }
 
 pub fn shutdown_vm_mode(conn: &Connect, name: &str, mode: PowerMode) -> Result<(), LibvirtError> {
-    domain_action(conn, name, "shutdown", |d| {
-        match mode {
-            PowerMode::Default => d.shutdown().map(|_| ()),
-            PowerMode::GuestAgent => d
-                .shutdown_flags(sys::VIR_DOMAIN_SHUTDOWN_GUEST_AGENT)
-                .map(|_| ()),
-        }
+    domain_action(conn, name, "shutdown", |d| match mode {
+        PowerMode::Default => d.shutdown().map(|_| ()),
+        PowerMode::GuestAgent => d
+            .shutdown_flags(sys::VIR_DOMAIN_SHUTDOWN_GUEST_AGENT)
+            .map(|_| ()),
     })
 }
 
@@ -497,8 +495,9 @@ pub fn replace_domain_xml(conn: &Connect, name: &str, xml: &str) -> Result<(), L
             )));
         }
     }
-    virt::domain::Domain::define_xml(conn, xml)
-        .map_err(|e| LibvirtError::Operation(format!("Failed to update domain XML for '{name}': {e}")))?;
+    virt::domain::Domain::define_xml(conn, xml).map_err(|e| {
+        LibvirtError::Operation(format!("Failed to update domain XML for '{name}': {e}"))
+    })?;
     Ok(())
 }
 
@@ -656,7 +655,10 @@ fn enrich_disk_block_info(domain: &virt::domain::Domain, disks: &mut [DiskInfo])
             disk.physical_bytes = Some(info.physical.max(0) as u64);
             continue;
         }
-        if disk.device == "disk" && !disk.source.is_empty() && disk.source != crate::unknown_string() {
+        if disk.device == "disk"
+            && !disk.source.is_empty()
+            && disk.source != crate::unknown_string()
+        {
             if let Ok(meta) = std::fs::metadata(&disk.source) {
                 disk.physical_bytes = Some(meta.len());
             }
@@ -719,6 +721,8 @@ mod tests {
         assert!(super::error_suggests_nvram_undefine(
             "cannot undefine domain with nvram"
         ));
-        assert!(!super::error_suggests_nvram_undefine("disk path mentions nvram-backup"));
+        assert!(!super::error_suggests_nvram_undefine(
+            "disk path mentions nvram-backup"
+        ));
     }
 }

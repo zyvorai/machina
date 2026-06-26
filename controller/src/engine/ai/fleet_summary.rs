@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FleetClusterSlice {
@@ -24,7 +24,7 @@ pub struct FleetZeusSummary {
     pub reachable_peers: usize,
 }
 
-pub async fn summarize(pool: &PgPool) -> anyhow::Result<FleetZeusSummary> {
+pub async fn summarize(pool: &SqlitePool) -> anyhow::Result<FleetZeusSummary> {
     let mut clusters = vec![local_slice(pool).await?];
     let peer_urls = super::settings::get_fleet_peer_urls(pool).await?;
     let mut reachable_peers = 0usize;
@@ -49,7 +49,7 @@ pub async fn summarize(pool: &PgPool) -> anyhow::Result<FleetZeusSummary> {
     })
 }
 
-async fn local_slice(pool: &PgPool) -> anyhow::Result<FleetClusterSlice> {
+async fn local_slice(pool: &SqlitePool) -> anyhow::Result<FleetClusterSlice> {
     let name: String = sqlx::query_scalar("SELECT name FROM clusters ORDER BY created_at LIMIT 1")
         .fetch_one(pool)
         .await?;
@@ -86,11 +86,13 @@ async fn fetch_peer_slice(base: &str) -> FleetClusterSlice {
         }
     };
 
-    let health = client
-        .get(format!("{base}/api/v1/health"))
-        .send()
-        .await;
-    if health.as_ref().map(|r| r.status().is_success()).unwrap_or(false) == false {
+    let health = client.get(format!("{base}/api/v1/health")).send().await;
+    if health
+        .as_ref()
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
+        == false
+    {
         return FleetClusterSlice {
             label,
             reachable: false,
@@ -128,6 +130,6 @@ fn unreachable_peer(label: &str) -> FleetClusterSlice {
     }
 }
 
-pub async fn local_export(pool: &PgPool) -> anyhow::Result<FleetClusterSlice> {
+pub async fn local_export(pool: &SqlitePool) -> anyhow::Result<FleetClusterSlice> {
     local_slice(pool).await
 }

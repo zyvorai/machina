@@ -6,7 +6,8 @@ use std::process::{Command, Output, Stdio};
 
 use crate::config::ControllerConfig;
 
-const FORWARDER_TEMPLATE: &str = include_str!("../../../contrib/k8s/packetwolf-export-forwarder.yaml");
+const FORWARDER_TEMPLATE: &str =
+    include_str!("../../../contrib/k8s/packetwolf-export-forwarder.yaml");
 const FORWARD_SCRIPT: &str = include_str!("../../../contrib/k8s/packetwolf-export-forward.py");
 
 pub struct K8sTetragonInstallResult {
@@ -68,7 +69,10 @@ fn packetwolf_export_url(cfg: &ControllerConfig) -> String {
 }
 
 fn indent_configmap_script(src: &str) -> String {
-    src.lines().map(|line| format!("    {line}")).collect::<Vec<_>>().join("\n")
+    src.lines()
+        .map(|line| format!("    {line}"))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 pub fn render_export_forwarder_manifest(
@@ -78,14 +82,19 @@ pub fn render_export_forwarder_manifest(
 ) -> String {
     let token = k8s_name_token(cluster_id);
     let host_id = format!("k8s-{cluster_id}");
-    let api_key = cfg.packetwolf_api_key.as_deref().unwrap_or("");
+    // Strip newlines/colons from api_key to prevent YAML structure injection via template replace.
+    let raw_key = cfg.packetwolf_api_key.as_deref().unwrap_or("");
+    let api_key = raw_key.replace(['\n', '\r', ':'], "");
     FORWARDER_TEMPLATE
         .replace("{{NAMESPACE}}", namespace)
         .replace("{{CLUSTER_TOKEN}}", &token)
         .replace("{{HOST_ID}}", &host_id)
         .replace("{{EXPORT_URL}}", &packetwolf_export_url(cfg))
-        .replace("{{API_KEY}}", api_key)
-        .replace("{{FORWARD_SCRIPT}}", &indent_configmap_script(FORWARD_SCRIPT))
+        .replace("{{API_KEY}}", &api_key)
+        .replace(
+            "{{FORWARD_SCRIPT}}",
+            &indent_configmap_script(FORWARD_SCRIPT),
+        )
 }
 
 fn kubectl_apply(manifest: &str) -> Result<Output, std::io::Error> {
@@ -157,7 +166,10 @@ pub fn export_forwarder_status(
         .output();
     match output {
         Ok(o) if o.status.success() => {
-            let ready = String::from_utf8_lossy(&o.stdout).trim().parse::<u32>().unwrap_or(0);
+            let ready = String::from_utf8_lossy(&o.stdout)
+                .trim()
+                .parse::<u32>()
+                .unwrap_or(0);
             K8sExportForwarderStatus {
                 cluster_id: cluster_id.into(),
                 host_id,
@@ -212,7 +224,9 @@ pub fn install_tetragon_helm(
             helm_output: String::new(),
             forwarder_applied: false,
             forwarder_output: String::new(),
-            message: "helm not found on controller — install Helm CLI or run enrollment from a bastion".into(),
+            message:
+                "helm not found on controller — install Helm CLI or run enrollment from a bastion"
+                    .into(),
         };
     }
 

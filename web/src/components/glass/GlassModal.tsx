@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect } from 'react'
 
 const spring = { type: 'spring' as const, stiffness: 320, damping: 28, mass: 0.85 }
 
@@ -17,6 +17,13 @@ export type GlassModalProps = {
 }
 
 export function GlassModal({ open, onClose, title, subtitle, children, wide, footer }: GlassModalProps) {
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [open, onClose])
+
   return (
     <AnimatePresence>
       {open && (

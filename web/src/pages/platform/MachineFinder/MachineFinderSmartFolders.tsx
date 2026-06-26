@@ -106,24 +106,24 @@ export default function MachineFinderSmartFolders({ state }: Props) {
         </div>
       </div>
 
-      {(finder?.tags.length ?? 0) > 0 && (
+      {(finder?.tags?.length ?? 0) > 0 && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40 flex items-center gap-1 mb-2">
             <Tag className="w-3 h-3" /> Tags
           </p>
           <div className="space-y-0.5">
-            {finder!.tags.map((t) => (
+            {(finder?.tags ?? []).map((t) => (
               <SidebarRow key={t.tag} active={tag === t.tag} label={`#${t.tag}`} count={t.count} onClick={() => setFilter({ tag: t.tag })} />
             ))}
           </div>
         </div>
       )}
 
-      {(finder?.projects.length ?? 0) > 0 && (
+      {(finder?.projects?.length ?? 0) > 0 && (
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40 mb-2">Projects</p>
           <div className="space-y-0.5">
-            {finder!.projects.map((p) => (
+            {(finder?.projects ?? []).map((p) => (
               <SidebarRow key={p.project} active={project === p.project} label={p.project} count={p.count} onClick={() => setFilter({ project: p.project })} />
             ))}
           </div>

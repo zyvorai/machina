@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Server } from 'lucide-react'
+import { Server, X } from 'lucide-react'
 import SecurityLensLayout from '../../../components/platform/SecurityLensLayout'
 import { getFirewallOverview, getFirewallServices, type AllowedService } from '../../../api/zeusFirewall'
 import { formatUserError } from '../../../utils/apiError'
@@ -82,12 +82,21 @@ export default function PlatformFirewallServices() {
       emptySubtitle={services.length === 0 ? 'Firewall profiles will populate when Zeus agents sync rules.' : 'Clear the search filter to see all services.'}
     >
       <div className="flex flex-wrap gap-2 mb-4">
-        <input
-          className="input text-sm max-w-xs"
-          placeholder="Filter by name, port, or host…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
+        <div className="relative max-w-xs">
+          <input
+            className={`input text-sm w-full ${filter ? 'pr-8' : 'pr-4'}`}
+            aria-label="Filter firewall services"
+            placeholder="Filter by name, port, or host…"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+          />
+          {filter && (
+            <button type="button" aria-label="Clear filter" onClick={() => setFilter('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
         <span className="text-sm text-slate-500 self-center">{visible.length} service(s)</span>
       </div>
       <div className="space-y-2">

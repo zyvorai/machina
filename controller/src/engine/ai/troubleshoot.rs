@@ -1,10 +1,9 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
-use super::infra_graph::{GraphScope, PathRequest};
 
 #[derive(Debug, Deserialize)]
 pub struct TroubleshootRequest {
@@ -44,13 +43,13 @@ pub struct DiagnosisReport {
 }
 
 async fn resolve_vm(
-    pool: &PgPool,
+    pool: &SqlitePool,
     vm_id: Option<Uuid>,
     vm_name: Option<&str>,
 ) -> anyhow::Result<(Uuid, String, Option<Uuid>, i64, i32, String)> {
     if let Some(id) = vm_id {
         let row: (String, Option<Uuid>, i64, i32, String) = sqlx::query_as(
-            "SELECT name, host_id, memory_mib, vcpus, observed_state FROM vms WHERE id = $1",
+            "SELECT name, host_id, memory_mib, vcpus, observed_state FROM vms WHERE id = ?",
         )
         .bind(id)
         .fetch_one(pool)
@@ -59,7 +58,7 @@ async fn resolve_vm(
     }
     if let Some(name) = vm_name.filter(|n| !n.is_empty()) {
         let row: (Uuid, String, Option<Uuid>, i64, i32, String) = sqlx::query_as(
-            "SELECT id, name, host_id, memory_mib, vcpus, observed_state FROM vms WHERE name ILIKE $1 LIMIT 1",
+            "SELECT id, name, host_id, memory_mib, vcpus, observed_state FROM vms WHERE name LIKE ? LIMIT 1",
         )
         .bind(name)
         .fetch_one(pool)
@@ -69,7 +68,7 @@ async fn resolve_vm(
     anyhow::bail!("vm_id or vm_name required")
 }
 
-pub async fn diagnose(pool: &PgPool, req: &TroubleshootRequest) -> anyhow::Result<DiagnosisReport> {
+pub async fn diagnose(pool: &SqlitePool, req: &TroubleshootRequest) -> anyhow::Result<DiagnosisReport> {
     let (vid, vname, host_id, mem_alloc, vcpus, state) =
         resolve_vm(pool, req.vm_id, req.vm_name.as_deref()).await?;
     let symptom = req.symptom.to_lowercase();
@@ -78,12 +77,11 @@ pub async fn diagnose(pool: &PgPool, req: &TroubleshootRequest) -> anyhow::Resul
     let mut actions = Vec::new();
 
     // CPU
-    let cpu: Option<f64> = sqlx::query_scalar(
-        "SELECT cpu_percent FROM vm_metrics WHERE vm_id = $1",
-    )
-    .bind(vid)
-    .fetch_optional(pool)
-    .await?;
+    let cpu: Option<f64> =
+        sqlx::query_scalar("SELECT cpu_percent FROM vm_metrics WHERE vm_id = ?")
+            .bind(vid)
+            .fetch_optional(pool)
+            .await?;
     let cpu_status = match cpu {
         Some(c) if c >= 90.0 => "critical",
         Some(c) if c >= 70.0 => "warn",
@@ -107,12 +105,11 @@ pub async fn diagnose(pool: &PgPool, req: &TroubleshootRequest) -> anyhow::Resul
     }
 
     // Memory / balloon
-    let mem_used: Option<i64> = sqlx::query_scalar(
-        "SELECT memory_used_mib FROM vm_metrics WHERE vm_id = $1",
-    )
-    .bind(vid)
-    .fetch_optional(pool)
-    .await?;
+    let mem_used: Option<i64> =
+        sqlx::query_scalar("SELECT memory_used_mib FROM vm_metrics WHERE vm_id = ?")
+            .bind(vid)
+            .fetch_optional(pool)
+            .await?;
     let mem_ratio = mem_used.map(|u| u as f64 / mem_alloc.max(1) as f64);
     let mem_status = match mem_ratio {
         Some(r) if r >= 0.92 => "critical",
@@ -124,12 +121,22 @@ pub async fn diagnose(pool: &PgPool, req: &TroubleshootRequest) -> anyhow::Resul
         domain: "memory".into(),
         status: mem_status.into(),
         detail: mem_used
-            .map(|u| format!("{u}/{mem_alloc} MiB ({:.0}%)", (u as f64 / mem_alloc as f64) * 100.0))
+            .map(|u| {
+                format!(
+                    "{u}/{mem_alloc} MiB ({:.0}%)",
+                    (u as f64 / mem_alloc as f64) * 100.0
+                )
+            })
             .unwrap_or_else(|| format!("Allocated {mem_alloc} MiB — no guest metrics")),
     });
     if mem_status == "critical" || mem_status == "warn" {
         findings.push(Finding {
-            severity: if mem_status == "critical" { "high" } else { "medium" }.into(),
+            severity: if mem_status == "critical" {
+                "high"
+            } else {
+                "medium"
+            }
+            .into(),
             message: "Memory pressure — check balloon driver and host overcommit".into(),
             domain: "memory".into(),
         });
@@ -138,21 +145,22 @@ pub async fn diagnose(pool: &PgPool, req: &TroubleshootRequest) -> anyhow::Resul
     checks.push(CheckResult {
         domain: "numa_balloon".into(),
         status: "info".into(),
-        detail: "NUMA topology follows host layout; verify guest NUMA awareness if latency-sensitive.".into(),
+        detail:
+            "NUMA topology follows host layout; verify guest NUMA awareness if latency-sensitive."
+                .into(),
     });
 
     // Disk
-    let disk_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vm_disks WHERE vm_id = $1")
+    let disk_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vm_disks WHERE vm_id = ?")
         .bind(vid)
         .fetch_one(pool)
         .await
         .unwrap_or(0);
-    let disk_io: Option<(i64, i64)> = sqlx::query_as(
-        "SELECT disk_read_iops, disk_write_iops FROM vm_metrics WHERE vm_id = $1",
-    )
-    .bind(vid)
-    .fetch_optional(pool)
-    .await?;
+    let disk_io: Option<(i64, i64)> =
+        sqlx::query_as("SELECT disk_read_iops, disk_write_iops FROM vm_metrics WHERE vm_id = ?")
+            .bind(vid)
+            .fetch_optional(pool)
+            .await?;
     let disk_detail = match disk_io {
         Some((r, w)) if r + w > 5000 => format!(
             "{disk_count} disk(s); high I/O ({r} read / {w} write IOPS) — check storage pool latency"
@@ -169,7 +177,8 @@ pub async fn diagnose(pool: &PgPool, req: &TroubleshootRequest) -> anyhow::Resul
         if r + w > 8000 {
             findings.push(Finding {
                 severity: "medium".into(),
-                message: "Disk I/O saturation — correlate with PacketWolf flows and pool backend".into(),
+                message: "Disk I/O saturation — correlate with PacketWolf flows and pool backend"
+                    .into(),
                 domain: "disk".into(),
             });
         }
@@ -178,7 +187,7 @@ pub async fn diagnose(pool: &PgPool, req: &TroubleshootRequest) -> anyhow::Resul
     // Host pressure
     if let Some(hid) = host_id {
         let host: Option<(String, f64, i64, i64)> = sqlx::query_as(
-            "SELECT hostname, cpu_percent, memory_used_mib, memory_total_mib FROM hosts WHERE id = $1",
+            "SELECT hostname, cpu_percent, memory_used_mib, memory_total_mib FROM hosts WHERE id = ?",
         )
         .bind(hid)
         .fetch_optional(pool)
@@ -299,7 +308,7 @@ pub async fn diagnose(pool: &PgPool, req: &TroubleshootRequest) -> anyhow::Resul
     })
 }
 
-pub async fn verify_after_action(pool: &PgPool, vm_id: Uuid) -> anyhow::Result<String> {
+pub async fn verify_after_action(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<String> {
     let req = TroubleshootRequest {
         vm_id: Some(vm_id),
         vm_name: None,

@@ -183,6 +183,11 @@ export default function StoragePoolDetail() {
           </div>
           <div className="w-full bg-slate-700 rounded-full h-3">
             <div
+              role="progressbar"
+              aria-label="Storage usage"
+              aria-valuenow={Math.round(Math.min(usagePct, 100))}
+              aria-valuemin={0}
+              aria-valuemax={100}
               className={`h-3 rounded-full transition-all ${statusBgClass(utilizationTone(usagePct))}`}
               style={{ width: `${Math.min(usagePct, 100)}%` }}
             />
@@ -202,9 +207,9 @@ export default function StoragePoolDetail() {
         </div>
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
           {volumes.length === 0 ? (
-            <div className="p-8 text-center text-slate-500">No volumes in this pool</div>
+            <EmptyState title="No volumes" description="This pool is empty. Create a volume to get started." />
           ) : (
-            <table className="w-full">
+            <table className="w-full" aria-label="Storage volumes">
               <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400"><th className="px-6 py-3">Name</th><th className="px-6 py-3">Type</th><th className="px-6 py-3">Capacity</th><th className="px-6 py-3">Used</th><th className="px-6 py-3 hidden lg:table-cell">Path</th><th className="px-6 py-3 text-right">Actions</th></tr></thead>
               <tbody className="divide-y divide-slate-700/50">
                 {volumes.map((v) => (
@@ -216,9 +221,9 @@ export default function StoragePoolDetail() {
                     <td className="px-6 py-3 text-sm text-slate-400 truncate max-w-xs hidden lg:table-cell">{v.path}</td>
                     <td className="px-6 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => { setResizeTarget({ pool: pool.name, vol: v.name }); setResizeGb(v.capacity_gb.toFixed(2)) }} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="Resize"><Maximize className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
-                        <button onClick={() => { setCloneTarget({ pool: pool.name, vol: v.name }); setCloneName(`${v.name}-clone`) }} className="p-1.5 hover:bg-green-600/20 rounded transition" title="Clone"><Copy className={`w-4 h-4 ${statusToneClass('ok')}`} /></button>
-                        <button onClick={() => setDeleteTarget({ pool: pool.name, vol: v.name })} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
+                        <button onClick={() => { setResizeTarget({ pool: pool.name, vol: v.name }); setResizeGb(v.capacity_gb.toFixed(2)) }} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="Resize" aria-label="Resize"><Maximize className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
+                        <button onClick={() => { setCloneTarget({ pool: pool.name, vol: v.name }); setCloneName(`${v.name}-clone`) }} className="p-1.5 hover:bg-green-600/20 rounded transition" title="Clone" aria-label="Clone"><Copy className={`w-4 h-4 ${statusToneClass('ok')}`} /></button>
+                        <button onClick={() => setDeleteTarget({ pool: pool.name, vol: v.name })} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete" aria-label="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
                       </div>
                     </td>
                   </tr>
@@ -265,7 +270,7 @@ export default function StoragePoolDetail() {
               <div className="text-sm text-slate-400">Volume: <span className="text-white font-medium">{resizeTarget.vol}</span></div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">New Size (GB)</label>
-                <input type="number" step="0.01" value={resizeGb} onChange={(e) => setResizeGb(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm" />
+                <input type="number" step="0.01" min="0.01" value={resizeGb} onChange={(e) => setResizeGb(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm" />
               </div>
             </div>
             <div className="flex justify-end gap-3 px-5 pb-5">
@@ -312,11 +317,11 @@ export default function StoragePoolDetail() {
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Capacity (GB)</label>
-                <input type="number" step="0.01" value={newVolCapacity} onChange={(e) => setNewVolCapacity(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm" />
+                <input type="number" step="0.01" min="0.01" value={newVolCapacity} onChange={(e) => setNewVolCapacity(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm" />
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Format</label>
-                <select value={newVolFormat} onChange={(e) => setNewVolFormat(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm">
+                <select aria-label="Volume format" value={newVolFormat} onChange={(e) => setNewVolFormat(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm">
                   <option value="qcow2">qcow2</option>
                   <option value="raw">raw</option>
                   <option value="qcow">qcow</option>

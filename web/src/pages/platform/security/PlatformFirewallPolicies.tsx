@@ -95,8 +95,8 @@ export default function PlatformFirewallPolicies() {
     >
       <MacGlassPanel title="New policy">
         <div className="grid gap-3 max-w-lg">
-          <input className="input text-sm" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="input text-sm" placeholder="Profile" value={profile} onChange={(e) => setProfile(e.target.value)} />
+          <input aria-label="Policy name" className="input text-sm" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input aria-label="Policy profile" className="input text-sm" placeholder="Profile" value={profile} onChange={(e) => setProfile(e.target.value)} />
           <textarea className="input text-sm font-mono min-h-[8rem]" value={specYaml} onChange={(e) => setSpecYaml(e.target.value)} />
           <div className="flex gap-2">
             <button type="button" className="btn-secondary text-sm" onClick={() => void simulate()}>Simulate</button>

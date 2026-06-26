@@ -144,12 +144,14 @@ export default function OpenStackImageUploadModal({
             <div className="grid gap-2 sm:grid-cols-2">
               <input
                 type="text"
+                aria-label="Glance image name"
                 placeholder="Glance image name"
                 value={glanceName}
                 onChange={(e) => setGlanceName(e.target.value)}
                 className="input-field text-sm"
               />
               <select
+                aria-label="Visibility"
                 value={visibility}
                 onChange={(e) => setVisibility(e.target.value)}
                 className="input-field text-sm"
@@ -167,6 +169,7 @@ export default function OpenStackImageUploadModal({
               <div className="grid gap-2 sm:grid-cols-3">
                 <input
                   type="text"
+                  aria-label="Nova flavor"
                   placeholder="flavor"
                   value={flavor}
                   onChange={(e) => setFlavor(e.target.value)}
@@ -174,6 +177,7 @@ export default function OpenStackImageUploadModal({
                 />
                 <input
                   type="text"
+                  aria-label="Network"
                   placeholder="network"
                   value={network}
                   onChange={(e) => setNetwork(e.target.value)}
@@ -181,6 +185,7 @@ export default function OpenStackImageUploadModal({
                 />
                 <input
                   type="text"
+                  aria-label="Key pair name"
                   placeholder="key_name"
                   value={keyName}
                   onChange={(e) => setKeyName(e.target.value)}
@@ -188,6 +193,7 @@ export default function OpenStackImageUploadModal({
                 />
                 <input
                   type="text"
+                  aria-label="Instance name"
                   placeholder="instance name"
                   value={instanceName}
                   onChange={(e) => setInstanceName(e.target.value)}
@@ -195,6 +201,7 @@ export default function OpenStackImageUploadModal({
                 />
                 <input
                   type="text"
+                  aria-label="Security group"
                   placeholder="security group"
                   value={securityGroup}
                   onChange={(e) => setSecurityGroup(e.target.value)}
@@ -202,6 +209,7 @@ export default function OpenStackImageUploadModal({
                 />
                 <input
                   type="text"
+                  aria-label="Availability zone"
                   placeholder="availability zone"
                   value={availabilityZone}
                   onChange={(e) => setAvailabilityZone(e.target.value)}
@@ -218,8 +226,8 @@ export default function OpenStackImageUploadModal({
             </button>
           </div>
           {loading && (
-            <div className="flex justify-center py-6">
-              <Loader2 className="w-6 h-6 animate-spin text-orange-400" />
+            <div role="status" aria-label="Loading preview" className="flex justify-center py-6">
+              <Loader2 className="w-6 h-6 animate-spin text-orange-400" aria-hidden="true" />
             </div>
           )}
           {preview && !loading && (

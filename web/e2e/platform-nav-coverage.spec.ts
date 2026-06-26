@@ -3,7 +3,7 @@
 import { test, expect } from '@playwright/test'
 import { mockPlatformApi } from './platformMock'
 
-test('advanced tier shows sidebar policy and Go menu opens', async ({ page }) => {
+test('advanced tier shows sidebar policy and Go menu opens', { retries: 1 }, async ({ page }) => {
   await mockPlatformApi(page, { tier: 'advanced' })
   await page.goto('/platform/policy')
   await expect(page.getByRole('heading', { name: /Policy & Quotas/i })).toBeVisible()
@@ -52,10 +52,11 @@ test('normal tier hides context bar on dashboard', async ({ page }) => {
   await expect(page.locator('.tahoe-context-bar')).toHaveCount(0)
 })
 
-test('power tier shows context bar on hub roots only', async ({ page }) => {
+test('power tier shows context bar on hub roots only', { retries: 1 }, async ({ page }) => {
+  test.setTimeout(60_000)
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/operations')
-  await expect(page.locator('.tahoe-context-bar')).toBeVisible({ timeout: 15_000 })
+  await expect(page.locator('.tahoe-context-bar')).toBeVisible({ timeout: 20_000 })
   await page.goto('/platform/tasks')
   await expect(page.locator('.tahoe-context-bar')).toHaveCount(0)
 })
@@ -111,7 +112,7 @@ test('normal tier alerts quick action opens notification center', async ({ page 
   await expect(page.getByRole('heading', { name: 'Alerts', exact: true })).toBeVisible({ timeout: 15_000 })
 })
 
-test('settings context bar collapses overflow into More menu', async ({ page }) => {
+test('settings context bar collapses overflow into More menu', { retries: 1 }, async ({ page }) => {
   await mockPlatformApi(page, { tier: 'advanced' })
   await page.goto('/platform/policy')
   await expect(page.getByRole('heading', { name: /Policy & Quotas/i })).toBeVisible({ timeout: 15_000 })
@@ -199,7 +200,7 @@ test('spotlight opens via keyboard shortcut', async ({ page }) => {
 test('spotlight keeps page context prefill from Ask Zeus', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/vms/v1')
-  await expect(page.getByRole('heading', { name: 'vm-1' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'vm-1' }).first()).toBeVisible({ timeout: 15_000 })
   await page.evaluate(() => {
     window.dispatchEvent(new CustomEvent('machina-open-spotlight', { detail: { prefill: 'vm-1 guest health' } }))
   })

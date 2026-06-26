@@ -2,7 +2,7 @@
 // Fleet Linux health rollup (Phase 36).
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -29,7 +29,7 @@ pub struct FleetLinuxHealthOverview {
 }
 
 pub async fn overview(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FleetLinuxHealthOverview> {
     let rows: Vec<(Uuid, String)> = sqlx::query_as(
@@ -66,7 +66,11 @@ pub async fn overview(
         let smart_failures = obs
             .get("smart")
             .and_then(|s| s.as_array())
-            .map(|arr| arr.iter().filter(|d| d.get("passed") == Some(&serde_json::json!(false))).count())
+            .map(|arr| {
+                arr.iter()
+                    .filter(|d| d.get("passed") == Some(&serde_json::json!(false)))
+                    .count()
+            })
             .unwrap_or(0);
         let status = if io > 50.0 || smart_failures > 0 {
             pressure_hosts += 1;
@@ -112,17 +116,22 @@ pub struct FleetDiagnoseReport {
     pub hypotheses: Vec<crate::engine::ai::knowledge_diagnose::DiagnoseHypothesis>,
 }
 
-pub async fn diagnose(pool: &PgPool, cfg: &ControllerConfig, query: &str) -> anyhow::Result<FleetDiagnoseReport> {
+pub async fn diagnose(
+    pool: &SqlitePool,
+    cfg: &ControllerConfig,
+    query: &str,
+) -> anyhow::Result<FleetDiagnoseReport> {
     let zeus = crate::engine::ai::zeus_summary::summarize(pool).await?;
     let linux = overview(pool, cfg).await?;
     let mut diag = crate::engine::ai::knowledge_diagnose::diagnose(pool, query).await?;
     if linux.pressure_hosts > 0 {
-        diag.hypotheses.push(crate::engine::ai::knowledge_diagnose::DiagnoseHypothesis {
-            title: "Hypervisor IO/memory pressure".into(),
-            confidence: 0.8,
-            evidence: linux.summary.clone(),
-            action: "Review Activity Monitor and storage tiers; consider rebalance.".into(),
-        });
+        diag.hypotheses
+            .push(crate::engine::ai::knowledge_diagnose::DiagnoseHypothesis {
+                title: "Hypervisor IO/memory pressure".into(),
+                confidence: 0.8,
+                evidence: linux.summary.clone(),
+                action: "Review Activity Monitor and storage tiers; consider rebalance.".into(),
+            });
     }
     Ok(FleetDiagnoseReport {
         query: query.into(),

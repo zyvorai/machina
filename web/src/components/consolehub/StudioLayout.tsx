@@ -67,7 +67,6 @@ export default function StudioLayout({
         activeProtocol={activeProtocol}
         onProtocolChange={onProtocolChange}
         recommended={recommended}
-        osHint={osHint}
       />
       <div className={`flex-1 min-h-0 grid gap-2 ${split ? 'grid-cols-1 lg:grid-cols-[3fr_2fr]' : 'grid-cols-1'}`}>
         <div className="min-h-0 flex flex-col rounded-xl overflow-hidden bg-[#0a0a0c] border border-white/[0.06]">

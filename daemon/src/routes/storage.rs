@@ -7,9 +7,7 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 
 use machina_core::libvirt::storage;
-use machina_core::{
-    CreateVolumeRequest, LibvirtManager, StoragePoolInfo, StorageVolumeInfo,
-};
+use machina_core::{CreateVolumeRequest, LibvirtManager, StoragePoolInfo, StorageVolumeInfo};
 
 use crate::auth::RequestActor;
 use crate::conn_query::{spawn_libvirt_actor, ConnQuery};
@@ -123,13 +121,7 @@ async fn create_volume(
     let pool2 = pool_name.clone();
     let req2 = req.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
-        storage::create_volume(
-            conn,
-            &pool2,
-            &req2.name,
-            req2.capacity_gb,
-            &req2.format,
-        )
+        storage::create_volume(conn, &pool2, &req2.name, req2.capacity_gb, &req2.format)
     })
     .await?;
     Ok(Json(

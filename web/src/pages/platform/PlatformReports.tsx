@@ -313,7 +313,7 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
               </div>
             )}
             <div className="overflow-x-auto mt-4">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" aria-label="Project costs">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-white/[0.06]">
                     <th className="py-2 pr-2">Project</th>
@@ -371,7 +371,7 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
                 >
                   {migrationBusy ? 'Generating…' : 'Generate report'}
                 </button>
-                {migrationReport && migrationReport.rows.length > 0 && (
+                {migrationReport && (migrationReport.rows?.length ?? 0) > 0 && (
                   <button
                     type="button"
                     className="btn-secondary text-xs"
@@ -383,8 +383,8 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
                           row.vm_name,
                           row.readiness_percent,
                           row.install_state,
-                          row.qga_gaps.join('; '),
-                          row.remediation.join('; '),
+                          (row.qga_gaps ?? []).join('; '),
+                          (row.remediation ?? []).join('; '),
                         ]
                           .map((c) => `"${String(c).replace(/"/g, '""')}"`)
                           .join(','),
@@ -415,7 +415,7 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
                   </ul>
                 )}
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
+                  <table className="w-full text-xs" aria-label="VM migration readiness">
                     <thead>
                       <tr className="text-left text-slate-500">
                         <th className="py-1 pr-2">VM</th>
@@ -500,8 +500,8 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
               </div>
               {cap.planner_recommendations && cap.planner_recommendations.length > 0 && (
                 <ul className="mt-3 text-xs text-slate-400 space-y-1">
-                  {cap.planner_recommendations.map((r, i) => (
-                    <li key={i}>• {r}</li>
+                  {cap.planner_recommendations.map((r) => (
+                    <li key={r}>• {r}</li>
                   ))}
                 </ul>
               )}
@@ -514,7 +514,7 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
           <p className="text-2xl font-bold text-slate-100 -mt-2">{compliance.score}/100</p>
           <p className="text-sm text-slate-400 mt-1">{compliance.summary}</p>
           <ul className="mt-3 text-xs space-y-1">
-            {compliance.checks.map((c) => (
+            {(compliance.checks ?? []).map((c) => (
               <li key={c.id} className={statusToneClass(c.passed ? 'ok' : 'warn')}>
                 {c.passed ? '✓' : '○'} {c.name} — {c.detail}
               </li>
@@ -615,7 +615,7 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
             <p>{cost.snapshot_heavy_count} snapshot-heavy</p>
           </div>
           {cost.suggestions.length > 0 && (
-            <ul className="mt-3 text-xs text-slate-400 space-y-1">{cost.suggestions.map((s, i) => <li key={i}>• {s}</li>)}</ul>
+            <ul className="mt-3 text-xs text-slate-400 space-y-1">{cost.suggestions.map((s) => <li key={s}>• {s}</li>)}</ul>
           )}
           <div className="flex flex-wrap gap-2 mt-3">
             <a className="btn-secondary text-xs" href={getAiCostExportUrl()} download data-testid="reports-cost-export-url">
@@ -699,7 +699,7 @@ export default function PlatformReports({ embedded }: { embedded?: boolean } = {
             {aiCap.storage_runway_days != null && <p>Storage runway: <span className="text-slate-200">{aiCap.storage_runway_days} days</span></p>}
           </div>
           {aiCap.recommendations.length > 0 && (
-            <ul className="mt-3 text-xs text-slate-400 space-y-1">{aiCap.recommendations.map((r, i) => <li key={i}>• {r}</li>)}</ul>
+            <ul className="mt-3 text-xs text-slate-400 space-y-1">{aiCap.recommendations.map((r) => <li key={r}>• {r}</li>)}</ul>
           )}
           <div className="flex flex-wrap gap-2 mt-3">
             <a className="btn-secondary text-xs" href={getAiCapacityExportUrl()} download data-testid="reports-capacity-export-url">

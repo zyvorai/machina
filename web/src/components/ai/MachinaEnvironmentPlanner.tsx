@@ -36,7 +36,7 @@ export default function MachinaEnvironmentPlanner() {
   return (
     <MacGlassPanel title="Intent environment planner" subtitle="NL staging / dev / prod sizing">
       <div className="flex flex-wrap gap-2">
-        <input className="input flex-1 text-sm min-w-[12rem]" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input aria-label="Environment plan query" className="input flex-1 text-sm min-w-[12rem]" value={query} onChange={(e) => setQuery(e.target.value)} />
         <button type="button" className="btn-primary text-xs flex items-center gap-1" disabled={busy} onClick={() => void run()}>
           <Layers className="w-3 h-3" /> Plan
         </button>

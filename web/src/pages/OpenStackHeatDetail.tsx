@@ -148,7 +148,7 @@ function OpenStackHeatDetailContent() {
         <Loader2 className="w-6 h-6 animate-spin text-sky-400 mx-auto" />
       ) : tab === 'resources' ? (
         <div className="overflow-x-auto rounded-xl border border-slate-700">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Stack resources">
             <thead className="bg-slate-900/80 text-slate-400 text-left">
               <tr>
                 <th className="px-3 py-2">Logical ID</th>
@@ -211,7 +211,7 @@ function OpenStackHeatDetailContent() {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-700">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Stack outputs">
             <thead className="bg-slate-900/80 text-slate-400 text-left">
               <tr>
                 <th className="px-3 py-2">Key</th>

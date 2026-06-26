@@ -4,8 +4,9 @@ use axum::extract::{Path, State};
 use axum::Extension;
 use axum::Json;
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::engine::drs::{self, ClusterSettings, ClusterSettingsPatch};
 use crate::state::AppState;
 
@@ -22,9 +23,7 @@ pub struct ClusterSummary {
     pub settings: ClusterSettings,
 }
 
-pub async fn get_cluster(
-    State(state): State<AppState>,
-) -> Result<Json<ClusterSummary>, ApiError> {
+pub async fn get_cluster(State(state): State<AppState>) -> Result<Json<ClusterSummary>, ApiError> {
     Ok(Json(build_cluster_summary(&state.pool).await?))
 }
 
@@ -39,11 +38,10 @@ pub struct LeadershipStatus {
 pub async fn get_leadership(
     State(state): State<AppState>,
 ) -> Result<Json<LeadershipStatus>, ApiError> {
-    let row: (String, chrono::DateTime<chrono::Utc>) = sqlx::query_as(
-        "SELECT holder_id, lease_until FROM controller_leadership WHERE id = 1",
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let row: (String, chrono::DateTime<chrono::Utc>) =
+        sqlx::query_as("SELECT holder_id, lease_until FROM controller_leadership WHERE id = 1")
+            .fetch_one(&state.pool)
+            .await?;
     Ok(Json(LeadershipStatus {
         controller_id: state.config.controller_id.clone(),
         is_leader: state.leader.is_leader(),
@@ -54,7 +52,9 @@ pub async fn get_leadership(
 
 pub async fn get_settings(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ClusterSettings>, ApiError> {
+    require_operator(&actor)?;
     let settings = drs::get_cluster_settings(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -63,8 +63,10 @@ pub async fn get_settings(
 
 pub async fn patch_settings(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ClusterSettingsPatch>,
 ) -> Result<Json<ClusterSettings>, ApiError> {
+    require_admin(&actor)?;
     drs::update_cluster_settings(&state.pool, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -74,7 +76,7 @@ pub async fn patch_settings(
     Ok(Json(settings))
 }
 
-async fn build_cluster_summary(pool: &PgPool) -> Result<ClusterSummary, ApiError> {
+async fn build_cluster_summary(pool: &SqlitePool) -> Result<ClusterSummary, ApiError> {
     let row: (uuid::Uuid, String) =
         sqlx::query_as("SELECT id, name FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_one(pool)
@@ -119,7 +121,7 @@ pub async fn patch_cluster(
 ) -> Result<Json<ClusterSummary>, ApiError> {
     crate::auth::require_admin(&actor)?;
     if let Some(name) = &body.name {
-        sqlx::query("UPDATE clusters SET name = $1")
+        sqlx::query("UPDATE clusters SET name = ?")
             .bind(name)
             .execute(&state.pool)
             .await?;

@@ -168,7 +168,7 @@ export default function DiskImagesPage() {
 
   const templateOptions = useMemo(() => {
     if (!vbCatalog) return []
-    const fromItems = vbCatalog.items.map((i) => i.name)
+    const fromItems = (vbCatalog.items ?? []).map((i) => i.name)
     if (fromItems.length) return [...fromItems].sort((a, b) => a.localeCompare(b))
     return [...vbCatalog.templates].sort((a, b) => a.localeCompare(b))
   }, [vbCatalog])
@@ -314,6 +314,7 @@ export default function DiskImagesPage() {
             onClick={() => void load()}
             className="p-2 hover:bg-slate-700 rounded transition"
             title="Refresh"
+            aria-label="Refresh"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
@@ -567,7 +568,7 @@ export default function DiskImagesPage() {
         />
       ) : (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-          <table className="w-full">
+          <table className="w-full" aria-label="Disk images">
             <thead>
               <tr className="border-b border-slate-700/50 text-left text-xs text-slate-400 uppercase tracking-wide">
                 <th className="px-5 py-3">Name</th>

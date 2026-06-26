@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { Code2, Package, Shield, Terminal, Wrench } from 'lucide-react'
 import PlatformApiConsole from '../../components/platform/PlatformApiConsole'
 import DetailTabs from '../../components/platform/DetailTabs'
@@ -96,7 +97,7 @@ export default function PlatformDeveloper() {
           <p className="text-sm text-slate-400">{overview.summary}</p>
           <div className="grid gap-4 sm:grid-cols-3">
             <MacStatWidget label="SDK version" value={overview.sdk_typescript.version} icon={<Package className="w-4 h-4" />} />
-            <MacStatWidget label="Terraform resources" value={String(overview.terraform.resources.length)} icon={<Code2 className="w-4 h-4" />} />
+            <MacStatWidget label="Terraform resources" value={String(overview.terraform.resources?.length ?? 0)} icon={<Code2 className="w-4 h-4" />} />
             <MacStatWidget label="OpenAPI" value="v1" icon={<Terminal className="w-4 h-4" />} />
           </div>
           <MacGlassPanel title="TypeScript SDK">
@@ -106,7 +107,7 @@ export default function PlatformDeveloper() {
               <CopyButton text={overview.sdk_typescript.install} label="Copy install" />
             </div>
             <ul className="mt-3 flex flex-wrap gap-2">
-              {overview.sdk_typescript.resources.map((r) => (
+              {(overview.sdk_typescript.resources ?? []).map((r) => (
                 <li key={r} className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300">{r}</li>
               ))}
             </ul>
@@ -120,7 +121,7 @@ export default function PlatformDeveloper() {
               OpenAPI spec: <a className={`hover:underline ${hubLinkClasses()}`} href={overview.openapi_url}>{overview.openapi_url}</a>
             </p>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
+              <table className="w-full text-sm text-left" aria-label="API resources">
                 <thead className="text-xs text-slate-500 border-b border-slate-700">
                   <tr>
                     <th className="py-2 pr-4">Resource</th>
@@ -141,6 +142,54 @@ export default function PlatformDeveloper() {
                 </tbody>
               </table>
             </div>
+          </MacGlassPanel>
+          <MacGlassPanel title="Agent & metrics ingest" subtitle="Push endpoints for machina-agent, Prometheus, and security sensors">
+            <p className="text-sm text-slate-400 mb-3 leading-relaxed">
+              These routes are for agents and observability pipelines — not browser forms. Use the API Console tab to try authenticated POSTs, or copy the examples below into your agent install.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs text-slate-500 mb-1">Zeus security telemetry (controller)</p>
+                <div className="flex items-start gap-2">
+                  <pre className="text-xs bg-slate-950/80 rounded-lg p-3 overflow-x-auto text-slate-300 flex-1">{`POST /api/v1/zeus-security/ingest/{host_id}
+Authorization: Bearer <controller-jwt-or-api-key>
+Content-Type: application/json
+
+{"events":[...]}`}</pre>
+                  <CopyButton
+                    text={`curl -sS -X POST "$CONTROLLER/api/v1/zeus-security/ingest/$HOST_ID" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" -d '{"events":[]}'`}
+                    label="Copy curl"
+                  />
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-1">Prometheus remote-write (daemon)</p>
+                <div className="flex items-start gap-2">
+                  <pre className="text-xs bg-slate-950/80 rounded-lg p-3 overflow-x-auto text-slate-300 flex-1">{`POST /api/v1/metrics/ingest/remote-write
+Authorization: Bearer <session-or-token>
+Content-Type: application/x-protobuf`}</pre>
+                  <CopyButton
+                    text={`curl -sS -X POST "$DAEMON/api/v1/metrics/ingest/remote-write" -H "Authorization: Bearer $TOKEN" --data-binary @metrics.pb`}
+                    label="Copy curl"
+                  />
+                </div>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 mb-1">Prometheus text scrape ingest (daemon)</p>
+                <div className="flex items-start gap-2">
+                  <pre className="text-xs bg-slate-950/80 rounded-lg p-3 overflow-x-auto text-slate-300 flex-1">{`POST /api/v1/metrics/ingest/prometheus
+Content-Type: text/plain`}</pre>
+                  <CopyButton
+                    text={`curl -sS -X POST "$DAEMON/api/v1/metrics/ingest/prometheus" -H "Authorization: Bearer $TOKEN" -H "Content-Type: text/plain" --data-binary @scrape.txt`}
+                    label="Copy curl"
+                  />
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mt-3">
+              Configure remote-write auth in <Link to="/settings" className={hubLinkClasses()}>Settings → Observability</Link>.
+              Security sensors enroll via <Link to="/platform/zeus/security" className={hubLinkClasses()}>Security Center</Link>.
+            </p>
           </MacGlassPanel>
         </>
       ) : null}

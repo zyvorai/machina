@@ -44,7 +44,10 @@ pub async fn list_api_keys(
 ) -> Result<Json<Vec<ApiKeyRow>>, ApiError> {
     require_admin(&actor)?;
     let rows = sqlx::query_as::<_, ApiKeyRow>(
-        "SELECT id, name, role, created_at, last_used_at FROM api_keys ORDER BY created_at DESC",
+        "SELECT id, name, role,
+                strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at,
+                strftime('%Y-%m-%dT%H:%M:%SZ', last_used_at) AS last_used_at
+         FROM api_keys ORDER BY created_at DESC LIMIT 500",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -57,10 +60,16 @@ pub async fn create_api_key(
     Json(body): Json<CreateApiKeyBody>,
 ) -> Result<Json<CreateApiKeyResponse>, ApiError> {
     require_admin(&actor)?;
+    if body.name.is_empty() || body.name.len() > 128 {
+        return Err(ApiError::bad_request("api key name must be 1–128 characters"));
+    }
+    if !matches!(body.role.as_str(), "admin" | "operator" | "viewer") {
+        return Err(ApiError::bad_request("role must be admin, operator, or viewer"));
+    }
     let id = Uuid::new_v4();
     let token = format!("machina_{}", Uuid::new_v4());
     let hash = hash_token(&token);
-    sqlx::query("INSERT INTO api_keys (id, name, key_hash, role) VALUES ($1, $2, $3, $4)")
+    sqlx::query("INSERT INTO api_keys (id, name, key_hash, role) VALUES (?, ?, ?, ?)")
         .bind(id)
         .bind(&body.name)
         .bind(hash)
@@ -81,7 +90,7 @@ pub async fn delete_api_key(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    sqlx::query("DELETE FROM api_keys WHERE id = $1")
+    sqlx::query("DELETE FROM api_keys WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -95,16 +104,18 @@ pub fn hash_token(token: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-pub async fn authenticate_api_key(pool: &sqlx::PgPool, token: &str) -> anyhow::Result<Option<AuthUser>> {
+pub async fn authenticate_api_key(
+    pool: &sqlx::SqlitePool,
+    token: &str,
+) -> anyhow::Result<Option<AuthUser>> {
     let hash = hash_token(token);
-    let row: Option<(String, String)> = sqlx::query_as(
-        "SELECT name, role FROM api_keys WHERE key_hash = $1",
-    )
-    .bind(&hash)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT name, role FROM api_keys WHERE key_hash = ?")
+            .bind(&hash)
+            .fetch_optional(pool)
+            .await?;
     if let Some((name, role)) = row {
-        let _ = sqlx::query("UPDATE api_keys SET last_used_at = NOW() WHERE key_hash = $1")
+        let _ = sqlx::query("UPDATE api_keys SET last_used_at = datetime('now') WHERE key_hash = ?")
             .bind(&hash)
             .execute(pool)
             .await;

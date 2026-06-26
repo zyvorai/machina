@@ -111,6 +111,7 @@ export default function OsDiagnosePanel({
     >
       <div className="flex flex-wrap gap-2 mb-3">
         <input
+          aria-label="Diagnosis query"
           className="input text-sm flex-1 min-w-[12rem]"
           placeholder={resourceKind === 'host' ? 'Why is this host under pressure?' : 'Guest health and exposed ports'}
           value={query}

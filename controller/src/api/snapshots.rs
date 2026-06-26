@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::api::tasks::TaskResponse;
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 use crate::tasks::enqueue::enqueue_task;
 
@@ -47,38 +47,43 @@ pub struct VmTimelineRow {
 
 pub async fn list_vm_timeline(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<Vec<VmTimelineRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = sqlx::query_as::<_, VmTimelineRow>(
         r#"
         SELECT * FROM (
             SELECT 'backup' AS kind, b.id,
                    CASE WHEN b.status = 'completed' THEN 'Backup successful'
                         ELSE 'Backup ' || b.status END AS label,
-                   b.status, b.created_at
-            FROM backup_records b WHERE b.vm_id = $1
+                   b.status, strftime('%Y-%m-%dT%H:%M:%SZ', b.created_at) AS created_at
+            FROM backup_records b WHERE b.vm_id = ?
             UNION ALL
             SELECT 'snapshot' AS kind, s.id,
                    'Snapshot: ' || s.name AS label,
-                   s.status, s.created_at
-            FROM snapshot_records s WHERE s.vm_id = $1
+                   s.status, strftime('%Y-%m-%dT%H:%M:%SZ', s.created_at) AS created_at
+            FROM snapshot_records s WHERE s.vm_id = ?
             UNION ALL
             SELECT 'console' AS kind, c.id,
                    'Console ' || c.protocol || ' (' || c.backend || ')' AS label,
                    CASE WHEN c.ended_at IS NULL THEN 'active' ELSE 'ended' END AS status,
-                   c.started_at AS created_at
-            FROM console_sessions c WHERE c.vm_id = $1
+                   strftime('%Y-%m-%dT%H:%M:%SZ', c.started_at) AS created_at
+            FROM console_sessions c WHERE c.vm_id = ?
             UNION ALL
             SELECT 'lifecycle' AS kind, v.id,
                    'VM ' || COALESCE(v.observed_state, v.desired_state, 'unknown') AS label,
                    COALESCE(v.observed_state, v.desired_state, 'unknown') AS status,
-                   COALESCE(v.updated_at, v.created_at) AS created_at
-            FROM vms v WHERE v.id = $1
+                   strftime('%Y-%m-%dT%H:%M:%SZ', COALESCE(v.updated_at, v.created_at)) AS created_at
+            FROM vms v WHERE v.id = ?
         ) t
         ORDER BY created_at DESC
         LIMIT 50
         "#,
     )
+    .bind(vm_id)
+    .bind(vm_id)
+    .bind(vm_id)
     .bind(vm_id)
     .fetch_all(&state.pool)
     .await?;
@@ -87,11 +92,14 @@ pub async fn list_vm_timeline(
 
 pub async fn list_vm_snapshots(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<Vec<SnapshotRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = sqlx::query_as::<_, SnapshotRow>(
-        "SELECT id, vm_id, name, status, message, COALESCE(snapshot_path, '') AS snapshot_path, created_at
-         FROM snapshot_records WHERE vm_id = $1 ORDER BY created_at DESC",
+        "SELECT id, vm_id, name, status, message, COALESCE(snapshot_path, '') AS snapshot_path,
+                strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+         FROM snapshot_records WHERE vm_id = ? ORDER BY created_at DESC",
     )
     .bind(vm_id)
     .fetch_all(&state.pool)
@@ -101,19 +109,20 @@ pub async fn list_vm_snapshots(
 
 pub async fn create_vm_snapshot(
     State(state): State<AppState>,
-    Extension(_actor): Extension<AuthUser>,
+    Extension(actor): Extension<AuthUser>,
     Path(vm_id): Path<Uuid>,
     Json(body): Json<CreateSnapshotBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
 
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO snapshot_records (id, vm_id, name, status) VALUES ($1, $2, $3, 'pending')",
+        "INSERT INTO snapshot_records (id, vm_id, name, status) VALUES (?, ?, ?, 'pending')",
     )
     .bind(id)
     .bind(vm_id)
@@ -137,7 +146,17 @@ pub async fn create_vm_snapshot(
         Some(vm_id),
         host_id,
     )
-    .await?;
+    .await
+    .map_err(|e| {
+        let pool = state.pool.clone();
+        tokio::spawn(async move {
+            let _ = sqlx::query("DELETE FROM snapshot_records WHERE id = ?")
+                .bind(id)
+                .execute(&pool)
+                .await;
+        });
+        e
+    })?;
 
     Ok(Json(TaskResponse {
         task_id: task_id.to_string(),
@@ -148,9 +167,11 @@ pub async fn create_vm_snapshot(
 
 pub async fn delete_vm_snapshot(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path((vm_id, name)): Path<(Uuid, String)>,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    require_operator(&actor)?;
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -180,8 +201,8 @@ pub async fn revert_vm_snapshot(
     Extension(actor): Extension<AuthUser>,
     Path((vm_id, name)): Path<(Uuid, String)>,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    crate::auth::require_operator(&actor)?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    require_operator(&actor)?;
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -231,7 +252,7 @@ pub async fn clone_vm_snapshot(
     machina_spec::validate_name(&body.new_name)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;

@@ -220,7 +220,10 @@ pub fn create_api_token_scoped(
 
 pub fn validate_api_token(token: &str) -> Option<ApiToken> {
     let tokens = load_tokens();
-    tokens.get(token).cloned().inspect(|_| crate::obs_counters::inc_api_token_ok())
+    tokens
+        .get(token)
+        .cloned()
+        .inspect(|_| crate::obs_counters::inc_api_token_ok())
 }
 
 pub fn delete_api_token(token: &str) -> Result<(), LibvirtError> {

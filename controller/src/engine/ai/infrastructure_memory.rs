@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -20,14 +20,14 @@ pub struct InfrastructureMemory {
     pub runbook_hints: Vec<String>,
 }
 
-pub async fn recall(pool: &PgPool, limit: i64) -> anyhow::Result<InfrastructureMemory> {
+pub async fn recall(pool: &SqlitePool, limit: i64) -> anyhow::Result<InfrastructureMemory> {
     let cap = limit.clamp(1, 50);
 
     let mut incidents = Vec::new();
 
     let structured: Vec<(DateTime<Utc>, String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT created_at, severity, title, summary, root_cause FROM ai_incidents
-         ORDER BY created_at DESC LIMIT $1",
+        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), severity, title, summary, root_cause FROM ai_incidents
+         ORDER BY created_at DESC LIMIT ?",
     )
     .bind(cap)
     .fetch_all(pool)
@@ -49,12 +49,12 @@ pub async fn recall(pool: &PgPool, limit: i64) -> anyhow::Result<InfrastructureM
     }
 
     let rows: Vec<(DateTime<Utc>, String, String, Option<serde_json::Value>)> = sqlx::query_as(
-        "SELECT created_at, actor, action, detail FROM audit_logs
+        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), actor, action, detail FROM audit_logs
          WHERE action LIKE '%fail%'
             OR action LIKE 'ai.autopilot%'
             OR action LIKE '%migrate%'
             OR action LIKE '%delete%'
-         ORDER BY created_at DESC LIMIT $1",
+         ORDER BY created_at DESC LIMIT ?",
     )
     .bind(cap)
     .fetch_all(pool)
@@ -62,10 +62,18 @@ pub async fn recall(pool: &PgPool, limit: i64) -> anyhow::Result<InfrastructureM
 
     for (at, actor, action, detail) in rows {
         let lesson = match action.as_str() {
-            a if a.contains("fail") => "Review failed task logs before retry; check agent connectivity.",
-            a if a.contains("autopilot") => "Autopilot action audited — verify guardrails before expanding batch size.",
-            a if a.contains("migrate") => "Migration events affect placement — check DRS recommendations after.",
-            a if a.contains("delete") => "Destructive change recorded — ensure approval workflow was followed.",
+            a if a.contains("fail") => {
+                "Review failed task logs before retry; check agent connectivity."
+            }
+            a if a.contains("autopilot") => {
+                "Autopilot action audited — verify guardrails before expanding batch size."
+            }
+            a if a.contains("migrate") => {
+                "Migration events affect placement — check DRS recommendations after."
+            }
+            a if a.contains("delete") => {
+                "Destructive change recorded — ensure approval workflow was followed."
+            }
             _ => "Historical infrastructure change — correlate with Mission Control timeline.",
         };
         let summary = detail
@@ -107,16 +115,22 @@ pub struct SimilarIncidentsResult {
     pub summary: String,
 }
 
-pub async fn similar(pool: &PgPool, query: &str, limit: i64) -> anyhow::Result<SimilarIncidentsResult> {
+pub async fn similar(
+    pool: &SqlitePool,
+    query: &str,
+    limit: i64,
+) -> anyhow::Result<SimilarIncidentsResult> {
     let cap = limit.clamp(1, 20);
     let pattern = format!("%{}%", query.trim());
 
     let rows: Vec<(DateTime<Utc>, String, String, Option<serde_json::Value>)> = sqlx::query_as(
-        "SELECT created_at, action, actor, detail FROM audit_logs
-         WHERE action ILIKE $1 OR actor ILIKE $1
-            OR detail::text ILIKE $1
-         ORDER BY created_at DESC LIMIT $2",
+        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), action, actor, detail FROM audit_logs
+         WHERE action LIKE ? OR actor LIKE ?
+            OR detail LIKE ?
+         ORDER BY created_at DESC LIMIT ?",
     )
+    .bind(&pattern)
+    .bind(&pattern)
     .bind(&pattern)
     .bind(cap)
     .fetch_all(pool)
@@ -141,7 +155,10 @@ pub async fn similar(pool: &PgPool, query: &str, limit: i64) -> anyhow::Result<S
     let summary = if incidents.is_empty() {
         format!("No similar incidents for '{query}' in audit history.")
     } else {
-        format!("Found {} similar incident(s) for '{query}'.", incidents.len())
+        format!(
+            "Found {} similar incident(s) for '{query}'.",
+            incidents.len()
+        )
     };
 
     Ok(SimilarIncidentsResult {
@@ -159,13 +176,13 @@ pub struct ChangeBeforeOutage {
 }
 
 pub async fn changes_before_outage(
-    pool: &PgPool,
+    pool: &SqlitePool,
     incident_id: Option<Uuid>,
     hours_before: i32,
 ) -> anyhow::Result<ChangeBeforeOutage> {
     let window_start = if let Some(id) = incident_id {
         sqlx::query_scalar::<_, DateTime<Utc>>(
-            "SELECT COALESCE(window_start, created_at) FROM ai_incidents WHERE id = $1",
+            "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', COALESCE(window_start, created_at)) FROM ai_incidents WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(pool)
@@ -178,10 +195,10 @@ pub async fn changes_before_outage(
     let start = end - chrono::Duration::hours(hours_before.clamp(1, 48) as i64);
 
     let rows: Vec<(DateTime<Utc>, String, String, Option<serde_json::Value>)> = sqlx::query_as(
-        "SELECT created_at, actor, action, detail FROM audit_logs
-         WHERE created_at BETWEEN $1 AND $2
-           AND (action ILIKE '%network%' OR action ILIKE '%firewall%' OR action ILIKE '%migrate%'
-                OR action ILIKE '%storage%' OR action ILIKE '%delete%' OR action ILIKE '%update%')
+        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), actor, action, detail FROM audit_logs
+         WHERE created_at BETWEEN ? AND ?
+           AND (action LIKE '%network%' OR action LIKE '%firewall%' OR action LIKE '%migrate%'
+                OR action LIKE '%storage%' OR action LIKE '%delete%' OR action LIKE '%update%')
          ORDER BY created_at ASC LIMIT 50",
     )
     .bind(start)
@@ -207,7 +224,11 @@ pub async fn changes_before_outage(
 
     Ok(ChangeBeforeOutage {
         incident_id: incident_id.map(|id| id.to_string()),
-        summary: format!("{} change(s) in the {}h before incident.", changes.len(), hours_before),
+        summary: format!(
+            "{} change(s) in the {}h before incident.",
+            changes.len(),
+            hours_before
+        ),
         changes,
     })
 }

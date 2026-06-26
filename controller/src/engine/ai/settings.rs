@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiSettings {
@@ -29,7 +29,7 @@ pub struct AiSettingsPatch {
     pub fleet_peer_urls: Option<Vec<String>>,
 }
 
-pub async fn get_ai_settings(pool: &PgPool) -> anyhow::Result<AiSettings> {
+pub async fn get_ai_settings(pool: &SqlitePool) -> anyhow::Result<AiSettings> {
     let row: (
         bool,
         String,
@@ -43,7 +43,7 @@ pub async fn get_ai_settings(pool: &PgPool) -> anyhow::Result<AiSettings> {
     ) = sqlx::query_as(
         "SELECT ai_enabled, ai_mode, ai_provider, ai_model, COALESCE(ai_api_key, ''),
          ai_autopilot_interval_secs, ai_autopilot_last_run, ai_autopilot_max_actions,
-         COALESCE(ai_fleet_peer_urls, '[]'::jsonb)
+         COALESCE(ai_fleet_peer_urls, '[]')
          FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
@@ -62,68 +62,76 @@ pub async fn get_ai_settings(pool: &PgPool) -> anyhow::Result<AiSettings> {
     })
 }
 
-pub async fn patch_ai_settings(pool: &PgPool, patch: &AiSettingsPatch) -> anyhow::Result<AiSettings> {
+pub async fn patch_ai_settings(
+    pool: &SqlitePool,
+    patch: &AiSettingsPatch,
+) -> anyhow::Result<AiSettings> {
+    let mut tx = pool.begin().await?;
     if let Some(v) = patch.enabled {
-        sqlx::query("UPDATE clusters SET ai_enabled = $1")
+        sqlx::query("UPDATE clusters SET ai_enabled = ?")
             .bind(v)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &patch.mode {
-        sqlx::query("UPDATE clusters SET ai_mode = $1")
+        sqlx::query("UPDATE clusters SET ai_mode = ?")
             .bind(v)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &patch.provider {
-        sqlx::query("UPDATE clusters SET ai_provider = $1")
+        sqlx::query("UPDATE clusters SET ai_provider = ?")
             .bind(v)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &patch.model {
-        sqlx::query("UPDATE clusters SET ai_model = $1")
+        sqlx::query("UPDATE clusters SET ai_model = ?")
             .bind(v)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &patch.api_key {
-        sqlx::query("UPDATE clusters SET ai_api_key = $1")
+        sqlx::query("UPDATE clusters SET ai_api_key = ?")
             .bind(v)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = patch.autopilot_interval_secs {
-        sqlx::query("UPDATE clusters SET ai_autopilot_interval_secs = $1")
+        sqlx::query("UPDATE clusters SET ai_autopilot_interval_secs = ?")
             .bind(v.clamp(0, 86400))
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = patch.autopilot_max_actions {
-        sqlx::query("UPDATE clusters SET ai_autopilot_max_actions = $1")
+        sqlx::query("UPDATE clusters SET ai_autopilot_max_actions = ?")
             .bind(v.clamp(1, 10))
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &patch.fleet_peer_urls {
         let json = serde_json::to_value(v)?;
-        sqlx::query("UPDATE clusters SET ai_fleet_peer_urls = $1")
+        sqlx::query("UPDATE clusters SET ai_fleet_peer_urls = ?")
             .bind(json)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
     }
+    tx.commit().await?;
     get_ai_settings(pool).await
 }
 
-pub async fn get_fleet_peer_urls(pool: &PgPool) -> anyhow::Result<Vec<String>> {
+pub async fn get_fleet_peer_urls(pool: &SqlitePool) -> anyhow::Result<Vec<String>> {
     Ok(get_ai_settings(pool).await?.fleet_peer_urls)
 }
 
-pub async fn autopilot_max_actions(pool: &PgPool) -> anyhow::Result<usize> {
-    Ok(get_ai_settings(pool).await?.autopilot_max_actions.clamp(1, 10) as usize)
+pub async fn autopilot_max_actions(pool: &SqlitePool) -> anyhow::Result<usize> {
+    Ok(get_ai_settings(pool)
+        .await?
+        .autopilot_max_actions
+        .clamp(1, 10) as usize)
 }
 
-pub async fn api_key(pool: &PgPool) -> anyhow::Result<Option<String>> {
+pub async fn api_key(pool: &SqlitePool) -> anyhow::Result<Option<String>> {
     if std::env::var("MACHINA_AI_DISABLED").ok().as_deref() == Some("1") {
         return Ok(None);
     }
@@ -144,7 +152,7 @@ pub async fn api_key(pool: &PgPool) -> anyhow::Result<Option<String>> {
     }
 }
 
-pub async fn llm_enabled(pool: &PgPool) -> anyhow::Result<bool> {
+pub async fn llm_enabled(pool: &SqlitePool) -> anyhow::Result<bool> {
     let s = get_ai_settings(pool).await?;
     Ok(s.enabled && s.api_key_configured && api_key(pool).await?.is_some())
 }

@@ -14,7 +14,7 @@ pub use playbooks::run_playbooks_for_alert;
 pub use siem::forward_all_integrations;
 
 use crate::config::ControllerConfig;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, serde::Serialize)]
 pub struct CycleStats {
@@ -23,7 +23,11 @@ pub struct CycleStats {
     pub forwarded: usize,
 }
 
-pub async fn run_cycle(pool: &PgPool, cfg: &ControllerConfig, controller_id: &str) -> anyhow::Result<CycleStats> {
+pub async fn run_cycle(
+    pool: &SqlitePool,
+    cfg: &ControllerConfig,
+    controller_id: &str,
+) -> anyhow::Result<CycleStats> {
     let ingest = ingest_recent(pool, cfg).await?;
     let alerts_fired = run_detection(pool).await?;
     let forwarded = forward_all_integrations(pool, controller_id).await?;

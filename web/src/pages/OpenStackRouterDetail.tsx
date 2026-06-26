@@ -107,7 +107,7 @@ function OpenStackRouterDetailContent() {
           {router.external_gateway ? 'Gateway is set on this router.' : 'No external gateway — outbound NAT requires one.'}
         </p>
         <div className="flex flex-wrap gap-2 items-end">
-          <select id="ext-net" className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm min-w-[14rem]"
+          <select id="ext-net" aria-label="External network" className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm min-w-[14rem]"
             defaultValue="">
             <option value="" disabled>Select external network…</option>
             {networks.filter((n) => n.external).map((n) => (
@@ -142,7 +142,7 @@ function OpenStackRouterDetailContent() {
         <h2 className="text-sm font-medium text-slate-300">Subnet interfaces</h2>
         <p className="text-xs text-slate-500">Connect internal subnets to this router for east-west and NAT routing.</p>
         <div className="flex flex-wrap gap-2 items-end">
-          <select value={linkSubnetId} onChange={(e) => setLinkSubnetId(e.target.value)}
+          <select aria-label="Subnet to link" value={linkSubnetId} onChange={(e) => setLinkSubnetId(e.target.value)}
             className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm min-w-[14rem]">
             <option value="">Select subnet…</option>
             {subnets.map((s) => (

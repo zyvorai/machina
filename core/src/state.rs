@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::time::Instant;
 
 use crate::openstack::{
-    OpenStackAttachedVolume, OpenStackConnectionStatus, OpenStackFloatingIp, OpenStackFlavor,
+    OpenStackAttachedVolume, OpenStackConnectionStatus, OpenStackFlavor, OpenStackFloatingIp,
     OpenStackImage, OpenStackInstance, OpenStackKeyPair, OpenStackNetwork,
 };
 
@@ -917,7 +917,8 @@ impl OpenStackCreateWizard {
     }
 
     pub fn image_name(&self) -> Option<&str> {
-        self.image_idx.and_then(|i| self.images.get(i).map(|img| img.name.as_str()))
+        self.image_idx
+            .and_then(|i| self.images.get(i).map(|img| img.name.as_str()))
     }
 
     pub fn network_name(&self) -> Option<&str> {
@@ -1096,10 +1097,8 @@ impl AppState {
         ];
 
         if self.openstack_configured() {
-            let mut os_children: Vec<SidebarItem> = vec![
-                SidebarItem::OpenStackCreate,
-                SidebarItem::OpenStackImages,
-            ];
+            let mut os_children: Vec<SidebarItem> =
+                vec![SidebarItem::OpenStackCreate, SidebarItem::OpenStackImages];
             os_children.extend(
                 self.openstack_instances
                     .iter()

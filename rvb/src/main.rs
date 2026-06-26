@@ -59,7 +59,7 @@ enum Commands {
 fn print_catalog_table(templates: &HashMap<String, Template>) {
     let mut ids: Vec<_> = templates.keys().cloned().collect();
     ids.sort();
-    println!("{:20} {:12} {:12} {}", "ID", "DISTRO", "RELEASE", "FORMAT");
+    println!("{:20} {:12} {:12} FORMAT", "ID", "DISTRO", "RELEASE");
     for id in ids {
         let t = &templates[&id];
         println!(

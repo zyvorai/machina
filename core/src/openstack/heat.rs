@@ -121,7 +121,9 @@ pub async fn probe_heat_reachable(cfg: &OpenStackConfig) -> bool {
         .unwrap_or(false)
 }
 
-pub async fn list_heat_stacks(cfg: &OpenStackConfig) -> Result<Vec<OpenStackHeatStack>, LibvirtError> {
+pub async fn list_heat_stacks(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackHeatStack>, LibvirtError> {
     if !probe_heat_reachable(cfg).await {
         return Ok(Vec::new());
     }
@@ -149,7 +151,9 @@ pub async fn get_heat_stack(
     let name = stack_name.trim();
     let id = stack_id.trim();
     if name.is_empty() || id.is_empty() {
-        return Err(LibvirtError::Invalid("stack_name and stack_id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "stack_name and stack_id are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     #[derive(Deserialize)]
@@ -265,14 +269,21 @@ pub async fn get_heat_stack_template(
     if let Some(s) = body.as_str() {
         return Ok(s.to_string());
     }
-    Err(LibvirtError::Invalid("Heat template response missing template body".into()))
+    Err(LibvirtError::Invalid(
+        "Heat template response missing template body".into(),
+    ))
 }
 
-fn heat_stack_ids<'a>(stack_name: &'a str, stack_id: &'a str) -> Result<(&'a str, &'a str), LibvirtError> {
+fn heat_stack_ids<'a>(
+    stack_name: &'a str,
+    stack_id: &'a str,
+) -> Result<(&'a str, &'a str), LibvirtError> {
     let name = stack_name.trim();
     let id = stack_id.trim();
     if name.is_empty() || id.is_empty() {
-        return Err(LibvirtError::Invalid("stack_name and stack_id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "stack_name and stack_id are required".into(),
+        ));
     }
     Ok((name, id))
 }
@@ -316,9 +327,9 @@ pub async fn create_heat_stack(
         .await
         .map_err(map_osauth_err)?;
     let out: serde_json::Value = resp.json().await.map_err(map_json_err)?;
-    let stack = out.get("stack").ok_or_else(|| {
-        LibvirtError::Invalid("Heat create response missing stack".into())
-    })?;
+    let stack = out
+        .get("stack")
+        .ok_or_else(|| LibvirtError::Invalid("Heat create response missing stack".into()))?;
     let parsed: StackJson = serde_json::from_value(stack.clone())
         .map_err(|e| LibvirtError::Invalid(format!("Heat create response parse: {e}")))?;
     Ok(stack_from_json(parsed))
@@ -341,7 +352,10 @@ pub async fn update_heat_stack(
     req: &UpdateHeatStackRequest,
 ) -> Result<OpenStackHeatStack, LibvirtError> {
     let (name, id) = heat_stack_ids(stack_name, stack_id)?;
-    if req.template_body.as_ref().is_none_or(|t| t.trim().is_empty())
+    if req
+        .template_body
+        .as_ref()
+        .is_none_or(|t| t.trim().is_empty())
         && req.parameters.is_none()
         && req.timeout_mins.is_none()
     {
@@ -370,9 +384,9 @@ pub async fn update_heat_stack(
         .await
         .map_err(map_osauth_err)?;
     let out: serde_json::Value = resp.json().await.map_err(map_json_err)?;
-    let stack = out.get("stack").ok_or_else(|| {
-        LibvirtError::Invalid("Heat update response missing stack".into())
-    })?;
+    let stack = out
+        .get("stack")
+        .ok_or_else(|| LibvirtError::Invalid("Heat update response missing stack".into()))?;
     let parsed: StackJson = serde_json::from_value(stack.clone())
         .map_err(|e| LibvirtError::Invalid(format!("Heat create response parse: {e}")))?;
     Ok(stack_from_json(parsed))
@@ -386,7 +400,9 @@ pub async fn delete_heat_stack(
     let name = stack_name.trim();
     let id = stack_id.trim();
     if name.is_empty() || id.is_empty() {
-        return Err(LibvirtError::Invalid("stack_name and stack_id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "stack_name and stack_id are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     session

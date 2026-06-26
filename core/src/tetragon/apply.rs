@@ -23,7 +23,11 @@ fn tetragon_tp_dir() -> PathBuf {
     PathBuf::from("/etc/tetragon/tetragon.tp.d")
 }
 
-fn sync_policy_to_tetragon(name: &str, body: Option<&str>, dry_run: bool) -> Result<(), LibvirtError> {
+fn sync_policy_to_tetragon(
+    name: &str,
+    body: Option<&str>,
+    dry_run: bool,
+) -> Result<(), LibvirtError> {
     if dry_run {
         return Ok(());
     }
@@ -31,7 +35,9 @@ fn sync_policy_to_tetragon(name: &str, body: Option<&str>, dry_run: bool) -> Res
     let _ = fs::create_dir_all(&tp);
     let dest = tp.join(format!("{name}.json"));
     match body {
-        Some(content) => fs::write(&dest, content).map_err(LibvirtError::map_op("write tetragon tp policy"))?,
+        Some(content) => {
+            fs::write(&dest, content).map_err(LibvirtError::map_op("write tetragon tp policy"))?
+        }
         None => {
             let _ = fs::remove_file(&dest);
         }
@@ -62,9 +68,12 @@ fn write_file(path: &Path, contents: &str, dry_run: bool) -> Result<(), LibvirtE
     fs::write(path, contents).map_err(LibvirtError::map_op("write tetragon file"))
 }
 
-pub fn apply_security_bundle(bundle_json: &str, dry_run: bool) -> Result<SecurityBundleApplyResult, LibvirtError> {
-    let bundle: Value =
-        serde_json::from_str(bundle_json).map_err(|e| LibvirtError::Invalid(format!("bundle JSON: {e}")))?;
+pub fn apply_security_bundle(
+    bundle_json: &str,
+    dry_run: bool,
+) -> Result<SecurityBundleApplyResult, LibvirtError> {
+    let bundle: Value = serde_json::from_str(bundle_json)
+        .map_err(|e| LibvirtError::Invalid(format!("bundle JSON: {e}")))?;
     let dir = policies_subdir();
     let mut operations = Vec::new();
     let mut policies_written = 0usize;
@@ -177,7 +186,9 @@ pub fn apply_security_bundle(bundle_json: &str, dry_run: bool) -> Result<Securit
     let message = if dry_run {
         "Dry run — no files written".into()
     } else if !install_message.is_empty() && !reload_message.is_empty() {
-        format!("Applied {policies_written} TracingPolicy file(s); {install_message}; {reload_message}")
+        format!(
+            "Applied {policies_written} TracingPolicy file(s); {install_message}; {reload_message}"
+        )
     } else if !install_message.is_empty() {
         format!("Applied {policies_written} TracingPolicy file(s); {install_message}")
     } else if !reload_message.is_empty() {

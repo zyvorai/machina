@@ -438,7 +438,7 @@ export default function PlatformFirewallTargetDetail() {
                   <MacGlassPanel title="Timeline">
                     <ul className="space-y-2 text-xs text-slate-400">
                       {timeline.map((e, i) => (
-                        <li key={i}>
+                        <li key={`${String(e.created_at)}-${i}`}>
                           {String(e.created_at || '')} — {String(e.summary || e.kind || '')}
                         </li>
                       ))}

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 // Auto-sync firewall posture during host.inventory.
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -10,7 +10,7 @@ use crate::config::ControllerConfig;
 use super::drift;
 
 pub async fn sync_host_posture(
-    pool: &PgPool,
+    pool: &SqlitePool,
     _cfg: &ControllerConfig,
     host_id: Uuid,
     agent_addr: &str,
@@ -26,9 +26,9 @@ pub async fn sync_host_posture(
     let report = drift::detect_drift(pool, "host", host_id, &inv).await?;
     if report.drift_detected {
         let _ = sqlx::query(
-            "INSERT INTO firewall_timeline (target_kind, target_id, kind, summary, detail_json, actor)
-             VALUES ('host', $1, 'drift', $2, $3, 'system')",
+            "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, 'host', ?, 'drift', ?, ?, 'system')",
         )
+        .bind(uuid::Uuid::new_v4())
         .bind(host_id)
         .bind(&report.summary)
         .bind(serde_json::json!({
@@ -38,15 +38,15 @@ pub async fn sync_host_posture(
         .execute(pool)
         .await;
 
-        let hostname: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = $1")
+        let hostname: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_one(pool)
             .await
             .unwrap_or_else(|_| host_id.to_string());
         let _ = sqlx::query(
-            "INSERT INTO events (kind, severity, message, resource_type, resource_id)
-             VALUES ('firewall.drift', 'warning', $1, 'host', $2)",
+            "INSERT INTO events (id, kind, message, resource_type, resource_id, payload) VALUES (?, 'firewall.drift', ?, 'host', ?, '{\"severity\":\"warning\"}')",
         )
+        .bind(uuid::Uuid::new_v4())
         .bind(format!("Firewall drift on {hostname}: {}", report.summary))
         .bind(host_id)
         .execute(pool)

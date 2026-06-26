@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use super::host_shell;
 use super::template_catalog;
@@ -31,12 +31,12 @@ pub struct MissingTemplateImage {
 }
 
 pub async fn check_template_readiness(
-    pool: &PgPool,
+    pool: &SqlitePool,
     name: &str,
     version: &str,
 ) -> anyhow::Result<TemplateReadiness> {
     let row: Option<(String, bool)> = sqlx::query_as(
-        "SELECT source_disk, cloud_init FROM templates WHERE name = $1 AND version = $2",
+        "SELECT source_disk, cloud_init FROM templates WHERE name = ? AND version = ?",
     )
     .bind(name)
     .bind(version)
@@ -45,10 +45,9 @@ pub async fn check_template_readiness(
 
     let (source_disk, cloud_init) = row.ok_or_else(|| anyhow::anyhow!("template not found"))?;
 
-    let host_online: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
-            .fetch_one(pool)
-            .await?;
+    let host_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+        .fetch_one(pool)
+        .await?;
 
     let disk_exists = disk_exists_on_hosts(pool, &source_disk).await;
     let auto_fetch = template_catalog::download_url_for(name, version).is_some();
@@ -90,9 +89,11 @@ pub async fn check_template_readiness(
 }
 
 /// Marketplace templates whose golden disk is absent on all online hosts.
-pub async fn list_missing_marketplace_images(pool: &PgPool) -> anyhow::Result<Vec<MissingTemplateImage>> {
+pub async fn list_missing_marketplace_images(
+    pool: &SqlitePool,
+) -> anyhow::Result<Vec<MissingTemplateImage>> {
     let rows: Vec<(String, String, String, String, Option<String>)> = sqlx::query_as(
-        "SELECT name, version, source_disk, category, icon FROM templates WHERE marketplace = TRUE ORDER BY featured DESC, name",
+        "SELECT name, version, source_disk, category, icon FROM templates WHERE marketplace = TRUE ORDER BY featured DESC, name LIMIT 200",
     )
     .fetch_all(pool)
     .await?;
@@ -123,12 +124,12 @@ pub async fn disk_exists_at(path: &str) -> bool {
     Path::new(path).is_file()
 }
 
-pub async fn disk_exists_on_hosts(pool: &PgPool, path: &str) -> bool {
+pub async fn disk_exists_on_hosts(pool: &SqlitePool, path: &str) -> bool {
     if disk_exists_at(path).await {
         return true;
     }
     let hosts: Vec<String> = sqlx::query_scalar(
-        "SELECT COALESCE(NULLIF(address, ''), hostname) FROM hosts WHERE state = 'online' ORDER BY hostname",
+        "SELECT COALESCE(NULLIF(address, ''), hostname) FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 200",
     )
     .fetch_all(pool)
     .await

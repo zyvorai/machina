@@ -1,6 +1,6 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 pub fn parse_template_ref(template_ref: &str) -> (String, String) {
@@ -11,7 +11,7 @@ pub fn parse_template_ref(template_ref: &str) -> (String, String) {
     }
 }
 
-pub async fn resolve_template_disk(pool: &PgPool, template_ref: &str) -> anyhow::Result<String> {
+pub async fn resolve_template_disk(pool: &SqlitePool, template_ref: &str) -> anyhow::Result<String> {
     let (name, version) = if let Some((n, v)) = template_ref.split_once('@') {
         (n.to_string(), Some(v.to_string()))
     } else {
@@ -19,7 +19,7 @@ pub async fn resolve_template_disk(pool: &PgPool, template_ref: &str) -> anyhow:
     };
 
     let disk: String = if let Some(ver) = version {
-        sqlx::query_scalar("SELECT source_disk FROM templates WHERE name = $1 AND version = $2")
+        sqlx::query_scalar("SELECT source_disk FROM templates WHERE name = ? AND version = ?")
             .bind(&name)
             .bind(&ver)
             .fetch_optional(pool)
@@ -27,7 +27,7 @@ pub async fn resolve_template_disk(pool: &PgPool, template_ref: &str) -> anyhow:
             .ok_or_else(|| anyhow::anyhow!("template not found: {name}@{ver}"))?
     } else {
         sqlx::query_scalar(
-            "SELECT source_disk FROM templates WHERE name = $1 ORDER BY created_at DESC LIMIT 1",
+            "SELECT source_disk FROM templates WHERE name = ? ORDER BY created_at DESC LIMIT 1",
         )
         .bind(&name)
         .fetch_optional(pool)
@@ -38,7 +38,7 @@ pub async fn resolve_template_disk(pool: &PgPool, template_ref: &str) -> anyhow:
 }
 
 pub async fn resolve_template_firewall_profile(
-    pool: &PgPool,
+    pool: &SqlitePool,
     template_ref: &str,
 ) -> anyhow::Result<Option<String>> {
     let (name, version) = if let Some((n, v)) = template_ref.split_once('@') {
@@ -48,7 +48,7 @@ pub async fn resolve_template_firewall_profile(
     };
     let profile: Option<String> = if let Some(ver) = version {
         sqlx::query_scalar(
-            "SELECT firewall_profile FROM templates WHERE name = $1 AND version = $2",
+            "SELECT firewall_profile FROM templates WHERE name = ? AND version = ?",
         )
         .bind(&name)
         .bind(&ver)
@@ -56,7 +56,7 @@ pub async fn resolve_template_firewall_profile(
         .await?
     } else {
         sqlx::query_scalar(
-            "SELECT firewall_profile FROM templates WHERE name = $1 ORDER BY created_at DESC LIMIT 1",
+            "SELECT firewall_profile FROM templates WHERE name = ? ORDER BY created_at DESC LIMIT 1",
         )
         .bind(&name)
         .fetch_optional(pool)
@@ -66,7 +66,7 @@ pub async fn resolve_template_firewall_profile(
 }
 
 pub async fn upsert_ha_policy(
-    pool: &PgPool,
+    pool: &SqlitePool,
     vm_id: Uuid,
     enabled: bool,
     restart_attempts: i32,
@@ -74,15 +74,15 @@ pub async fn upsert_ha_policy(
     fence_on_failure: bool,
     anti_affinity: bool,
 ) -> anyhow::Result<()> {
-    let existing: Option<Uuid> = sqlx::query_scalar("SELECT id FROM ha_policies WHERE vm_id = $1")
+    let existing: Option<Uuid> = sqlx::query_scalar("SELECT id FROM ha_policies WHERE vm_id = ?")
         .bind(vm_id)
         .fetch_optional(pool)
         .await?;
 
     if let Some(id) = existing {
         sqlx::query(
-            "UPDATE ha_policies SET enabled = $1, restart_attempts = $2, restart_priority = $3,
-             fence_on_failure = $4, anti_affinity = $5 WHERE id = $6",
+            "UPDATE ha_policies SET enabled = ?, restart_attempts = ?, restart_priority = ?,
+             fence_on_failure = ?, anti_affinity = ? WHERE id = ?",
         )
         .bind(enabled)
         .bind(restart_attempts)
@@ -95,7 +95,7 @@ pub async fn upsert_ha_policy(
     } else {
         sqlx::query(
             "INSERT INTO ha_policies (id, vm_id, enabled, restart_attempts, restart_priority, fence_on_failure, anti_affinity)
-             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4())
         .bind(vm_id)
@@ -110,10 +110,10 @@ pub async fn upsert_ha_policy(
     Ok(())
 }
 
-pub async fn get_ha_policy(pool: &PgPool, vm_id: Uuid) -> anyhow::Result<Option<HaPolicyRow>> {
+pub async fn get_ha_policy(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Option<HaPolicyRow>> {
     Ok(sqlx::query_as(
         "SELECT enabled, restart_attempts, restart_priority, fence_on_failure, anti_affinity
-         FROM ha_policies WHERE vm_id = $1",
+         FROM ha_policies WHERE vm_id = ?",
     )
     .bind(vm_id)
     .fetch_optional(pool)
@@ -121,7 +121,10 @@ pub async fn get_ha_policy(pool: &PgPool, vm_id: Uuid) -> anyhow::Result<Option<
 }
 
 /// Replace `{{ key }}` / `{{key}}` placeholders (Jinja-style subset).
-pub fn apply_template_vars(input: &str, vars: &std::collections::HashMap<String, String>) -> String {
+pub fn apply_template_vars(
+    input: &str,
+    vars: &std::collections::HashMap<String, String>,
+) -> String {
     let mut out = input.to_string();
     for (k, v) in vars {
         out = out.replace(&format!("{{{{ {k} }}}}"), v);

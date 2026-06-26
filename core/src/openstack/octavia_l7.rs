@@ -122,7 +122,9 @@ pub async fn create_lb_listener(
     let lb_id = req.loadbalancer_id.trim();
     let name = req.name.trim();
     if lb_id.is_empty() || name.is_empty() {
-        return Err(LibvirtError::Invalid("loadbalancer_id and name are required".into()));
+        return Err(LibvirtError::Invalid(
+            "loadbalancer_id and name are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let listener = serde_json::json!({
@@ -215,7 +217,9 @@ pub async fn create_lb_pool(
     let name = req.name.trim();
     let listener_id = req.listener_id.trim();
     if name.is_empty() || listener_id.is_empty() {
-        return Err(LibvirtError::Invalid("name and listener_id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "name and listener_id are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let pool = serde_json::json!({
@@ -306,7 +310,9 @@ pub async fn create_lb_member(
     let pid = pool_id.trim();
     let address = req.address.trim();
     if pid.is_empty() || address.is_empty() {
-        return Err(LibvirtError::Invalid("pool id and member address are required".into()));
+        return Err(LibvirtError::Invalid(
+            "pool id and member address are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let mut member = serde_json::json!({
@@ -336,7 +342,9 @@ pub async fn delete_lb_member(
     let pid = pool_id.trim();
     let mid = member_id.trim();
     if pid.is_empty() || mid.is_empty() {
-        return Err(LibvirtError::Invalid("pool id and member id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "pool id and member id are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     session
@@ -415,7 +423,9 @@ pub async fn create_lb_health_monitor(
     let pool_id = req.pool_id.trim();
     let name = req.name.trim();
     if pool_id.is_empty() || name.is_empty() {
-        return Err(LibvirtError::Invalid("pool_id and name are required".into()));
+        return Err(LibvirtError::Invalid(
+            "pool_id and name are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let monitor = serde_json::json!({
@@ -438,7 +448,9 @@ pub async fn create_lb_health_monitor(
 pub async fn delete_lb_health_monitor(cfg: &OpenStackConfig, id: &str) -> Result<(), LibvirtError> {
     let monitor_id = id.trim();
     if monitor_id.is_empty() {
-        return Err(LibvirtError::Invalid("health monitor id is required".into()));
+        return Err(LibvirtError::Invalid(
+            "health monitor id is required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     session
@@ -452,9 +464,21 @@ pub async fn delete_lb_health_monitor(cfg: &OpenStackConfig, id: &str) -> Result
 fn parse_listener(v: serde_json::Value) -> Result<OpenStackLbListener, LibvirtError> {
     let l = v.get("listener").unwrap_or(&v);
     Ok(OpenStackLbListener {
-        id: l.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-        name: l.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-        protocol: l.get("protocol").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+        id: l
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        name: l
+            .get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        protocol: l
+            .get("protocol")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
         protocol_port: l.get("protocol_port").and_then(|x| x.as_u64()).unwrap_or(0) as u16,
         provisioning_status: l
             .get("provisioning_status")
@@ -466,18 +490,40 @@ fn parse_listener(v: serde_json::Value) -> Result<OpenStackLbListener, LibvirtEr
             .and_then(|x| x.as_str())
             .unwrap_or("")
             .to_string(),
-        loadbalancer_id: l.get("loadbalancer_id").and_then(|x| x.as_str()).map(String::from),
-        default_pool_id: l.get("default_pool_id").and_then(|x| x.as_str()).map(String::from),
+        loadbalancer_id: l
+            .get("loadbalancer_id")
+            .and_then(|x| x.as_str())
+            .map(String::from),
+        default_pool_id: l
+            .get("default_pool_id")
+            .and_then(|x| x.as_str())
+            .map(String::from),
     })
 }
 
 fn parse_pool(v: serde_json::Value) -> Result<OpenStackLbPool, LibvirtError> {
     let p = v.get("pool").unwrap_or(&v);
     Ok(OpenStackLbPool {
-        id: p.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-        name: p.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-        protocol: p.get("protocol").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-        lb_algorithm: p.get("lb_algorithm").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+        id: p
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        name: p
+            .get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        protocol: p
+            .get("protocol")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        lb_algorithm: p
+            .get("lb_algorithm")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
         provisioning_status: p
             .get("provisioning_status")
             .and_then(|x| x.as_str())
@@ -488,17 +534,31 @@ fn parse_pool(v: serde_json::Value) -> Result<OpenStackLbPool, LibvirtError> {
             .and_then(|x| x.as_str())
             .unwrap_or("")
             .to_string(),
-        loadbalancer_id: p.get("loadbalancer_id").and_then(|x| x.as_str()).map(String::from),
+        loadbalancer_id: p
+            .get("loadbalancer_id")
+            .and_then(|x| x.as_str())
+            .map(String::from),
     })
 }
 
 fn parse_member(v: serde_json::Value) -> Result<OpenStackLbMember, LibvirtError> {
     let m = v.get("member").unwrap_or(&v);
     Ok(OpenStackLbMember {
-        id: m.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-        address: m.get("address").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+        id: m
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        address: m
+            .get("address")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
         protocol_port: m.get("protocol_port").and_then(|x| x.as_u64()).unwrap_or(0) as u16,
-        subnet_id: m.get("subnet_id").and_then(|x| x.as_str()).map(String::from),
+        subnet_id: m
+            .get("subnet_id")
+            .and_then(|x| x.as_str())
+            .map(String::from),
         provisioning_status: m
             .get("provisioning_status")
             .and_then(|x| x.as_str())
@@ -515,9 +575,21 @@ fn parse_member(v: serde_json::Value) -> Result<OpenStackLbMember, LibvirtError>
 fn parse_monitor(v: serde_json::Value) -> Result<OpenStackLbHealthMonitor, LibvirtError> {
     let m = v.get("healthmonitor").unwrap_or(&v);
     Ok(OpenStackLbHealthMonitor {
-        id: m.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-        name: m.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string(),
-        r#type: m.get("type").and_then(|x| x.as_str()).unwrap_or("").to_string(),
+        id: m
+            .get("id")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        name: m
+            .get("name")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        r#type: m
+            .get("type")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
         delay: m.get("delay").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
         timeout: m.get("timeout").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
         max_retries: m.get("max_retries").and_then(|x| x.as_u64()).unwrap_or(0) as u32,

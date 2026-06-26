@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -20,7 +20,7 @@ pub struct SreForecastReport {
     pub forecasts: Vec<ResourceExhaustionForecast>,
 }
 
-pub async fn forecast(pool: &PgPool) -> anyhow::Result<SreForecastReport> {
+pub async fn forecast(pool: &SqlitePool) -> anyhow::Result<SreForecastReport> {
     let rows: Vec<(Uuid, String, i64, i64, f64)> = sqlx::query_as(
         "SELECT v.id, v.name, v.memory_mib, m.memory_used_mib, m.cpu_percent
          FROM vms v
@@ -34,7 +34,7 @@ pub async fn forecast(pool: &PgPool) -> anyhow::Result<SreForecastReport> {
     .unwrap_or_default();
 
     let pool_ratio: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(MAX(used_gib::float / NULLIF(capacity_gib, 0)), 0) FROM storage_pools WHERE capacity_gib > 0",
+        "SELECT COALESCE(MAX(used_gib * 1.0 / NULLIF(capacity_gib, 0)), 0.0) FROM storage_pools WHERE capacity_gib > 0",
     )
     .fetch_optional(pool)
     .await?
@@ -90,9 +90,11 @@ pub async fn forecast(pool: &PgPool) -> anyhow::Result<SreForecastReport> {
     }
 
     forecasts.sort_by(|a, b| {
-        b.severity
-            .cmp(&a.severity)
-            .then_with(|| a.hours_until_critical.partial_cmp(&b.hours_until_critical).unwrap_or(std::cmp::Ordering::Equal))
+        b.severity.cmp(&a.severity).then_with(|| {
+            a.hours_until_critical
+                .partial_cmp(&b.hours_until_critical)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     });
     forecasts.truncate(20);
 

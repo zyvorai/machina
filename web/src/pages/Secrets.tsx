@@ -96,8 +96,14 @@ export default function SecretsPage() {
     >
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <input type="text" placeholder="Search secrets..." value={search} onChange={(e) => setSearch(e.target.value)}
-          className="w-full pl-10 pr-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm focus:outline-none focus:border-blue-500" />
+        <input type="text" aria-label="Search secrets" placeholder="Search secrets..." value={search} onChange={(e) => setSearch(e.target.value)}
+          className={`w-full pl-10 py-2 bg-slate-800 border border-slate-700 rounded-lg text-sm focus:outline-none focus:border-blue-500 ${search ? 'pr-8' : 'pr-4'}`} />
+        {search && (
+          <button type="button" aria-label="Clear search" onClick={() => setSearch('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -119,7 +125,7 @@ export default function SecretsPage() {
         />
       ) : (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-          <table className="w-full">
+          <table className="w-full" aria-label="libvirt secrets">
             <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400">
               <th className="px-6 py-3">UUID</th><th className="px-6 py-3 hidden md:table-cell">Usage Type</th><th className="px-6 py-3 hidden md:table-cell">Usage ID</th><th className="px-6 py-3 text-right">Actions</th>
             </tr></thead>
@@ -131,8 +137,8 @@ export default function SecretsPage() {
                   <td className="px-6 py-3 text-sm text-slate-400 hidden md:table-cell">{s.usage_id}</td>
                   <td className="px-6 py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => showXml(s.uuid)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="View XML"><Code className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
-                      <button onClick={() => setDeleteTarget(s.uuid)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
+                      <button onClick={() => showXml(s.uuid)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="View XML" aria-label="View XML"><Code className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
+                      <button onClick={() => setDeleteTarget(s.uuid)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete" aria-label="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
                     </div>
                   </td>
                 </tr>

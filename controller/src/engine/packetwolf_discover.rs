@@ -91,7 +91,10 @@ fn url_from_service(item: &Value) -> Option<DiscoveredEndpoint> {
     if !is_packetwolf_api_service(name) {
         return None;
     }
-    let namespace = meta.get("namespace").and_then(|v| v.as_str()).map(String::from);
+    let namespace = meta
+        .get("namespace")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let spec = item.get("spec")?;
     let ports = spec.get("ports")?.as_array()?;
     let port = ports
@@ -109,9 +112,7 @@ fn url_from_service(item: &Value) -> Option<DiscoveredEndpoint> {
         .filter(|t| *t == "LoadBalancer")
     {
         let _ = lb;
-        if let Some(ingress) = spec
-            .pointer("/status/loadBalancer/ingress/0")
-        {
+        if let Some(ingress) = spec.pointer("/status/loadBalancer/ingress/0") {
             let host = ingress
                 .get("ip")
                 .or_else(|| ingress.get("hostname"))
@@ -126,7 +127,9 @@ fn url_from_service(item: &Value) -> Option<DiscoveredEndpoint> {
     }
 
     if spec.get("type").and_then(|v| v.as_str()) == Some("NodePort") {
-        let node_port = ports.iter().find_map(|p| p.get("nodePort").and_then(|v| v.as_u64()))?;
+        let node_port = ports
+            .iter()
+            .find_map(|p| p.get("nodePort").and_then(|v| v.as_u64()))?;
         if let Some(node_ip) = first_node_internal_ip() {
             return Some(DiscoveredEndpoint {
                 base_url: format!("http://{node_ip}:{node_port}"),
@@ -222,7 +225,10 @@ pub fn discover_blocking(insecure_tls: bool) -> Option<DiscoveredEndpoint> {
     if !kubectl_available() {
         return None;
     }
-    for discover_fn in [discover_via_kubectl_targeted, discover_via_kubectl_all_namespaces] {
+    for discover_fn in [
+        discover_via_kubectl_targeted,
+        discover_via_kubectl_all_namespaces,
+    ] {
         if let Some(ep) = discover_fn() {
             if probe_health(&ep.base_url, insecure_tls) {
                 return Some(ep);
@@ -238,7 +244,8 @@ pub fn effective_config(cfg: &ControllerConfig) -> (ControllerConfig, Option<Dis
     if !auto_discover_enabled() {
         return (effective, None);
     }
-    let configured_ok = cfg.packetwolf_enabled && probe_health(&cfg.packetwolf_base_url, cfg.packetwolf_insecure_tls);
+    let configured_ok = cfg.packetwolf_enabled
+        && probe_health(&cfg.packetwolf_base_url, cfg.packetwolf_insecure_tls);
     if configured_ok {
         return (effective, None);
     }
@@ -250,7 +257,9 @@ pub fn effective_config(cfg: &ControllerConfig) -> (ControllerConfig, Option<Dis
     (effective, discovered)
 }
 
-pub async fn effective_config_async(cfg: &ControllerConfig) -> (ControllerConfig, Option<DiscoveredEndpoint>) {
+pub async fn effective_config_async(
+    cfg: &ControllerConfig,
+) -> (ControllerConfig, Option<DiscoveredEndpoint>) {
     let base = cfg.clone();
     let fallback = cfg.clone();
     tokio::task::spawn_blocking(move || effective_config(&base))

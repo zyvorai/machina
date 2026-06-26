@@ -6,7 +6,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
+use axum::Extension;
+
 use crate::api::ApiError;
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -46,9 +49,11 @@ async fn vm_agent_row(
 
 pub async fn query_vm_libvirt(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Query(q): Query<LibvirtQueryParams>,
 ) -> Result<Json<Value>, ApiError> {
+    require_operator(&actor)?;
     let (name, host_id) = vm_agent_row(&state, id).await?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await
@@ -89,9 +94,11 @@ pub async fn query_vm_libvirt(
 
 pub async fn invoke_vm_libvirt(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<LibvirtActionBody>,
 ) -> Result<Json<Value>, ApiError> {
+    require_admin(&actor)?;
     let (name, host_id) = vm_agent_row(&state, id).await?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await
@@ -117,9 +124,11 @@ pub struct PutDomainXmlBody {
 
 pub async fn put_vm_domain_xml(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<PutDomainXmlBody>,
 ) -> Result<Json<Value>, ApiError> {
+    require_admin(&actor)?;
     let (name, host_id) = vm_agent_row(&state, id).await?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await
@@ -155,9 +164,11 @@ pub struct HostLibvirtActionBody {
 
 pub async fn invoke_host_libvirt(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(host_id): Path<Uuid>,
     Json(body): Json<HostLibvirtActionBody>,
 ) -> Result<Json<Value>, ApiError> {
+    require_admin(&actor)?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -180,9 +191,11 @@ pub async fn invoke_host_libvirt(
 
 pub async fn query_host_libvirt(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(host_id): Path<Uuid>,
     Query(q): Query<HostLibvirtQueryParams>,
 ) -> Result<Json<Value>, ApiError> {
+    require_operator(&actor)?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;

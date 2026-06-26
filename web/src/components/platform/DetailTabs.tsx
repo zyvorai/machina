@@ -1,6 +1,6 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ChevronDown } from 'lucide-react'
 
 export type DetailTabDef<T extends string> = {
@@ -53,6 +53,27 @@ export default function DetailTabs<T extends string>({
     })
   }
 
+  const handleKeyDown = (e: KeyboardEvent<HTMLButtonElement>, currentId: T) => {
+    const idx = primary.findIndex((t) => t.id === currentId)
+    if (idx === -1) return
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault()
+      const next = primary[(idx + 1) % primary.length]
+      if (next) selectTab(next.id)
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const prev = primary[(idx - 1 + primary.length) % primary.length]
+      if (prev) selectTab(prev.id)
+    } else if (e.key === 'Home') {
+      e.preventDefault()
+      if (primary[0]) selectTab(primary[0].id)
+    } else if (e.key === 'End') {
+      e.preventDefault()
+      const last = primary[primary.length - 1]
+      if (last) selectTab(last.id)
+    }
+  }
+
   return (
     <div ref={stickyRef} className="platform-detail-tabs-sticky" id="platform-detail-tabs">
       <div role="tablist" className="flex flex-wrap items-center gap-1 pb-1">
@@ -62,7 +83,9 @@ export default function DetailTabs<T extends string>({
           type="button"
           role="tab"
           aria-selected={active === tab.id}
+          tabIndex={active === tab.id ? 0 : -1}
           onClick={() => selectTab(tab.id)}
+          onKeyDown={(e) => handleKeyDown(e, tab.id)}
           className={tabButtonClass(active === tab.id)}
         >
           {tab.label}

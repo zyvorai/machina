@@ -731,16 +731,15 @@ fn gather_lldp_from_networkctl() -> Result<LldpInventory, LibvirtError> {
     let networkctl = find_bin("networkctl");
     let raw = run_capture_soft(&networkctl, &["lldp"]);
     if raw.contains("(failed to run") || raw.contains("(exit ") {
-        return Err(LibvirtError::Operation("networkctl lldp unavailable".into()));
+        return Err(LibvirtError::Operation(
+            "networkctl lldp unavailable".into(),
+        ));
     }
     let neighbors = parse_networkctl_lldp_text(&raw);
     let summary = if neighbors.is_empty() {
         "systemd-networkd LLDP — no neighbors advertised".into()
     } else {
-        format!(
-            "{} LLDP neighbor(s) via systemd-networkd",
-            neighbors.len()
-        )
+        format!("{} LLDP neighbor(s) via systemd-networkd", neighbors.len())
     };
     Ok(LldpInventory {
         source: "systemd_networkd".into(),
@@ -883,7 +882,10 @@ fn parse_networkctl_lldp_text(raw: &str) -> Vec<LldpNeighbor> {
             system_name: parts.get(base + 2).copied().unwrap_or("").to_string(),
             capabilities: parts.get(base + 3).copied().unwrap_or("").to_string(),
             port_id: parts.get(base + 4).copied().unwrap_or("").to_string(),
-            port_description: parts.get(base + 5..).map(|p| p.join(" ")).unwrap_or_default(),
+            port_description: parts
+                .get(base + 5..)
+                .map(|p| p.join(" "))
+                .unwrap_or_default(),
             system_description: String::new(),
         });
     }
@@ -943,7 +945,9 @@ pub fn validate_port_forward_protocol(protocol: &str) -> Result<(), LibvirtError
 
 pub fn validate_port_forward_host_port(host_port: u16) -> Result<(), LibvirtError> {
     if host_port == 0 {
-        return Err(LibvirtError::Invalid("host_port must be non-zero".to_string()));
+        return Err(LibvirtError::Invalid(
+            "host_port must be non-zero".to_string(),
+        ));
     }
     if host_port < 1024 {
         return Err(LibvirtError::Invalid(
@@ -960,7 +964,9 @@ pub fn validate_port_forward_host_port(host_port: u16) -> Result<(), LibvirtErro
 
 pub fn validate_port_forward_vm_port(vm_port: u16) -> Result<(), LibvirtError> {
     if vm_port == 0 {
-        return Err(LibvirtError::Invalid("vm_port must be non-zero".to_string()));
+        return Err(LibvirtError::Invalid(
+            "vm_port must be non-zero".to_string(),
+        ));
     }
     Ok(())
 }

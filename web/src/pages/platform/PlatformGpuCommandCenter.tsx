@@ -174,7 +174,7 @@ export default function PlatformGpuCommandCenter() {
 
             <MacGlassPanel title="GPU hosts" subtitle="Site, rack, profile, and VM occupancy">
               <div className="overflow-x-auto -mt-2">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm" aria-label="GPU hosts">
                   <thead>
                     <tr className="text-left text-slate-500 border-b border-white/[0.06]">
                       <th className="py-2 pr-2">Host</th>
@@ -186,7 +186,7 @@ export default function PlatformGpuCommandCenter() {
                     </tr>
                   </thead>
                   <tbody>
-                    {overview.hosts.map((h) => (
+                    {(overview.hosts ?? []).map((h) => (
                       <tr key={h.host_id} className="border-b border-white/[0.04] text-slate-200">
                         <td className="py-2 pr-2">
                           <Link to={`/platform/hosts/${h.host_id}`} className={`hover:underline ${hubLinkClasses()}`}>{h.hostname}</Link>
@@ -205,10 +205,10 @@ export default function PlatformGpuCommandCenter() {
               </div>
             </MacGlassPanel>
 
-            {overview.vms.length > 0 && (
+            {(overview.vms?.length ?? 0) > 0 && (
               <MacGlassPanel title="GPU workloads" subtitle="Tagged VMs across the fleet">
                 <ul className="text-sm space-y-2 -mt-2">
-                  {overview.vms.map((v) => (
+                  {(overview.vms ?? []).map((v) => (
                     <li key={v.vm_id} className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.04] pb-2">
                       <Link to={`/platform/vms/${v.vm_id}`} className={`inline-flex items-center gap-1.5 hover:underline ${hubLinkClasses()}`}>
                         <Monitor className="w-3.5 h-3.5" />

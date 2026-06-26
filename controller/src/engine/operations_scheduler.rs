@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 // Scheduled runbook triggers from catalog auto_trigger hints.
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::config::ControllerConfig;
 use crate::state::AppState;
@@ -18,7 +18,7 @@ pub fn spawn(state: AppState) {
     });
 }
 
-async fn tick_triggers(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<()> {
+async fn tick_triggers(pool: &SqlitePool, cfg: &ControllerConfig) -> anyhow::Result<()> {
     let rows: Vec<(String, Option<String>, Option<chrono::DateTime<chrono::Utc>>)> = sqlx::query_as(
         "SELECT incident, auto_trigger, last_triggered_at FROM ops_runbook_catalog WHERE enabled = true AND auto_trigger IS NOT NULL",
     )
@@ -35,14 +35,17 @@ async fn tick_triggers(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<
         if !trigger_fired(pool, cfg, &trigger).await? {
             continue;
         }
-        let _ = crate::engine::operations::execute_runbook(
+        if let Err(e) = crate::engine::operations::execute_runbook(
             pool,
             &incident,
             "runbook-scheduler",
             &serde_json::json!({ "auto_trigger": trigger }),
         )
-        .await;
-        sqlx::query("UPDATE ops_runbook_catalog SET last_triggered_at = NOW() WHERE incident = $1")
+        .await
+        {
+            tracing::error!(incident = %incident, "runbook scheduler: auto-triggered runbook failed: {e:#}");
+        }
+        sqlx::query("UPDATE ops_runbook_catalog SET last_triggered_at = datetime('now') WHERE incident = ?")
             .bind(&incident)
             .execute(pool)
             .await?;
@@ -51,7 +54,11 @@ async fn tick_triggers(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<
     Ok(())
 }
 
-async fn trigger_fired(pool: &PgPool, _cfg: &ControllerConfig, trigger: &str) -> anyhow::Result<bool> {
+async fn trigger_fired(
+    pool: &SqlitePool,
+    _cfg: &ControllerConfig,
+    trigger: &str,
+) -> anyhow::Result<bool> {
     if trigger == "host.state=offline" {
         let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
             .fetch_one(pool)
@@ -60,7 +67,7 @@ async fn trigger_fired(pool: &PgPool, _cfg: &ControllerConfig, trigger: &str) ->
     }
     if trigger == "task.failed:backup" {
         let n: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM tasks WHERE status = 'failed' AND operation LIKE '%backup%' AND created_at > NOW() - INTERVAL '1 hour'",
+            "SELECT COUNT(*) FROM tasks WHERE status = 'failed' AND operation LIKE '%backup%' AND created_at > datetime('now', '-1 hours')",
         )
         .fetch_one(pool)
         .await?;
@@ -68,7 +75,7 @@ async fn trigger_fired(pool: &PgPool, _cfg: &ControllerConfig, trigger: &str) ->
     }
     if trigger == "zeus.drift_detected" {
         let n: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM firewall_timeline WHERE kind = 'drift' AND created_at > NOW() - INTERVAL '24 hours'",
+            "SELECT COUNT(*) FROM firewall_timeline WHERE kind = 'drift' AND created_at > datetime('now', '-24 hours')",
         )
         .fetch_one(pool)
         .await?;
@@ -76,7 +83,7 @@ async fn trigger_fired(pool: &PgPool, _cfg: &ControllerConfig, trigger: &str) ->
     }
     if trigger == "storage.used_pct>85" {
         let n: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM storage_pools WHERE capacity_gib > 0 AND (used_gib::float / capacity_gib::float) > 0.85",
+            "SELECT COUNT(*) FROM storage_pools WHERE capacity_gib > 0 AND (used_gib * 1.0 / capacity_gib) > 0.85",
         )
         .fetch_one(pool)
         .await?;

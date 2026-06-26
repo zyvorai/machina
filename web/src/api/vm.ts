@@ -716,6 +716,23 @@ export const migrateVM = (name: string, destUri: string, live: boolean, opts?: M
     ...opts,
   })
 
+export const getMigrateBandwidth = (name: string) =>
+  readJsonObject<{ mbps: number }>(`${API}/vms/${encodeURIComponent(name)}/migrate/max-bandwidth`)
+export const setMigrateBandwidth = (name: string, mbps: number) =>
+  apiPost<{ mbps: number }>(`${API}/vms/${encodeURIComponent(name)}/migrate/max-bandwidth`, { mbps })
+export const setMigrateDowntime = (name: string, downtime_ns: number) =>
+  apiPost<{ downtime_ns: number }>(`${API}/vms/${encodeURIComponent(name)}/migrate/max-downtime`, { downtime_ns })
+
+export interface VmJobInfo {
+  job_type: string
+  time_elapsed_ms: number
+  data_total_bytes: number
+  data_processed_bytes: number
+  data_remaining_bytes: number
+}
+export const getVmJob = (name: string) =>
+  readJsonObject<VmJobInfo>(`${API}/vms/${encodeURIComponent(name)}/job`)
+
 export type GuestKeyPreset = 'ctrl_alt_del' | 'esc' | 'alt_tab'
 
 export const sendGuestKey = (

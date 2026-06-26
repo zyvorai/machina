@@ -89,13 +89,13 @@ function OpenStackFlavorsContent() {
       <section className="rounded-xl border border-slate-700 p-4 space-y-3">
         <h2 className="text-sm font-medium text-slate-300 flex items-center gap-2"><Plus className="w-4 h-4" /> Create flavor</h2>
         <div className="grid sm:grid-cols-2 gap-3">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
+          <input aria-label="Flavor name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Name"
             className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm" />
-          <input value={vcpus} onChange={(e) => setVcpus(e.target.value)} placeholder="vCPUs" type="number" min={1}
+          <input aria-label="vCPUs" value={vcpus} onChange={(e) => setVcpus(e.target.value)} placeholder="vCPUs" type="number" min={1}
             className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm" />
-          <input value={ram} onChange={(e) => setRam(e.target.value)} placeholder="RAM (MB)" type="number" min={512}
+          <input aria-label="RAM in MB" value={ram} onChange={(e) => setRam(e.target.value)} placeholder="RAM (MB)" type="number" min={512}
             className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm" />
-          <input value={disk} onChange={(e) => setDisk(e.target.value)} placeholder="Disk (GB)" type="number" min={0}
+          <input aria-label="Disk in GB" value={disk} onChange={(e) => setDisk(e.target.value)} placeholder="Disk (GB)" type="number" min={0}
             className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm" />
         </div>
         <button type="button" disabled={creating} onClick={() => void handleCreate()}
@@ -111,7 +111,7 @@ function OpenStackFlavorsContent() {
         <Loader2 className="w-8 h-8 animate-spin text-sky-400" />
       ) : (
         <div className="rounded-xl border border-slate-700 overflow-hidden">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Flavors">
             <thead className="bg-slate-900/80 text-slate-400 text-left">
               <tr>
                 <th className="px-3 py-2">Name</th>

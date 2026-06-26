@@ -1,6 +1,6 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { ActiveMonitor, ConsoleMonitor } from '../../utils/consoleMonitors'
 import { inferConsoleMonitors } from '../../utils/consoleMonitors'
 
@@ -36,6 +36,9 @@ type ViewportCtx = ViewportState & {
   setResolution: (r: string) => void
   setMonitors: (monitors: ConsoleMonitor[]) => void
   setActiveMonitor: (monitor: ActiveMonitor) => void
+  /** noVNC-native Ctrl+Alt+Del, registered by VNCViewer when connected. */
+  sendCtrlAltDel: (() => void) | null
+  registerCtrlAltDel: (fn: (() => void) | null) => void
 }
 
 const defaultState: ViewportState = {
@@ -59,6 +62,10 @@ const Ctx = createContext<ViewportCtx | null>(null)
 
 export function ConsoleViewportProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<ViewportState>(defaultState)
+  const ctrlAltDelRef = useRef<(() => void) | null>(null)
+  const registerCtrlAltDel = useCallback((fn: (() => void) | null) => {
+    ctrlAltDelRef.current = fn
+  }, [])
 
   const setMode = useCallback((mode: ViewportMode) => {
     setState((s) => {
@@ -148,6 +155,8 @@ export function ConsoleViewportProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('machina:console-guest-size', onTestGuestSize)
   }, [setGuestSize, setMonitors])
 
+  const sendCtrlAltDel = useCallback(() => ctrlAltDelRef.current?.(), [])
+
   const value = useMemo(
     () => ({
       ...state,
@@ -162,8 +171,10 @@ export function ConsoleViewportProvider({ children }: { children: ReactNode }) {
       setResolution,
       setMonitors,
       setActiveMonitor,
+      sendCtrlAltDel,
+      registerCtrlAltDel,
     }),
-    [state, setMode, setZoom, setScaledFit, setGuestSize, setScroll, setViewportSize, setConnected, setProtocol, setResolution, setMonitors, setActiveMonitor],
+    [state, setMode, setZoom, setScaledFit, setGuestSize, setScroll, setViewportSize, setConnected, setProtocol, setResolution, setMonitors, setActiveMonitor, sendCtrlAltDel, registerCtrlAltDel],
   )
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

@@ -60,12 +60,8 @@ async fn create_token(
     State(_m): State<LibvirtManager>,
     Json(req): Json<CreateTokenRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let token = automation::create_api_token_scoped(
-        &req.name,
-        &req.username,
-        req.role,
-        req.scopes,
-    )?;
+    let token =
+        automation::create_api_token_scoped(&req.name, &req.username, req.role, req.scopes)?;
     Ok(Json(serde_json::json!(token)))
 }
 

@@ -44,11 +44,9 @@ fn base_url(cfg: &GuestkitConfig) -> Result<String, AppError> {
 async fn proxy_get(cfg: &GuestkitConfig, path: &str) -> Result<Value, AppError> {
     let client = client(cfg)?;
     let url = format!("{}{}", base_url(cfg)?, path);
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| AppError::from(LibvirtError::Operation(format!("guestkit GET {path}: {e}"))))?;
+    let resp = client.get(&url).send().await.map_err(|e| {
+        AppError::from(LibvirtError::Operation(format!("guestkit GET {path}: {e}")))
+    })?;
     let status = resp.status();
     let body: Value = resp
         .json()
@@ -65,12 +63,11 @@ async fn proxy_get(cfg: &GuestkitConfig, path: &str) -> Result<Value, AppError> 
 async fn proxy_post(cfg: &GuestkitConfig, path: &str, body: Value) -> Result<Value, AppError> {
     let client = client(cfg)?;
     let url = format!("{}{}", base_url(cfg)?, path);
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| AppError::from(LibvirtError::Operation(format!("guestkit POST {path}: {e}"))))?;
+    let resp = client.post(&url).json(&body).send().await.map_err(|e| {
+        AppError::from(LibvirtError::Operation(format!(
+            "guestkit POST {path}: {e}"
+        )))
+    })?;
     let status = resp.status();
     let out: Value = resp
         .json()
@@ -159,7 +156,13 @@ pub fn guestkit_routes() -> Router<LibvirtManager> {
     Router::new()
         .route("/guestkit/status", get(guestkit_status))
         .route("/guestkit/capabilities", get(guestkit_capabilities))
-        .route("/guestkit/jobs", get(guestkit_list_jobs).post(guestkit_submit_job))
+        .route(
+            "/guestkit/jobs",
+            get(guestkit_list_jobs).post(guestkit_submit_job),
+        )
         .route("/guestkit/jobs/{id}", get(guestkit_get_job))
-        .route("/guestkit/proxy", get(guestkit_proxy_get).post(guestkit_proxy_post))
+        .route(
+            "/guestkit/proxy",
+            get(guestkit_proxy_get).post(guestkit_proxy_post),
+        )
 }

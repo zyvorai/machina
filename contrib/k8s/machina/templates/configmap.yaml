@@ -1,0 +1,41 @@
+{{- if .Values.configMap.create }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ default (printf "%s-config" (include "machina.fullname" .)) .Values.configMap.name }}
+  labels:
+    app.kubernetes.io/name: {{ include "machina.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+data:
+  config.toml: |
+    [daemon]
+    host = {{ .Values.daemon.host | quote }}
+    port = {{ .Values.daemon.port }}
+
+    [auth]
+    pam_service = {{ .Values.auth.pamService | quote }}
+
+    [auth.ldap]
+    enabled = {{ .Values.auth.ldap.enabled }}
+    url = {{ .Values.auth.ldap.url | quote }}
+    base_dn = {{ .Values.auth.ldap.baseDn | quote }}
+
+    [auth.oidc]
+    enabled = {{ .Values.auth.oidc.enabled }}
+    issuer_url = {{ .Values.auth.oidc.issuerUrl | quote }}
+    client_id = {{ .Values.auth.oidc.clientId | quote }}
+    client_secret = {{ .Values.auth.oidc.clientSecret | quote }}
+    redirect_url = {{ .Values.auth.oidc.redirectUrl | quote }}
+    button_label = {{ .Values.auth.oidc.buttonLabel | quote }}
+    admin_groups = {{ .Values.auth.oidc.adminGroups | toJson }}
+    operator_groups = {{ .Values.auth.oidc.operatorGroups | toJson }}
+
+    [auth.saml]
+    enabled = {{ .Values.auth.saml.enabled }}
+    sp_entity_id = {{ .Values.auth.saml.spEntityId | quote }}
+    sp_acs_url = {{ .Values.auth.saml.spAcsUrl | quote }}
+    idp_entity_id = {{ .Values.auth.saml.idpEntityId | quote }}
+    idp_metadata_url = {{ .Values.auth.saml.idpMetadataUrl | quote }}
+    name_id_format = {{ .Values.auth.saml.nameIdFormat | quote }}
+    button_label = {{ .Values.auth.saml.buttonLabel | quote }}
+{{- end }}

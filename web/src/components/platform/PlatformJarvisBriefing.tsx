@@ -90,11 +90,11 @@ export default function PlatformJarvisBriefing() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" aria-hidden />
         <input
           type="search"
+          aria-label="Zeus search"
           className="input w-full pl-10"
           placeholder={ZEUS_SEARCH_PLACEHOLDER}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          aria-label="Zeus search"
         />
       </form>
 

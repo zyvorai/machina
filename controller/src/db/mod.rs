@@ -1,129 +1,33 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use sqlx::{PgPool, postgres::PgPoolOptions};
+use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
+use sqlx::SqlitePool;
+use std::str::FromStr;
+use std::time::Duration;
 use uuid::Uuid;
 
-pub async fn connect(database_url: &str) -> anyhow::Result<PgPool> {
-    let pool = PgPoolOptions::new()
-        .max_connections(16)
-        .connect(database_url)
+pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
+    let options = SqliteConnectOptions::from_str(database_url)?
+        .create_if_missing(true)
+        .journal_mode(SqliteJournalMode::Wal)
+        .pragma("foreign_keys", "ON")
+        .busy_timeout(Duration::from_secs(5));
+
+    let pool = SqlitePoolOptions::new()
+        .max_connections(4)
+        .connect_with(options)
         .await?;
+
     Ok(pool)
 }
 
-pub async fn migrate(pool: &PgPool) -> anyhow::Result<()> {
-    for name in [
-        "001_platform.sql",
-        "002_platform_extras.sql",
-        "003_ha_placement.sql",
-        "004_drs_fence.sql",
-        "005_platform_ops.sql",
-        "006_platform_batch6.sql",
-        "007_platform_batch7.sql",
-        "008_platform_ha_oidc.sql",
-        "009_platform_batch11.sql",
-        "010_platform_batch12.sql",
-        "011_platform_batch15.sql",
-        "012_platform_batch17.sql",
-        "013_platform_batch24.sql",
-        "014_platform_batch30.sql",
-        "015_platform_batch31_40.sql",
-        "016_platform_ai.sql",
-        "017_ai_v5.sql",
-        "018_ai_v8.sql",
-        "019_baremetal.sql",
-        "020_zeus_firewall.sql",
-        "021_template_firewall.sql",
-        "022_firewall_phase15.sql",
-        "023_firewall_phases16_25.sql",
-        "024_baremetal_firewall.sql",
-        "025_multisite_firewall.sql",
-        "026_network_overlays.sql",
-        "027_platform_plugins.sql",
-        "028_storage_tiers.sql",
-        "029_enterprise_security.sql",
-        "030_lldp_cache.sql",
-        "031_operations.sql",
-        "032_observability.sql",
-        "033_enterprise_hardening.sql",
-        "034_host_geography.sql",
-        "035_vm_inventory_reconcile.sql",
-        "036_zeus_ai_redesign.sql",
-        "037_ai_infra_program.sql",
-        "038_soc.sql",
-        "039_soc_v2.sql",
-        "040_templates_unify.sql",
-        "041_fleet_snapshot_schedules.sql",
-        "042_marketplace_os_refresh.sql",
-        "043_consolehub.sql",
-    ] {
-        let sql = match name {
-            "001_platform.sql" => include_str!("../../migrations/001_platform.sql"),
-            "002_platform_extras.sql" => include_str!("../../migrations/002_platform_extras.sql"),
-            "003_ha_placement.sql" => include_str!("../../migrations/003_ha_placement.sql"),
-            "004_drs_fence.sql" => include_str!("../../migrations/004_drs_fence.sql"),
-            "005_platform_ops.sql" => include_str!("../../migrations/005_platform_ops.sql"),
-            "006_platform_batch6.sql" => include_str!("../../migrations/006_platform_batch6.sql"),
-            "007_platform_batch7.sql" => include_str!("../../migrations/007_platform_batch7.sql"),
-            "008_platform_ha_oidc.sql" => include_str!("../../migrations/008_platform_ha_oidc.sql"),
-            "009_platform_batch11.sql" => include_str!("../../migrations/009_platform_batch11.sql"),
-            "010_platform_batch12.sql" => include_str!("../../migrations/010_platform_batch12.sql"),
-            "011_platform_batch15.sql" => include_str!("../../migrations/011_platform_batch15.sql"),
-            "012_platform_batch17.sql" => include_str!("../../migrations/012_platform_batch17.sql"),
-            "013_platform_batch24.sql" => include_str!("../../migrations/013_platform_batch24.sql"),
-            "014_platform_batch30.sql" => include_str!("../../migrations/014_platform_batch30.sql"),
-            "015_platform_batch31_40.sql" => include_str!("../../migrations/015_platform_batch31_40.sql"),
-            "016_platform_ai.sql" => include_str!("../../migrations/016_platform_ai.sql"),
-            "017_ai_v5.sql" => include_str!("../../migrations/017_ai_v5.sql"),
-            "018_ai_v8.sql" => include_str!("../../migrations/018_ai_v8.sql"),
-            "019_baremetal.sql" => include_str!("../../migrations/019_baremetal.sql"),
-            "020_zeus_firewall.sql" => include_str!("../../migrations/020_zeus_firewall.sql"),
-            "021_template_firewall.sql" => include_str!("../../migrations/021_template_firewall.sql"),
-            "022_firewall_phase15.sql" => include_str!("../../migrations/022_firewall_phase15.sql"),
-            "023_firewall_phases16_25.sql" => include_str!("../../migrations/023_firewall_phases16_25.sql"),
-            "024_baremetal_firewall.sql" => include_str!("../../migrations/024_baremetal_firewall.sql"),
-            "025_multisite_firewall.sql" => include_str!("../../migrations/025_multisite_firewall.sql"),
-            "026_network_overlays.sql" => include_str!("../../migrations/026_network_overlays.sql"),
-            "027_platform_plugins.sql" => include_str!("../../migrations/027_platform_plugins.sql"),
-            "028_storage_tiers.sql" => include_str!("../../migrations/028_storage_tiers.sql"),
-            "029_enterprise_security.sql" => include_str!("../../migrations/029_enterprise_security.sql"),
-            "030_lldp_cache.sql" => include_str!("../../migrations/030_lldp_cache.sql"),
-            "031_operations.sql" => include_str!("../../migrations/031_operations.sql"),
-            "032_observability.sql" => include_str!("../../migrations/032_observability.sql"),
-            "033_enterprise_hardening.sql" => include_str!("../../migrations/033_enterprise_hardening.sql"),
-            "034_host_geography.sql" => include_str!("../../migrations/034_host_geography.sql"),
-            "035_vm_inventory_reconcile.sql" => include_str!("../../migrations/035_vm_inventory_reconcile.sql"),
-            "036_zeus_ai_redesign.sql" => include_str!("../../migrations/036_zeus_ai_redesign.sql"),
-            "037_ai_infra_program.sql" => include_str!("../../migrations/037_ai_infra_program.sql"),
-            "038_soc.sql" => include_str!("../../migrations/038_soc.sql"),
-            "039_soc_v2.sql" => include_str!("../../migrations/039_soc_v2.sql"),
-            "040_templates_unify.sql" => include_str!("../../migrations/040_templates_unify.sql"),
-            "041_fleet_snapshot_schedules.sql" => {
-                include_str!("../../migrations/041_fleet_snapshot_schedules.sql")
-            }
-            "042_marketplace_os_refresh.sql" => {
-                include_str!("../../migrations/042_marketplace_os_refresh.sql")
-            }
-            "043_consolehub.sql" => include_str!("../../migrations/043_consolehub.sql"),
-            "044_packetwolf_local.sql" => include_str!("../../migrations/044_packetwolf_local.sql"),
-            _ => continue,
-        };
-        for stmt in sql.split(';').map(str::trim).filter(|s| !s.is_empty()) {
-            sqlx::query(stmt).execute(pool).await?;
-        }
-    }
-    // Idempotent: tables created via manual SQL or superuser may omit app-role grants.
-    let _ = sqlx::query("GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO machina")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO machina")
-        .execute(pool)
-        .await;
+pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
+    sqlx::migrate!().run(pool).await?;
     Ok(())
 }
 
 pub async fn ensure_bootstrap(
-    pool: &PgPool,
+    pool: &SqlitePool,
     admin_user: &str,
     admin_password: &str,
 ) -> anyhow::Result<()> {
@@ -132,7 +36,7 @@ pub async fn ensure_bootstrap(
         .await?;
     if cluster_count == 0 {
         let cluster_id = Uuid::new_v4();
-        sqlx::query("INSERT INTO clusters (id, name) VALUES ($1, $2)")
+        sqlx::query("INSERT INTO clusters (id, name) VALUES (?, ?)")
             .bind(cluster_id)
             .bind("default")
             .execute(pool)
@@ -144,27 +48,26 @@ pub async fn ensure_bootstrap(
         .await?;
     if user_count == 0 {
         let hash = bcrypt::hash(admin_password, bcrypt::DEFAULT_COST)?;
-        sqlx::query(
-            "INSERT INTO users (id, username, password_hash, role) VALUES ($1, $2, $3, $4)",
-        )
-        .bind(Uuid::new_v4())
-        .bind(admin_user)
-        .bind(hash)
-        .bind("admin")
-        .execute(pool)
-        .await?;
+        sqlx::query("INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)")
+            .bind(Uuid::new_v4())
+            .bind(admin_user)
+            .bind(hash)
+            .bind("admin")
+            .execute(pool)
+            .await?;
     }
 
     let host_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await?;
     if host_count == 0 {
-        let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
-            .fetch_one(pool)
-            .await?;
+        let cluster_id: Uuid =
+            sqlx::query_scalar::<_, Uuid>("SELECT id FROM clusters LIMIT 1")
+                .fetch_one(pool)
+                .await?;
         sqlx::query(
             "INSERT INTO hosts (id, cluster_id, hostname, address, state, agent_grpc_addr)
-             VALUES ($1, $2, $3, $4, $5, $6)",
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4())
         .bind(cluster_id)
@@ -172,7 +75,8 @@ pub async fn ensure_bootstrap(
         .bind("127.0.0.1")
         .bind("online")
         .bind(
-            std::env::var("MACHINA_AGENT_ADDR").unwrap_or_else(|_| "http://127.0.0.1:50051".into()),
+            std::env::var("MACHINA_AGENT_ADDR")
+                .unwrap_or_else(|_| "127.0.0.1:50051".into()),
         )
         .execute(pool)
         .await?;
@@ -180,5 +84,9 @@ pub async fn ensure_bootstrap(
 
     crate::engine::template_catalog::ensure_default_templates(pool).await?;
 
+    Ok(())
+}
+
+pub async fn ensure_machina_db_ownership() -> anyhow::Result<()> {
     Ok(())
 }

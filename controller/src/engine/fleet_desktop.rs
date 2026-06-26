@@ -2,12 +2,12 @@
 // Fleet desktop aggregator (Phase 35).
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::config::ControllerConfig;
-use crate::engine::fleet_linux::FleetLinuxHealthOverview;
 use crate::engine::ai::zeus_summary;
 use crate::engine::fleet_linux;
+use crate::engine::fleet_linux::FleetLinuxHealthOverview;
 use crate::engine::observability;
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,44 +28,53 @@ pub struct FleetDesktopOverview {
     pub linux_summary: String,
 }
 
-pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<FleetDesktopOverview> {
+pub async fn overview(
+    pool: &SqlitePool,
+    cfg: &ControllerConfig,
+) -> anyhow::Result<FleetDesktopOverview> {
     let zeus = zeus_summary::summarize(pool).await?;
     let obs = observability::overview(pool).await?;
-    let linux = fleet_linux::overview(pool, cfg).await.unwrap_or_else(|_| FleetLinuxHealthOverview {
-        hosts_scanned: 0,
-        pressure_hosts: 0,
-        thermal_alerts: 0,
-        smart_alerts: 0,
-        hosts: vec![],
-        summary: "Linux health unavailable".into(),
-    });
+    let linux =
+        fleet_linux::overview(pool, cfg)
+            .await
+            .unwrap_or_else(|_| FleetLinuxHealthOverview {
+                hosts_scanned: 0,
+                pressure_hosts: 0,
+                thermal_alerts: 0,
+                smart_alerts: 0,
+                hosts: vec![],
+                summary: "Linux health unavailable".into(),
+            });
     let hosts_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await?;
     let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
         .await?;
-    let active_tasks: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'running')",
-    )
-    .fetch_one(pool)
-    .await?;
+    let active_tasks: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'running')")
+            .fetch_one(pool)
+            .await?;
     let failed_tasks_24h: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM tasks WHERE status = 'failed' AND created_at > NOW() - INTERVAL '24 hours'",
+        "SELECT COUNT(*) FROM tasks WHERE status = 'failed' AND created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await?;
-    let unread_notifications: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM notifications WHERE read_at IS NULL",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(0);
+    let unread_notifications: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM notification_outbox WHERE delivered = FALSE")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(0);
     let slo_breach_count = obs.slos.iter().filter(|s| s.status == "breach").count();
     Ok(FleetDesktopOverview {
         summary: format!(
             "Zeus {} · {} SLO(s) · {} hosts · {} VMs · {} active tasks · {}",
-            zeus.status, obs.slos.len(), zeus.hosts_online, vm_count, active_tasks, linux.summary
+            zeus.status,
+            obs.slos.len(),
+            zeus.hosts_online,
+            vm_count,
+            active_tasks,
+            linux.summary
         ),
         zeus_status: zeus.status,
         zeus_highlights: zeus.highlights,

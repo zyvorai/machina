@@ -62,13 +62,13 @@ export default function PlatformDockEditor({ open, onClose }: PlatformDockEditor
   return (
     <div className="fixed inset-0 z-[400] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} aria-hidden />
-      <div className="mac-menu-panel relative w-full max-w-md p-5 space-y-4" role="dialog" aria-labelledby="dock-editor-title">
+      <div className="mac-menu-panel relative w-full max-w-md p-5 space-y-4" role="dialog" aria-modal="true" aria-labelledby="dock-editor-title">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 id="dock-editor-title" className="text-lg font-semibold text-white">Customize Dock</h2>
             <p className="text-sm text-white/50">Reorder pinned apps — synced with Finder favorites.</p>
           </div>
-          <button type="button" onClick={onClose} className="mac-menubar-icon-btn" title="Close">
+          <button type="button" onClick={onClose} className="mac-menubar-icon-btn" title="Close" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -80,13 +80,13 @@ export default function PlatformDockEditor({ open, onClose }: PlatformDockEditor
               <li key={item.path} className="flex items-center gap-2 rounded-lg border border-white/[0.08] px-2 py-1.5">
                 <GripVertical className="h-4 w-4 text-white/30 shrink-0" />
                 <span className="flex-1 text-sm text-white truncate">{item.label}</span>
-                <button type="button" className="mac-menubar-icon-btn" onClick={() => move(idx, -1)} disabled={idx === 0} title="Move up">
+                <button type="button" className="mac-menubar-icon-btn" onClick={() => move(idx, -1)} disabled={idx === 0} title="Move up" aria-label="Move up">
                   <ChevronUp className="h-4 w-4" />
                 </button>
-                <button type="button" className="mac-menubar-icon-btn" onClick={() => move(idx, 1)} disabled={idx === paths.length - 1} title="Move down">
+                <button type="button" className="mac-menubar-icon-btn" onClick={() => move(idx, 1)} disabled={idx === paths.length - 1} title="Move down" aria-label="Move down">
                   <ChevronDown className="h-4 w-4" />
                 </button>
-                <button type="button" className="mac-menubar-icon-btn text-rose-300" onClick={() => remove(item.path)} title="Remove">
+                <button type="button" className="mac-menubar-icon-btn text-rose-300" onClick={() => remove(item.path)} title="Remove" aria-label="Remove">
                   <Trash2 className="h-4 w-4" />
                 </button>
               </li>
@@ -95,7 +95,7 @@ export default function PlatformDockEditor({ open, onClose }: PlatformDockEditor
         </ul>
 
         <div className="flex gap-2">
-          <select className="input flex-1 text-sm" value={addPath} onChange={(e) => setAddPath(e.target.value)}>
+          <select className="input flex-1 text-sm" aria-label="Add app to dock" value={addPath} onChange={(e) => setAddPath(e.target.value)}>
             <option value="">Add app…</option>
             {available.map((item) => (
               <option key={item.path} value={item.path}>{item.label}</option>

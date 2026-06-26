@@ -3,7 +3,7 @@
 // https://zyvor.dev · info@zyvor.dev
 
 import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react'
-import { login as apiLogin, logout as apiLogout, getSession } from '../api/auth'
+import { login as apiLogin, logout as apiLogout, getSession, exchangeTokenForSession } from '../api/auth'
 
 interface AuthContextType {
   isAuthenticated: boolean
@@ -13,6 +13,7 @@ interface AuthContextType {
   sessionId: string
   loading: boolean
   login: (username: string, password: string) => Promise<void>
+  exchangeToken: (token: string) => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -23,6 +24,7 @@ const AuthContext = createContext<AuthContextType>({
   sessionId: '',
   loading: true,
   login: async () => {},
+  exchangeToken: async () => {},
   logout: async () => {},
 })
 
@@ -39,20 +41,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [sessionId, setSessionId] = useState('')
   const [loading, setLoading] = useState(true)
 
-  // Check existing session on mount
+  // Check existing session on mount; honor ?token= platform JWT deep links.
   useEffect(() => {
-    getSession()
-      .then((session) => {
+    const params = new URLSearchParams(window.location.search)
+    const token = params.get('token')?.trim()
+    const bootstrap = async () => {
+      try {
+        if (token) {
+          await exchangeTokenForSession(token)
+          params.delete('token')
+          const qs = params.toString()
+          window.history.replaceState(null, '', `${window.location.pathname}${qs ? `?${qs}` : ''}`)
+        }
+        const session = await getSession()
         if (session.authenticated) clearLoginPathFromUrl()
         setIsAuthenticated(session.authenticated)
         setUsername(session.username || '')
         setSessionId(typeof session.session_id === 'string' ? session.session_id : '')
-      })
-      .catch(() => {
+      } catch {
+        if (token) {
+          window.location.replace('/login?error=token')
+        }
         setIsAuthenticated(false)
         setSessionId('')
-      })
-      .finally(() => setLoading(false))
+      } finally {
+        setLoading(false)
+      }
+    }
+    void bootstrap()
   }, [])
 
   const login = useCallback(async (user: string, pass: string) => {
@@ -64,15 +80,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSessionId(typeof session.session_id === 'string' ? session.session_id : '')
   }, [])
 
+  const exchangeToken = useCallback(async (token: string) => {
+    await exchangeTokenForSession(token)
+    const session = await getSession()
+    clearLoginPathFromUrl()
+    setIsAuthenticated(session.authenticated)
+    setUsername(session.username || '')
+    setSessionId(typeof session.session_id === 'string' ? session.session_id : '')
+  }, [])
+
   const logout = useCallback(async () => {
     await apiLogout()
+    localStorage.removeItem('machina_platform_jwt')
+    localStorage.removeItem('machina_platform_basic')
+    localStorage.removeItem('machina-saved-login')
     setIsAuthenticated(false)
     setUsername('')
     setSessionId('')
   }, [])
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, username, isRoot: username === 'root', sessionId, loading, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, username, isRoot: username === 'root', sessionId, loading, login, exchangeToken, logout }}>
       {children}
     </AuthContext.Provider>
   )

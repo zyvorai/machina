@@ -88,8 +88,8 @@ export default function MachinaDoctorPanel({ vmId, report, loading, onRefresh, o
             <p className="text-sm text-slate-400">All checks passed.</p>
           ) : (
             <ul className="space-y-3 text-sm">
-              {report.issues.map((issue, i) => (
-                <li key={i} className="rounded-xl border border-white/[0.06] p-3">
+              {report.issues.map((issue) => (
+                <li key={issue.message} className="rounded-xl border border-white/[0.06] p-3">
                   <p className={`font-medium capitalize ${statusToneClass(issue.severity === 'critical' ? 'error' : 'warn')}`}>{issue.message}</p>
                   {issue.remediation && <p className="text-xs text-slate-500 mt-1">{issue.remediation}</p>}
                   {issue.fix_action && issue.fix_label && (

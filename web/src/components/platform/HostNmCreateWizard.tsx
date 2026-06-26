@@ -69,8 +69,8 @@ export default function HostNmCreateWizard({ hostId, classic = false, onRefresh 
 
       {kind === 'bond' && (
         <div className="grid gap-2 sm:grid-cols-2">
-          <input className="input text-xs" value={bondName} onChange={(e) => setBondName(e.target.value)} placeholder="bond0" />
-          <input className="input text-xs" value={bondIfaces} onChange={(e) => setBondIfaces(e.target.value)} placeholder="eth0,eth1" />
+          <input aria-label="Bond name" className="input text-xs" value={bondName} onChange={(e) => setBondName(e.target.value)} placeholder="bond0" />
+          <input aria-label="Bond interfaces" className="input text-xs" value={bondIfaces} onChange={(e) => setBondIfaces(e.target.value)} placeholder="eth0,eth1" />
           <button type="button" className="btn-secondary text-xs sm:col-span-2" disabled={busy} onClick={() => void runAction('cockpit.nm.create_bond', { name: bondName, interfaces: ifacesFrom(bondIfaces) })}>
             Create bond
           </button>
@@ -80,12 +80,12 @@ export default function HostNmCreateWizard({ hostId, classic = false, onRefresh 
       {kind === 'team' && (
         <div className="grid gap-2 sm:grid-cols-2">
           <input className="input text-xs" value={teamName} onChange={(e) => setTeamName(e.target.value)} placeholder="team0" />
-          <select className="input text-xs" value={teamRunner} onChange={(e) => setTeamRunner(e.target.value)}>
+          <select className="input text-xs" aria-label="Team runner mode" value={teamRunner} onChange={(e) => setTeamRunner(e.target.value)}>
             <option value="loadbalance">loadbalance</option>
             <option value="roundrobin">roundrobin</option>
             <option value="activebackup">activebackup</option>
           </select>
-          <input className="input text-xs sm:col-span-2" value={teamIfaces} onChange={(e) => setTeamIfaces(e.target.value)} placeholder="eth0,eth1" />
+          <input aria-label="Team interfaces" className="input text-xs sm:col-span-2" value={teamIfaces} onChange={(e) => setTeamIfaces(e.target.value)} placeholder="eth0,eth1" />
           <button type="button" className="btn-secondary text-xs sm:col-span-2" disabled={busy} onClick={() => void runAction('cockpit.nm.create_team', { name: teamName, runner: teamRunner, interfaces: ifacesFrom(teamIfaces) })}>
             Create team
           </button>
@@ -94,9 +94,9 @@ export default function HostNmCreateWizard({ hostId, classic = false, onRefresh 
 
       {kind === 'vlan' && (
         <div className="grid gap-2 sm:grid-cols-2">
-          <input className="input text-xs" value={vlanParent} onChange={(e) => setVlanParent(e.target.value)} placeholder="Parent (eth0)" />
-          <input className="input text-xs" value={vlanId} onChange={(e) => setVlanId(e.target.value)} placeholder="VLAN ID" />
-          <input className="input text-xs sm:col-span-2" value={vlanName} onChange={(e) => setVlanName(e.target.value)} placeholder="Connection name (optional)" />
+          <input aria-label="VLAN parent interface" className="input text-xs" value={vlanParent} onChange={(e) => setVlanParent(e.target.value)} placeholder="Parent (eth0)" />
+          <input aria-label="VLAN ID" className="input text-xs" value={vlanId} onChange={(e) => setVlanId(e.target.value)} placeholder="VLAN ID" />
+          <input aria-label="Connection name (optional)" className="input text-xs sm:col-span-2" value={vlanName} onChange={(e) => setVlanName(e.target.value)} placeholder="Connection name (optional)" />
           <button type="button" className="btn-secondary text-xs sm:col-span-2" disabled={busy} onClick={() => void runAction('cockpit.nm.create_vlan', { name: vlanName, parent: vlanParent, vlan_id: Number(vlanId) })}>
             Create VLAN
           </button>
@@ -105,8 +105,8 @@ export default function HostNmCreateWizard({ hostId, classic = false, onRefresh 
 
       {kind === 'wifi' && (
         <div className="grid gap-2">
-          <input className="input text-xs" value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} placeholder="SSID" />
-          <input className="input text-xs" value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} placeholder="Password (optional)" type="password" />
+          <input aria-label="Wi-Fi SSID" className="input text-xs" value={wifiSsid} onChange={(e) => setWifiSsid(e.target.value)} placeholder="SSID" />
+          <input aria-label="Wi-Fi password (optional)" className="input text-xs" value={wifiPassword} onChange={(e) => setWifiPassword(e.target.value)} placeholder="Password (optional)" type="password" autoComplete="off" />
           <button type="button" className="btn-secondary text-xs" disabled={busy} onClick={() => void runAction('cockpit.nm.create_wifi', { ssid: wifiSsid, password: wifiPassword })}>
             Connect Wi-Fi
           </button>
@@ -115,12 +115,12 @@ export default function HostNmCreateWizard({ hostId, classic = false, onRefresh 
 
       {kind === 'wireguard' && (
         <div className="grid gap-2 sm:grid-cols-2">
-          <input className="input text-xs" value={wgName} onChange={(e) => setWgName(e.target.value)} placeholder="wg0" />
-          <input className="input text-xs" value={wgAddress} onChange={(e) => setWgAddress(e.target.value)} placeholder="10.0.0.2/32" />
-          <input className="input text-xs sm:col-span-2 font-mono" value={wgPrivateKey} onChange={(e) => setWgPrivateKey(e.target.value)} placeholder="Private key (optional)" />
-          <input className="input text-xs sm:col-span-2 font-mono" value={wgPeerKey} onChange={(e) => setWgPeerKey(e.target.value)} placeholder="Peer public key" />
-          <input className="input text-xs" value={wgEndpoint} onChange={(e) => setWgEndpoint(e.target.value)} placeholder="Endpoint host:51820" />
-          <input className="input text-xs" value={wgAllowedIps} onChange={(e) => setWgAllowedIps(e.target.value)} placeholder="Allowed IPs" />
+          <input aria-label="WireGuard interface name" className="input text-xs" value={wgName} onChange={(e) => setWgName(e.target.value)} placeholder="wg0" />
+          <input aria-label="WireGuard address" className="input text-xs" value={wgAddress} onChange={(e) => setWgAddress(e.target.value)} placeholder="10.0.0.2/32" />
+          <input aria-label="WireGuard private key (optional)" className="input text-xs sm:col-span-2 font-mono" value={wgPrivateKey} onChange={(e) => setWgPrivateKey(e.target.value)} placeholder="Private key (optional)" />
+          <input aria-label="WireGuard peer public key" className="input text-xs sm:col-span-2 font-mono" value={wgPeerKey} onChange={(e) => setWgPeerKey(e.target.value)} placeholder="Peer public key" />
+          <input aria-label="WireGuard endpoint (host:port)" className="input text-xs" value={wgEndpoint} onChange={(e) => setWgEndpoint(e.target.value)} placeholder="Endpoint host:51820" />
+          <input aria-label="WireGuard allowed IPs" className="input text-xs" value={wgAllowedIps} onChange={(e) => setWgAllowedIps(e.target.value)} placeholder="Allowed IPs" />
           <button type="button" className="btn-secondary text-xs sm:col-span-2" disabled={busy} onClick={() => void runAction('cockpit.nm.create_wireguard', { name: wgName, address: wgAddress, private_key: wgPrivateKey, peer_public_key: wgPeerKey, endpoint: wgEndpoint, allowed_ips: wgAllowedIps })}>
             Create WireGuard
           </button>

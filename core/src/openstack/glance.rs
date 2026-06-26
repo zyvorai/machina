@@ -268,7 +268,10 @@ pub async fn upload_qcow2_to_glance(
 }
 
 /// Delete a Glance image by ID.
-pub async fn delete_glance_image(cfg: &OpenStackConfig, image_id: &str) -> Result<(), LibvirtError> {
+pub async fn delete_glance_image(
+    cfg: &OpenStackConfig,
+    image_id: &str,
+) -> Result<(), LibvirtError> {
     let id = image_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("image_id is required".into()));

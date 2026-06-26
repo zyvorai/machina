@@ -22,7 +22,11 @@ export default function MissionControlBriefing({ state, missingImagesCount = 0, 
 
   useEffect(() => {
     void getFleetSummary()
-      .then((r) => setSummaryText(r.summary))
+      .then((r) =>
+        setSummaryText(
+          `${r.aggregate_vm_count} VMs · ${r.reachable_peers}/${r.peer_count} peers reachable · $${r.aggregate_monthly_usd.toFixed(0)}/mo`,
+        ),
+      )
       .catch(() => setSummaryText(null))
   }, [state.vms.length])
 

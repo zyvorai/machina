@@ -881,6 +881,9 @@ pub struct AuthConfig {
     /// Optional LDAP / Active Directory bind for password login (tried before PAM when enabled).
     #[serde(default)]
     pub ldap: LdapConfig,
+    /// SAML SP metadata and IdP settings (config-only until SAML login is implemented).
+    #[serde(default)]
+    pub saml: SamlConfig,
     /// Max in-memory browser sessions cluster-wide (oldest evicted when exceeded).
     #[serde(default = "default_max_sessions_global")]
     pub max_sessions_global: usize,
@@ -1012,6 +1015,77 @@ impl Default for OidcDefaultRole {
     }
 }
 
+fn default_saml_name_id_format() -> String {
+    "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress".to_string()
+}
+
+fn default_saml_button_label() -> String {
+    "Sign in with SAML".to_string()
+}
+
+/// SAML 2.0 service-provider metadata (stored in config; login flow not yet wired).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SamlConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    /// SP entity ID, e.g. `https://hypervisor.example.com/saml/metadata`.
+    #[serde(default)]
+    pub sp_entity_id: String,
+    /// Assertion consumer URL, e.g. `https://host:5092/api/v1/auth/saml/acs`.
+    #[serde(default)]
+    pub sp_acs_url: String,
+    /// IdP entity ID from federation metadata.
+    #[serde(default)]
+    pub idp_entity_id: String,
+    /// Remote metadata URL (preferred over inline XML).
+    #[serde(default)]
+    pub idp_metadata_url: String,
+    /// Inline IdP metadata XML when URL is unavailable.
+    #[serde(default)]
+    pub idp_metadata_xml: String,
+    #[serde(default = "default_saml_name_id_format")]
+    pub name_id_format: String,
+    #[serde(default = "default_saml_button_label")]
+    pub button_label: String,
+    #[serde(default)]
+    pub admin_groups: Vec<String>,
+    #[serde(default)]
+    pub operator_groups: Vec<String>,
+    #[serde(default)]
+    pub default_role: OidcDefaultRole,
+    /// Operator notes (not used at runtime).
+    #[serde(default)]
+    pub notes: String,
+}
+
+impl SamlConfig {
+    pub fn is_configured(&self) -> bool {
+        self.enabled
+            && !self.sp_entity_id.trim().is_empty()
+            && (!self.idp_metadata_url.trim().is_empty()
+                || !self.idp_metadata_xml.trim().is_empty())
+    }
+}
+
+impl Default for SamlConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            sp_entity_id: String::new(),
+            sp_acs_url: String::new(),
+            idp_entity_id: String::new(),
+            idp_metadata_url: String::new(),
+            idp_metadata_xml: String::new(),
+            name_id_format: default_saml_name_id_format(),
+            button_label: default_saml_button_label(),
+            admin_groups: Vec::new(),
+            operator_groups: Vec::new(),
+            default_role: OidcDefaultRole::ReadOnly,
+            notes: String::new(),
+        }
+    }
+}
+
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
@@ -1019,6 +1093,7 @@ impl Default for AuthConfig {
             oidc: OidcConfig::default(),
             run_as_user: RunAsUserConfig::default(),
             ldap: LdapConfig::default(),
+            saml: SamlConfig::default(),
             max_sessions_global: default_max_sessions_global(),
             max_sessions_per_user: 0,
         }

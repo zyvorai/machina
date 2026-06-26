@@ -24,7 +24,9 @@ import {
   launchpadStatusLabel,
   launchpadStatusTone,
   openLaunchpadApp,
+  openLaunchpadInWorkspace,
   pinLaunchpadApp,
+  shareLaunchpadApp,
 } from '../../utils/launchpadHelpers'
 import { statusToneClass } from '../../utils/semanticColors'
 import { useToastContext } from '../../contexts/ToastContext'
@@ -163,11 +165,27 @@ export default function PlatformLaunchpadAppDetail() {
                     <Route className="w-3.5 h-3.5" />
                     Inspect Route
                   </button>
-                  <button type="button" className="btn-secondary text-xs opacity-50 cursor-not-allowed" title="Coming soon" disabled>
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs inline-flex items-center gap-1.5"
+                    onClick={() =>
+                      void shareLaunchpadApp(app)
+                        .then(() => toast.success('Shared or copied link'))
+                        .catch((e: unknown) => toast.error(formatUserError(e)))
+                    }
+                  >
                     <Share2 className="w-3.5 h-3.5" />
                     Share
                   </button>
-                  <button type="button" className="btn-secondary text-xs opacity-50 cursor-not-allowed" title="Coming soon" disabled>
+                  <button
+                    type="button"
+                    className="btn-secondary text-xs inline-flex items-center gap-1.5"
+                    onClick={() =>
+                      void openLaunchpadInWorkspace(app)
+                        .then(() => toast.success('Opened in workspace window'))
+                        .catch((e: unknown) => toast.error(formatUserError(e)))
+                    }
+                  >
                     <SquareArrowOutUpRight className="w-3.5 h-3.5" />
                     Open in Workspace
                   </button>

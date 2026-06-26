@@ -1,11 +1,10 @@
 [Unit]
 Description=Machina platform controller (central management API)
 Documentation=https://github.com/ssahani/machina
-After=network-online.target postgresql.service
+After=network-online.target
 Wants=network-online.target
-Requires=postgresql.service
-StartLimitIntervalSec=300
-StartLimitBurst=10
+# Disable burst limit — controller will retry on startup failures
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple

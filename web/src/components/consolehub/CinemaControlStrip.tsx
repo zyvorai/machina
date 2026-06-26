@@ -232,7 +232,7 @@ export default function CinemaControlStrip({
 
         {/* Keyboard dropdown */}
         <div className="relative" ref={keyboardRef}>
-          <button type="button" className={btn} onClick={() => setKeyboardOpen((v) => !v)} title="Keyboard">
+          <button type="button" className={btn} onClick={() => setKeyboardOpen((v) => !v)} title="Keyboard" aria-label="Keyboard">
             <Keyboard className="w-3.5 h-3.5" />
           </button>
           {keyboardOpen ? (
@@ -275,6 +275,7 @@ export default function CinemaControlStrip({
                 <p className="text-[10px] text-amber-200/80">Connect the display console to enable paste into the VM.</p>
               ) : null}
               <textarea
+                aria-label="Clipboard text to send to VM"
                 className="w-full min-h-[4.5rem] rounded border border-white/10 bg-black/40 px-2 py-1.5 text-xs text-slate-100 font-mono resize-y"
                 value={localDraft}
                 onChange={(e) => setLocalDraft(e.target.value)}
@@ -296,7 +297,7 @@ export default function CinemaControlStrip({
 
         {/* Display dropdown */}
         <div className="relative" ref={displayRef}>
-          <button type="button" className={btn} onClick={() => setDisplayOpen((v) => !v)} title="Display" data-testid="cinema-display">
+          <button type="button" className={btn} onClick={() => setDisplayOpen((v) => !v)} title="Display" aria-label="Display" data-testid="cinema-display">
             <Monitor className="w-3.5 h-3.5" />
           </button>
           {displayOpen ? (
@@ -351,20 +352,20 @@ export default function CinemaControlStrip({
 
         {/* Network */}
         {onOpenNetwork ? (
-          <button type="button" className={btn} onClick={onOpenNetwork} title="Network" data-testid="cinema-network">
+          <button type="button" className={btn} onClick={onOpenNetwork} title="Network" aria-label="Network" data-testid="cinema-network">
             <Network className="w-3.5 h-3.5" />
           </button>
         ) : null}
 
         {/* Snapshot */}
         {onSnapshot && !readOnly ? (
-          <button type="button" className={btn} onClick={onSnapshot} title="Snapshot" data-testid="cinema-snapshot">
+          <button type="button" className={btn} onClick={onSnapshot} title="Snapshot" aria-label="Snapshot" data-testid="cinema-snapshot">
             <Camera className="w-3.5 h-3.5" />
           </button>
         ) : null}
 
         {/* Record */}
-        <button type="button" className={btn} onClick={() => onRecord?.()} title="Record">
+        <button type="button" className={btn} onClick={() => onRecord?.()} title="Record" aria-label="Record">
           <Square className="w-3 h-3" />
         </button>
 

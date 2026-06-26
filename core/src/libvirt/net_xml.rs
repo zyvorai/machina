@@ -65,13 +65,19 @@ mod tests {
     #[test]
     fn domain_xml_single_quoted_network_sources() {
         let xml = r#"<interface type='network'><source network='default'/></interface>"#;
-        assert_eq!(network_names_from_domain_xml(xml), vec!["default".to_string()]);
+        assert_eq!(
+            network_names_from_domain_xml(xml),
+            vec!["default".to_string()]
+        );
     }
 
     #[test]
     fn domain_xml_double_quoted_network_sources() {
         let xml = r#"<interface type="network"><source network="default"/></interface>"#;
-        assert_eq!(network_names_from_domain_xml(xml), vec!["default".to_string()]);
+        assert_eq!(
+            network_names_from_domain_xml(xml),
+            vec!["default".to_string()]
+        );
     }
 
     #[test]

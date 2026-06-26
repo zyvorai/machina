@@ -1,76 +1,41 @@
-# Documentation
+# machina Documentation
 
-## Client Presentations
+Enterprise Linux hypervisor management platform
 
-**6 HTML+PDF presentation decks** covering business value, architecture, security, technical deep dives, and quick-start guides — organized for different audiences.
+## Start Here
 
-> 📊 **All presentations available as interactive HTML** (viewable in any browser) **and PDF** (printable/shareable). Download or view online: [`client-presentations/`](client-presentations/)
+| Goal | Document |
+|------|----------|
+| Infrastructure vision | [machina-infrastructure-vision.md](machina-infrastructure-vision.md) |
+| KubeVirt migration | [kubevirt-migration.md](kubevirt-migration.md) |
+| Observability | [observability.md](guides/observability.md) |
+| OpenStack | [openstack.md](openstack.md) |
+| **User journeys & acceptance criteria** | [User Stories](USER_STORIES.md) |
 
-### Presentation Index
+## User Stories
 
-| # | Title | Use Case | Audience |
-|---|-------|----------|----------|
-| 01 | Business Value | Market value, ROI, key differentiation | C-suite, VP Infrastructure |
-| 02 | Pricing & Licensing | TCO, cost comparison vs alternatives | Finance, Procurement |
-| 03 | Technical Architecture | Full platform stack, Rust daemon, libvirt integration | Architects, DevOps |
-| 04 | Quickstart Guide | Installation, initial setup, POC workflow | New users, solutions architects |
-| 05 | Security & Compliance | PAM auth, RBAC, session management, audit trails | Security, compliance teams |
-| 06 | ROI Calculator | Financial justification tool, cost-benefit analysis | Finance, project managers |
+Persona-based journeys with acceptance criteria: **[USER_STORIES.md](USER_STORIES.md)**
 
-[**→ Full Presentation Library**](client-presentations/) with descriptions and generation instructions
+| Persona | Focus |
+|---------|-------|
+| Alex (Hypervisor Admin) | Manage VMs, networks, storage on bare metal |
+| Morgan (Infra Engineer) | API automation and scheduled actions |
+| Jordan (NOC Operator) | Live consoles and fleet metrics |
 
-New feature decks (07–10): VM Detail UX, ConsoleHub Cinema/Studio, Connect hub, F01–F13 QA matrix. Generate PDFs and mail:
+## Ecosystem
 
-```bash
-./scripts/generate-feature-pdfs.sh    # docs/client-presentations/07–10-*.pdf
-./scripts/mail-feature-pdfs.sh        # To sibu@zyvor.dev, cc ssahani@zyvor.dev
-```
+Part of the [Zyvor / HyperSDK platform stack](https://zyvor.dev):
 
----
+| Product | Role |
+|---------|------|
+| **hypercluster** | Kubernetes bootstrap |
+| **machina** | Bare-metal hypervisor OS |
+| **zeus-os (v9s)** | Cloud / KubeVirt control plane |
+| **forge** | AI infrastructure on K8s |
+| **hypersdk / hyper2kvm** | VM migration |
+| **guestkit** | Offline VM assurance |
+| **packetwolf** | Network intelligence |
+| **Aether** | Runtime portability |
+| **hermes** | Application layer for K8s |
 
-## Platform guides
-
-| Guide | Description |
-|-------|-------------|
-| [Platform VM Detail UX](guides/platform-vm-detail-ux.md) | Hero, action bar, attention stack, Connect hub, Access tab |
-| [VM daily access](guides/vm-daily-access.md) | Connect hub, laptop NAT path, export, ports |
-| [Platform feature QA](guides/platform-feature-qa.md) | F01–F13 Playwright matrix (mock + live) |
-| [VM lifecycle & SSH](guides/vm-lifecycle-ssh.md) | SSH keys, cloud-init, port forwards |
-| [Machina Cinema Mode](machina-cinema-mode.md) | Cinema / Studio / Mission Control wall |
-
----
-
-## Getting Started
-
-| Document | Description |
-|----------|-------------|
-| [README](../README.md) | Project overview, architecture, key features |
-| [Installation](../install.sh) | Automated installer for Fedora/RHEL/Ubuntu/Debian/openSUSE/Arch |
-| [KubeVirt Migration](kubevirt-migration.md) | Optional Kubernetes integration guide |
-| [Guacamole Integration](guacamole-integration.md) | HTML5 gateway integration (optional) |
-| [OIDC & local Linux user](oidc-effective-linux-user.md) | Session vs NSS mapping, defaults, run-as-user boundary |
-| [UX wiring & QA](ux.md) | Cross-shell UX, login variants, manual QA matrix, E2E pointers |
-| [Platform VM Detail UX](guides/platform-vm-detail-ux.md) | Connect hub, Access tab, action bar, attention stack |
-| [Platform feature QA](guides/platform-feature-qa.md) | F01–F13 feature matrix (`npm run test:e2e:features`) |
-| [Machina Cinema Mode](machina-cinema-mode.md) | Cinema / Studio console UX, entry points, tests |
-| [Operator runbook](runbook.md) | Health, backup, remote access, web login troubleshooting |
-| [Developing on macOS](macos-build.md) | **Remote-only Rust builds** — do not `cargo build` / `make` on Mac |
-| [Remote binary packaging](PACKAGE_BINARY_REMOTE.md) | Build tarball on Linux, fetch to laptop |
-
----
-
-## API & Automation
-
-- **REST API** — 50+ endpoints for VM lifecycle, storage, networking, metrics
-- **WebSocket** — Console proxies (VNC, SPICE, serial, SSH) and live metrics
-- **CLI** — `machinactl` for remote deployment, health checks, backups, upgrades
-- **Webhooks** — Event-driven automations (VM state change, alert triggers)
-- **Prometheus** — Native metrics export (`/metrics`)
-
----
-
-## Support & Contributing
-
-- **Issues** — Report bugs or request features via GitHub Issues
-- **Contributing** — See [CONTRIBUTING.md](../CONTRIBUTING.md)
-- **Community** — Join discussions and ask questions in GitHub Discussions
+See also: [../README.md](../README.md)

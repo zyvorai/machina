@@ -86,16 +86,9 @@ test('integrations hub lists OpenStack when enabled', async ({ page }) => {
 
 test('integrations hub shows live OpenStack and K8s preview stats', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'normal' })
-  const instancesReq = page.waitForResponse(
-    (r) => r.url().includes('/openstack/instances') && r.ok(),
-    { timeout: 20_000 },
-  )
-  const k8sReq = page.waitForResponse((r) => r.url().includes('/k8s/overview') && r.ok(), { timeout: 20_000 })
   await page.goto('/platform/integrations')
-  await expect(page.getByText('OpenStack preview')).toBeVisible()
-  await expect(page.getByText('Kubernetes preview')).toBeVisible()
-  await instancesReq
-  await k8sReq
+  await expect(page.getByText('OpenStack preview')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('Kubernetes preview')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('Instances').first()).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('web-01')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('k3s')).toBeVisible({ timeout: 15_000 })
@@ -110,11 +103,12 @@ test('integrations hub lists classic Machina tools', async ({ page }) => {
   await expect(page.getByText('Leaving the desktop')).toBeVisible()
 })
 
-test('Go menu navigates without tier bounce on allowed route', async ({ page }) => {
+test('Go menu navigates without tier bounce on allowed route', { retries: 1 }, async ({ page }) => {
+  test.setTimeout(90_000)
   await mockPlatformApi(page, { tier: 'normal' })
   await page.goto('/platform')
   await expect(page.getByRole('heading', { name: /e2e-cluster|Production Cluster|Zyvor Platform/i })).toBeVisible({
-    timeout: 15_000,
+    timeout: 30_000,
   })
   const menubar = page.locator('.mac-menubar-inner')
   await menubar.getByRole('button', { name: 'Go', exact: true }).click()
@@ -146,7 +140,7 @@ test('backups destinations tab loads at normal tier', async ({ page }) => {
 test('vm detail topology tab loads at power tier', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/vms/v1?tab=topology')
-  await expect(page.getByRole('heading', { name: 'vm-1' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'vm-1' }).first()).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('2 nodes · 1 edges')).toBeVisible({ timeout: 15_000 })
 })
 

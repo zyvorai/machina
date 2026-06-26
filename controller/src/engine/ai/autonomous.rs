@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -33,7 +33,7 @@ pub struct AutonomousPlanResult {
 }
 
 pub async fn plan(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &crate::config::ControllerConfig,
     body: &AutonomousPlanBody,
 ) -> anyhow::Result<AutonomousPlanResult> {
@@ -46,7 +46,7 @@ pub async fn plan(
 }
 
 async fn plan_with_agent(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &crate::config::ControllerConfig,
     body: &AutonomousPlanBody,
     agent_id: &str,
@@ -155,14 +155,13 @@ pub struct AutonomousExecuteBody {
 }
 
 pub async fn execute_approved_plan(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &crate::config::ControllerConfig,
-    state: &crate::state::AppState,
+    _state: &crate::state::AppState,
     actor: &crate::auth::AuthUser,
     body: &AutonomousExecuteBody,
 ) -> anyhow::Result<serde_json::Value> {
-    super::enterprise_zeus::require_zeus_execute(actor)
-        .map_err(|e| anyhow::anyhow!(e.message))?;
+    super::enterprise_zeus::require_zeus_execute(actor).map_err(|e| anyhow::anyhow!(e.message))?;
     let plan = plan(
         pool,
         cfg,
@@ -178,7 +177,10 @@ pub async fn execute_approved_plan(
         let created = super::actions::create_action(
             pool,
             &super::actions::CreateActionBody {
-                action_type: step.action_type.clone().unwrap_or_else(|| "execute_plan".into()),
+                action_type: step
+                    .action_type
+                    .clone()
+                    .unwrap_or_else(|| "execute_plan".into()),
                 label: step.title.clone(),
                 review: step.detail.clone(),
                 risk: "Review required".into(),

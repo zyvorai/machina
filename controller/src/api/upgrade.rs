@@ -1,12 +1,14 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Path, State};
+use axum::Extension;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api::tasks::TaskResponse;
 use crate::api::ApiError;
+use crate::auth::{require_admin, AuthUser};
 use crate::state::AppState;
 use crate::tasks::enqueue::enqueue_task;
 
@@ -18,7 +20,9 @@ pub struct AgentUpgradeMatrix {
     pub notes: String,
 }
 
-pub async fn upgrade_matrix(State(state): State<AppState>) -> Result<Json<AgentUpgradeMatrix>, ApiError> {
+pub async fn upgrade_matrix(
+    State(_state): State<AppState>,
+) -> Result<Json<AgentUpgradeMatrix>, ApiError> {
     Ok(Json(AgentUpgradeMatrix {
         controller_version: env!("CARGO_PKG_VERSION").into(),
         recommended_agent: env!("CARGO_PKG_VERSION").into(),
@@ -40,9 +44,11 @@ fn default_version() -> String {
 
 pub async fn upgrade_host_agent(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<UpgradeHostBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_admin(&actor)?;
     let task_id = enqueue_task(
         &state,
         "host.agent.upgrade",

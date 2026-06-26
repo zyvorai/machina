@@ -210,7 +210,7 @@ export default function OpenStackInstanceAdvanced({ inst, volumes, onRefresh }: 
           ))}
         </ul>
         <div className="flex flex-wrap gap-2 items-end">
-          <select value={attachNetId} onChange={(e) => setAttachNetId(e.target.value)}
+          <select aria-label="Network to attach" value={attachNetId} onChange={(e) => setAttachNetId(e.target.value)}
             className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm">
             <option value="">Network to attach…</option>
             {networks.map((n) => (
@@ -249,7 +249,7 @@ export default function OpenStackInstanceAdvanced({ inst, volumes, onRefresh }: 
         <div className="flex flex-wrap gap-2 mt-3 items-end">
           <div>
             <label className="block text-xs text-slate-500 mb-1">Resize to flavor</label>
-            <select value={resizeFlavor} onChange={(e) => setResizeFlavor(e.target.value)}
+            <select aria-label="Resize to flavor" value={resizeFlavor} onChange={(e) => setResizeFlavor(e.target.value)}
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm">
               <option value="">Select…</option>
               {flavors.map((f) => (
@@ -295,6 +295,7 @@ export default function OpenStackInstanceAdvanced({ inst, volumes, onRefresh }: 
           <div>
             <label className="block text-xs text-slate-500 mb-1">Remote console type</label>
             <select
+              aria-label="Remote console type"
               value={consoleType}
               onChange={(e) => setConsoleType(e.target.value as OpenStackConsoleType)}
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm min-w-[10rem]"
@@ -362,6 +363,7 @@ export default function OpenStackInstanceAdvanced({ inst, volumes, onRefresh }: 
           <div>
             <label className="block text-xs text-slate-500 mb-1">Available in project</label>
             <select
+              aria-label="Available floating IP"
               value={existingFipId}
               onChange={(e) => setExistingFipId(e.target.value)}
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm max-w-md"
@@ -394,7 +396,7 @@ export default function OpenStackInstanceAdvanced({ inst, volumes, onRefresh }: 
         <div className="flex flex-wrap gap-2 items-end">
           <div>
             <label className="block text-xs text-slate-500 mb-1">External network</label>
-            <select value={extNet} onChange={(e) => setExtNet(e.target.value)}
+            <select aria-label="External network" value={extNet} onChange={(e) => setExtNet(e.target.value)}
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm max-w-xs">
               <option value="">Select…</option>
               {networks.map((n) => (
@@ -420,6 +422,7 @@ export default function OpenStackInstanceAdvanced({ inst, volumes, onRefresh }: 
         <p className="text-xs text-slate-500 mb-2">Replace the instance disk from a Glance image (destructive).</p>
         <div className="flex flex-wrap gap-2 items-end">
           <select
+            aria-label="Glance image for rebuild"
             value={rebuildImageId}
             onChange={(e) => setRebuildImageId(e.target.value)}
             className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm min-w-[12rem]"
@@ -448,6 +451,7 @@ export default function OpenStackInstanceAdvanced({ inst, volumes, onRefresh }: 
           <Tags className="w-4 h-4 text-sky-400" /> Metadata
         </h2>
         <textarea
+          aria-label="Instance metadata (key=value, one per line)"
           value={metadataText}
           onChange={(e) => setMetadataText(e.target.value)}
           rows={4}
@@ -527,7 +531,7 @@ export default function OpenStackInstanceAdvanced({ inst, volumes, onRefresh }: 
         <div className="flex flex-wrap gap-2 items-end mb-3">
           <div>
             <label className="block text-xs text-slate-500 mb-1">Attach volume</label>
-            <select value={attachVolId} onChange={(e) => setAttachVolId(e.target.value)}
+            <select aria-label="Volume to attach" value={attachVolId} onChange={(e) => setAttachVolId(e.target.value)}
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm max-w-md">
               <option value="">Select unattached volume…</option>
               {cinderVols.map((v) => (
@@ -563,7 +567,7 @@ export default function OpenStackInstanceAdvanced({ inst, volumes, onRefresh }: 
           </Link>
         </h2>
         <div className="flex flex-wrap gap-2 items-end mb-2">
-          <input value={sgName} onChange={(e) => setSgName(e.target.value)} placeholder="group name"
+          <input aria-label="Security group name" value={sgName} onChange={(e) => setSgName(e.target.value)} placeholder="group name"
             className="px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm" />
           <button type="button" disabled={!sgName.trim()}
             onClick={() => run(() => addOpenStackSecurityGroup(inst.id, sgName.trim()), 'Security group added')}

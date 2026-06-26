@@ -2,7 +2,7 @@
 //! Guest-agent tools for Zeus copilot — read tools inline, write tools via ai_actions approval.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -23,7 +23,7 @@ pub struct GuestToolResult {
 }
 
 pub async fn execute_read(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     vm_id: Uuid,
     tool: &str,
@@ -57,7 +57,7 @@ pub async fn execute_read(
 }
 
 pub async fn propose_write(
-    pool: &PgPool,
+    pool: &SqlitePool,
     vm_id: Uuid,
     tool: &str,
     actor: &str,

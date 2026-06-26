@@ -1,9 +1,9 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 // Multi-site federated Zeus Firewall (Phase 24).
 
-use machina_core::{gather_cloud_inventory, simulate_connectivity, profile_by_name};
+use machina_core::{gather_cloud_inventory, profile_by_name, simulate_connectivity};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -139,16 +139,17 @@ pub struct MultisiteSyncResult {
     pub summary: String,
 }
 
-pub async fn ensure_default_sites(pool: &PgPool) -> anyhow::Result<()> {
+pub async fn ensure_default_sites(pool: &SqlitePool) -> anyhow::Result<()> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM firewall_sites")
         .fetch_one(pool)
         .await?;
     if count == 0 {
         sqlx::query(
-            "INSERT INTO firewall_sites (name, region, role, gitops_namespace, dr_pair) VALUES
-             ('primary-local', 'local', 'primary', 'site-primary', 'dr-replica'),
-             ('dr-replica', 'dr', 'replica', 'site-dr', 'primary-local')",
+            "INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, dr_pair) VALUES (?, 'primary-local', 'local', 'primary', 'site-primary', 'dr-replica'),
+             (?, 'dr-replica', 'dr', 'replica', 'site-dr', 'primary-local')",
         )
+        .bind(uuid::Uuid::new_v4())
+        .bind(uuid::Uuid::new_v4())
         .execute(pool)
         .await?;
     }
@@ -157,22 +158,25 @@ pub async fn ensure_default_sites(pool: &PgPool) -> anyhow::Result<()> {
         .fetch_one(pool)
         .await?;
     if policy_count == 0 {
-        let primary_id: Uuid = sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = 'primary-local'")
-            .fetch_one(pool)
-            .await?;
-        let dr_id: Uuid = sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = 'dr-replica'")
-            .fetch_one(pool)
-            .await?;
+        let primary_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = 'primary-local'")
+                .fetch_one(pool)
+                .await?;
+        let dr_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = 'dr-replica'")
+                .fetch_one(pool)
+                .await?;
         for (site_id, name, profile) in [
             (primary_id, "fleet-production", "ProductionServer"),
             (primary_id, "fleet-public", "WebServer"),
             (dr_id, "fleet-dr-standby", "MetalLockdown"),
         ] {
             sqlx::query(
-                "INSERT INTO firewall_site_policies (site_id, policy_name, profile, spec_yaml)
-                 VALUES ($1, $2, $3, $4)
+                "INSERT INTO firewall_site_policies (id, site_id, policy_name, profile, spec_yaml)
+                 VALUES (?, ?, ?, ?, ?)
                  ON CONFLICT (site_id, policy_name) DO NOTHING",
             )
+            .bind(uuid::Uuid::new_v4())
             .bind(site_id)
             .bind(name)
             .bind(profile)
@@ -186,34 +190,44 @@ pub async fn ensure_default_sites(pool: &PgPool) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<MultisiteOverview> {
+pub async fn overview(pool: &SqlitePool, cfg: &ControllerConfig) -> anyhow::Result<MultisiteOverview> {
     ensure_default_sites(pool).await?;
     let ov = firewall_overview(pool, cfg).await?;
-    let rows: Vec<(Uuid, String, String, String, String, bool, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            "SELECT id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair
+    let rows: Vec<(
+        Uuid,
+        String,
+        String,
+        String,
+        String,
+        bool,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair
              FROM firewall_sites ORDER BY name",
-        )
-        .fetch_all(pool)
-        .await?;
+    )
+    .fetch_all(pool)
+    .await?;
 
     let per_site = (ov.targets.len() / rows.len().max(1)).max(1);
     let critical_each = ov.critical_count / rows.len().max(1);
 
     let sites: Vec<FirewallSiteRow> = rows
         .into_iter()
-        .map(|(id, name, region, role, ns, lock, geo, dr)| FirewallSiteRow {
-            id: id.to_string(),
-            name: name.clone(),
-            region,
-            role,
-            gitops_namespace: ns,
-            lockdown_enabled: lock,
-            geo_fence: geo,
-            dr_pair: dr,
-            target_count: per_site,
-            critical_count: critical_each,
-        })
+        .map(
+            |(id, name, region, role, ns, lock, geo, dr)| FirewallSiteRow {
+                id: id.to_string(),
+                name: name.clone(),
+                region,
+                role,
+                gitops_namespace: ns,
+                lockdown_enabled: lock,
+                geo_fence: geo,
+                dr_pair: dr,
+                target_count: per_site,
+                critical_count: critical_each,
+            },
+        )
         .collect();
 
     let policy_conflicts = detect_policy_conflicts(pool).await?;
@@ -268,7 +282,7 @@ fn site_compliance_rollup(sites: &[FirewallSiteRow]) -> SiteComplianceRollup {
     }
 }
 
-async fn detect_policy_conflicts(pool: &PgPool) -> anyhow::Result<Vec<PolicyConflict>> {
+async fn detect_policy_conflicts(pool: &SqlitePool) -> anyhow::Result<Vec<PolicyConflict>> {
     let rows: Vec<(String, String, String)> = sqlx::query_as(
         "SELECT s.name, p.policy_name, p.profile FROM firewall_site_policies p
          JOIN firewall_sites s ON s.id = p.site_id
@@ -288,7 +302,8 @@ async fn detect_policy_conflicts(pool: &PgPool) -> anyhow::Result<Vec<PolicyConf
                 id: "global-divergence".into(),
                 policy_name: global[0].0.clone(),
                 sites: vec!["primary-local".into(), "dr-replica".into()],
-                detail: "Global policies may diverge across sites without site-scoped GitOps".into(),
+                detail: "Global policies may diverge across sites without site-scoped GitOps"
+                    .into(),
             }]);
         }
         return Ok(vec![]);
@@ -301,7 +316,8 @@ async fn detect_policy_conflicts(pool: &PgPool) -> anyhow::Result<Vec<PolicyConf
     }
     let mut conflicts = Vec::new();
     for (name, entries) in by_name {
-        let profiles: std::collections::HashSet<_> = entries.iter().map(|(_, p)| p.clone()).collect();
+        let profiles: std::collections::HashSet<_> =
+            entries.iter().map(|(_, p)| p.clone()).collect();
         if profiles.len() > 1 {
             conflicts.push(PolicyConflict {
                 id: format!("conflict-{name}"),
@@ -314,7 +330,7 @@ async fn detect_policy_conflicts(pool: &PgPool) -> anyhow::Result<Vec<PolicyConf
     Ok(conflicts)
 }
 
-pub async fn federated_export(pool: &PgPool) -> anyhow::Result<FederatedExport> {
+pub async fn federated_export(pool: &SqlitePool) -> anyhow::Result<FederatedExport> {
     ensure_default_sites(pool).await?;
     let export = gitops::export_policies(pool).await?;
     let sites: Vec<(String, String)> =
@@ -346,7 +362,7 @@ pub async fn federated_export(pool: &PgPool) -> anyhow::Result<FederatedExport> 
     })
 }
 
-pub async fn dr_template_bundle(pool: &PgPool) -> anyhow::Result<DrTemplateBundle> {
+pub async fn dr_template_bundle(pool: &SqlitePool) -> anyhow::Result<DrTemplateBundle> {
     ensure_default_sites(pool).await?;
     Ok(DrTemplateBundle {
         primary_site: "primary-local".into(),
@@ -368,25 +384,25 @@ pub async fn dr_template_bundle(pool: &PgPool) -> anyhow::Result<DrTemplateBundl
 }
 
 pub async fn cross_site_sync(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     req: MultisiteSyncRequest,
     actor: &str,
 ) -> anyhow::Result<MultisiteSyncResult> {
     ensure_default_sites(pool).await?;
-    let source_id: Uuid = sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = $1")
+    let source_id: Uuid = sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = ?")
         .bind(&req.source_site)
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| anyhow::anyhow!("unknown source site"))?;
-    let target_id: Uuid = sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = $1")
+    let target_id: Uuid = sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = ?")
         .bind(&req.target_site)
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| anyhow::anyhow!("unknown target site"))?;
 
     let policies: Vec<(String, String, String)> = sqlx::query_as(
-        "SELECT policy_name, spec_yaml, profile FROM firewall_site_policies WHERE site_id = $1",
+        "SELECT policy_name, spec_yaml, profile FROM firewall_site_policies WHERE site_id = ?",
     )
     .bind(source_id)
     .fetch_all(pool)
@@ -396,13 +412,14 @@ pub async fn cross_site_sync(
     let mut profiles_to_apply: Vec<String> = Vec::new();
     for (name, yaml, profile) in policies {
         sqlx::query(
-            "INSERT INTO firewall_site_policies (site_id, policy_name, profile, spec_yaml)
-             VALUES ($1, $2, $3, $4)
+            "INSERT INTO firewall_site_policies (id, site_id, policy_name, profile, spec_yaml)
+             VALUES (?, ?, ?, ?, ?)
              ON CONFLICT (site_id, policy_name) DO UPDATE SET
                spec_yaml = EXCLUDED.spec_yaml,
                profile = EXCLUDED.profile,
-               updated_at = NOW()",
+               updated_at = datetime('now')",
         )
+        .bind(Uuid::new_v4())
         .bind(target_id)
         .bind(&name)
         .bind(&profile)
@@ -416,7 +433,7 @@ pub async fn cross_site_sync(
     }
 
     let lockdown_applied = if req.include_lockdown {
-        sqlx::query("UPDATE firewall_sites SET lockdown_enabled = true WHERE id = $1")
+        sqlx::query("UPDATE firewall_sites SET lockdown_enabled = true WHERE id = ?")
             .bind(target_id)
             .execute(pool)
             .await?;
@@ -431,18 +448,20 @@ pub async fn cross_site_sync(
     let mut hosts_applied = 0usize;
     let mut apply_errors = Vec::new();
     if req.apply_profiles || req.include_lockdown {
-        let online_hosts: Vec<(String,)> = sqlx::query_as(
-            "SELECT id::text FROM hosts WHERE state = 'online' ORDER BY hostname",
-        )
-        .fetch_all(pool)
-        .await?;
+        let online_hosts: Vec<(Uuid,)> =
+            sqlx::query_as("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 200")
+                .fetch_all(pool)
+                .await?;
 
         if req.apply_profiles {
             if let Some(profile) = profiles_to_apply.first() {
                 for (host_id,) in &online_hosts {
-                    match super::inventory::apply_profile(pool, cfg, host_id, profile, actor, false).await {
+                    let hid = host_id.to_string();
+                    match super::inventory::apply_profile(pool, cfg, &hid, profile, actor, false)
+                        .await
+                    {
                         Ok(_) => hosts_applied += 1,
-                        Err(e) => apply_errors.push(format!("{host_id} {profile}: {e}")),
+                        Err(e) => apply_errors.push(format!("{hid} {profile}: {e}")),
                     }
                 }
             }
@@ -450,10 +469,11 @@ pub async fn cross_site_sync(
 
         if req.include_lockdown {
             for (host_id,) in &online_hosts {
+                let hid = host_id.to_string();
                 match super::inventory::apply_profile(
                     pool,
                     cfg,
-                    host_id,
+                    &hid,
                     &req.lockdown_profile,
                     actor,
                     false,
@@ -461,7 +481,7 @@ pub async fn cross_site_sync(
                 .await
                 {
                     Ok(_) => hosts_applied += 1,
-                    Err(e) => apply_errors.push(format!("{host_id} {}: {e}", req.lockdown_profile)),
+                    Err(e) => apply_errors.push(format!("{hid} {}: {e}", req.lockdown_profile)),
                 }
             }
         }
@@ -476,8 +496,9 @@ pub async fn cross_site_sync(
         "apply_errors": apply_errors.len(),
     });
     sqlx::query(
-        "INSERT INTO firewall_site_timeline (site_id, kind, detail_json, actor) VALUES ($1, 'sync', $2, $3)",
+        "INSERT INTO firewall_site_timeline (id, site_id, kind, detail_json, actor) VALUES (?, ?, 'sync', ?, ?)",
     )
+    .bind(Uuid::new_v4())
     .bind(target_id)
     .bind(detail)
     .bind(actor)
@@ -502,7 +523,7 @@ pub async fn cross_site_sync(
     })
 }
 
-pub async fn site_drift_compare(pool: &PgPool) -> anyhow::Result<SiteDriftReport> {
+pub async fn site_drift_compare(pool: &SqlitePool) -> anyhow::Result<SiteDriftReport> {
     ensure_default_sites(pool).await?;
     let pairs: Vec<(String, Option<String>)> =
         sqlx::query_as("SELECT name, dr_pair FROM firewall_sites ORDER BY name")
@@ -523,13 +544,14 @@ pub async fn site_drift_compare(pool: &PgPool) -> anyhow::Result<SiteDriftReport
                 captured_at: chrono::Utc::now().to_rfc3339(),
             });
             let _ = sqlx::query(
-                "INSERT INTO firewall_site_drift (site_id, peer_site_id, drift_json)
-                 SELECT s.id, p.id, $3 FROM firewall_sites s
-                 JOIN firewall_sites p ON p.name = $2 WHERE s.name = $1",
+                "INSERT INTO firewall_site_drift (id, site_id, peer_site_id, drift_json)
+                 SELECT ?, s.id, p.id, ? FROM firewall_sites s
+                 JOIN firewall_sites p ON p.name = ? WHERE s.name = ?",
             )
-            .bind(&site)
-            .bind(&peer_name)
+            .bind(Uuid::new_v4())
             .bind(serde_json::json!({"fields": ["profile_version", "geo_fence"]}))
+            .bind(&peer_name)
+            .bind(&site)
             .execute(pool)
             .await;
         }
@@ -542,13 +564,14 @@ pub async fn site_drift_compare(pool: &PgPool) -> anyhow::Result<SiteDriftReport
 }
 
 pub async fn cross_site_connectivity(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<CrossSiteConnectivity> {
     ensure_default_sites(pool).await?;
-    let site_names: Vec<String> = sqlx::query_scalar("SELECT name FROM firewall_sites ORDER BY name")
-        .fetch_all(pool)
-        .await?;
+    let site_names: Vec<String> =
+        sqlx::query_scalar("SELECT name FROM firewall_sites ORDER BY name")
+            .fetch_all(pool)
+            .await?;
 
     let cloud = gather_cloud_inventory();
     let mut matrix = Vec::new();
@@ -557,9 +580,10 @@ pub async fn cross_site_connectivity(
             if i == j {
                 continue;
             }
-            let allowed = !cloud.security_groups.iter().any(|r| {
-                r.source == "0.0.0.0/0" && a.contains("primary") && b.contains("dr")
-            });
+            let allowed = !cloud
+                .security_groups
+                .iter()
+                .any(|r| r.source == "0.0.0.0/0" && a.contains("primary") && b.contains("dr"));
             matrix.push(CrossSiteHop {
                 from_site: a.clone(),
                 to_site: b.clone(),
@@ -605,7 +629,7 @@ pub async fn cross_site_connectivity(
     })
 }
 
-pub async fn federated_siem_tag(pool: &PgPool, hours: u32) -> anyhow::Result<serde_json::Value> {
+pub async fn federated_siem_tag(pool: &SqlitePool, hours: u32) -> anyhow::Result<serde_json::Value> {
     let sites: Vec<String> = sqlx::query_scalar("SELECT name FROM firewall_sites ORDER BY name")
         .fetch_all(pool)
         .await?;
@@ -617,12 +641,17 @@ pub async fn federated_siem_tag(pool: &PgPool, hours: u32) -> anyhow::Result<ser
     }))
 }
 
-pub async fn merge_timeline(pool: &PgPool, limit: i64) -> anyhow::Result<Vec<serde_json::Value>> {
-    let rows: Vec<(String, String, serde_json::Value, chrono::DateTime<chrono::Utc>)> = sqlx::query_as(
+pub async fn merge_timeline(pool: &SqlitePool, limit: i64) -> anyhow::Result<Vec<serde_json::Value>> {
+    let rows: Vec<(
+        String,
+        String,
+        serde_json::Value,
+        chrono::DateTime<chrono::Utc>,
+    )> = sqlx::query_as(
         "SELECT s.name, t.kind, t.detail_json, t.created_at
          FROM firewall_site_timeline t
          JOIN firewall_sites s ON s.id = t.site_id
-         ORDER BY t.created_at DESC LIMIT $1",
+         ORDER BY t.created_at DESC LIMIT ?",
     )
     .bind(limit)
     .fetch_all(pool)

@@ -234,7 +234,7 @@ export default function GuestAgentDiagnosticsPanel({
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 py-2 bg-slate-900/60">
             Guest filesystems
           </p>
-          <table className="w-full text-xs">
+          <table className="w-full text-xs" aria-label="Guest filesystems">
             <thead>
               <tr className="text-left text-slate-500 border-b border-white/[0.06]">
                 <th className="px-3 py-2">Mount</th>

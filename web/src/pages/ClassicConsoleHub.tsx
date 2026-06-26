@@ -19,7 +19,7 @@ import { formatUserError } from '../utils/apiError'
 import MachineCockpit from '../components/consolehub/MachineCockpit'
 import type { ConsoleHubSessionRow } from '../components/consolehub/ConsoleHubSessionHistory'
 import PageLayout from '../components/PageLayout'
-import { parseConsoleMode, type ConsoleExperienceMode } from '../utils/consoleExperienceMode'
+import { getDefaultProtocol, parseConsoleMode, type ConsoleExperienceMode } from '../utils/consoleExperienceMode'
 
 function classicWsUrl(pathTemplate: string, token: string): string | null {
   const path = pathTemplate.replace('__WS_TOKEN__', encodeURIComponent(token))
@@ -76,12 +76,14 @@ export default function ClassicConsoleHub() {
         listClassicConsoleHubSessions(name, conn).catch(() => []),
       ])
       setPlan(hubPlan)
-      setActiveProtocol(hubPlan.recommended)
+      // Cockpit pattern: pick protocol from VM capabilities, not backend hint
+      const defaultProto = getDefaultProtocol(hubPlan)
+      setActiveProtocol(defaultProto)
       setVmState(vm?.state ?? null)
       setHistory(sessions)
-      const needsGuac = hubPlan.recommended.startsWith('guacamole_')
+      const needsGuac = defaultProto.startsWith('guacamole_')
       if (needsGuac && hubPlan.guacamole.available) {
-        const sess = await createClassicConsoleHubSession(name, { protocol: hubPlan.recommended }, conn)
+        const sess = await createClassicConsoleHubSession(name, { protocol: defaultProto }, conn)
         setSession(sess)
         setWsUrl(null)
       } else {

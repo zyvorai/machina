@@ -72,6 +72,7 @@ function OpenStackLoadBalancersContent() {
         <div>
           <label className="block text-xs text-slate-500 mb-1">VIP subnet</label>
           <select value={subnetId} onChange={(e) => setSubnetId(e.target.value)}
+            aria-label="VIP subnet"
             className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-sm min-w-[14rem]">
             <option value="">Select subnet…</option>
             {subnets.map((s) => (
@@ -99,7 +100,7 @@ function OpenStackLoadBalancersContent() {
         <EmptyState title="No load balancers" description="Octavia may be unreachable or no LBs in this project." />
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-700">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Load balancers">
             <thead className="bg-slate-900/80 text-slate-400 text-left">
               <tr>
                 <th className="px-3 py-2">Name</th>

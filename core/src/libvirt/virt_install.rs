@@ -187,7 +187,11 @@ pub fn create_vm_virt_install(
 
     let want_both = gt.eq_ignore_ascii_case("both");
     let gt_install = if want_both {
-        if win { "spice" } else { "vnc" }
+        if win {
+            "spice"
+        } else {
+            "vnc"
+        }
     } else {
         gt
     };
@@ -515,7 +519,8 @@ pub fn install_defined_vm(
         || !req.iso.trim().is_empty();
     if !has_install {
         return Err(LibvirtError::Invalid(
-            "Configure an install source (location, PXE, install_os, or ISO) before installing".into(),
+            "Configure an install source (location, PXE, install_os, or ISO) before installing"
+                .into(),
         ));
     }
 

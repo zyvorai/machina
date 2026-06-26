@@ -1,9 +1,11 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use machina_core::{apply_k8s_plan, compile_k8s_policies, detect_k8s_backend, k8s_cluster_ready, FirewallPlanRequest};
+use machina_core::{
+    apply_k8s_plan, compile_k8s_policies, detect_k8s_backend, k8s_cluster_ready,
+    FirewallPlanRequest,
+};
 use serde::Serialize;
-use sqlx::PgPool;
-use uuid::Uuid;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct K8sFirewallStatus {
@@ -29,7 +31,7 @@ pub async fn compile_plan(
 }
 
 pub async fn apply_plan(
-    pool: &PgPool,
+    pool: &SqlitePool,
     namespace: &str,
     profile: &str,
     actor: &str,
@@ -45,9 +47,9 @@ pub async fn apply_plan(
     let result = apply_k8s_plan(namespace, &req)?;
     if !dry_run {
         let _ = sqlx::query(
-            "INSERT INTO firewall_k8s_apply_log (namespace, profile, backend, actor, detail_json)
-             VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO firewall_k8s_apply_log (id, namespace, profile, backend, actor, detail_json) VALUES (?, ?, ?, ?, ?, ?)",
         )
+        .bind(uuid::Uuid::new_v4())
         .bind(namespace)
         .bind(profile)
         .bind(detect_k8s_backend().as_str())

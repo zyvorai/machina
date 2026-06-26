@@ -194,7 +194,7 @@ export default function BackupsPage() {
       icon={<Archive className="w-6 h-6" />}
       actions={
         <>
-          <button onClick={load} className="p-2 hover:bg-slate-700 rounded transition" title="Refresh"><RefreshCw className="w-4 h-4" /></button>
+          <button onClick={load} className="p-2 hover:bg-slate-700 rounded transition" title="Refresh" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
           <button
             onClick={() => setShowForm(!showForm)}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-500 hover:to-blue-600 rounded-lg transition-all text-sm font-medium shadow-lg shadow-blue-600/20"
@@ -238,6 +238,7 @@ export default function BackupsPage() {
             <div>
               <label className="block text-sm text-slate-400 mb-1">VM (leave empty for all)</label>
               <select
+                aria-label="VM (leave empty for all)"
                 value={vmName}
                 onChange={(e) => setVmName(e.target.value)}
                 className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm focus:border-blue-500 focus:outline-none"
@@ -309,9 +310,9 @@ export default function BackupsPage() {
       {/* Backup list */}
       <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
         {backups.length === 0 ? (
-          <div className="p-8 text-center text-slate-500">No backups found. Create one to get started.</div>
+          <EmptyState title="No backups" description="Create a backup to protect your VMs. Backups are stored at the configured target path." />
         ) : (
-          <table className="w-full">
+          <table className="w-full" aria-label="Backup jobs">
             <thead>
               <tr className="border-b border-slate-700/50 text-left text-sm text-slate-400">
                 <th className="px-4 py-3">Backup ID</th>
@@ -399,10 +400,10 @@ export default function BackupsPage() {
                       >
                         <Download className="w-4 h-4 text-cyan-400" />
                       </a>
-                      <button onClick={() => setRestoreTarget(b)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="Restore">
+                      <button onClick={() => setRestoreTarget(b)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="Restore" aria-label="Restore">
                         <RotateCcw className={`w-4 h-4 ${statusToneClass('info')}`} />
                       </button>
-                      <button onClick={() => setDeleteTarget(b)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete">
+                      <button onClick={() => setDeleteTarget(b)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete" aria-label="Delete">
                         <Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} />
                       </button>
                     </div>
@@ -433,7 +434,7 @@ export default function BackupsPage() {
                 <>
                   <div className="flex justify-between"><span className="text-slate-400">Failed</span><span className={statusToneClass('error')}>{verifyResult.files_failed}</span></div>
                   <div className={`mt-2 bg-slate-900 rounded p-2 text-xs font-mono max-h-32 overflow-y-auto ${statusToneClass('error')} opacity-80`}>
-                    {verifyResult.failed_files.map((f, i) => <div key={i}>{f}</div>)}
+                    {verifyResult.failed_files.map((f) => <div key={f}>{f}</div>)}
                   </div>
                 </>
               )}

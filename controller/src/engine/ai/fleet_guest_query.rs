@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -60,7 +60,7 @@ struct FilterPlan {
 }
 
 pub async fn execute(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     req: &FleetGuestQueryRequest,
 ) -> anyhow::Result<FleetGuestQueryReport> {
@@ -133,7 +133,7 @@ fn deterministic_summary(query: &str, matched: usize, scanned: usize) -> Summary
     }
 }
 
-async fn resolve_vm_ids(pool: &PgPool, req: &FleetGuestQueryRequest) -> anyhow::Result<Vec<Uuid>> {
+async fn resolve_vm_ids(pool: &SqlitePool, req: &FleetGuestQueryRequest) -> anyhow::Result<Vec<Uuid>> {
     if !req.vm_ids.is_empty() {
         return Ok(req.vm_ids.clone());
     }
@@ -141,13 +141,15 @@ async fn resolve_vm_ids(pool: &PgPool, req: &FleetGuestQueryRequest) -> anyhow::
     let rows: Vec<(Uuid,)> = sqlx::query_as(
         "SELECT id FROM vms
          WHERE COALESCE(inventory_source, 'libvirt') = 'libvirt'
-           AND ($1::text IS NULL OR project = $1)
-           AND ($2::text IS NULL OR $2 = ANY(tags))
+           AND (? IS NULL OR project = ?)
+           AND (? IS NULL OR EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value = ?))
            AND (observed_state = 'running' OR observed_state = 'paused')
          ORDER BY name
          LIMIT 50",
     )
     .bind(req.project.as_deref())
+    .bind(req.project.as_deref())
+    .bind(req.tag.as_deref())
     .bind(req.tag.as_deref())
     .fetch_all(pool)
     .await?;
@@ -155,7 +157,7 @@ async fn resolve_vm_ids(pool: &PgPool, req: &FleetGuestQueryRequest) -> anyhow::
         let rows: Vec<(Uuid,)> = sqlx::query_as(
             "SELECT id FROM vms
              WHERE COALESCE(inventory_source, 'libvirt') = 'libvirt'
-               AND name ILIKE $1
+               AND name LIKE ?
              LIMIT 50",
         )
         .bind(&pattern)
@@ -166,7 +168,7 @@ async fn resolve_vm_ids(pool: &PgPool, req: &FleetGuestQueryRequest) -> anyhow::
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
-async fn parse_filter_plan(pool: &PgPool, query: &str) -> FilterPlan {
+async fn parse_filter_plan(pool: &SqlitePool, query: &str) -> FilterPlan {
     let ql = query.to_lowercase();
     let mut plan = keyword_plan(&ql);
 

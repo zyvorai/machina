@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Link } from 'react-router'
 import { AlertTriangle, Radar, Shield, ShieldAlert } from 'lucide-react'
 import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
@@ -16,6 +17,7 @@ import {
   getFleetThreatSummary,
   getFabricHealth,
   getZeusSecurityGraph,
+  getZeusSecuritySensors,
   getZeusSecurityStatus,
   installFleetTetragon,
   nlSecuritySearch,
@@ -74,7 +76,9 @@ export default function PlatformSecurityCenter() {
   const [graph, setGraph] = useState<SecurityGraph | null>(null)
   const [sensorCount, setSensorCount] = useState(0)
   const [sensorMatrix, setSensorMatrix] = useState<FleetSensorRow[]>([])
+  const [sensorRegistry, setSensorRegistry] = useState<Array<Record<string, unknown>>>([])
   const [fleetEnrollBusy, setFleetEnrollBusy] = useState(false)
+  const [confirmEnrollTetragon, setConfirmEnrollTetragon] = useState(false)
   const [timeline, setTimeline] = useState<SecurityEvent[]>([])
   const [fabricHealth, setFabricHealth] = useState<FabricHealth | null>(null)
   const [nlQuery, setNlQuery] = useState('')
@@ -87,11 +91,12 @@ export default function PlatformSecurityCenter() {
     setError(null)
     setLoading(true)
     try {
-      const [st, th, gr, fleetSensors, tl, health] = await Promise.all([
+      const [st, th, gr, fleetSensors, sensorReg, tl, health] = await Promise.all([
         getZeusSecurityStatus(),
         getFleetThreatSummary(),
         getZeusSecurityGraph(),
         getFleetSensors(),
+        getZeusSecuritySensors().catch(() => ({ sensors: [] as Array<Record<string, unknown>> })),
         getFleetSecurityTimeline(24),
         getFabricHealth(),
       ])
@@ -100,6 +105,7 @@ export default function PlatformSecurityCenter() {
       setGraph(gr)
       setSensorCount(fleetSensors.sensors?.length ?? fleetSensors.matrix?.length ?? 0)
       setSensorMatrix(fleetSensors.matrix ?? [])
+      setSensorRegistry(sensorReg.sensors ?? [])
       setTimeline(tl.events ?? [])
       setFabricHealth(health)
     } catch (e: unknown) {
@@ -128,7 +134,11 @@ export default function PlatformSecurityCenter() {
   const unhealthySensors = sensorMatrix.filter((r) => r.tetragon_status !== 'healthy' && r.host_state === 'online')
 
   const enrollFleetTetragon = () => {
-    if (!window.confirm(`Enroll Tetragon on all online hosts (${unhealthySensors.length || 'fleet'} sensor gap)?`)) return
+    setConfirmEnrollTetragon(true)
+  }
+
+  const doEnrollFleetTetragon = () => {
+    setConfirmEnrollTetragon(false)
     setFleetEnrollBusy(true)
     void installFleetTetragon()
       .then((r) => toast.success(r.summary))
@@ -184,8 +194,8 @@ export default function PlatformSecurityCenter() {
       {fabricHealth && (fabricHealth.issues?.length ?? 0) > 0 && (
         <MacGlassPanel title="Fabric health" subtitle={fabricHealth.summary ?? fabricHealth.status}>
           <ul className="text-sm text-slate-300 space-y-1">
-            {fabricHealth.issues?.slice(0, 5).map((issue, i) => (
-              <li key={i} className={statusToneClass('warn')}>
+            {fabricHealth.issues?.slice(0, 5).map((issue) => (
+              <li key={`${String(issue.host_id ?? '')}-${issue.summary}`} className={statusToneClass('warn')}>
                 {issue.summary}
                 {issue.host_id ? (
                   <>
@@ -265,13 +275,34 @@ export default function PlatformSecurityCenter() {
             )}
           </MacGlassPanel>
 
+          {sensorRegistry.length > 0 && (
+            <MacGlassPanel
+              title="Sensor registry"
+              subtitle="GET /api/v1/zeus-security/sensors — enrolled PacketWolf / Tetragon endpoints"
+            >
+              <ul className="text-sm space-y-2">
+                {sensorRegistry.slice(0, 10).map((row, i) => (
+                  <li key={String(row.id ?? row.host_id ?? i)} className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.04] pb-2">
+                    <span className="text-slate-300">
+                      {String(row.hostname ?? row.name ?? row.host_id ?? 'sensor')}
+                      {row.kind ? <span className="text-slate-500 text-xs ml-2">{String(row.kind)}</span> : null}
+                    </span>
+                    <span className={`text-xs ${statusToneClass(row.healthy === false || row.status === 'unhealthy' ? 'warn' : 'ok')}`}>
+                      {String(row.status ?? (row.healthy === false ? 'unhealthy' : 'healthy'))}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </MacGlassPanel>
+          )}
+
           <MacGlassPanel title="Critical" subtitle="Requires attention">
             {critical.length === 0 ? (
               <p className="text-sm text-slate-500">No critical security events in the current window.</p>
             ) : (
               <ul className="space-y-2">
-                {critical.slice(0, 8).map((ev, i) => (
-                  <li key={i} className={`text-sm flex flex-wrap items-center justify-between gap-2 ${statusToneClass('error')}`}>
+                {critical.slice(0, 8).map((ev) => (
+                  <li key={`${String(ev.host_id ?? '')}-${String(ev.kind ?? '')}-${String(ev.summary ?? '')}`} className={`text-sm flex flex-wrap items-center justify-between gap-2 ${statusToneClass('error')}`}>
                     <span>{String(ev.summary ?? ev.kind ?? 'event')}</span>
                     <EbpfActionMenu
                       hostId={ev.host_id ? String(ev.host_id) : undefined}
@@ -293,6 +324,7 @@ export default function PlatformSecurityCenter() {
           <MacGlassPanel title="Zeus security search" subtitle="Natural language event search">
             <div className="flex flex-wrap gap-2 mb-2">
               <input
+                aria-label="Zeus security search query"
                 className="input text-sm flex-1 min-w-[14rem]"
                 placeholder="Show every process that opened port 8080 last week"
                 value={nlQuery}
@@ -343,6 +375,15 @@ export default function PlatformSecurityCenter() {
 
         </>
       )}
+      <ConfirmDialog
+        open={confirmEnrollTetragon}
+        title="Enroll Fleet Tetragon"
+        message={`Enroll Tetragon on all online hosts (${unhealthySensors.length || 'fleet'} sensor gap)? Agents will be installed and TracingPolicies applied.`}
+        confirmLabel="Enroll"
+        variant="warning"
+        onCancel={() => setConfirmEnrollTetragon(false)}
+        onConfirm={doEnrollFleetTetragon}
+      />
     </PlatformPageChrome>
   )
 }

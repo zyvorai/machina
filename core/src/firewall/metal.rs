@@ -58,8 +58,7 @@ pub fn gather_metal_inventory(server: &MetalServerInput) -> FirewallInventory {
         backend_zone: server.bmc_vlan.clone().into(),
         status_line: Some(format!(
             "BMC {} · PXE VLAN {} · policy-only (no live BMC ACL)",
-            server.bmc_vlan,
-            server.pxe_vlan
+            server.bmc_vlan, server.pxe_vlan
         )),
         drift_detected: false,
         last_changed: None,
@@ -103,7 +102,10 @@ pub fn scan_ipmi_exposure(bmc_address: &str, bmc_type: &str) -> MetalExposureSca
             notes.push("IPMI port 623/tcp responded (exposure risk if not VLAN-restricted)".into());
         }
         if redfish {
-            notes.push(format!("Redfish HTTPS responded on {} ({bmc_type})", bmc_address));
+            notes.push(format!(
+                "Redfish HTTPS responded on {} ({bmc_type})",
+                bmc_address
+            ));
         }
         ipmi || redfish
     };

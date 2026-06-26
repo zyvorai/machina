@@ -2,13 +2,13 @@
 
 //! Declarative platform specs (`virt.zyvor.dev/v1`).
 
-mod error;
-mod vm;
 mod cluster;
+mod error;
+mod ha;
 mod host;
 mod task;
 mod template;
-mod ha;
+mod vm;
 
 pub use cluster::*;
 pub use error::*;

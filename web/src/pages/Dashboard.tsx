@@ -145,12 +145,12 @@ export default function Dashboard() {
   const [showRebootConfirm, setShowRebootConfirm] = useState(false)
 
   const handleHostShutdown = async () => {
-    try { await hostShutdown() } catch (e) { console.error('Shutdown failed:', e) }
+    try { await hostShutdown() } catch (e: unknown) { toast.error(`Host shutdown failed: ${formatUserError(e)}`) }
     setShowShutdownConfirm(false)
   }
 
   const handleHostReboot = async () => {
-    try { await hostReboot() } catch (e) { console.error('Reboot failed:', e) }
+    try { await hostReboot() } catch (e: unknown) { toast.error(`Host reboot failed: ${formatUserError(e)}`) }
     setShowRebootConfirm(false)
   }
 
@@ -563,16 +563,16 @@ export default function Dashboard() {
                 <div className="flex items-center gap-2 shrink-0">
                   {vm.state === 'running' && (
                     <>
-                      <Link to={vmConsoleRoute(vm.name, vm.libvirt_connection)} className="p-1.5 hover:bg-slate-600/30 rounded transition" title="Console">
+                      <Link to={vmConsoleRoute(vm.name, vm.libvirt_connection)} className="p-1.5 hover:bg-slate-600/30 rounded transition" title="Console" aria-label="Console">
                         <Terminal className="w-3.5 h-3.5 text-slate-400" />
                       </Link>
-                      <button onClick={() => vmAction(vm, shutdownVM, 'Shutdown')} className="p-1.5 hover:bg-yellow-600/20 rounded transition" title="Shutdown">
+                      <button onClick={() => vmAction(vm, shutdownVM, 'Shutdown')} className="p-1.5 hover:bg-yellow-600/20 rounded transition" title="Shutdown" aria-label="Shutdown">
                         <Power className={`w-3.5 h-3.5 ${statusToneClass('warn')}`} />
                       </button>
                     </>
                   )}
                   {vm.state === 'shutoff' && (
-                    <button onClick={() => vmAction(vm, startVM, 'Start')} className="p-1.5 hover:bg-green-600/20 rounded transition" title="Start">
+                    <button onClick={() => vmAction(vm, startVM, 'Start')} className="p-1.5 hover:bg-green-600/20 rounded transition" title="Start" aria-label="Start">
                       <Play className={`w-3.5 h-3.5 ${statusToneClass('ok')}`} />
                     </button>
                   )}
@@ -596,8 +596,8 @@ export default function Dashboard() {
             </h2>
           </div>
           <div className="divide-y divide-slate-700/30 max-h-64 overflow-y-auto">
-            {events.map((ev, i) => (
-              <div key={i} className="px-6 py-2.5 flex items-center justify-between text-sm gap-3">
+            {events.map((ev) => (
+              <div key={`${ev.timestamp}-${ev.name}-${ev.event}`} className="px-6 py-2.5 flex items-center justify-between text-sm gap-3">
                 <div className="flex items-center gap-2 min-w-0">
                   {ev.event === 'state_change' && <ArrowRight className={`w-3.5 h-3.5 shrink-0 ${statusToneClass('info')}`} />}
                   {ev.event === 'vm_added' && <Plus className={`w-3.5 h-3.5 shrink-0 ${statusToneClass('ok')}`} />}

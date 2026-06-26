@@ -141,14 +141,12 @@ async fn resolve_project_id_from_nova(session: &osauth::Session) -> Option<Strin
         .await
         .ok()?;
     let body: ListResp = resp.json().await.ok()?;
-    body.servers
-        .into_iter()
-        .find_map(|s| {
-            s.tenant_id
-                .or(s.project_id)
-                .map(|id| id.trim().to_string())
-                .filter(|id| !id.is_empty())
-        })
+    body.servers.into_iter().find_map(|s| {
+        s.tenant_id
+            .or(s.project_id)
+            .map(|id| id.trim().to_string())
+            .filter(|id| !id.is_empty())
+    })
 }
 
 async fn resolve_project_id(cfg: &OpenStackConfig, session: &osauth::Session) -> Option<String> {
@@ -180,9 +178,7 @@ async fn fetch_neutron_quotas(
 
 /// Error when Cinder is absent from the service catalog.
 pub fn cinder_unavailable_error() -> LibvirtError {
-    LibvirtError::Invalid(
-        "Cinder block-storage is not registered in the service catalog".into(),
-    )
+    LibvirtError::Invalid("Cinder block-storage is not registered in the service catalog".into())
 }
 
 /// True when Cinder block-storage is registered in the service catalog.
@@ -190,11 +186,7 @@ pub async fn probe_cinder_reachable(cfg: &OpenStackConfig) -> bool {
     let Ok(session) = connect_session(cfg).await else {
         return false;
     };
-    session
-        .get(BLOCK_STORAGE, &["limits"])
-        .send()
-        .await
-        .is_ok()
+    session.get(BLOCK_STORAGE, &["limits"]).send().await.is_ok()
 }
 
 /// Fail fast when Cinder APIs are unavailable.
@@ -206,7 +198,9 @@ pub async fn ensure_cinder_reachable(cfg: &OpenStackConfig) -> Result<(), Libvir
     }
 }
 
-pub async fn get_quota_summary(cfg: &OpenStackConfig) -> Result<OpenStackQuotaSummary, LibvirtError> {
+pub async fn get_quota_summary(
+    cfg: &OpenStackConfig,
+) -> Result<OpenStackQuotaSummary, LibvirtError> {
     let session = connect_session(cfg).await?;
     let compute_resp = session
         .get(COMPUTE, &["limits"])
@@ -265,30 +259,24 @@ pub async fn update_quotas(
 
     let service = req.service.trim().to_lowercase();
     let resp = match service.as_str() {
-        "compute" | "nova" => {
-            session
-                .put(COMPUTE, &["os-quota-sets", &project_id])
-                .json(&serde_json::json!({ "quota_set": req.quotas }))
-                .send()
-                .await
-                .map_err(map_osauth_err)?
-        }
-        "cinder" | "block-storage" => {
-            session
-                .put(BLOCK_STORAGE, &["os-quota-sets", &project_id])
-                .json(&serde_json::json!({ "quota_set": req.quotas }))
-                .send()
-                .await
-                .map_err(map_osauth_err)?
-        }
-        "neutron" | "network" => {
-            session
-                .put(NETWORK, &["quotas", &project_id])
-                .json(&serde_json::json!({ "quota": req.quotas }))
-                .send()
-                .await
-                .map_err(map_osauth_err)?
-        }
+        "compute" | "nova" => session
+            .put(COMPUTE, &["os-quota-sets", &project_id])
+            .json(&serde_json::json!({ "quota_set": req.quotas }))
+            .send()
+            .await
+            .map_err(map_osauth_err)?,
+        "cinder" | "block-storage" => session
+            .put(BLOCK_STORAGE, &["os-quota-sets", &project_id])
+            .json(&serde_json::json!({ "quota_set": req.quotas }))
+            .send()
+            .await
+            .map_err(map_osauth_err)?,
+        "neutron" | "network" => session
+            .put(NETWORK, &["quotas", &project_id])
+            .json(&serde_json::json!({ "quota": req.quotas }))
+            .send()
+            .await
+            .map_err(map_osauth_err)?,
         _ => {
             return Err(LibvirtError::Invalid(
                 "service must be compute, cinder, or neutron".into(),

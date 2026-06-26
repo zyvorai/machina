@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Clone)]
 pub struct LeaderHandle {
@@ -17,7 +17,7 @@ impl LeaderHandle {
     }
 }
 
-pub fn spawn(pool: PgPool, controller_id: String) -> LeaderHandle {
+pub fn spawn(pool: SqlitePool, controller_id: String) -> LeaderHandle {
     let is_leader = Arc::new(AtomicBool::new(false));
     let handle = LeaderHandle {
         is_leader: is_leader.clone(),
@@ -39,13 +39,14 @@ pub fn spawn(pool: PgPool, controller_id: String) -> LeaderHandle {
     handle
 }
 
-async fn renew_lease(pool: &PgPool, holder_id: &str) -> anyhow::Result<bool> {
+async fn renew_lease(pool: &SqlitePool, holder_id: &str) -> anyhow::Result<bool> {
     let acquired: bool = sqlx::query_scalar(
-        "UPDATE controller_leadership SET holder_id = $1, lease_until = NOW() + INTERVAL '15 seconds',
-         updated_at = NOW()
-         WHERE id = 1 AND (lease_until < NOW() OR holder_id = $1 OR holder_id = '')
+        "UPDATE controller_leadership SET holder_id = ?, lease_until = datetime('now', '+15 seconds'),
+         updated_at = datetime('now')
+         WHERE id = 1 AND (lease_until < datetime('now') OR holder_id = ? OR holder_id = '')
          RETURNING TRUE",
     )
+    .bind(holder_id)
     .bind(holder_id)
     .fetch_optional(pool)
     .await?

@@ -2,8 +2,8 @@
 // Proprietary software — see LICENSE in the repository root.
 // https://zyvor.dev · info@zyvor.dev
 
-use tracing::warn;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 use virt::connect::Connect;
 use virt::domain::Domain;
 use virt::domain_snapshot::DomainSnapshot;
@@ -456,7 +456,8 @@ pub fn snapshot_action_precheck(
     let snap = DomainSnapshot::lookup_by_name(&domain, snap_name, 0)
         .map_err(|e| LibvirtError::NotFound(format!("Snapshot '{snap_name}' not found: {e}")))?;
     let snap_xml = snap.get_xml_desc(0).unwrap_or_default();
-    let external = snap_xml.contains("snapshot='external'") || snap_xml.contains("snapshot=\"external\"");
+    let external =
+        snap_xml.contains("snapshot='external'") || snap_xml.contains("snapshot=\"external\"");
 
     let action = action.trim().to_ascii_lowercase();
     let (ok, blocked, message) = match action.as_str() {

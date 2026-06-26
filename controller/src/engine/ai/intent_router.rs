@@ -35,7 +35,7 @@ pub struct SpotlightResult {
 pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) -> SpotlightResult {
     let q = query.trim();
     let mut intents = Vec::new();
-    let mut search_hits = vm_hits;
+    let search_hits = vm_hits;
 
     if q.is_empty() {
         return SpotlightResult {
@@ -47,7 +47,8 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
 
     let ql = q.to_lowercase();
 
-    if (ql.contains("guest") && (ql.contains("kernel") || ql.contains("logged in") || ql.contains("qga")))
+    if (ql.contains("guest")
+        && (ql.contains("kernel") || ql.contains("logged in") || ql.contains("qga")))
         || ql.contains("old kernel")
         || (ql.contains("guest agent") && ql.contains("vm"))
     {
@@ -158,7 +159,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("disk pressure") || ql.contains("io pressure") || (ql.contains("host") && ql.contains("slow")) {
+    if ql.contains("disk pressure")
+        || ql.contains("io pressure")
+        || (ql.contains("host") && ql.contains("slow"))
+    {
         intents.push(intent(
             "host-disk-pressure",
             "Host disk / IO pressure",
@@ -169,7 +173,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("disk utility") || ql.contains("smart fail") || (ql.contains("storage") && ql.contains("full")) {
+    if ql.contains("disk utility")
+        || ql.contains("smart fail")
+        || (ql.contains("storage") && ql.contains("full"))
+    {
         intents.push(intent(
             "disk-utility",
             "Disk Utility",
@@ -180,7 +187,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("console") || ql.contains("fleet log") || ql.contains("audit log")
+    if ql.contains("console")
+        || ql.contains("fleet log")
+        || ql.contains("audit log")
         || (ql.contains("task") && ql.contains("fail"))
     {
         intents.push(intent(
@@ -271,7 +280,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("keychain") || ql.contains("secrets inventory") || ql.contains("api keys")
+    if ql.contains("keychain")
+        || ql.contains("secrets inventory")
+        || ql.contains("api keys")
         || (ql.contains("vault") && ql.contains("list"))
     {
         intents.push(intent(
@@ -284,7 +295,8 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("maintenance mission") || ql.contains("patch timeline")
+    if ql.contains("maintenance mission")
+        || ql.contains("patch timeline")
         || (ql.contains("maintenance") && ql.contains("mission"))
     {
         intents.push(intent(
@@ -297,7 +309,8 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("jarvis") && (ql.contains("shell") || ql.contains("landing") || ql.contains("home"))
+    if ql.contains("jarvis")
+        && (ql.contains("shell") || ql.contains("landing") || ql.contains("home"))
     {
         intents.push(intent(
             "jarvis-shell",
@@ -309,7 +322,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("software update") || ql.contains("host patch") || ql.contains("pending update")
+    if ql.contains("software update")
+        || ql.contains("host patch")
+        || ql.contains("pending update")
         || (ql.contains("package") && ql.contains("update"))
     {
         intents.push(intent(
@@ -322,7 +337,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("network lens") || ql.contains("reachability") || (ql.contains("why") && ql.contains("reach")) {
+    if ql.contains("network lens")
+        || ql.contains("reachability")
+        || (ql.contains("why") && ql.contains("reach"))
+    {
         intents.push(intent(
             "network-lens",
             "Network Lens",
@@ -355,7 +373,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("firewall drift") || (ql.contains("fix") && ql.contains("firewall") && ql.contains("drift")) {
+    if ql.contains("firewall drift")
+        || (ql.contains("fix") && ql.contains("firewall") && ql.contains("drift"))
+    {
         intents.push(intent(
             "fix-firewall-drift",
             "Fix firewall drift",
@@ -377,7 +397,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("smart folder") || ql.contains("finder") || (ql.contains("tag") && ql.contains("vm")) {
+    if ql.contains("smart folder")
+        || ql.contains("finder")
+        || (ql.contains("tag") && ql.contains("vm"))
+    {
         intents.push(intent(
             "vm-finder",
             "VM Finder",
@@ -445,7 +468,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if (ql.contains("exposure cost") || ql.contains("firewall waste") || ql.contains("port waste")
+    if (ql.contains("exposure cost")
+        || ql.contains("firewall waste")
+        || ql.contains("port waste")
         || (ql.contains("exposure") && ql.contains("finops")))
     {
         intents.push(intent(
@@ -522,7 +547,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("bare metal firewall") || ql.contains("bmc exposure") || ql.contains("ipmi exposed") {
+    if ql.contains("bare metal firewall")
+        || ql.contains("bmc exposure")
+        || ql.contains("ipmi exposed")
+    {
         intents.push(intent(
             "zeus-metal-firewall",
             "Bare metal firewall",
@@ -555,7 +583,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("secure all hosts") || ql.contains("autonomous firewall") || ql.contains("ai operator") {
+    if ql.contains("secure all hosts")
+        || ql.contains("autonomous firewall")
+        || ql.contains("ai operator")
+    {
         intents.push(intent(
             "zeus-operator",
             "AI operator secure plan",
@@ -599,7 +630,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("plugin marketplace") || ql.contains("install plugin") || (ql.contains("marketplace") && ql.contains("plugin")) {
+    if ql.contains("plugin marketplace")
+        || ql.contains("install plugin")
+        || (ql.contains("marketplace") && ql.contains("plugin"))
+    {
         intents.push(intent(
             "marketplace-plugins",
             "Plugin marketplace",
@@ -610,7 +644,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("storage tier") || ql.contains("vsan") || (ql.contains("backup") && ql.contains("sla")) {
+    if ql.contains("storage tier")
+        || ql.contains("vsan")
+        || (ql.contains("backup") && ql.contains("sla"))
+    {
         intents.push(intent(
             "storage-tiers",
             "Storage tiers & SLA",
@@ -654,7 +691,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("runbook") && (ql.contains("catalog") || ql.contains("operations") || ql.contains("execute")) {
+    if ql.contains("runbook")
+        && (ql.contains("catalog") || ql.contains("operations") || ql.contains("execute"))
+    {
         intents.push(intent(
             "ops-runbooks",
             "Operations runbooks",
@@ -687,8 +726,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if (ql.contains("secure") && (ql.contains("machine") || ql.contains("vm") || ql.contains("host")))
-        || ql.contains("lock down") || ql.contains("lockdown")
+    if (ql.contains("secure")
+        && (ql.contains("machine") || ql.contains("vm") || ql.contains("host")))
+        || ql.contains("lock down")
+        || ql.contains("lockdown")
     {
         intents.push(intent(
             "zeus-secure",
@@ -700,7 +741,8 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("exposed") || (ql.contains("port") && ql.contains("5432"))
+    if ql.contains("exposed")
+        || (ql.contains("port") && ql.contains("5432"))
         || (ql.contains("database") && ql.contains("public"))
     {
         intents.push(intent(
@@ -713,7 +755,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("firewall approval") || ql.contains("risky firewall") || ql.contains("approve firewall") {
+    if ql.contains("firewall approval")
+        || ql.contains("risky firewall")
+        || ql.contains("approve firewall")
+    {
         intents.push(intent(
             "zeus-fw-approval",
             "Firewall approvals",
@@ -735,7 +780,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("reach") || (ql.contains("can't") && ql.contains("connect")) || ql.contains("network path") {
+    if ql.contains("reach")
+        || (ql.contains("can't") && ql.contains("connect"))
+        || ql.contains("network path")
+    {
         intents.push(intent(
             "network-lens",
             "Network Lens",
@@ -767,7 +815,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
                 .or_else(|| extract_after(&ql, " to "))
                 .map(|s| s.to_string());
             let review = match &target {
-                Some(h) => format!("Migrate {vm_name} to host {h} — pre-check and review required."),
+                Some(h) => {
+                    format!("Migrate {vm_name} to host {h} — pre-check and review required.")
+                }
                 None => format!("Open migration workflow for {vm_name}."),
             };
             let label = format!("Migrate VM {vm_name}");
@@ -783,7 +833,8 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         }
         if (ql.contains("enable") || ql.contains("turn on")) && ql.contains("ha") {
             let label = format!("Enable HA for {vm_name}");
-            let review = format!("Enable high availability policy for {vm_name} — review before applying.");
+            let review =
+                format!("Enable high availability policy for {vm_name} — review before applying.");
             intents.push(intent(
                 "enable-ha-vm",
                 &label,
@@ -796,7 +847,8 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         }
     }
 
-    if ql.contains("environment") || ql.contains("gpu cluster")
+    if ql.contains("environment")
+        || ql.contains("gpu cluster")
         || (ql.contains("staging") && (ql.contains("for") || ql.contains("developer")))
         || ql.contains("medium staging")
     {
@@ -847,7 +899,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("power") && (ql.contains("waste") || ql.contains("carbon") || ql.contains("optimize")) {
+    if ql.contains("power")
+        && (ql.contains("waste") || ql.contains("carbon") || ql.contains("optimize"))
+    {
         intents.push(intent(
             "fleet-power",
             "Fleet power optimizer",
@@ -859,32 +913,35 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("what breaks") || ql.contains("shut down") || (ql.contains("shutdown") && ql.contains("host"))
-        || ql.contains("evacuate") || (ql.contains("migrate") && ql.contains("host"))
+    if ql.contains("what breaks")
+        || ql.contains("shut down")
+        || (ql.contains("shutdown") && ql.contains("host"))
+        || ql.contains("evacuate")
+        || (ql.contains("migrate") && ql.contains("host"))
     {
-        let host_hint = extract_after(&ql, "host ")
-            .or_else(|| extract_after(&ql, "down "))
-            .unwrap_or("host-01");
-        let action = if ql.contains("evacuate") || ql.contains("migrate") {
-            "migrate"
-        } else {
-            "shutdown"
-        };
-        let label = format!("Impact: {action} host {host_hint}");
-        let review = format!("Simulate blast radius if host {host_hint} is evacuated or shut down.");
-        intents.push(intent(
-            "twin-impact",
-            &label,
-            &review,
-            "twin_impact",
-            None,
-            Some("/platform/topology".into()),
-            Some(serde_json::json!({
-                "action": action,
-                "target_kind": "host",
-                "target_id": host_hint,
-            })),
-        ));
+        if let Some(host_hint) = extract_after(&ql, "host ").or_else(|| extract_after(&ql, "down ")) {
+            let action = if ql.contains("evacuate") || ql.contains("migrate") {
+                "migrate"
+            } else {
+                "shutdown"
+            };
+            let label = format!("Impact: {action} host {host_hint}");
+            let review =
+                format!("Simulate blast radius if host {host_hint} is evacuated or shut down.");
+            intents.push(intent(
+                "twin-impact",
+                &label,
+                &review,
+                "twin_impact",
+                None,
+                Some("/platform/topology".into()),
+                Some(serde_json::json!({
+                    "action": action,
+                    "target_kind": "host",
+                    "target_id": host_hint,
+                })),
+            ));
+        }
     }
 
     if ql.contains("isolate") && ql.contains("network") {
@@ -903,7 +960,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if (ql.contains("storage") || ql.contains("pool")) && (ql.contains("drain") || ql.contains("shutdown")) {
+    if (ql.contains("storage") || ql.contains("pool"))
+        && (ql.contains("drain") || ql.contains("shutdown"))
+    {
         intents.push(intent(
             "twin-storage",
             "Storage pool blast radius",
@@ -934,7 +993,8 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if (ql.contains("runbook") && (ql.contains("diagnos") || ql.contains("knowledge") || ql.contains("slow")))
+    if (ql.contains("runbook")
+        && (ql.contains("diagnos") || ql.contains("knowledge") || ql.contains("slow")))
         || ql.contains("why is") && ql.contains("slow")
     {
         intents.push(intent(
@@ -962,7 +1022,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("stack") && (ql.contains("status") || ql.contains("running") || ql.contains("track")) {
+    if ql.contains("stack")
+        && (ql.contains("status") || ql.contains("running") || ql.contains("track"))
+    {
         intents.push(intent(
             "mission-stack-status",
             "Mission stack status",
@@ -974,7 +1036,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("migrate") && (ql.contains("doctor") || ql.contains("boot") || ql.contains("assurance")) {
+    if ql.contains("migrate")
+        && (ql.contains("doctor") || ql.contains("boot") || ql.contains("assurance"))
+    {
         intents.push(intent(
             "guestkit-doctor",
             "GuestKit migration doctor",
@@ -986,7 +1050,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("team") && (ql.contains("cost") || ql.contains("attribution") || ql.contains("chargeback")) {
+    if ql.contains("team")
+        && (ql.contains("cost") || ql.contains("attribution") || ql.contains("chargeback"))
+    {
         intents.push(intent(
             "cost-attribution",
             "Team cost attribution",
@@ -998,7 +1064,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("rebalance") || ql.contains("drs") || (ql.contains("fleet") && ql.contains("hot")) {
+    if ql.contains("rebalance")
+        || ql.contains("drs")
+        || (ql.contains("fleet") && ql.contains("hot"))
+    {
         intents.push(intent(
             "fleet-rebalance",
             "Fleet rebalance",
@@ -1010,7 +1079,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("cis") || ql.contains("pci") || ql.contains("soc2") || ql.contains("hipaa")
+    if ql.contains("cis")
+        || ql.contains("pci")
+        || ql.contains("soc2")
+        || ql.contains("hipaa")
         || (ql.contains("compliance") && ql.contains("framework"))
     {
         intents.push(intent(
@@ -1046,7 +1118,8 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("why") && (ql.contains("slow") || ql.contains("down") || ql.contains("billing")) {
+    if ql.contains("why") && (ql.contains("slow") || ql.contains("down") || ql.contains("billing"))
+    {
         intents.push(intent(
             "knowledge-diagnose",
             "Diagnose infrastructure issue",
@@ -1070,7 +1143,9 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("service") && (ql.contains("fail") || ql.contains("blast") || ql.contains("impact")) {
+    if ql.contains("service")
+        && (ql.contains("fail") || ql.contains("blast") || ql.contains("impact"))
+    {
         intents.push(intent(
             "service-impact",
             "Service blast radius",
@@ -1173,7 +1248,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
         ));
     }
 
-    if ql.contains("graph") || (ql.contains("reach") && ql.contains("vm")) || ql.contains("connectivity") {
+    if ql.contains("graph")
+        || (ql.contains("reach") && ql.contains("vm"))
+        || ql.contains("connectivity")
+    {
         intents.push(intent(
             "infra-graph",
             "Infrastructure Graph Brain",
@@ -1184,7 +1262,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("rightsize") || ql.contains("oversized") || (ql.contains("idle") && ql.contains("vm")) {
+    if ql.contains("rightsize")
+        || ql.contains("oversized")
+        || (ql.contains("idle") && ql.contains("vm"))
+    {
         intents.push(intent(
             "rightsizing",
             "VM Rightsizing",
@@ -1206,7 +1287,10 @@ pub fn route_spotlight(query: &str, online_hosts: i64, vm_hits: Vec<SearchHit>) 
             None,
         ));
     }
-    if ql.contains("troubleshoot") || (ql.contains("slow") && ql.contains("vm")) || ql.contains("vm is slow") {
+    if ql.contains("troubleshoot")
+        || (ql.contains("slow") && ql.contains("vm"))
+        || ql.contains("vm is slow")
+    {
         intents.push(intent(
             "troubleshoot-vm",
             "Troubleshoot VM",
@@ -1421,7 +1505,10 @@ fn parse_nl_create_vm(query: &str) -> Option<SpotlightIntent> {
             query
                 .split_whitespace()
                 .find(|w| w.contains('-') && w.len() > 2)
-                .map(|s| s.trim_matches(|c: char| !c.is_alphanumeric() && c != '-').to_string())
+                .map(|s| {
+                    s.trim_matches(|c: char| !c.is_alphanumeric() && c != '-')
+                        .to_string()
+                })
         })
         .unwrap_or_else(|| "new-vm".into());
 

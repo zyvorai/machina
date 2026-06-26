@@ -211,8 +211,8 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
           </button>
         }>
           <div className="grid gap-2 sm:grid-cols-3 mb-4 pb-4 border-b border-white/[0.04]">
-            <input className="input text-sm" value={vaultName} onChange={(e) => setVaultName(e.target.value)} placeholder="Provider name" />
-            <input className="input text-sm sm:col-span-2" value={vaultAddress} onChange={(e) => setVaultAddress(e.target.value)} placeholder="https://vault:8200" />
+            <input className="input text-sm" aria-label="Provider name" value={vaultName} onChange={(e) => setVaultName(e.target.value)} placeholder="Provider name" />
+            <input className="input text-sm sm:col-span-2" aria-label="Vault address" value={vaultAddress} onChange={(e) => setVaultAddress(e.target.value)} placeholder="https://vault:8200" />
             <button
               type="button"
               className="btn-secondary text-xs sm:col-span-3 w-fit"
@@ -246,10 +246,10 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
       {activeTab === 'mfa' && mfa && (
         <MacGlassPanel title="MFA compliance">
           <p className="text-sm text-slate-400 mb-3">{mfa.summary}</p>
-          {mfa.users.length === 0 ? (
+          {(mfa.users ?? []).length === 0 ? (
             <p className="text-sm text-slate-500">No roles require MFA yet — enable in Settings → Security.</p>
           ) : (
-            <table className="w-full text-sm text-left">
+            <table className="w-full text-sm text-left" aria-label="MFA-required users">
               <thead className="text-xs text-slate-500 border-b border-slate-700">
                 <tr>
                   <th className="py-2 pr-4">User</th>
@@ -259,7 +259,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
                 </tr>
               </thead>
               <tbody>
-                {mfa.users.map((u) => (
+                {(mfa.users ?? []).map((u) => (
                   <tr key={u.username} className="border-b border-slate-800/60">
                     <td className="py-2 pr-4 text-slate-200">{u.username}</td>
                     <td className="py-2 pr-4 text-slate-400">{u.role}</td>
@@ -296,9 +296,9 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
         <MacGlassPanel title="Workspace isolation">
           <p className="text-sm text-slate-400 mb-3">{tenants.summary}</p>
           <div className="grid gap-2 sm:grid-cols-4 mb-4 pb-4 border-b border-white/[0.04]">
-            <input className="input text-sm" value={policyProject} onChange={(e) => setPolicyProject(e.target.value)} placeholder="Project" />
-            <input className="input text-sm" type="number" min={1} value={policyMaxVms} onChange={(e) => setPolicyMaxVms(e.target.value)} placeholder="Max VMs" />
-            <select className="input text-sm" value={policyIsolation} onChange={(e) => setPolicyIsolation(e.target.value)}>
+            <input className="input text-sm" aria-label="Project" value={policyProject} onChange={(e) => setPolicyProject(e.target.value)} placeholder="Project" />
+            <input className="input text-sm" type="number" min={1} aria-label="Max VMs" value={policyMaxVms} onChange={(e) => setPolicyMaxVms(e.target.value)} placeholder="Max VMs" />
+            <select className="input text-sm" aria-label="Network isolation" value={policyIsolation} onChange={(e) => setPolicyIsolation(e.target.value)}>
               <option value="shared">shared</option>
               <option value="isolated">isolated</option>
               <option value="dedicated">dedicated</option>
@@ -324,7 +324,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
               Save policy
             </button>
           </div>
-          <table className="w-full text-sm text-left">
+          <table className="w-full text-sm text-left" aria-label="Tenant isolation policies">
             <thead className="text-xs text-slate-500 border-b border-slate-700">
               <tr>
                 <th className="py-2 pr-4">Project</th>
@@ -335,7 +335,7 @@ export default function PlatformEnterprise({ embedded }: { embedded?: boolean } 
               </tr>
             </thead>
             <tbody>
-              {tenants.projects.map((p) => (
+              {(tenants.projects ?? []).map((p) => (
                 <tr key={p.project_name} className="border-b border-slate-800/60">
                   <td className="py-2 pr-4 text-slate-200">{p.project_name}</td>
                   <td className="py-2 pr-4 text-slate-400">{p.vm_count}{p.max_vms > 0 ? ` / ${p.max_vms}` : ''}</td>

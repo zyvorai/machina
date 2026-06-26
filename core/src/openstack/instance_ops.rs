@@ -43,12 +43,12 @@ pub struct AttachVolumeRequest {
     pub volume_id: String,
 }
 
-async fn server_mut(cfg: &OpenStackConfig, id: &str) -> Result<openstack::compute::Server, LibvirtError> {
+async fn server_mut(
+    cfg: &OpenStackConfig,
+    id: &str,
+) -> Result<openstack::compute::Server, LibvirtError> {
     let cloud = connect_cloud(cfg).await?;
-    cloud
-        .get_server(id.trim())
-        .await
-        .map_err(map_openstack_err)
+    cloud.get_server(id.trim()).await.map_err(map_openstack_err)
 }
 
 pub async fn pause_instance(cfg: &OpenStackConfig, id: &str) -> Result<(), LibvirtError> {
@@ -157,7 +157,9 @@ pub async fn get_remote_console(
 ) -> Result<OpenStackRemoteConsole, LibvirtError> {
     let session = connect_session(cfg).await?;
     let body = match console_type.trim().to_lowercase().as_str() {
-        "spice" | "spice-html5" => serde_json::json!({ "os-getSPICEConsole": { "type": "spice-html5" } }),
+        "spice" | "spice-html5" => {
+            serde_json::json!({ "os-getSPICEConsole": { "type": "spice-html5" } })
+        }
         "serial" => serde_json::json!({ "os-getSerialConsole": { "type": "serial" } }),
         "rdp" | "rdp-html5" => serde_json::json!({ "os-getRDPConsole": { "type": "rdp-html5" } }),
         _ => serde_json::json!({ "os-getVNCConsole": { "type": "novnc" } }),
@@ -203,7 +205,10 @@ pub async fn attach_volume(
         "volumeAttachment": { "volumeId": vol }
     });
     session
-        .post(COMPUTE, &["servers", server_id.trim(), "os-volume_attachments"])
+        .post(
+            COMPUTE,
+            &["servers", server_id.trim(), "os-volume_attachments"],
+        )
         .json(&body)
         .send()
         .await
@@ -222,7 +227,10 @@ pub async fn detach_volume(
     }
     let session = connect_session(cfg).await?;
     session
-        .delete(COMPUTE, &["servers", server_id.trim(), "os-volume_attachments", vol])
+        .delete(
+            COMPUTE,
+            &["servers", server_id.trim(), "os-volume_attachments", vol],
+        )
         .send()
         .await
         .map_err(map_osauth_err)?;
@@ -275,8 +283,7 @@ pub async fn export_instance_to_disk(
         .unwrap_or_else(|| format!("{name}-export"));
     super::resources::snapshot_instance(cfg, id, &snap_name).await?;
     let timeout = std::time::Duration::from_secs(cfg.upload_timeout_secs.max(120));
-    let image_id =
-        super::resources::wait_glance_image_by_name(cfg, &snap_name, timeout).await?;
+    let image_id = super::resources::wait_glance_image_by_name(cfg, &snap_name, timeout).await?;
     let pull = super::pull::pull_glance_image_to_disk(
         cfg,
         &image_id,
@@ -295,7 +302,10 @@ pub async fn export_instance_to_disk(
         pull: Some(pull.clone()),
         steps: vec![
             format!("Snapshot {snap_name} created in Glance."),
-            format!("Downloaded {} bytes to {}.", pull.bytes_written, pull.dest_path),
+            format!(
+                "Downloaded {} bytes to {}.",
+                pull.bytes_written, pull.dest_path
+            ),
             "Open Import VM to define a libvirt domain from this disk.".into(),
         ],
         hypervisord_dashboard: hypersdk_dashboard_url(cfg),
@@ -303,10 +313,7 @@ pub async fn export_instance_to_disk(
 }
 
 fn hypersdk_dashboard_url(cfg: &OpenStackConfig) -> String {
-    let base = cfg
-        .hypersdk_base_url
-        .trim()
-        .trim_end_matches('/');
+    let base = cfg.hypersdk_base_url.trim().trim_end_matches('/');
     if base.is_empty() {
         "https://127.0.0.1:5080/web/dashboard/".into()
     } else {
@@ -321,7 +328,9 @@ pub async fn add_security_group(
 ) -> Result<(), LibvirtError> {
     let name = group_name.trim();
     if name.is_empty() {
-        return Err(LibvirtError::Invalid("security group name is required".into()));
+        return Err(LibvirtError::Invalid(
+            "security group name is required".into(),
+        ));
     }
     let mut server = server_mut(cfg, id).await?;
     server
@@ -339,7 +348,9 @@ pub async fn remove_security_group(
 ) -> Result<(), LibvirtError> {
     let name = group_name.trim();
     if name.is_empty() {
-        return Err(LibvirtError::Invalid("security group name is required".into()));
+        return Err(LibvirtError::Invalid(
+            "security group name is required".into(),
+        ));
     }
     let mut server = server_mut(cfg, id).await?;
     server
@@ -363,7 +374,9 @@ pub async fn rebuild_instance(
 ) -> Result<(), LibvirtError> {
     let image = req.image.trim();
     if image.is_empty() {
-        return Err(LibvirtError::Invalid("image is required for rebuild".into()));
+        return Err(LibvirtError::Invalid(
+            "image is required for rebuild".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let mut body = serde_json::json!({
@@ -425,7 +438,12 @@ pub async fn unlock_instance(cfg: &OpenStackConfig, id: &str) -> Result<(), Libv
 }
 
 pub async fn reset_instance_state(cfg: &OpenStackConfig, id: &str) -> Result<(), LibvirtError> {
-    instance_action(cfg, id, serde_json::json!({ "os-resetState": { "state": "active" } })).await
+    instance_action(
+        cfg,
+        id,
+        serde_json::json!({ "os-resetState": { "state": "active" } }),
+    )
+    .await
 }
 
 async fn instance_action(

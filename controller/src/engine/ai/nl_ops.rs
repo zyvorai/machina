@@ -1,14 +1,14 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
+use super::actions::{self, CreateActionBody};
 use super::environment_intent;
 use super::infra_graph::{self, GraphQueryRequest};
 use super::predictions;
 use super::troubleshoot;
-use super::actions::{self, CreateActionBody};
 
 #[derive(Debug, Deserialize)]
 pub struct NlOpsRequest {
@@ -41,7 +41,7 @@ pub struct NlOpsPlan {
     pub reply: String,
 }
 
-pub async fn execute(pool: &PgPool, req: &NlOpsRequest, actor: &str) -> anyhow::Result<NlOpsPlan> {
+pub async fn execute(pool: &SqlitePool, req: &NlOpsRequest, actor: &str) -> anyhow::Result<NlOpsPlan> {
     let q = req.query.trim();
     let ql = q.to_lowercase();
 
@@ -99,11 +99,12 @@ pub async fn execute(pool: &PgPool, req: &NlOpsRequest, actor: &str) -> anyhow::
     if ql.contains("migrate") && ql.contains("from") {
         let host_hint = extract_host_hint(&ql);
         let vms: Vec<(Uuid, String)> = if let Some(h) = &host_hint {
+            let escaped = h.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
             sqlx::query_as(
                 "SELECT v.id, v.name FROM vms v JOIN hosts h ON h.id = v.host_id
-                 WHERE h.hostname ILIKE $1 OR h.id::text = $1",
+                 WHERE h.hostname LIKE ? ESCAPE '\\'",
             )
-            .bind(h)
+            .bind(format!("%{escaped}%"))
             .fetch_all(pool)
             .await?
         } else {
@@ -151,7 +152,10 @@ pub async fn execute(pool: &PgPool, req: &NlOpsRequest, actor: &str) -> anyhow::
             dry_run: req.dry_run,
             approval_required: true,
             action_ids,
-            reply: format!("Prepared {} migration(s) — approve in Zeus queue.", vms.len()),
+            reply: format!(
+                "Prepared {} migration(s) — approve in Zeus queue.",
+                vms.len()
+            ),
         });
     }
 
@@ -263,13 +267,7 @@ pub async fn execute(pool: &PgPool, req: &NlOpsRequest, actor: &str) -> anyhow::
     }
 
     // Infrastructure search fallback
-    let hits = infra_graph::query(
-        pool,
-        &GraphQueryRequest {
-            query: q.into(),
-        },
-    )
-    .await?;
+    let hits = infra_graph::query(pool, &GraphQueryRequest { query: q.into() }).await?;
     Ok(NlOpsPlan {
         intent: "search".into(),
         summary: format!("{} result(s)", hits.hits.len()),
@@ -314,7 +312,10 @@ fn extract_host_hint(ql: &str) -> Option<String> {
         let rest = &ql[idx..];
         for word in rest.split_whitespace() {
             if word.starts_with("host-") || word.contains('-') {
-                return Some(word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-').into());
+                return Some(
+                    word.trim_matches(|c: char| !c.is_alphanumeric() && c != '-')
+                        .into(),
+                );
             }
         }
     }

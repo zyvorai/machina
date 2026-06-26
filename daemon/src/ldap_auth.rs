@@ -55,7 +55,10 @@ pub fn ldap_authenticate(
 
     let mut ldap = open_ldap(url, cfg)?;
 
-    if username.contains('@') && cfg.bind_dn.trim().is_empty() && cfg.user_dn_template.trim().is_empty() {
+    if username.contains('@')
+        && cfg.bind_dn.trim().is_empty()
+        && cfg.user_dn_template.trim().is_empty()
+    {
         ldap.simple_bind(username, password)
             .map_err(|e| format!("LDAP bind failed: {e}"))?
             .success()
@@ -68,8 +71,7 @@ pub fn ldap_authenticate(
         });
     }
 
-    let (user_dn, groups, session_username) =
-        resolve_user_dn_and_groups(cfg, &mut ldap, username)?;
+    let (user_dn, groups, session_username) = resolve_user_dn_and_groups(cfg, &mut ldap, username)?;
     ldap.simple_bind(&user_dn, password)
         .map_err(|e| format!("LDAP bind failed: {e}"))?
         .success()
@@ -167,7 +169,12 @@ fn lookup_groups_for_upn(
     Ok(rs
         .into_iter()
         .map(SearchEntry::construct)
-        .flat_map(|e| e.attrs.get(&cfg.member_attribute).cloned().unwrap_or_default())
+        .flat_map(|e| {
+            e.attrs
+                .get(&cfg.member_attribute)
+                .cloned()
+                .unwrap_or_default()
+        })
         .collect())
 }
 

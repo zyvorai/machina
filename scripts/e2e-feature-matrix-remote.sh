@@ -9,6 +9,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+# shellcheck source=lib/e2e-auth.sh
+source "${SCRIPT_DIR}/lib/e2e-auth.sh"
 
 USER="${1:?usage: $0 USER HOST}"
 HOST="${2:?HOST}"
@@ -47,9 +49,10 @@ except Exception:
 " 2>/dev/null || true)"
 fi
 
-export PLAYWRIGHT_LIVE_URL="$BASE"
-export PLAYWRIGHT_LIVE_USER="$USER"
-export PLAYWRIGHT_LIVE_PASS="$PASS"
+export E2E_USER="$USER"
+export E2E_PASSWORD="$PASS"
+export E2E_AUTH_MODE="${E2E_AUTH_MODE:-auto}"
+e2e_export_playwright_live_env "$BASE" "$USER" "$PASS"
 export PLAYWRIGHT_LIBVIRT_VM_ID="$VM_ID"
 
 npm run test:e2e:features:live

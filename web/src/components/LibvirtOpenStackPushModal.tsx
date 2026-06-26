@@ -153,7 +153,7 @@ export default function LibvirtOpenStackPushModal({
   if (!osReady) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onClose}>
-        <div className="bg-slate-900 border border-slate-600 rounded-xl p-6 max-w-md" onClick={(e) => e.stopPropagation()}>
+        <div role="dialog" aria-modal="true" aria-label="OpenStack upload disabled" className="bg-slate-900 border border-slate-600 rounded-xl p-6 max-w-md" onClick={(e) => e.stopPropagation()}>
           <p className="text-slate-300 text-sm">OpenStack upload is disabled. Enable <code className="text-slate-200">[openstack] upload_enabled</code> and configure the cloud in Settings.</p>
         </div>
       </div>
@@ -163,6 +163,9 @@ export default function LibvirtOpenStackPushModal({
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onClose}>
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Push to OpenStack"
         className="bg-slate-900 border border-slate-600 rounded-xl shadow-xl w-full max-w-3xl max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
@@ -171,8 +174,8 @@ export default function LibvirtOpenStackPushModal({
             <Cloud className="w-5 h-5 text-orange-400" />
             Push {vmName} to OpenStack
           </h2>
-          <button type="button" className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400" onClick={onClose}>
-            <X className="w-4 h-4" />
+          <button type="button" className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400" onClick={onClose} aria-label="Close">
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
         <div className="p-4 overflow-y-auto space-y-4 text-sm">
@@ -183,8 +186,8 @@ export default function LibvirtOpenStackPushModal({
             />
           )}
           {loading && (
-            <div className="flex justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-orange-400" />
+            <div role="status" aria-label="Loading" className="flex justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-orange-400" aria-hidden="true" />
             </div>
           )}
           {preview && !loading && (
@@ -211,7 +214,7 @@ export default function LibvirtOpenStackPushModal({
               )}
               <div className="grid gap-2 sm:grid-cols-2">
                 <input className="input-field" placeholder="Glance name" value={glanceName} onChange={(e) => setGlanceName(e.target.value)} />
-                <select className="input-field" value={visibility} onChange={(e) => setVisibility(e.target.value)}>
+                <select className="input-field" aria-label="Visibility" value={visibility} onChange={(e) => setVisibility(e.target.value)}>
                   <option value="private">private</option>
                   <option value="shared">shared</option>
                   <option value="public">public</option>
@@ -223,12 +226,12 @@ export default function LibvirtOpenStackPushModal({
               </label>
               {bootInstance && (
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <input className="input-field" placeholder="flavor" value={flavor} onChange={(e) => setFlavor(e.target.value)} />
-                  <input className="input-field" placeholder="network UUID" value={network} onChange={(e) => setNetwork(e.target.value)} />
-                  <input className="input-field" placeholder="keypair" value={keyName} onChange={(e) => setKeyName(e.target.value)} />
-                  <input className="input-field" placeholder="instance name" value={instanceName} onChange={(e) => setInstanceName(e.target.value)} />
-                  <input className="input-field" placeholder="security group" value={securityGroup} onChange={(e) => setSecurityGroup(e.target.value)} />
-                  <input className="input-field" placeholder="availability zone" value={availabilityZone} onChange={(e) => setAvailabilityZone(e.target.value)} />
+                  <input aria-label="Nova flavor" className="input-field" placeholder="flavor" value={flavor} onChange={(e) => setFlavor(e.target.value)} />
+                  <input aria-label="Network UUID" className="input-field" placeholder="network UUID" value={network} onChange={(e) => setNetwork(e.target.value)} />
+                  <input aria-label="Key pair" className="input-field" placeholder="keypair" value={keyName} onChange={(e) => setKeyName(e.target.value)} />
+                  <input aria-label="Instance name" className="input-field" placeholder="instance name" value={instanceName} onChange={(e) => setInstanceName(e.target.value)} />
+                  <input aria-label="Security group" className="input-field" placeholder="security group" value={securityGroup} onChange={(e) => setSecurityGroup(e.target.value)} />
+                  <input aria-label="Availability zone" className="input-field" placeholder="availability zone" value={availabilityZone} onChange={(e) => setAvailabilityZone(e.target.value)} />
                   <label className="flex items-center gap-2 text-slate-400 sm:col-span-2">
                     <input type="checkbox" checked={waitActive} onChange={(e) => setWaitActive(e.target.checked)} />
                     Wait for ACTIVE

@@ -15,15 +15,15 @@ use axum::routing::{any, get, post, put};
 use axum::{Json, Router};
 use futures_util::{SinkExt, StreamExt};
 use libvirt_guac_bridge::{bridge_from_plan, GuacBridgeTarget, GuacamoleBridgeParams};
+use machina_spec::VirtualMachine;
 use serde::{Deserialize, Serialize};
 use sqlx::types::Json as SqlxJson;
-use machina_spec::VirtualMachine;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::agent_client;
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Clone)]
@@ -176,6 +176,11 @@ impl ConsoleSessionStore {
         id
     }
 
+    async fn remove(&self, id: Uuid) {
+        let mut map = self.inner.write().await;
+        map.remove(&id);
+    }
+
     async fn get(&self, id: Uuid) -> Option<LiveConsoleSession> {
         let map = self.inner.read().await;
         let entry = map.get(&id)?;
@@ -189,18 +194,42 @@ impl ConsoleSessionStore {
 pub fn api_routes() -> Router<AppState> {
     Router::new()
         .route("/api/v1/vms/{id}/consolehub/plan", get(consolehub_plan))
-        .route("/api/v1/vms/{id}/consolehub/sessions", get(list_sessions).post(create_session))
-        .route("/api/v1/consolehub/sessions/{session_id}/end", post(end_session))
+        .route(
+            "/api/v1/vms/{id}/consolehub/sessions",
+            get(list_sessions).post(create_session),
+        )
+        .route(
+            "/api/v1/consolehub/sessions/{session_id}/end",
+            post(end_session),
+        )
         .route(
             "/api/v1/consolehub/sessions/{session_id}/replay",
             get(get_session_replay).put(upload_session_replay),
         )
-        .route("/api/v1/vms/{id}/consolehub/access-requests", post(create_access_request))
-        .route("/api/v1/consolehub/access-requests/{request_id}/approve", post(approve_access_request))
-        .route("/api/v1/vms/{id}/consolehub/break-glass", post(break_glass_session))
-        .route("/api/v1/vms/{id}/consolehub/collaborate", post(collaborate_session))
-        .route("/api/v1/consolehub/spectator/validate", get(validate_spectator))
-        .route("/api/v1/vms/{id}/consolehub/explain", post(consolehub_explain))
+        .route(
+            "/api/v1/vms/{id}/consolehub/access-requests",
+            post(create_access_request),
+        )
+        .route(
+            "/api/v1/consolehub/access-requests/{request_id}/approve",
+            post(approve_access_request),
+        )
+        .route(
+            "/api/v1/vms/{id}/consolehub/break-glass",
+            post(break_glass_session),
+        )
+        .route(
+            "/api/v1/vms/{id}/consolehub/collaborate",
+            post(collaborate_session),
+        )
+        .route(
+            "/api/v1/consolehub/spectator/validate",
+            get(validate_spectator),
+        )
+        .route(
+            "/api/v1/vms/{id}/consolehub/explain",
+            post(consolehub_explain),
+        )
 }
 
 pub fn proxy_routes() -> Router<AppState> {
@@ -209,18 +238,28 @@ pub fn proxy_routes() -> Router<AppState> {
             "/consolehub/guacamole/{session_id}/websocket-tunnel",
             any(guac_ws_proxy),
         )
-        .route("/consolehub/guacamole/{session_id}", any(guac_http_proxy_root))
-        .route("/consolehub/guacamole/{session_id}/", any(guac_http_proxy_root))
-        .route("/consolehub/guacamole/{session_id}/{*path}", any(guac_http_proxy))
+        .route(
+            "/consolehub/guacamole/{session_id}",
+            any(guac_http_proxy_root),
+        )
+        .route(
+            "/consolehub/guacamole/{session_id}/",
+            any(guac_http_proxy_root),
+        )
+        .route(
+            "/consolehub/guacamole/{session_id}/{*path}",
+            any(guac_http_proxy),
+        )
 }
 
 async fn vm_row(state: &AppState, id: Uuid) -> Result<(String, Uuid), ApiError> {
-    let row: (String, Option<Uuid>) =
-        sqlx::query_as("SELECT name, host_id FROM vms WHERE id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
-    let host_id = row.1.ok_or_else(|| ApiError::bad_request("vm has no host"))?;
+    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    let host_id = row
+        .1
+        .ok_or_else(|| ApiError::bad_request("vm has no host"))?;
     Ok((row.0, host_id))
 }
 
@@ -229,7 +268,7 @@ async fn vm_meta(
     id: Uuid,
 ) -> Result<(String, Option<Uuid>, String, Option<String>), ApiError> {
     let row: (String, Option<Uuid>, String, Option<String>) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), k8s_namespace FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), k8s_namespace FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -246,9 +285,7 @@ fn kubevirt_plan(vm_id: Uuid, vm_name: &str, namespace: &str, ws_token: &str) ->
         recommended: "novnc".into(),
         native: NativeConsoleInfo {
             console_type: "vnc".into(),
-            ws_path: format!(
-                "/ws/v1/k8s-kubevirt/{enc_ns}/{enc_name}/vnc?token={ws_token}"
-            ),
+            ws_path: format!("/ws/v1/k8s-kubevirt/{enc_ns}/{enc_name}/vnc?token={ws_token}"),
             serial_ws_path: format!(
                 "/ws/v1/k8s-kubevirt/{enc_ns}/{enc_name}/console?token={ws_token}"
             ),
@@ -273,7 +310,7 @@ fn kubevirt_plan(vm_id: Uuid, vm_name: &str, namespace: &str, ws_token: &str) ->
 }
 
 async fn kubevirt_plan_enriched(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::SqlitePool,
     daemon_base_url: &str,
     vm_id: Uuid,
     vm_name: &str,
@@ -281,14 +318,13 @@ async fn kubevirt_plan_enriched(
     ws_token: &str,
 ) -> ConsoleHubPlan {
     let mut plan = kubevirt_plan(vm_id, vm_name, namespace, ws_token);
-    let row: Option<(Option<String>, serde_json::Value)> = sqlx::query_as(
-        "SELECT guest_ip, spec_json FROM vms WHERE id = $1",
-    )
-    .bind(vm_id)
-    .fetch_optional(pool)
-    .await
-    .ok()
-    .flatten();
+    let row: Option<(Option<String>, serde_json::Value)> =
+        sqlx::query_as("SELECT guest_ip, spec_json FROM vms WHERE id = ?")
+            .bind(vm_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten();
     if let Some((guest_ip, spec)) = row {
         if let Some(ip) = guest_ip.filter(|s| !s.trim().is_empty()) {
             plan.guest_ip = Some(ip.clone());
@@ -296,8 +332,7 @@ async fn kubevirt_plan_enriched(
         }
         if let Ok(vm) = serde_json::from_value::<VirtualMachine>(spec.clone()) {
             if let Some(mode) = auth_mode_from_spec(&vm) {
-                plan.guest_access.serial_password_login =
-                    mode == "password" || mode == "both";
+                plan.guest_access.serial_password_login = mode == "password" || mode == "both";
                 plan.guest_access.auth_mode = mode;
             }
             let user = vm
@@ -329,13 +364,12 @@ async fn kubevirt_plan_enriched(
                 plan.hypervisor_address = Some(node_ip.trim().to_string());
                 plan.ssh_connect_host = Some(node_ip.trim().to_string());
             }
-        } else if let Some(expose) =
-            crate::engine::kubevirt_ssh::discover_kubevirt_ssh_expose(
-                daemon_base_url,
-                namespace,
-                vm_name,
-            )
-            .await
+        } else if let Some(expose) = crate::engine::kubevirt_ssh::discover_kubevirt_ssh_expose(
+            daemon_base_url,
+            namespace,
+            vm_name,
+        )
+        .await
         {
             plan.guest_access.ssh_nat_host_port = Some(expose.port);
             plan.ssh_connect_port = Some(expose.port);
@@ -347,32 +381,33 @@ async fn kubevirt_plan_enriched(
     plan
 }
 
-fn check_federated_console_auth(
-    state: &AppState,
-    user: &AuthUser,
-) -> Result<(), ApiError> {
+fn check_federated_console_auth(state: &AppState, user: &AuthUser) -> Result<(), ApiError> {
     if !state.config.consolehub_require_oidc {
         return Ok(());
     }
     match user.auth_source.as_deref() {
         Some("oidc") | Some("saml") => Ok(()),
-        _ => Err(ApiError::bad_request("ConsoleHub requires federated SSO login")
-            .with_code("console_oidc_required")
-            .with_remediation("Sign in via Platform → OIDC/SAML before opening a production console.")),
+        _ => Err(
+            ApiError::bad_request("ConsoleHub requires federated SSO login")
+                .with_code("console_oidc_required")
+                .with_remediation(
+                    "Sign in via Platform → OIDC/SAML before opening a production console.",
+                ),
+        ),
     }
 }
 
-async fn host_agent_grpc(pool: &sqlx::PgPool, host_id: Uuid) -> Result<String, ApiError> {
-    let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = $1")
+async fn host_agent_grpc(pool: &sqlx::SqlitePool, host_id: Uuid) -> Result<String, ApiError> {
+    let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;
     Ok(addr)
 }
 
-async fn host_agent_console(pool: &sqlx::PgPool, host_id: Uuid) -> Result<String, ApiError> {
+async fn host_agent_console(pool: &sqlx::SqlitePool, host_id: Uuid) -> Result<String, ApiError> {
     let addr: String = sqlx::query_scalar(
-        "SELECT COALESCE(NULLIF(agent_console_addr, ''), agent_grpc_addr) FROM hosts WHERE id = $1",
+        "SELECT COALESCE(NULLIF(agent_console_addr, ''), agent_grpc_addr) FROM hosts WHERE id = ?",
     )
     .bind(host_id)
     .fetch_one(pool)
@@ -381,12 +416,12 @@ async fn host_agent_console(pool: &sqlx::PgPool, host_id: Uuid) -> Result<String
 }
 
 async fn host_guacamole_config(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::SqlitePool,
     host_id: Uuid,
     fallback: &crate::config::ControllerConfig,
 ) -> (String, String, bool) {
     let row: Option<(String, String)> = sqlx::query_as(
-        "SELECT guacamole_base_url, guacamole_json_secret_hex FROM hosts WHERE id = $1",
+        "SELECT guacamole_base_url, guacamole_json_secret_hex FROM hosts WHERE id = ?",
     )
     .bind(host_id)
     .fetch_optional(pool)
@@ -446,7 +481,7 @@ fn serial_password_login(auth_mode: &str) -> bool {
 }
 
 async fn build_guest_access_hints(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::SqlitePool,
     host_id: Uuid,
     agent: &machina_agent::pb::GetConsoleAccessPlanResponse,
     spec_vm: Option<&VirtualMachine>,
@@ -509,9 +544,13 @@ fn plan_from_agent(
         recommended,
         native: NativeConsoleInfo {
             console_type: agent.console_type.clone(),
-            ws_path: format!("/ws/v1/platform/vnc/{vm_id}?token={ws_token}"),
+            ws_path: if agent.console_type == "spice" && agent.vnc_port == 0 {
+                format!("/ws/v1/platform/spice/{vm_id}?token={ws_token}")
+            } else {
+                format!("/ws/v1/platform/vnc/{vm_id}?token={ws_token}")
+            },
             serial_ws_path: format!("/ws/v1/platform/serial/{vm_id}?token={ws_token}"),
-            available: agent.vnc_port > 0,
+            available: agent.vnc_port > 0 || agent.has_spice,
         },
         guacamole: GuacamoleConsoleInfo {
             available: agent.guacamole_available,
@@ -533,7 +572,7 @@ fn plan_from_agent(
             agent.os_hint.clone()
         },
         protocols: build_protocol_list(agent),
-        webrtc_spice_available: agent.console_type == "spice",
+        webrtc_spice_available: agent.console_type == "spice" || agent.has_spice,
         guest_access: guest_access.clone(),
         hypervisor_address: hypervisor_address.clone(),
         ssh_connect_host: ssh_host.clone(),
@@ -563,7 +602,7 @@ fn ssh_connect_target(
 
 fn build_protocol_list(agent: &machina_agent::pb::GetConsoleAccessPlanResponse) -> Vec<String> {
     let mut out = Vec::new();
-    if agent.console_type == "spice" {
+    if agent.console_type == "spice" || agent.has_spice {
         out.push("spice".into());
         out.push("webrtc_spice".into());
     }
@@ -604,27 +643,29 @@ pub async fn consolehub_plan(
     }
     let (vm_name, host_id) = vm_row(&state, id).await?;
     let agent_addr = host_agent_grpc(&state.pool, host_id).await?;
-    let mut client = agent_client::connect(&agent_addr).await.map_err(|e| ApiError::internal(e.to_string()))?;
+    let mut client = agent_client::connect(&agent_addr)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
     let agent_plan = agent_client::get_console_access_plan(&mut client, &vm_name)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    let spec_vm: Option<VirtualMachine> = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = $1")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|v| serde_json::from_value(v).ok());
+    let spec_vm: Option<VirtualMachine> =
+        sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten()
+            .and_then(|v| serde_json::from_value(v).ok());
     let guest_access =
         build_guest_access_hints(&state.pool, host_id, &agent_plan, spec_vm.as_ref()).await;
-    let hypervisor_address: Option<String> = sqlx::query_scalar(
-        "SELECT NULLIF(TRIM(address), '') FROM hosts WHERE id = $1",
-    )
-    .bind(host_id)
-    .fetch_optional(&state.pool)
-    .await
-    .ok()
-    .flatten();
+    let hypervisor_address: Option<String> =
+        sqlx::query_scalar("SELECT NULLIF(TRIM(address), '') FROM hosts WHERE id = ?")
+            .bind(host_id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
     let ws_token = state.ws_tokens.issue(id).await;
     let mut plan = plan_from_agent(
         id,
@@ -657,9 +698,11 @@ async fn check_console_rbac(
     protocol: &str,
 ) -> Result<(), ApiError> {
     if user.role == "viewer" && (protocol.contains("rdp") || protocol == "serial") {
-        return Err(ApiError::bad_request("viewer role cannot open RDP or serial console")
-            .with_code("console_rbac")
-            .with_remediation("Request operator access or use SSH/noVNC."));
+        return Err(
+            ApiError::bad_request("viewer role cannot open RDP or serial console")
+                .with_code("console_rbac")
+                .with_remediation("Request operator access or use SSH/noVNC."),
+        );
     }
     Ok(())
 }
@@ -675,7 +718,9 @@ fn check_device_posture(posture_header: Option<&str>) -> Result<(), ApiError> {
         Some("trusted") | Some("compliant") => Ok(()),
         _ => Err(ApiError::bad_request("device posture check failed")
             .with_code("console_posture_required")
-            .with_remediation("Connect from a managed device with valid Zeus posture attestation.")),
+            .with_remediation(
+                "Connect from a managed device with valid Zeus posture attestation.",
+            )),
     }
 }
 
@@ -689,7 +734,7 @@ async fn check_jit_approval(
         return Ok(());
     }
     let approved: Option<Uuid> = sqlx::query_scalar(
-        "SELECT id FROM console_access_requests WHERE vm_id = $1 AND requester = $2 AND protocol = $3 AND status = 'approved' AND (expires_at IS NULL OR expires_at > NOW()) ORDER BY approved_at DESC LIMIT 1",
+        "SELECT id FROM console_access_requests WHERE vm_id = ? AND requester = ? AND protocol = ? AND status = 'approved' AND (expires_at IS NULL OR expires_at > datetime('now')) ORDER BY approved_at DESC LIMIT 1",
     )
     .bind(vm_id)
     .bind(&user.username)
@@ -712,7 +757,7 @@ pub async fn create_session(
     Json(body): Json<CreateSessionBody>,
 ) -> Result<Json<ConsoleSessionResponse>, ApiError> {
     check_federated_console_auth(&state, &user)?;
-    let (vm_name, _host_id, source, k8s_namespace) = vm_meta(&state, id).await?;
+    let (_vm_name, _host_id, source, k8s_namespace) = vm_meta(&state, id).await?;
     if source == "kubevirt" {
         let protocol = body
             .protocol
@@ -720,7 +765,9 @@ pub async fn create_session(
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "novnc".into());
         if protocol.starts_with("guacamole_") {
-            return Err(ApiError::bad_request("Guacamole protocols are not available for KubeVirt guests"));
+            return Err(ApiError::bad_request(
+                "Guacamole protocols are not available for KubeVirt guests",
+            ));
         }
         check_console_rbac(&state, &user, &protocol).await?;
         if !body.break_glass {
@@ -728,7 +775,11 @@ pub async fn create_session(
         } else {
             crate::auth::require_operator(&user)?;
         }
-        check_device_posture(headers.get("x-zeus-device-posture").and_then(|v| v.to_str().ok()))?;
+        check_device_posture(
+            headers
+                .get("x-zeus-device-posture")
+                .and_then(|v| v.to_str().ok()),
+        )?;
         let ws_token = state.ws_tokens.issue(id).await;
         let audit_id = Uuid::new_v4();
         let ttl = Duration::from_secs(state.config.consolehub_session_ttl_secs);
@@ -767,7 +818,9 @@ pub async fn create_session(
     }
     let (vm_name, host_id) = vm_row(&state, id).await?;
     let agent_addr = host_agent_grpc(&state.pool, host_id).await?;
-    let mut client = agent_client::connect(&agent_addr).await.map_err(|e| ApiError::internal(e.to_string()))?;
+    let mut client = agent_client::connect(&agent_addr)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
     let agent_plan = agent_client::get_console_access_plan(&mut client, &vm_name)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -784,12 +837,16 @@ pub async fn create_session(
     } else {
         crate::auth::require_operator(&user)?;
     }
-    check_device_posture(headers.get("x-zeus-device-posture").and_then(|v| v.to_str().ok()))?;
+    check_device_posture(
+        headers
+            .get("x-zeus-device-posture")
+            .and_then(|v| v.to_str().ok()),
+    )?;
 
     if body.break_glass {
         sqlx::query(
             "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
-             VALUES ($1,$2,$3,$4,$5,$6)",
+             VALUES (?,?,?,?,?,?)",
         )
         .bind(Uuid::new_v4())
         .bind(&user.username)
@@ -807,15 +864,23 @@ pub async fn create_session(
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(ttl.as_secs() as i64);
 
     let agent_console = host_agent_console(&state.pool, host_id).await?;
-    let agent_proxy = format!("http://{}", agent_client::normalize_agent_addr(&agent_console));
+    let agent_proxy = format!(
+        "http://{}",
+        agent_client::normalize_agent_addr(&agent_console)
+    );
     let prefix = state.config.consolehub_proxy_prefix.trim_end_matches('/');
 
-    let (backend, guac_token, emergency_url): (String, Option<String>, Option<String>) = if protocol.starts_with("guacamole_") {
+    let (backend, guac_token, emergency_url): (String, Option<String>, Option<String>) = if protocol
+        .starts_with("guacamole_")
+    {
         let (base_url, secret_hex, enabled) =
             host_guacamole_config(&state.pool, host_id, &state.config).await;
         if !enabled {
-            return Err(ApiError::bad_request("Guacamole not configured on this host")
-                .with_remediation("Run: sudo bash scripts/install-guacamole.sh on the hypervisor."));
+            return Err(
+                ApiError::bad_request("Guacamole not configured on this host").with_remediation(
+                    "Run: sudo bash scripts/install-guacamole.sh on the hypervisor.",
+                ),
+            );
         }
         let guest_ip = agent_plan.guest_ip.clone();
         let target = guac_target_for_protocol(
@@ -866,7 +931,7 @@ pub async fn create_session(
     let recording = state.config.consolehub_recording_enabled || body.break_glass;
     sqlx::query(
         "INSERT INTO console_sessions (id, vm_id, host_id, actor, protocol, backend, guac_token, agent_proxy_base, emergency_url, expires_at, audit_id, recording_enabled)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)",
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     )
     .bind(session_id)
     .bind(id)
@@ -881,11 +946,16 @@ pub async fn create_session(
     .bind(audit_id)
     .bind(recording)
     .execute(&state.pool)
-    .await?;
+    .await
+    .map_err(|e| {
+        let sessions = state.console_sessions.clone();
+        tokio::spawn(async move { sessions.remove(session_id).await });
+        ApiError::internal(e.to_string())
+    })?;
 
     sqlx::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
-         VALUES ($1,$2,$3,$4,$5,$6)",
+         VALUES (?,?,?,?,?,?)",
     )
     .bind(audit_id)
     .bind(&user.username)
@@ -898,7 +968,7 @@ pub async fn create_session(
 
     let spectator_token = Uuid::new_v4().to_string();
     if recording {
-        let _ = sqlx::query("UPDATE console_sessions SET spectator_token = $2 WHERE id = $1")
+        let _ = sqlx::query("UPDATE console_sessions SET spectator_token = ? WHERE id = ?")
             .bind(session_id)
             .bind(&spectator_token)
             .execute(&state.pool)
@@ -924,7 +994,11 @@ pub async fn create_session(
         emergency_url,
         audit_id: audit_id.to_string(),
         expires_at: expires_at.to_rfc3339(),
-        spectator_token: if recording { Some(spectator_token) } else { None },
+        spectator_token: if recording {
+            Some(spectator_token)
+        } else {
+            None
+        },
         recording_enabled: recording,
     }))
 }
@@ -938,8 +1012,10 @@ fn session_replay_path(state: &AppState, session_id: Uuid) -> std::path::PathBuf
 
 pub async fn list_sessions(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<serde_json::Value>>, ApiError> {
+    require_operator(&actor)?;
     let rows: Vec<(
         Uuid,
         String,
@@ -950,7 +1026,7 @@ pub async fn list_sessions(
         bool,
         Option<String>,
     )> = sqlx::query_as(
-        "SELECT id, actor, protocol, backend, started_at, ended_at, recording_enabled, recording_path FROM console_sessions WHERE vm_id = $1 ORDER BY started_at DESC LIMIT 50",
+        "SELECT id, actor, protocol, backend, started_at, ended_at, recording_enabled, recording_path FROM console_sessions WHERE vm_id = ? ORDER BY started_at DESC LIMIT 50",
     )
     .bind(id)
     .fetch_all(&state.pool)
@@ -989,7 +1065,7 @@ pub async fn validate_spectator(
     axum::extract::Query(q): Query<SpectatorValidateQuery>,
 ) -> Result<Json<SpectatorValidateResponse>, ApiError> {
     let row: Option<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT vm_id, actor, protocol FROM console_sessions WHERE id = $1 AND spectator_token = $2 AND ended_at IS NULL AND recording_enabled = TRUE",
+        "SELECT vm_id, actor, protocol FROM console_sessions WHERE id = ? AND spectator_token = ? AND ended_at IS NULL AND recording_enabled = TRUE",
     )
     .bind(q.session_id)
     .bind(q.token.trim())
@@ -1050,7 +1126,7 @@ pub async fn collaborate_session(
 
     sqlx::query(
         "INSERT INTO console_sessions (id, vm_id, host_id, actor, protocol, backend, expires_at, audit_id, recording_enabled, spectator_token, metadata_json)
-         VALUES ($1,$2,$3,$4,$5,'native',$6,$7,TRUE,$8,$9)",
+         VALUES (?,?,?,?,?,'native',?,?,TRUE,?,?)",
     )
     .bind(session_id)
     .bind(id)
@@ -1069,7 +1145,7 @@ pub async fn collaborate_session(
 
     sqlx::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
-         VALUES ($1,$2,$3,$4,$5,$6)",
+         VALUES (?,?,?,?,?,?)",
     )
     .bind(audit_id)
     .bind(&user.username)
@@ -1128,7 +1204,7 @@ pub async fn break_glass_session(
 
 fn guac_target_for_protocol(
     protocol: &str,
-    vm_name: &str,
+    _vm_name: &str,
     plan: &machina_agent::pb::GetConsoleAccessPlanResponse,
     guest_ip: String,
     rdp_user: Option<&str>,
@@ -1173,7 +1249,9 @@ fn guac_target_for_protocol(
                 },
             })
         }
-        other => Err(ApiError::bad_request(format!("unsupported Guacamole protocol: {other}"))),
+        other => Err(ApiError::bad_request(format!(
+            "unsupported Guacamole protocol: {other}"
+        ))),
     }
 }
 
@@ -1186,16 +1264,18 @@ pub async fn end_session(
         .to_string_lossy()
         .into_owned();
     sqlx::query(
-        "UPDATE console_sessions SET ended_at = NOW(),
-         recording_path = CASE WHEN recording_enabled THEN $3 ELSE recording_path END
-         WHERE id = $1 AND actor = $2",
+        "UPDATE console_sessions SET ended_at = datetime('now'),
+         recording_path = CASE WHEN recording_enabled THEN ? ELSE recording_path END
+         WHERE id = ? AND actor = ?",
     )
+    .bind(&replay_path)
     .bind(session_id)
     .bind(&user.username)
-    .bind(&replay_path)
     .execute(&state.pool)
     .await?;
-    Ok(Json(serde_json::json!({ "ended": true, "session_id": session_id.to_string() })))
+    Ok(Json(
+        serde_json::json!({ "ended": true, "session_id": session_id.to_string() }),
+    ))
 }
 
 pub async fn upload_session_replay(
@@ -1204,12 +1284,11 @@ pub async fn upload_session_replay(
     Path(session_id): Path<Uuid>,
     body: Body,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let row: Option<(bool, String)> = sqlx::query_as(
-        "SELECT recording_enabled, actor FROM console_sessions WHERE id = $1",
-    )
-    .bind(session_id)
-    .fetch_optional(&state.pool)
-    .await?;
+    let row: Option<(bool, String)> =
+        sqlx::query_as("SELECT recording_enabled, actor FROM console_sessions WHERE id = ?")
+            .bind(session_id)
+            .fetch_optional(&state.pool)
+            .await?;
     let Some((recording_enabled, actor)) = row else {
         return Err(ApiError::not_found("session not found"));
     };
@@ -1238,7 +1317,7 @@ pub async fn upload_session_replay(
         .map_err(|e| ApiError::internal(format!("write replay: {e}")))?;
 
     let path_str = path.to_string_lossy().into_owned();
-    sqlx::query("UPDATE console_sessions SET recording_path = $2 WHERE id = $1")
+    sqlx::query("UPDATE console_sessions SET recording_path = ? WHERE id = ?")
         .bind(session_id)
         .bind(&path_str)
         .execute(&state.pool)
@@ -1254,11 +1333,12 @@ pub async fn upload_session_replay(
 
 pub async fn get_session_replay(
     State(state): State<AppState>,
-    Extension(_user): Extension<AuthUser>,
+    Extension(actor): Extension<AuthUser>,
     Path(session_id): Path<Uuid>,
 ) -> Result<Response, ApiError> {
+    require_operator(&actor)?;
     let recording_path: Option<String> =
-        sqlx::query_scalar("SELECT recording_path FROM console_sessions WHERE id = $1")
+        sqlx::query_scalar("SELECT recording_path FROM console_sessions WHERE id = ?")
             .bind(session_id)
             .fetch_optional(&state.pool)
             .await?
@@ -1281,10 +1361,8 @@ pub async fn get_session_replay(
         )
         .header(
             axum::http::header::CONTENT_DISPOSITION,
-            HeaderValue::from_str(&format!(
-                "inline; filename=\"console-{session_id}.webm\""
-            ))
-            .unwrap_or_else(|_| HeaderValue::from_static("inline")),
+            HeaderValue::from_str(&format!("inline; filename=\"console-{session_id}.webm\""))
+                .unwrap_or_else(|_| HeaderValue::from_static("inline")),
         )
         .body(Body::from(bytes))
         .map_err(|e| ApiError::internal(format!("build response: {e}")))?)
@@ -1306,7 +1384,7 @@ pub async fn create_access_request(
     let request_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO console_access_requests (id, vm_id, requester, protocol, reason, status, expires_at)
-         VALUES ($1,$2,$3,$4,$5,'pending', NOW() + INTERVAL '24 hours')",
+         VALUES (?,?,?,?,?,'pending', datetime('now', '+24 hours'))",
     )
     .bind(request_id)
     .bind(id)
@@ -1329,17 +1407,21 @@ pub async fn approve_access_request(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     crate::auth::require_operator(&user)?;
     let updated = sqlx::query(
-        "UPDATE console_access_requests SET status = 'approved', approved_by = $2, approved_at = NOW(), expires_at = NOW() + INTERVAL '4 hours'
-         WHERE id = $1 AND status = 'pending'",
+        "UPDATE console_access_requests SET status = 'approved', approved_by = ?, approved_at = datetime('now'), expires_at = datetime('now', '+4 hours')
+         WHERE id = ? AND status = 'pending'",
     )
     .bind(request_id)
     .bind(&user.username)
     .execute(&state.pool)
     .await?;
     if updated.rows_affected() == 0 {
-        return Err(ApiError::bad_request("request not found or already processed"));
+        return Err(ApiError::bad_request(
+            "request not found or already processed",
+        ));
     }
-    Ok(Json(serde_json::json!({ "approved": true, "request_id": request_id.to_string() })))
+    Ok(Json(
+        serde_json::json!({ "approved": true, "request_id": request_id.to_string() }),
+    ))
 }
 
 async fn guac_http_proxy_root(
@@ -1378,7 +1460,10 @@ async fn guac_http_proxy_impl(
         .map(|q| format!("?{q}"))
         .unwrap_or_default();
     let url = if path.is_empty() {
-        format!("{}/guacamole-proxy/{query}", session.agent_proxy_base.trim_end_matches('/'))
+        format!(
+            "{}/guacamole-proxy/{query}",
+            session.agent_proxy_base.trim_end_matches('/')
+        )
     } else {
         format!(
             "{}/guacamole-proxy/{path}{query}",
@@ -1419,7 +1504,10 @@ async fn guac_http_proxy_impl(
     let headers = out.headers_mut().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
     for (k, v) in resp.headers().iter() {
         let name = k.as_str();
-        if matches!(name, "transfer-encoding" | "connection" | "content-encoding") {
+        if matches!(
+            name,
+            "transfer-encoding" | "connection" | "content-encoding"
+        ) {
             continue;
         }
         if let Ok(val) = HeaderValue::from_bytes(v.as_bytes()) {
@@ -1445,8 +1533,17 @@ async fn guac_ws_proxy(
     let query = req.uri().query().unwrap_or("").to_string();
     let target = format!(
         "ws://{}/guacamole-proxy/websocket-tunnel{}",
-        agent_client::normalize_agent_addr(&session.agent_proxy_base.strip_prefix("http://").unwrap_or(&session.agent_proxy_base)),
-        if query.is_empty() { String::new() } else { format!("?{query}") }
+        agent_client::normalize_agent_addr(
+            &session
+                .agent_proxy_base
+                .strip_prefix("http://")
+                .unwrap_or(&session.agent_proxy_base)
+        ),
+        if query.is_empty() {
+            String::new()
+        } else {
+            format!("?{query}")
+        }
     );
     Ok(ws.on_upgrade(move |socket| proxy_guac_ws(socket, target)))
 }
@@ -1525,15 +1622,23 @@ pub struct ConsoleExplainBody {
 
 pub async fn consolehub_explain(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<ConsoleExplainBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let (vm_name, _host_id) = vm_row(&state, id).await?;
-    let intent = if body.intent.is_empty() { "explain_screen" } else { body.intent.as_str() };
+    let intent = if body.intent.is_empty() {
+        "explain_screen"
+    } else {
+        body.intent.as_str()
+    };
     let mut lines = vec![format!("**{}** — ConsoleHub lens: {}", vm_name, body.lens)];
     if let Some(ip) = &body.guest_ip {
         if !ip.is_empty() {
-            lines.push(format!("Guest IP visible: `{ip}` — try SSH from the host when sshd is up."));
+            lines.push(format!(
+                "Guest IP visible: `{ip}` — try SSH from the host when sshd is up."
+            ));
         }
     }
     if let Some(st) = &body.vm_state {
@@ -1542,26 +1647,38 @@ pub async fn consolehub_explain(
     match intent {
         "diagnose_boot" => {
             lines.push("If the display is black, open **Serial** for boot output.".into());
-            lines.push("Common causes: missing virtio drivers, wrong root device, cloud-init failure.".into());
+            lines.push(
+                "Common causes: missing virtio drivers, wrong root device, cloud-init failure."
+                    .into(),
+            );
         }
         "fix_network" => {
             lines.push("Check guest NIC, cloud-init network config, and host/CNI routes.".into());
             lines.push("Use **Network** lens or PacketWolf trace when fabric is enabled.".into());
         }
         _ => {
-            lines.push("Analyze the visible console for login prompts, installers, or error screens.".into());
+            lines.push(
+                "Analyze the visible console for login prompts, installers, or error screens."
+                    .into(),
+            );
             if body.guest_ip.as_deref().unwrap_or("").is_empty() {
                 lines.push("No guest IP reported — network may still be initializing.".into());
             } else {
-                lines.push("Guest appears to have network — console and SSH should be reachable.".into());
+                lines.push(
+                    "Guest appears to have network — console and SSH should be reachable.".into(),
+                );
             }
         }
     }
     let object_ref = serde_json::json!({ "vm_id": id.to_string(), "intent": intent });
-    if let Ok(text) = crate::engine::ai::explain_screen(&state.pool, "console_hub", &object_ref).await {
+    if let Ok(text) =
+        crate::engine::ai::explain_screen(&state.pool, "console_hub", &object_ref).await
+    {
         lines.push(text);
     }
-    Ok(Json(serde_json::json!({ "explanation": lines.join("\n\n") })))
+    Ok(Json(
+        serde_json::json!({ "explanation": lines.join("\n\n") }),
+    ))
 }
 
 pub fn console_info_from_plan(plan: &ConsoleHubPlan) -> serde_json::Value {

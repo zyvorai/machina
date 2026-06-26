@@ -18,11 +18,10 @@ pub struct CpuCompatRule {
 pub async fn get_cpu_compat_matrix(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<CpuCompatRule>>, ApiError> {
-    let raw: serde_json::Value = sqlx::query_scalar(
-        "SELECT cpu_compat_matrix FROM clusters ORDER BY created_at LIMIT 1",
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let raw: serde_json::Value =
+        sqlx::query_scalar("SELECT cpu_compat_matrix FROM clusters ORDER BY created_at LIMIT 1")
+            .fetch_one(&state.pool)
+            .await?;
     let rules: Vec<CpuCompatRule> = serde_json::from_value(raw).unwrap_or_default();
     Ok(Json(rules))
 }
@@ -39,7 +38,7 @@ pub async fn patch_cpu_compat_matrix(
 ) -> Result<Json<Vec<CpuCompatRule>>, ApiError> {
     require_admin(&actor)?;
     let val = serde_json::to_value(&body.rules).map_err(|e| ApiError::internal(e.to_string()))?;
-    sqlx::query("UPDATE clusters SET cpu_compat_matrix = $1")
+    sqlx::query("UPDATE clusters SET cpu_compat_matrix = ?")
         .bind(val)
         .execute(&state.pool)
         .await?;

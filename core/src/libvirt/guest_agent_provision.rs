@@ -31,8 +31,13 @@ WantedBy=multi-user.target
 
 /// Effective config when callers only have optional overrides.
 pub fn effective_guest_agent_cfg(cfg: Option<&LibvirtConfig>) -> (bool, PathBuf) {
-    cfg.map(|c| (c.guest_agent_by_default, PathBuf::from(&c.guestkit_agent_binary)))
-        .unwrap_or((true, PathBuf::from("/usr/local/bin/guestkit")))
+    cfg.map(|c| {
+        (
+            c.guest_agent_by_default,
+            PathBuf::from(&c.guestkit_agent_binary),
+        )
+    })
+    .unwrap_or((true, PathBuf::from("/usr/local/bin/guestkit")))
 }
 
 pub fn guest_agent_enabled(cfg: Option<&LibvirtConfig>) -> bool {
@@ -144,15 +149,15 @@ pub fn stage_guestkit_seed_files(
         ))
     })?;
     fs::set_permissions(&dest, fs::Permissions::from_mode(0o755)).map_err(|e| {
-        LibvirtError::Operation(format!(
-            "chmod guestkit seed {}: {e}",
-            dest.display()
-        ))
+        LibvirtError::Operation(format!("chmod guestkit seed {}: {e}", dest.display()))
     })?;
     super::subprocess::log_line(
         log,
         "machina",
-        &format!("guestkit-agent staged for cloud-init ({})", binary.display()),
+        &format!(
+            "guestkit-agent staged for cloud-init ({})",
+            binary.display()
+        ),
     );
     Ok(())
 }
@@ -175,10 +180,7 @@ pub fn inject_guestkit_into_disk(
         super::subprocess::log_line(
             log,
             "machina",
-            &format!(
-                "guestkit inject skipped: {} not found",
-                binary.display()
-            ),
+            &format!("guestkit inject skipped: {} not found", binary.display()),
         );
         return Ok(());
     }

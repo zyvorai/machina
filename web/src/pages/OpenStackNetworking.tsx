@@ -174,6 +174,7 @@ function OpenStackNetworkingContent() {
             <select
               value={subnetNetId}
               onChange={(e) => setSubnetNetId(e.target.value)}
+              aria-label="Network"
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 min-w-[12rem]"
             >
               {networks.map((n) => (
@@ -234,6 +235,7 @@ function OpenStackNetworkingContent() {
             <select
               value={routerExtNet}
               onChange={(e) => setRouterExtNet(e.target.value)}
+              aria-label="External network"
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 min-w-[12rem]"
             >
               <option value="">None</option>
@@ -270,6 +272,7 @@ function OpenStackNetworkingContent() {
             <select
               value={linkRouterId}
               onChange={(e) => setLinkRouterId(e.target.value)}
+              aria-label="Router"
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 min-w-[12rem]"
             >
               {routers.map((r) => (
@@ -282,6 +285,7 @@ function OpenStackNetworkingContent() {
             <select
               value={linkSubnetId}
               onChange={(e) => setLinkSubnetId(e.target.value)}
+              aria-label="Subnet"
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 min-w-[12rem]"
             >
               {subnets.map((s) => (
@@ -334,6 +338,7 @@ function OpenStackNetworkingContent() {
             <select
               value={portNetId}
               onChange={(e) => setPortNetId(e.target.value)}
+              aria-label="Network (port)"
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 min-w-[12rem]"
             >
               {networks.map((n) => (
@@ -342,6 +347,7 @@ function OpenStackNetworkingContent() {
             </select>
           </div>
           <input
+            aria-label="Port name (optional)"
             value={portName}
             onChange={(e) => setPortName(e.target.value)}
             placeholder="Port name (optional)"
@@ -373,6 +379,7 @@ function OpenStackNetworkingContent() {
             <select
               value={fipExtNet}
               onChange={(e) => setFipExtNet(e.target.value)}
+              aria-label="External network (FIP)"
               className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 min-w-[12rem]"
             >
               {networks.filter((n) => n.external).map((n) => (

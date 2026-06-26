@@ -92,7 +92,10 @@ pub fn probe_guest_agent(
     guest: Option<&GuestInfo>,
 ) -> Result<GuestAgentDiagnostics, LibvirtError> {
     let xml = lookup_domain(conn, name)
-        .and_then(|d| d.get_xml_desc(0).map_err(LibvirtError::map_op("get_xml_desc")))
+        .and_then(|d| {
+            d.get_xml_desc(0)
+                .map_err(LibvirtError::map_op("get_xml_desc"))
+        })
         .unwrap_or_default();
     let (channel_attached, channel_connected) = channel_state(&xml);
     let agent_ping = if channel_connected {
@@ -182,7 +185,12 @@ pub fn probe_guest_agent(
         },
     });
     if let Some(g) = guest {
-        if !g.os_pretty_name.as_ref().map(|s| s.is_empty()).unwrap_or(true) {
+        if !g
+            .os_pretty_name
+            .as_ref()
+            .map(|s| s.is_empty())
+            .unwrap_or(true)
+        {
             checks.push(GuestAgentCheck {
                 id: "os_info".into(),
                 label: "Guest OS info".into(),

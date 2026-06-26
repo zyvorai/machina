@@ -278,7 +278,10 @@ async fn qcow2_kubevirt_start(
 
 pub fn kubevirt_routes() -> Router<LibvirtManager> {
     Router::new()
-        .route("/kubevirt/qcow2-bundle", get(qcow2_kubevirt_bundle_get).post(qcow2_kubevirt_bundle_post))
+        .route(
+            "/kubevirt/qcow2-bundle",
+            get(qcow2_kubevirt_bundle_get).post(qcow2_kubevirt_bundle_post),
+        )
         .route("/kubevirt/qcow2/apply", post(qcow2_kubevirt_apply))
         .route("/kubevirt/qcow2/upload", post(qcow2_kubevirt_upload))
         .route("/kubevirt/qcow2/start", post(qcow2_kubevirt_start))

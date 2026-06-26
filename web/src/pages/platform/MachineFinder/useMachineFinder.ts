@@ -19,7 +19,7 @@ import {
   type PlatformHost,
   type PlatformVm,
 } from '../../../api/platform'
-import { fleetGuestQuery, type FleetGuestQueryReport } from '../../../api/ai'
+import { fleetGuestQuery, getAiSecurity, type FleetGuestQueryReport, type SecurityReport } from '../../../api/ai'
 import { useAi } from '../../../contexts/AiContext'
 import { useToastContext } from '../../../contexts/ToastContext'
 import { usePlatformDesktopTier } from '../../../hooks/usePlatformDesktopTier'
@@ -90,8 +90,11 @@ export function useMachineFinder() {
   const [batchPowerBusy, setBatchPowerBusy] = useState(false)
   const [sshVm, setSshVm] = useState<PlatformVm | null>(null)
   const [pruneBusy, setPruneBusy] = useState(false)
+  const [confirmPrune, setConfirmPrune] = useState(false)
+  const [deleteVmTarget, setDeleteVmTarget] = useState<PlatformVm | null>(null)
   const [fleetGuestReport, setFleetGuestReport] = useState<FleetGuestQueryReport | null>(null)
   const [fleetGuestBusy, setFleetGuestBusy] = useState(false)
+  const [aiSecurity, setAiSecurity] = useState<SecurityReport | null>(null)
   const deleteTaskToastRef = useRef<string | null>(null)
 
   const hostMap = useMemo(() => new Map(hosts.map((h) => [h.id, h.hostname])), [hosts])
@@ -249,6 +252,11 @@ export function useMachineFinder() {
 
   useEffect(() => { void load() }, [load])
 
+  useEffect(() => {
+    if (overlay !== 'security') return
+    void getAiSecurity().then(setAiSecurity).catch(() => setAiSecurity(null))
+  }, [overlay])
+
   const deleteTaskId = (location.state as { vmDeleteTaskId?: string; vmDeleteLabel?: string } | null)?.vmDeleteTaskId
   const deleteTaskLabel = (location.state as { vmDeleteLabel?: string } | null)?.vmDeleteLabel
 
@@ -375,13 +383,18 @@ export function useMachineFinder() {
     os: string
     size: string
     network: string
-    windows: { virtio: boolean; uefi: boolean; tpm: boolean; secureBoot: boolean; rdp: boolean }
+    windows: { virtio: boolean; virtioIsoPath: string; uefi: boolean; tpm: boolean; secureBoot: boolean; rdp: boolean }
   }) => {
     const spec = sizeToSpec(payload.size)
     const labels: Record<string, string> = { os_family: 'windows' }
     if (payload.windows.tpm) labels.tpm = 'true'
     if (payload.windows.secureBoot) labels.secure_boot = 'true'
-    if (payload.windows.virtio) labels.virtio_win = 'true'
+    if (payload.windows.virtio) {
+      labels.virtio_win = 'true'
+      if (payload.windows.virtioIsoPath.trim()) {
+        labels.virtio_win_iso = payload.windows.virtioIsoPath.trim()
+      }
+    }
     if (payload.windows.rdp) labels.rdp = 'true'
     const body: CreatePlatformVmBody = {
       api_version: 'virt.zyvor.dev/v1',
@@ -412,8 +425,11 @@ export function useMachineFinder() {
     setMigrateModal({ vm, destId: hostId, destName: host.hostname })
   }
 
-  const pruneMissing = async () => {
-    if (!window.confirm(`Remove ${filteredVms.length} missing VM record(s) from inventory? This cannot be undone.`)) return
+  const pruneMissing = () => {
+    setConfirmPrune(true)
+  }
+
+  const doPruneMissing = async () => {
     setPruneBusy(true)
     try {
       purgeVmShortcuts(filteredVms.map((v) => v.name))
@@ -452,8 +468,7 @@ export function useMachineFinder() {
       toast.error('Batch snapshot applies to libvirt VMs only')
       return
     }
-    const name = window.prompt('Snapshot name prefix', `batch-${Date.now()}`)?.trim()
-    if (!name) return
+    const name = `batch-${Date.now()}`
     setBatchPowerBusy(true)
     try {
       const blocked: string[] = []
@@ -595,8 +610,7 @@ export function useMachineFinder() {
       toast.error('Snapshots apply to libvirt VMs only')
       return
     }
-    const name = window.prompt('Snapshot name', `snap-${Date.now()}`)?.trim()
-    if (!name) return
+    const name = `snap-${Date.now()}`
     try {
       const r = await createVmSnapshot(vm.id, name)
       toastQueuedOperation(toast, `Snapshot ${vm.name}`, r.task_id, tier)
@@ -606,12 +620,15 @@ export function useMachineFinder() {
     }
   }
 
-  const vmDeleteAction = async (vm: PlatformVm) => {
+  const vmDeleteAction = (vm: PlatformVm) => {
     if (vm.inventory_source === 'kubevirt') {
       toast.error('KubeVirt guests must be deleted from the cluster')
       return
     }
-    if (!window.confirm(`Delete ${vm.name}? This cannot be undone.`)) return
+    setDeleteVmTarget(vm)
+  }
+
+  const doVmDeleteAction = async (vm: PlatformVm) => {
     try {
       await queuePlatformVmDelete(vm, toast, tier)
       if (selectedVmId === vm.id) setSelectedVmId(null)
@@ -699,9 +716,16 @@ export function useMachineFinder() {
     sshVm,
     setSshVm,
     pruneBusy,
+    confirmPrune,
+    setConfirmPrune,
+    deleteVmTarget,
+    setDeleteVmTarget,
+    doPruneMissing,
+    doVmDeleteAction,
     fleetGuestReport,
     setFleetGuestReport,
     fleetGuestBusy,
+    aiSecurity,
     tier,
     load,
     setFilter,

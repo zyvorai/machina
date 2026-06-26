@@ -447,7 +447,7 @@ export default function FleetPage() {
           {t('fleet.allVms')}
         </h2>
         <div className="overflow-x-auto rounded-xl border border-slate-700/50">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Fleet hosts">
             <thead className="bg-slate-800/60 text-slate-400">
               <tr>
                 <th className="px-4 py-2 text-left">{t('fleet.colName')}</th>

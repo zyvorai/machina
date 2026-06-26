@@ -148,6 +148,13 @@ const PlatformLaunchpadSpace = lazy(() => import('./pages/platform/PlatformLaunc
 const PlatformBackups = lazy(() => import('./pages/platform/PlatformBackups'))
 const PlatformTopology = lazy(() => import('./pages/platform/PlatformTopology'))
 const PlatformZeusOs = lazy(() => import('./pages/platform/PlatformZeusOs'))
+const PlatformZeusSettings = lazy(() => import('./pages/platform/PlatformZeusSettings'))
+const PlatformAiProviders = lazy(() => import('./pages/platform/PlatformAiProviders'))
+const PlatformHa = lazy(() => import('./pages/platform/PlatformHa'))
+const PlatformBareMetal = lazy(() => import('./pages/platform/PlatformBareMetal'))
+const PlatformStorageTiers = lazy(() => import('./pages/platform/PlatformStorageTiers'))
+const PlatformMarketplace = lazy(() => import('./pages/platform/PlatformMarketplace'))
+const PlatformUpgrade = lazy(() => import('./pages/platform/PlatformUpgrade'))
 const PlatformRightsizing = lazy(() => import('./pages/platform/PlatformRightsizing'))
 const PlatformIncidentCommander = lazy(() => import('./pages/platform/PlatformIncidentCommander'))
 const PlatformZeusApprovals = lazy(() => import('./pages/platform/PlatformZeusApprovals'))
@@ -332,6 +339,12 @@ function AuthenticatedShellRoutes() {
           <RouteRecorder />
           <ToastRenderer />
           <div className={`${shellClass} flex flex-col min-h-dvh`}>
+            <a
+              href="#main-content"
+              className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-[9999] focus:px-4 focus:py-2 focus:bg-slate-900 focus:text-white focus:rounded-lg focus:shadow-lg focus:outline-none"
+            >
+              Skip to main content
+            </a>
             {!isPlatformRoute && <Navbar onOpenHelp={openHelp} />}
             {!isPlatformRoute && <ShellBridgeBar />}
             <ZeusSpotlight onOpenHelp={openHelp} />
@@ -400,6 +413,13 @@ function AuthenticatedShellRoutes() {
                   <Route path="observability" element={<PlatformObservability />} />
                   <Route path="enterprise" element={<PlatformEnterprise />} />
                   <Route path="zeus" element={<PlatformZeusOs />} />
+                  <Route path="zeus/configure" element={<PlatformZeusSettings />} />
+                  <Route path="ai-providers" element={<PlatformAiProviders />} />
+                  <Route path="ha" element={<PlatformHa />} />
+                  <Route path="baremetal" element={<PlatformBareMetal />} />
+                  <Route path="storage-tiers" element={<PlatformStorageTiers />} />
+                  <Route path="marketplace" element={<PlatformMarketplace />} />
+                  <Route path="upgrade" element={<PlatformUpgrade />} />
                   <Route path="zeus/rightsizing" element={<PlatformRightsizing />} />
                   <Route path="zeus/incidents" element={<PlatformIncidentCommander />} />
                   <Route path="zeus/approvals" element={<PlatformZeusApprovals />} />

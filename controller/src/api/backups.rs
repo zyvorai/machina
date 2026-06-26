@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::api::tasks::TaskResponse;
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 use crate::tasks::enqueue::enqueue_task;
 
@@ -37,11 +37,14 @@ fn default_type() -> String {
 
 pub async fn list_vm_backups(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<Vec<BackupRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = sqlx::query_as::<_, BackupRow>(
-        "SELECT id, vm_id, backup_type, status, message, COALESCE(backup_path, '') AS backup_path, created_at
-         FROM backup_records WHERE vm_id = $1 ORDER BY created_at DESC",
+        "SELECT id, vm_id, backup_type, status, message, COALESCE(backup_path, '') AS backup_path,
+                strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+         FROM backup_records WHERE vm_id = ? ORDER BY created_at DESC LIMIT 200",
     )
     .bind(vm_id)
     .fetch_all(&state.pool)
@@ -51,25 +54,17 @@ pub async fn list_vm_backups(
 
 pub async fn create_vm_backup(
     State(state): State<AppState>,
-    Extension(_actor): Extension<AuthUser>,
+    Extension(actor): Extension<AuthUser>,
     Path(vm_id): Path<Uuid>,
     Json(body): Json<CreateBackupBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    require_operator(&actor)?;
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
 
     let id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES ($1, $2, $3, 'pending')",
-    )
-    .bind(id)
-    .bind(vm_id)
-    .bind(&body.backup_type)
-    .execute(&state.pool)
-    .await?;
-
     let task_id = enqueue_task(
         &state,
         "vm.backup",
@@ -84,6 +79,15 @@ pub async fn create_vm_backup(
     )
     .await?;
 
+    sqlx::query(
+        "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES (?, ?, ?, 'pending')",
+    )
+    .bind(id)
+    .bind(vm_id)
+    .bind(&body.backup_type)
+    .execute(&state.pool)
+    .await?;
+
     Ok(Json(TaskResponse {
         task_id: task_id.to_string(),
         status: "pending".into(),
@@ -96,8 +100,8 @@ pub async fn restore_vm_backup(
     Extension(actor): Extension<AuthUser>,
     Path((vm_id, backup_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    crate::auth::require_operator(&actor)?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    require_operator(&actor)?;
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -135,7 +139,9 @@ pub struct BackupTimelineRow {
 
 pub async fn list_backup_timeline(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<BackupTimelineRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = sqlx::query_as::<_, BackupTimelineRow>(
         r#"
         SELECT * FROM (

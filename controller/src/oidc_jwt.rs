@@ -29,6 +29,7 @@ struct IdClaims {
     email: Option<String>,
     preferred_username: Option<String>,
     name: Option<String>,
+    nonce: Option<String>,
 }
 
 pub async fn validate_id_token(
@@ -36,12 +37,17 @@ pub async fn validate_id_token(
     issuer: &str,
     client_id: &str,
     jwks_uri: &str,
+    expected_nonce: Option<&str>,
 ) -> anyhow::Result<String> {
     let header = decode_header(id_token)?;
     let alg = header.alg;
     let kid = header.kid.unwrap_or_default();
 
-    let jwks: Jwks = reqwest::get(jwks_uri).await?.error_for_status()?.json().await?;
+    let jwks: Jwks = reqwest::get(jwks_uri)
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
     let jwk = jwks
         .keys
         .into_iter()
@@ -56,6 +62,15 @@ pub async fn validate_id_token(
     validation.validate_exp = true;
 
     let data = decode::<IdClaims>(id_token, &decoding_key, &validation)?;
+
+    if let Some(expected) = expected_nonce {
+        match data.claims.nonce.as_deref() {
+            Some(got) if got == expected => {}
+            Some(got) => anyhow::bail!("id_token nonce mismatch: expected {expected:?}, got {got:?}"),
+            None => anyhow::bail!("id_token missing nonce claim (replay protection requires nonce)"),
+        }
+    }
+
     let username = data
         .claims
         .email
@@ -68,13 +83,25 @@ pub async fn validate_id_token(
 fn decoding_key_for_jwk(jwk: &Jwk, alg: Algorithm) -> anyhow::Result<DecodingKey> {
     match (jwk.kty.as_str(), alg) {
         ("RSA", Algorithm::RS256) => {
-            let n = jwk.n.as_deref().ok_or_else(|| anyhow::anyhow!("JWKS RSA key missing n"))?;
-            let e = jwk.e.as_deref().ok_or_else(|| anyhow::anyhow!("JWKS RSA key missing e"))?;
+            let n = jwk
+                .n
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("JWKS RSA key missing n"))?;
+            let e = jwk
+                .e
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("JWKS RSA key missing e"))?;
             Ok(DecodingKey::from_rsa_components(n, e)?)
         }
         ("EC", Algorithm::ES256) => {
-            let x = jwk.x.as_deref().ok_or_else(|| anyhow::anyhow!("JWKS EC key missing x"))?;
-            let y = jwk.y.as_deref().ok_or_else(|| anyhow::anyhow!("JWKS EC key missing y"))?;
+            let x = jwk
+                .x
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("JWKS EC key missing x"))?;
+            let y = jwk
+                .y
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("JWKS EC key missing y"))?;
             let crv = jwk.crv.as_deref().unwrap_or("P-256");
             if crv != "P-256" {
                 anyhow::bail!("unsupported EC curve: {crv}");
@@ -82,7 +109,10 @@ fn decoding_key_for_jwk(jwk: &Jwk, alg: Algorithm) -> anyhow::Result<DecodingKey
             Ok(DecodingKey::from_ec_components(x, y)?)
         }
         (_, Algorithm::HS256) => anyhow::bail!("unsupported id_token algorithm: {alg:?}"),
-        (_, other) => anyhow::bail!("unsupported id_token algorithm/key: {other:?} / {}", jwk.kty),
+        (_, other) => anyhow::bail!(
+            "unsupported id_token algorithm/key: {other:?} / {}",
+            jwk.kty
+        ),
     }
 }
 

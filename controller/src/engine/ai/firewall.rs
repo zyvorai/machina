@@ -1,11 +1,11 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
-use machina_core::FirewallPlanRequest;
 use crate::config::ControllerConfig;
 use crate::engine::zeus_firewall::inventory::{plan_target, target_detail};
+use machina_core::FirewallPlanRequest;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FirewallExplainReport {
@@ -32,7 +32,7 @@ pub struct SecurePlanReport {
 }
 
 pub async fn explain_exposure(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     target_id: &str,
     question: Option<&str>,
@@ -64,7 +64,10 @@ pub async fn explain_exposure(
     let risk = detail.target.risk.clone();
     let recommendation = if evidence.is_empty() {
         "No critical exposures detected".into()
-    } else if evidence.iter().any(|e| e.contains("5432") || e.contains("3306")) {
+    } else if evidence
+        .iter()
+        .any(|e| e.contains("5432") || e.contains("3306"))
+    {
         "Restrict database to application subnet only".into()
     } else {
         "Restrict SSH to admin subnet only".into()
@@ -82,7 +85,7 @@ pub async fn explain_exposure(
 }
 
 pub async fn secure_machine_plan(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     target_id: &str,
 ) -> anyhow::Result<SecurePlanReport> {
@@ -113,7 +116,12 @@ pub async fn secure_machine_plan(
             action: "Create rollback checkpoint".into(),
         },
     ];
-    if detail.inventory.open_ports.iter().any(|p| p.port == 80 || p.port == 443) {
+    if detail
+        .inventory
+        .open_ports
+        .iter()
+        .any(|p| p.port == 80 || p.port == 443)
+    {
         steps.insert(
             1,
             SecurePlanStep {
@@ -132,7 +140,7 @@ pub async fn secure_machine_plan(
 }
 
 pub async fn simulate_plan(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     target_id: &str,
     profile: &str,
@@ -187,7 +195,7 @@ pub async fn simulate_plan(
 }
 
 pub async fn compliance_report(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     report_kind: &str,
 ) -> anyhow::Result<serde_json::Value> {

@@ -23,7 +23,6 @@ check_service() {
 }
 
 hdr "PLATFORM INSTALL: SYSTEMD"
-check_service postgresql
 check_service machina-controller
 check_service machina-agent
 

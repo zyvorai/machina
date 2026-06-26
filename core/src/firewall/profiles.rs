@@ -11,7 +11,10 @@ pub fn builtin_profiles() -> Vec<FirewallProfile> {
             "deny",
             "allow",
             StealthLevel::Standard,
-            vec![allow_tcp("22", vec!["admin-network"]), allow_tcp("443", vec!["any"])],
+            vec![
+                allow_tcp("22", vec!["admin-network"]),
+                allow_tcp("443", vec!["any"]),
+            ],
         ),
         profile(
             "Private",
@@ -79,7 +82,10 @@ pub fn builtin_profiles() -> Vec<FirewallProfile> {
             "deny",
             "allow",
             StealthLevel::Standard,
-            vec![allow_tcp("6789", vec!["storage-network"]), allow_tcp("2049", vec!["internal"])],
+            vec![
+                allow_tcp("6789", vec!["storage-network"]),
+                allow_tcp("2049", vec!["internal"]),
+            ],
         ),
         profile(
             "ManagementNode",
@@ -88,7 +94,10 @@ pub fn builtin_profiles() -> Vec<FirewallProfile> {
             "deny",
             "allow",
             StealthLevel::Strict,
-            vec![allow_tcp("22", vec!["admin-network"]), allow_tcp("443", vec!["admin-network"])],
+            vec![
+                allow_tcp("22", vec!["admin-network"]),
+                allow_tcp("443", vec!["admin-network"]),
+            ],
         ),
         profile(
             "DevelopmentVm",
@@ -115,7 +124,10 @@ pub fn builtin_profiles() -> Vec<FirewallProfile> {
             "deny",
             "deny",
             StealthLevel::Emergency,
-            vec![allow_tcp("22", vec!["zeus-management"]), allow_tcp("443", vec!["backup-network"])],
+            vec![
+                allow_tcp("22", vec!["zeus-management"]),
+                allow_tcp("443", vec!["backup-network"]),
+            ],
         ),
         profile(
             "BareMetalBmc",
@@ -158,7 +170,10 @@ pub fn builtin_profiles() -> Vec<FirewallProfile> {
             "deny",
             "deny",
             StealthLevel::Emergency,
-            vec![allow_tcp("623", vec!["zeus-management"]), allow_tcp("443", vec!["zeus-management"])],
+            vec![
+                allow_tcp("623", vec!["zeus-management"]),
+                allow_tcp("443", vec!["zeus-management"]),
+            ],
         ),
         profile(
             "BareMetalRedfish",

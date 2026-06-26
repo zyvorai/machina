@@ -161,7 +161,9 @@ impl HttpMetrics {
             );
         }
 
-        out.push_str("# HELP machina_http_requests_total API requests by method, route, and status\n");
+        out.push_str(
+            "# HELP machina_http_requests_total API requests by method, route, and status\n",
+        );
         out.push_str("# TYPE machina_http_requests_total counter\n");
         for key in keys {
             let stats = &guard[&key];

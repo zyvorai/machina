@@ -101,6 +101,7 @@ export default function ConsoleGuestFilePanel({
       {fileName ? (
         <input
           type="text"
+          aria-label="Destination path on guest"
           className="input w-full text-xs font-mono"
           placeholder="/tmp/filename on guest"
           value={destPath}

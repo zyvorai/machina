@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct CostAnalysis {
@@ -14,7 +14,7 @@ pub struct CostAnalysis {
     pub suggestions: Vec<String>,
 }
 
-pub async fn analyze(pool: &PgPool) -> anyhow::Result<CostAnalysis> {
+pub async fn analyze(pool: &SqlitePool) -> anyhow::Result<CostAnalysis> {
     let rates: (f64, f64) = sqlx::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
@@ -24,7 +24,7 @@ pub async fn analyze(pool: &PgPool) -> anyhow::Result<CostAnalysis> {
         .fetch_one(pool)
         .await?;
     let totals: (i64, i64) = sqlx::query_as(
-        "SELECT COALESCE(SUM(vcpus), 0)::bigint, COALESCE(SUM(memory_mib), 0)::bigint FROM vms",
+        "SELECT COALESCE(SUM(vcpus), 0), COALESCE(SUM(memory_mib), 0) FROM vms",
     )
     .fetch_one(pool)
     .await?;
@@ -33,7 +33,7 @@ pub async fn analyze(pool: &PgPool) -> anyhow::Result<CostAnalysis> {
     let estimated_monthly_usd = hourly * 730.0;
     let idle_vm_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM vms WHERE observed_state != 'running'
-         AND updated_at < NOW() - INTERVAL '30 days'",
+         AND updated_at < datetime('now', '-30 days')",
     )
     .fetch_one(pool)
     .await
@@ -45,7 +45,7 @@ pub async fn analyze(pool: &PgPool) -> anyhow::Result<CostAnalysis> {
          WHERE v.observed_state = 'running'
            AND v.memory_mib > 0
            AND m.memory_used_mib > 0
-           AND m.memory_used_mib::float / v.memory_mib::float < 0.35",
+           AND CAST(m.memory_used_mib AS REAL) / CAST(v.memory_mib AS REAL) < 0.35",
     )
     .fetch_one(pool)
     .await
@@ -60,10 +60,14 @@ pub async fn analyze(pool: &PgPool) -> anyhow::Result<CostAnalysis> {
 
     let mut suggestions = Vec::new();
     if idle_vm_count > 0 {
-        suggestions.push(format!("Archive or remove {idle_vm_count} idle VM(s) stopped 30+ days."));
+        suggestions.push(format!(
+            "Archive or remove {idle_vm_count} idle VM(s) stopped 30+ days."
+        ));
     }
     if oversized_vm_count > 0 {
-        suggestions.push(format!("Right-size {oversized_vm_count} VM(s) using <35% allocated memory."));
+        suggestions.push(format!(
+            "Right-size {oversized_vm_count} VM(s) using <35% allocated memory."
+        ));
     }
     if snapshot_heavy_count > 5 {
         suggestions.push("Consolidate old snapshots to reduce storage cost.".into());
@@ -89,7 +93,7 @@ pub async fn analyze(pool: &PgPool) -> anyhow::Result<CostAnalysis> {
     })
 }
 
-pub async fn export_csv(pool: &PgPool) -> anyhow::Result<String> {
+pub async fn export_csv(pool: &SqlitePool) -> anyhow::Result<String> {
     let analysis = analyze(pool).await?;
     let rates: (f64, f64) = sqlx::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
@@ -98,7 +102,7 @@ pub async fn export_csv(pool: &PgPool) -> anyhow::Result<String> {
     .await?;
 
     let vms: Vec<(String, i64, i64, String)> = sqlx::query_as(
-        "SELECT name, vcpus::bigint, memory_mib::bigint, COALESCE(observed_state, 'unknown')
+        "SELECT name, vcpus, memory_mib, COALESCE(observed_state, 'unknown')
          FROM vms ORDER BY name",
     )
     .fetch_all(pool)
@@ -111,9 +115,15 @@ Estimated monthly USD,",
     );
     csv.push_str(&format!("{:.2}\n", analysis.estimated_monthly_usd));
     csv.push_str(&format!("VM count,{}\n", analysis.vm_count));
-    csv.push_str(&format!("Idle VMs (30d+ stopped),{}\n", analysis.idle_vm_count));
+    csv.push_str(&format!(
+        "Idle VMs (30d+ stopped),{}\n",
+        analysis.idle_vm_count
+    ));
     csv.push_str(&format!("Oversized VMs,{}\n", analysis.oversized_vm_count));
-    csv.push_str(&format!("Snapshot-heavy VMs,{}\n", analysis.snapshot_heavy_count));
+    csv.push_str(&format!(
+        "Snapshot-heavy VMs,{}\n",
+        analysis.snapshot_heavy_count
+    ));
     csv.push_str(&format!("vCPU rate USD/hr,{}\n", rates.0));
     csv.push_str(&format!("Memory rate USD/GiB/hr,{}\n\n", rates.1));
     csv.push_str("VM,vCPUs,Memory MiB,State,Est monthly USD\n");

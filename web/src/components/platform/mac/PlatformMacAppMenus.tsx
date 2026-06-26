@@ -209,6 +209,7 @@ export default function PlatformMacAppMenus() {
       >
         <input
           type="search"
+          aria-label="Zeus search"
           value={zeusQuery}
           onChange={(e) => setZeusQuery(e.target.value)}
           placeholder={ZEUS_SEARCH_PLACEHOLDER}
@@ -223,7 +224,7 @@ export default function PlatformMacAppMenus() {
           <User className="w-3 h-3" />
           {username || 'user'}
         </span>
-        <button type="button" className="mac-menubar-icon-btn" title="Sign out" onClick={() => void logout()}>
+        <button type="button" className="mac-menubar-icon-btn" title="Sign out" aria-label="Sign out" onClick={() => void logout()}>
           <LogOut className="w-3.5 h-3.5" />
         </button>
       </div>

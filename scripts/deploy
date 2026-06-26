@@ -34,6 +34,8 @@ Flags (passed to deploy-remote.sh):
   --bind ADDR       daemon bind address
   --open-firewall      open firewalld port 5092 (and 5093 with --platform)
   --disable-firewalld  stop/disable firewalld and ufw (default for remote IPv4)
+  --with-packetwolf    co-deploy sibling ../packetwolf + merge controller bridge env
+  --packetwolf-e2e     after --e2e, run PacketWolf zeus/runtime tiers (needs ../packetwolf)
   --dry-run         show plan only
   --cleanup         remove remote deploy tree after install
 

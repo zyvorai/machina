@@ -7,7 +7,7 @@ pub mod splunk_hec;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -19,7 +19,7 @@ pub struct IntegrationRow {
     pub config_json: Value,
 }
 
-pub async fn forward_all_integrations(pool: &PgPool, controller_id: &str) -> anyhow::Result<usize> {
+pub async fn forward_all_integrations(pool: &SqlitePool, controller_id: &str) -> anyhow::Result<usize> {
     let rows: Vec<IntegrationRow> = sqlx::query_as(
         "SELECT id, integration_type, name, enabled, config_json FROM soc_integrations WHERE enabled = TRUE",
     )
@@ -43,9 +43,13 @@ pub async fn forward_all_integrations(pool: &PgPool, controller_id: &str) -> any
     Ok(total)
 }
 
-pub async fn forward_replay(pool: &PgPool, hours: i32, controller_id: &str) -> anyhow::Result<usize> {
+pub async fn forward_replay(
+    pool: &SqlitePool,
+    hours: i32,
+    controller_id: &str,
+) -> anyhow::Result<usize> {
     let since = Utc::now() - chrono::Duration::hours(hours as i64);
-    let _ = sqlx::query("DELETE FROM soc_event_exports WHERE exported_at < $1")
+    let _ = sqlx::query("DELETE FROM soc_event_exports WHERE exported_at < ?")
         .bind(since)
         .execute(pool)
         .await;
@@ -53,7 +57,7 @@ pub async fn forward_replay(pool: &PgPool, hours: i32, controller_id: &str) -> a
 }
 
 pub(crate) async fn fetch_unexported_events(
-    pool: &PgPool,
+    pool: &SqlitePool,
     integration_id: Uuid,
     limit: i64,
 ) -> anyhow::Result<Vec<EventRow>> {
@@ -62,10 +66,10 @@ pub(crate) async fn fetch_unexported_events(
          FROM soc_events e
          WHERE NOT EXISTS (
            SELECT 1 FROM soc_event_exports x
-           WHERE x.resource_id = e.id AND x.integration_id = $1 AND x.resource_type = 'event'
+           WHERE x.resource_id = e.id AND x.integration_id = ? AND x.resource_type = 'event'
          )
          ORDER BY e.occurred_at ASC
-         LIMIT $2",
+         LIMIT ?",
     )
     .bind(integration_id)
     .bind(limit)
@@ -75,14 +79,14 @@ pub(crate) async fn fetch_unexported_events(
 }
 
 pub(crate) async fn mark_exported(
-    pool: &PgPool,
+    pool: &SqlitePool,
     integration_id: Uuid,
     resource_type: &str,
     resource_ids: &[Uuid],
 ) -> anyhow::Result<()> {
     for id in resource_ids {
         sqlx::query(
-            "INSERT INTO soc_event_exports (integration_id, resource_type, resource_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+            "INSERT INTO soc_event_exports (integration_id, resource_type, resource_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
         )
         .bind(integration_id)
         .bind(resource_type)
@@ -93,9 +97,9 @@ pub(crate) async fn mark_exported(
     Ok(())
 }
 
-pub(crate) async fn integration_ok(pool: &PgPool, id: Uuid) -> anyhow::Result<()> {
+pub(crate) async fn integration_ok(pool: &SqlitePool, id: Uuid) -> anyhow::Result<()> {
     sqlx::query(
-        "UPDATE soc_integrations SET last_success_at = NOW(), last_error = NULL, updated_at = NOW() WHERE id = $1",
+        "UPDATE soc_integrations SET last_success_at = datetime('now'), last_error = NULL, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(id)
     .execute(pool)
@@ -103,14 +107,12 @@ pub(crate) async fn integration_ok(pool: &PgPool, id: Uuid) -> anyhow::Result<()
     Ok(())
 }
 
-pub(crate) async fn integration_err(pool: &PgPool, id: Uuid, err: &str) -> anyhow::Result<()> {
-    sqlx::query(
-        "UPDATE soc_integrations SET last_error = $2, updated_at = NOW() WHERE id = $1",
-    )
-    .bind(id)
-    .bind(err.chars().take(2000).collect::<String>())
-    .execute(pool)
-    .await?;
+pub(crate) async fn integration_err(pool: &SqlitePool, id: Uuid, err: &str) -> anyhow::Result<()> {
+    sqlx::query("UPDATE soc_integrations SET last_error = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(id)
+        .bind(err.chars().take(2000).collect::<String>())
+        .execute(pool)
+        .await?;
     Ok(())
 }
 
@@ -125,20 +127,20 @@ pub(crate) struct EventRow {
 }
 
 pub(crate) async fn fetch_unexported_alerts(
-    pool: &PgPool,
+    pool: &SqlitePool,
     integration_id: Uuid,
     limit: i64,
 ) -> anyhow::Result<Vec<AlertRow>> {
     let rows: Vec<AlertRow> = sqlx::query_as(
-        "SELECT a.id, a.title, a.severity, a.status, a.first_seen, a.last_seen, a.detail_json
+        "SELECT a.id, a.title, a.severity, a.status, strftime('%Y-%m-%dT%H:%M:%SZ', a.first_seen) AS first_seen, strftime('%Y-%m-%dT%H:%M:%SZ', a.last_seen) AS last_seen, a.detail_json
          FROM soc_alerts a
-         WHERE a.last_seen > NOW() - INTERVAL '7 days'
+         WHERE a.last_seen > datetime('now', '-7 days')
          AND NOT EXISTS (
            SELECT 1 FROM soc_event_exports x
-           WHERE x.resource_id = a.id AND x.integration_id = $1 AND x.resource_type = 'alert'
+           WHERE x.resource_id = a.id AND x.integration_id = ? AND x.resource_type = 'alert'
          )
          ORDER BY a.last_seen ASC
-         LIMIT $2",
+         LIMIT ?",
     )
     .bind(integration_id)
     .bind(limit)

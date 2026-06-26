@@ -138,7 +138,7 @@ export default function PlatformBackups() {
           <Camera className="w-3.5 h-3.5" /> Fleet snapshot schedules
         </Link>
       </p>
-      <div className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
+      <div role="tablist" className="flex flex-wrap gap-2 border-b border-white/[0.06] pb-1">
         {([
           ['timeline', 'Timeline', Archive],
           ['destinations', 'Destinations', Database],
@@ -146,6 +146,9 @@ export default function PlatformBackups() {
           <button
             key={id}
             type="button"
+            role="tab"
+            aria-selected={tab === id}
+            tabIndex={tab === id ? 0 : -1}
             onClick={() => setSearchParams(id === 'timeline' ? {} : { tab: id })}
             className={`px-4 py-2 text-sm rounded-t-lg flex items-center gap-2 transition ${
               tab === id ? 'bg-slate-800/80 text-orange-300 border-b-2 border-orange-400' : 'text-slate-400 hover:text-slate-200'
@@ -161,7 +164,7 @@ export default function PlatformBackups() {
           <MacGlassPanel title="Backup destinations" subtitle="Register NFS, S3, or local targets for fleet backups.">
             <div className="grid gap-3 md:grid-cols-3 mb-4">
               <input className="input text-sm" placeholder="Name" value={targetName} onChange={(e) => setTargetName(e.target.value)} />
-              <select className="input text-sm" value={targetKind} onChange={(e) => setTargetKind(e.target.value)}>
+              <select className="input text-sm" aria-label="Destination type" value={targetKind} onChange={(e) => setTargetKind(e.target.value)}>
                 <option value="nfs">nfs</option>
                 <option value="s3">s3</option>
                 <option value="local">local</option>
@@ -181,11 +184,11 @@ export default function PlatformBackups() {
           <MacGlassPanel title="Queue VM backup" subtitle="Full qcow2 or incremental (chains prior completed backup on host).">
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <input className="input text-sm" placeholder="VM id" value={backupVmId} onChange={(e) => setBackupVmId(e.target.value)} />
-              <select className="input text-sm" value={backupType} onChange={(e) => setBackupType(e.target.value as 'full' | 'incremental')}>
+              <select className="input text-sm" aria-label="Backup type" value={backupType} onChange={(e) => setBackupType(e.target.value as 'full' | 'incremental')}>
                 <option value="full">Full backup</option>
                 <option value="incremental">Incremental</option>
               </select>
-              <select className="input text-sm" value={backupTargetId} onChange={(e) => setBackupTargetId(e.target.value)}>
+              <select className="input text-sm" aria-label="Backup destination" value={backupTargetId} onChange={(e) => setBackupTargetId(e.target.value)}>
                 <option value="">Default target</option>
                 {targets.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.kind})</option>)}
               </select>

@@ -24,7 +24,7 @@ test('Machine Finder topology lens shows geography labels', async ({ page }) => 
   const inspector = page.locator('.platform-finder-inspector').first()
   await expect(inspector).toBeVisible()
   await expect(inspector.getByText('Site', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: /vm-1 running/ }).click()
+  await page.getByRole('button', { name: /^vm-1 running/ }).click()
   await expect(inspector.getByText('State', { exact: true })).toBeVisible()
   await expect(inspector.getByRole('link', { name: 'Open VM' })).toBeVisible()
 })

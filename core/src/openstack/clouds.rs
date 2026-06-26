@@ -15,11 +15,14 @@ pub struct OpenStackCloudEntry {
     pub active: bool,
 }
 
-pub fn list_configured_clouds(cfg: &OpenStackConfig) -> Result<Vec<OpenStackCloudEntry>, LibvirtError> {
+pub fn list_configured_clouds(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackCloudEntry>, LibvirtError> {
     let path = resolve_clouds_yaml_path(cfg).ok_or_else(|| {
         LibvirtError::Invalid("no clouds.yaml found — set clouds_yaml_path in [openstack]".into())
     })?;
-    let content = std::fs::read_to_string(&path).map_err(|e| LibvirtError::Operation(e.to_string()))?;
+    let content =
+        std::fs::read_to_string(&path).map_err(|e| LibvirtError::Operation(e.to_string()))?;
     let active = effective_cloud_name(cfg).unwrap_or_default();
     let mut names = Vec::new();
     let mut in_clouds = false;

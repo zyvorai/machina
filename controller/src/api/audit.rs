@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Query, State};
+use axum::Extension;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_admin, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -34,45 +36,54 @@ fn default_limit() -> i64 {
 
 pub async fn list_audit_logs(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<AuditQuery>,
 ) -> Result<Json<Vec<AuditRow>>, ApiError> {
+    require_admin(&actor)?;
     let limit = q.limit.clamp(1, 500);
+    fn escape_like(s: &str) -> String {
+        s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+    }
     let rows = match (&q.action, &q.actor) {
-        (Some(action), Some(actor)) if !action.is_empty() && !actor.is_empty() => {
+        (Some(action), Some(actor_filter)) if !action.is_empty() && !actor_filter.is_empty() => {
             sqlx::query_as::<_, AuditRow>(
-                "SELECT id, actor, action, resource_type, resource_id, created_at
-                 FROM audit_logs WHERE action LIKE $1 AND actor LIKE $2 ORDER BY created_at DESC LIMIT $3",
+                "SELECT id, actor, action, resource_type, resource_id,
+                        strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+                 FROM audit_logs WHERE action LIKE ? ESCAPE '\\' AND actor LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
             )
-            .bind(format!("%{action}%"))
-            .bind(format!("%{actor}%"))
+            .bind(format!("%{}%", escape_like(action)))
+            .bind(format!("%{}%", escape_like(actor_filter)))
             .bind(limit)
             .fetch_all(&state.pool)
             .await?
         }
         (Some(action), _) if !action.is_empty() => {
             sqlx::query_as::<_, AuditRow>(
-                "SELECT id, actor, action, resource_type, resource_id, created_at
-                 FROM audit_logs WHERE action LIKE $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT id, actor, action, resource_type, resource_id,
+                        strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+                 FROM audit_logs WHERE action LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
             )
-            .bind(format!("%{action}%"))
+            .bind(format!("%{}%", escape_like(action)))
             .bind(limit)
             .fetch_all(&state.pool)
             .await?
         }
-        (_, Some(actor)) if !actor.is_empty() => {
+        (_, Some(actor_filter)) if !actor_filter.is_empty() => {
             sqlx::query_as::<_, AuditRow>(
-                "SELECT id, actor, action, resource_type, resource_id, created_at
-                 FROM audit_logs WHERE actor LIKE $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT id, actor, action, resource_type, resource_id,
+                        strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+                 FROM audit_logs WHERE actor LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
             )
-            .bind(format!("%{actor}%"))
+            .bind(format!("%{}%", escape_like(actor_filter)))
             .bind(limit)
             .fetch_all(&state.pool)
             .await?
         }
         _ => {
             sqlx::query_as::<_, AuditRow>(
-                "SELECT id, actor, action, resource_type, resource_id, created_at
-                 FROM audit_logs ORDER BY created_at DESC LIMIT $1",
+                "SELECT id, actor, action, resource_type, resource_id,
+                        strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+                 FROM audit_logs ORDER BY created_at DESC LIMIT ?",
             )
             .bind(limit)
             .fetch_all(&state.pool)

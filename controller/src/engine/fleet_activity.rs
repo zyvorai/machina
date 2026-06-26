@@ -2,7 +2,7 @@
 // Fleet Activity Monitor aggregator (Phase 37).
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -43,12 +43,14 @@ pub struct FleetActivityOverview {
     pub running_vms: i64,
 }
 
-pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<FleetActivityOverview> {
-    let running_vms: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM vms WHERE observed_state = 'running'",
-    )
-    .fetch_one(pool)
-    .await?;
+pub async fn overview(
+    pool: &SqlitePool,
+    cfg: &ControllerConfig,
+) -> anyhow::Result<FleetActivityOverview> {
+    let running_vms: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
+            .fetch_one(pool)
+            .await?;
 
     let vm_rows: Vec<(Uuid, String, Option<Uuid>, String, f32, i64, i64)> = sqlx::query_as(
         "SELECT v.id, v.name, v.host_id, v.observed_state,
@@ -64,17 +66,19 @@ pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<F
 
     let top_vms: Vec<VmActivityItem> = vm_rows
         .into_iter()
-        .map(|(id, name, host_id, observed_state, cpu_percent, memory_used_mib, memory_mib)| {
-            VmActivityItem {
-                vm_id: id.to_string(),
-                vm_name: name,
-                host_id: host_id.map(|h| h.to_string()),
-                observed_state,
-                cpu_percent,
-                memory_used_mib,
-                memory_mib,
-            }
-        })
+        .map(
+            |(id, name, host_id, observed_state, cpu_percent, memory_used_mib, memory_mib)| {
+                VmActivityItem {
+                    vm_id: id.to_string(),
+                    vm_name: name,
+                    host_id: host_id.map(|h| h.to_string()),
+                    observed_state,
+                    cpu_percent,
+                    memory_used_mib,
+                    memory_mib,
+                }
+            },
+        )
         .collect();
 
     let host_rows: Vec<(Uuid, String, String, f32, i64, i64, i32)> = sqlx::query_as(

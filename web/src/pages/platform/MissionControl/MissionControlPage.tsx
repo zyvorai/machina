@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router'
 import PageLayout from '../../../components/PageLayout'
+import ConfirmDialog from '../../../components/ConfirmDialog'
 import { StructuredErrorBanner } from '../../../components/StructuredErrorBanner'
 import FleetCommandCenter from '../../../components/platform/fleet/FleetCommandCenter'
 import SimpleCreateVmWizard, {
@@ -174,6 +175,19 @@ export default function MissionControlPage() {
           onNotify={(m) => toast.success(m)}
         />
       )}
+      <ConfirmDialog
+        open={state.deleteVmTarget !== null}
+        title="Delete VM"
+        message={`Delete ${state.deleteVmTarget?.name}? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => state.setDeleteVmTarget(null)}
+        onConfirm={() => {
+          const vm = state.deleteVmTarget
+          state.setDeleteVmTarget(null)
+          if (vm) void state.doVmDeleteAction(vm)
+        }}
+      />
     </PageLayout>
   )
 }

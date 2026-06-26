@@ -18,22 +18,27 @@ pub mod score;
 pub mod types;
 
 pub use apply::{apply_plan, compile_profile_plan};
-pub use cloud::{gather_cloud_inventory, CloudFirewallInventory, CloudProvider, CloudSecurityGroupRule};
+pub use cloud::{
+    gather_cloud_inventory, CloudFirewallInventory, CloudProvider, CloudSecurityGroupRule,
+};
 pub use connectivity::{simulate_connectivity, ConnectivityMatrix};
 pub use detect::detect_backend;
 pub use diff::compute_diff;
 pub use finops::{
-    cloud_sg_monthly_cost, exposure_chargeback_tag, fleet_exposure_monthly, gpu_profile_exposure_cost,
-    idle_open_port_cost, is_public_bind, mission_stack_network_cost, port_monthly_cost,
-    profile_exposure_multiplier, public_port_finops_alert, storage_profile_exposure_cost,
-    GPU_EXPOSURE_MULTIPLIER, IDLE_PORT_MONTHLY_USD, STORAGE_EXPOSURE_MULTIPLIER,
+    cloud_sg_monthly_cost, exposure_chargeback_tag, fleet_exposure_monthly,
+    gpu_profile_exposure_cost, idle_open_port_cost, is_public_bind, mission_stack_network_cost,
+    port_monthly_cost, profile_exposure_multiplier, public_port_finops_alert,
+    storage_profile_exposure_cost, GPU_EXPOSURE_MULTIPLIER, IDLE_PORT_MONTHLY_USD,
+    STORAGE_EXPOSURE_MULTIPLIER,
 };
 pub use guest_ports::{guest_ports_to_open_ports, scan_guest_listening_ports, GuestListeningPort};
 pub use inventory::gather_firewall_inventory;
-pub use k8s_apply::{apply_k8s_plan, compile_k8s_policies, detect_k8s_backend, k8s_cluster_ready, K8sPolicyManifest};
+pub use k8s_apply::{
+    apply_k8s_plan, compile_k8s_policies, detect_k8s_backend, k8s_cluster_ready, K8sPolicyManifest,
+};
 pub use metal::{
-    compile_metal_plan, gather_metal_inventory, metal_preset_temporary_bmc, metal_preset_temporary_pxe,
-    scan_ipmi_exposure, MetalExposureScan, MetalServerInput,
+    compile_metal_plan, gather_metal_inventory, metal_preset_temporary_bmc,
+    metal_preset_temporary_pxe, scan_ipmi_exposure, MetalExposureScan, MetalServerInput,
 };
 pub use profiles::{builtin_profiles, profile_by_name};
 pub use score::compute_firewall_score;

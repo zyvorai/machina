@@ -46,6 +46,11 @@ function SloRow({ slo }: { slo: SloStatusItem }) {
       </div>
       <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
         <div
+          role="progressbar"
+          aria-label="SLO achievement"
+          aria-valuenow={Math.round(Math.min(100, Math.max(0, pct)))}
+          aria-valuemin={0}
+          aria-valuemax={100}
           className={`h-full rounded-full ${statusBgClass(sloTone(slo.status))}`}
           style={{ width: `${pct}%` }}
         />
@@ -135,7 +140,7 @@ export default function PlatformObservability() {
             ) : (
               <MacGlassPanel title="Recent API traces">
                 <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
+                  <table className="w-full text-sm text-left" aria-label="Recent API traces">
                     <thead className="text-xs text-slate-500 border-b border-slate-700">
                       <tr>
                         <th className="py-2 pr-4">Time</th>

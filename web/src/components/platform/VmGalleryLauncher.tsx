@@ -41,7 +41,7 @@ function VmGalleryTile({ vm }: { vm: PlatformVm }) {
           <Link to={cinemaHubPath(vm.id)} className="btn-primary text-xs py-1 px-2 inline-flex items-center gap-1 flex-1 justify-center">
             <Monitor className="w-3.5 h-3.5" /> Open Cinema
           </Link>
-          <Link to={studioHubPath(vm.id)} className="btn-secondary text-xs py-1 px-2 inline-flex items-center gap-1" title="Machina Studio">
+          <Link to={studioHubPath(vm.id)} className="btn-secondary text-xs py-1 px-2 inline-flex items-center gap-1" title="Machina Studio" aria-label="Machina Studio">
             <Terminal className="w-3.5 h-3.5" />
           </Link>
         </div>

@@ -49,6 +49,8 @@ export default function PlatformStepWizard({
   const panel = (
       <div
         className={`w-full ${maxWidthClass} ${embedded ? '' : 'max-h-[min(90vh,720px)]'} flex flex-col rounded-2xl border border-slate-700/60 bg-slate-900 shadow-2xl overflow-hidden`}
+        role={embedded ? undefined : 'dialog'}
+        aria-modal={embedded ? undefined : true}
         onClick={embedded ? undefined : (e) => e.stopPropagation()}
       >
         <div className="shrink-0 px-6 py-4 border-b border-slate-800">

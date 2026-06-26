@@ -2,7 +2,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -46,11 +46,14 @@ fn default_hours() -> i32 {
     4
 }
 
-pub async fn analyze(pool: &PgPool, q: &AnalyzeIncidentQuery) -> anyhow::Result<IncidentAnalysis> {
+pub async fn analyze(pool: &SqlitePool, q: &AnalyzeIncidentQuery) -> anyhow::Result<IncidentAnalysis> {
     analyze_with_symptoms(pool, q, &[]).await
 }
 
-pub async fn analyze_post(pool: &PgPool, body: &AnalyzeIncidentBody) -> anyhow::Result<IncidentAnalysis> {
+pub async fn analyze_post(
+    pool: &SqlitePool,
+    body: &AnalyzeIncidentBody,
+) -> anyhow::Result<IncidentAnalysis> {
     let q = AnalyzeIncidentQuery {
         hours: body.hours,
         vm_id: body.vm_id,
@@ -60,7 +63,7 @@ pub async fn analyze_post(pool: &PgPool, body: &AnalyzeIncidentBody) -> anyhow::
 }
 
 async fn analyze_with_symptoms(
-    pool: &PgPool,
+    pool: &SqlitePool,
     q: &AnalyzeIncidentQuery,
     symptoms: &[String],
 ) -> anyhow::Result<IncidentAnalysis> {
@@ -72,7 +75,7 @@ async fn analyze_with_symptoms(
     let audits: Vec<(DateTime<Utc>, String, String, Option<String>)> = sqlx::query_as(
         "SELECT created_at, actor, action, resource_type
          FROM audit_logs
-         WHERE created_at > NOW() - make_interval(hours => $1)
+         WHERE created_at > datetime('now', '-' || ? || ' hours')
          ORDER BY created_at DESC LIMIT 80",
     )
     .bind(hours)
@@ -83,14 +86,17 @@ async fn analyze_with_symptoms(
             at,
             source: "audit".into(),
             kind: action.clone(),
-            message: format!("{actor} — {action}{}", rt.map(|r| format!(" ({r})")).unwrap_or_default()),
+            message: format!(
+                "{actor} — {action}{}",
+                rt.map(|r| format!(" ({r})")).unwrap_or_default()
+            ),
             severity: audit_severity(&action),
         });
     }
 
     let events: Vec<(DateTime<Utc>, String, String)> = sqlx::query_as(
-        "SELECT created_at, kind, message FROM events
-         WHERE created_at > NOW() - make_interval(hours => $1)
+        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), kind, message FROM events
+         WHERE created_at > datetime('now', '-' || ? || ' hours')
          ORDER BY created_at DESC LIMIT 60",
     )
     .bind(hours)
@@ -113,8 +119,8 @@ async fn analyze_with_symptoms(
     let tasks: Vec<(DateTime<Utc>, String, String, Option<Uuid>)> = if let Some(vid) = vm_id {
         sqlx::query_as(
             "SELECT created_at, operation, status, resource_id FROM tasks
-             WHERE created_at > NOW() - make_interval(hours => $1)
-               AND (resource_id = $2 OR status = 'failed')
+             WHERE created_at > datetime('now', '-' || ? || ' hours')
+               AND (resource_id = ? OR status = 'failed')
              ORDER BY created_at DESC LIMIT 40",
         )
         .bind(hours)
@@ -124,7 +130,7 @@ async fn analyze_with_symptoms(
     } else {
         sqlx::query_as(
             "SELECT created_at, operation, status, resource_id FROM tasks
-             WHERE created_at > NOW() - make_interval(hours => $1)
+             WHERE created_at > datetime('now', '-' || ? || ' hours')
              ORDER BY created_at DESC LIMIT 40",
         )
         .bind(hours)
@@ -137,7 +143,11 @@ async fn analyze_with_symptoms(
             source: "task".into(),
             kind: op.clone(),
             message: format!("{op} — {status}"),
-            severity: if status == "failed" { "high".into() } else { "low".into() },
+            severity: if status == "failed" {
+                "high".into()
+            } else {
+                "low".into()
+            },
         });
     }
 
@@ -148,7 +158,11 @@ async fn analyze_with_symptoms(
     let mut evidence = Vec::new();
     for e in &timeline {
         let msg = e.message.to_lowercase();
-        if msg.contains("carrier") || msg.contains("nic") || msg.contains("bridge") || msg.contains("eno") {
+        if msg.contains("carrier")
+            || msg.contains("nic")
+            || msg.contains("bridge")
+            || msg.contains("eno")
+        {
             evidence.push(format!("{}: {}", e.source, e.message));
         }
     }
@@ -156,7 +170,7 @@ async fn analyze_with_symptoms(
     // Fence events
     let fences: Vec<(DateTime<Utc>, String)> = sqlx::query_as(
         "SELECT created_at, COALESCE(message, action) FROM fence_events
-         WHERE created_at > NOW() - make_interval(hours => $1)
+         WHERE created_at > datetime('now', '-' || ? || ' hours')
          ORDER BY created_at DESC LIMIT 10",
     )
     .bind(hours)
@@ -176,12 +190,11 @@ async fn analyze_with_symptoms(
 
     // VM metrics spike
     if let Some(vid) = vm_id {
-        if let Ok(cpu) = sqlx::query_scalar::<_, f64>(
-            "SELECT cpu_percent FROM vm_metrics WHERE vm_id = $1",
-        )
-        .bind(vid)
-        .fetch_optional(pool)
-        .await
+        if let Ok(cpu) =
+            sqlx::query_scalar::<_, f64>("SELECT cpu_percent FROM vm_metrics WHERE vm_id = ?")
+                .bind(vid)
+                .fetch_optional(pool)
+                .await
         {
             if let Some(c) = cpu {
                 if c >= 95.0 {
@@ -239,7 +252,7 @@ pub fn merge_packetwolf(timeline: &mut Vec<TimelineEntry>, packetwolf: &serde_js
 }
 
 async fn resolve_vm(
-    pool: &PgPool,
+    pool: &SqlitePool,
     vm_id: Option<Uuid>,
     vm_name: Option<&str>,
 ) -> anyhow::Result<Option<Uuid>> {
@@ -247,7 +260,7 @@ async fn resolve_vm(
         return Ok(Some(id));
     }
     if let Some(name) = vm_name.filter(|n| !n.is_empty()) {
-        let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM vms WHERE name = $1")
+        let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM vms WHERE name = ?")
             .bind(name)
             .fetch_optional(pool)
             .await?;
@@ -290,7 +303,9 @@ fn infer_root_cause(
             || e.message.to_lowercase().contains("vm.start")
             || e.message.to_lowercase().contains("vm.stop")
     });
-    let failed_task = timeline.iter().any(|e| e.source == "task" && e.severity == "high");
+    let failed_task = timeline
+        .iter()
+        .any(|e| e.source == "task" && e.severity == "high");
 
     let nic_hit = evidence.iter().any(|e| {
         let el = e.to_lowercase();

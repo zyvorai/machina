@@ -152,7 +152,7 @@ pub async fn execute_stack(
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-        let hostname: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = $1")
+        let hostname: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_one(&state.pool)
             .await
@@ -177,29 +177,32 @@ pub async fn execute_stack(
         let vm_id = Uuid::new_v4();
         let spec_json = gpu_vm_spec(&name);
         let tags: Vec<String> = vec!["gpu".into(), "mission-stack".into()];
+        let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into());
 
+        let mut tx = state.pool.begin().await.map_err(|e| ApiError::internal(e.to_string()))?;
         sqlx::query(
             "INSERT INTO vms (id, cluster_id, host_id, name, project, spec_json, desired_state, lifecycle_phase, vcpus, memory_mib, tags)
-             VALUES ($1, $2, $3, $4, 'mission-stack', $5, 'running', 'creating', 16, 65536, $6)",
+             VALUES (?, ?, ?, ?, 'mission-stack', ?, 'running', 'creating', 16, 65536, ?)",
         )
         .bind(vm_id)
         .bind(cluster_id)
         .bind(host_id)
         .bind(&name)
         .bind(&spec_json)
-        .bind(&tags)
-        .execute(&state.pool)
+        .bind(&tags_json)
+        .execute(&mut *tx)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class) VALUES ($1, $2, 'root', 100, 'silver')",
+            "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class) VALUES (?, ?, 'root', 100, 'silver')",
         )
         .bind(Uuid::new_v4())
         .bind(vm_id)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
+        tx.commit().await.map_err(|e| ApiError::internal(e.to_string()))?;
 
         let task_id = enqueue_task(
             state,
@@ -227,7 +230,10 @@ pub async fn execute_stack(
             vm_tasks.len()
         )
     } else {
-        format!("Enqueued {} GPU VM create task(s) for mission stack.", vm_tasks.len())
+        format!(
+            "Enqueued {} GPU VM create task(s) for mission stack.",
+            vm_tasks.len()
+        )
     };
 
     state.emit_event("ai.mission_stack", summary.clone());

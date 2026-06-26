@@ -29,13 +29,11 @@ pub struct AssociateFloatingIpRequest {
     pub floating_network: Option<String>,
 }
 
-pub async fn list_floating_ips(cfg: &OpenStackConfig) -> Result<Vec<OpenStackFloatingIp>, LibvirtError> {
+pub async fn list_floating_ips(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackFloatingIp>, LibvirtError> {
     let cloud = connect_cloud(cfg).await?;
-    let ports = cloud
-        .find_ports()
-        .all()
-        .await
-        .map_err(map_openstack_err)?;
+    let ports = cloud.find_ports().all().await.map_err(map_openstack_err)?;
     let port_device: std::collections::HashMap<String, String> = ports
         .iter()
         .filter_map(|p| {
@@ -66,11 +64,7 @@ pub async fn get_floating_ip(
     }
     let cloud = connect_cloud(cfg).await?;
     let fip = cloud.get_floating_ip(id).await.map_err(map_openstack_err)?;
-    let ports = cloud
-        .find_ports()
-        .all()
-        .await
-        .map_err(map_openstack_err)?;
+    let ports = cloud.find_ports().all().await.map_err(map_openstack_err)?;
     let port_device: std::collections::HashMap<String, String> = ports
         .iter()
         .filter_map(|p| {
@@ -123,9 +117,7 @@ pub async fn associate_floating_ip(
         .await
         .map_err(map_openstack_err)?;
     let port = ports.into_iter().next().ok_or_else(|| {
-        LibvirtError::Invalid(format!(
-            "no Neutron port found for instance {instance_id}"
-        ))
+        LibvirtError::Invalid(format!("no Neutron port found for instance {instance_id}"))
     })?;
 
     let mut fip = if let Some(ref fid) = req.floating_ip_id {
@@ -170,7 +162,9 @@ pub async fn create_floating_ip(
 ) -> Result<OpenStackFloatingIp, LibvirtError> {
     let net = req.floating_network_id.trim();
     if net.is_empty() {
-        return Err(LibvirtError::Invalid("floating_network_id is required".into()));
+        return Err(LibvirtError::Invalid(
+            "floating_network_id is required".into(),
+        ));
     }
     let cloud = connect_cloud(cfg).await?;
     let fip = cloud
@@ -181,15 +175,18 @@ pub async fn create_floating_ip(
     Ok(fip_row(&fip, None))
 }
 
-pub async fn delete_floating_ip(cfg: &OpenStackConfig, floating_ip_id: &str) -> Result<(), LibvirtError> {
+pub async fn delete_floating_ip(
+    cfg: &OpenStackConfig,
+    floating_ip_id: &str,
+) -> Result<(), LibvirtError> {
     let id = floating_ip_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("floating_ip_id is required".into()));
     }
     // Dissociate first so Neutron allows delete on busy clouds.
     let _ = dissociate_floating_ip(cfg, id).await;
-    use osauth::services::NETWORK;
     use super::auth::{connect_session, map_osauth_err};
+    use osauth::services::NETWORK;
     let session = connect_session(cfg).await?;
     session
         .delete(NETWORK, &["floatingips", id])

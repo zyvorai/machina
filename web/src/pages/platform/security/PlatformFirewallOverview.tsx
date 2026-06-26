@@ -162,7 +162,7 @@ export default function PlatformFirewallOverview() {
         include_lockdown: includeLockdown,
       })
       toast.success(r.summary)
-      if (r.apply_errors.length > 0) {
+      if ((r.apply_errors ?? []).length > 0) {
         toast.warning(`${r.apply_errors.length} apply error(s) — check agent connectivity`)
       }
       await load()
@@ -238,7 +238,7 @@ export default function PlatformFirewallOverview() {
               {scoreSample && (
                 <div className="text-sm text-slate-300 space-y-2">
                   <p>Score: <span className="font-semibold text-slate-100">{scoreSample.score}</span></p>
-                  {scoreSample.breakdown.slice(0, 3).map((b) => (
+                  {(scoreSample.breakdown ?? []).slice(0, 3).map((b) => (
                     <p key={b.category} className="text-xs text-slate-400">{b.category}: {b.detail} ({b.points} pts)</p>
                   ))}
                 </div>
@@ -319,7 +319,7 @@ export default function PlatformFirewallOverview() {
                 {multisite.sites.map((s) => (
                   <div key={s.id} className="rounded-xl border border-white/[0.06] bg-slate-950/40 px-3 py-2">
                     <p className="text-sm text-slate-200">{s.name} <span className="text-slate-500">({s.role})</span></p>
-                    <p className="text-xs text-slate-500 mt-0.5">{s.gitops_namespace} · {s.target_count} targets · grade {multisite.compliance_rollup.sites.find((c) => c.site === s.name)?.grade ?? '—'}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{s.gitops_namespace} · {s.target_count} targets · grade {(multisite.compliance_rollup?.sites ?? []).find((c) => c.site === s.name)?.grade ?? '—'}</p>
                   </div>
                 ))}
               </div>

@@ -91,7 +91,9 @@ impl LibvirtCtx {
                     }
                 }
                 if running {
-                    if let Ok(m) = machina_core::libvirt::metrics::get_vm_metrics(&self.conn, &v.name) {
+                    if let Ok(m) =
+                        machina_core::libvirt::metrics::get_vm_metrics(&self.conn, &v.name)
+                    {
                         entry.memory_used_mib = m.memory_used_mb;
                         entry.disk_read_iops = m.disk_rd_ops;
                         entry.disk_write_iops = m.disk_wr_ops;
@@ -106,7 +108,9 @@ impl LibvirtCtx {
         machina_core::libvirt::network::list_networks(&self.conn)
     }
 
-    pub fn list_host_gpus(&self) -> Result<Vec<(String, String, String, u32, String)>, LibvirtError> {
+    pub fn list_host_gpus(
+        &self,
+    ) -> Result<Vec<(String, String, String, u32, String)>, LibvirtError> {
         use machina_core::libvirt::extras::list_iommu_groups;
         let mut out = Vec::new();
         for group in list_iommu_groups()? {
@@ -129,7 +133,10 @@ impl LibvirtCtx {
             }
         }
         if let Ok(out_smi) = std::process::Command::new("nvidia-smi")
-            .args(["--query-gpu=pci.bus_id,name,mig.mode.current", "--format=csv,noheader"])
+            .args([
+                "--query-gpu=pci.bus_id,name,mig.mode.current",
+                "--format=csv,noheader",
+            ])
             .output()
         {
             if out_smi.status.success() {
@@ -140,7 +147,8 @@ impl LibvirtCtx {
                         let pci = parts[0].replace("00000000:", "").to_ascii_lowercase();
                         let mig = parts.get(2).cloned().unwrap_or_default();
                         for entry in &mut out {
-                            if entry.0.to_ascii_lowercase().contains(&pci) || pci.contains(&entry.0) {
+                            if entry.0.to_ascii_lowercase().contains(&pci) || pci.contains(&entry.0)
+                            {
                                 entry.4 = mig.clone();
                             }
                         }
@@ -191,7 +199,9 @@ impl LibvirtCtx {
             if let Some(src) = template_source.filter(|s| !s.is_empty()) {
                 create_linked_clone(src, disk_path)?;
             } else {
-                let size_gib = vm.root_disk_gib().map_err(|e| LibvirtError::Invalid(e.to_string()))?;
+                let size_gib = vm
+                    .root_disk_gib()
+                    .map_err(|e| LibvirtError::Invalid(e.to_string()))?;
                 create_qcow2(disk_path, size_gib)?;
             }
         } else if let Some(src) = template_source.filter(|s| !s.is_empty()) {
@@ -229,9 +239,7 @@ impl LibvirtCtx {
         }
 
         machina_core::libvirt::guest_agent_provision::inject_guestkit_into_disk(
-            disk_path,
-            None,
-            None,
+            disk_path, None, None,
         )?;
 
         let xml = domain_xml_from_spec(vm, disk_path, "qcow2", cloud_iso.as_deref())
@@ -317,6 +325,11 @@ impl LibvirtCtx {
                 "MACHINA_FENCE_COMMAND not configured".into(),
             ));
         }
+        if !hostname.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '.') {
+            return Err(LibvirtError::Operation(format!(
+                "invalid hostname for fence: {hostname}"
+            )));
+        }
         let cmdline = template.replace("{hostname}", hostname);
         let output = Command::new("sh")
             .arg("-c")
@@ -355,7 +368,12 @@ impl LibvirtCtx {
         }
     }
 
-    pub fn power(&self, name: &str, action: &str, mode: Option<&str>) -> Result<String, LibvirtError> {
+    pub fn power(
+        &self,
+        name: &str,
+        action: &str,
+        mode: Option<&str>,
+    ) -> Result<String, LibvirtError> {
         use machina_core::libvirt::domain::PowerMode;
         let power_mode = mode.map(PowerMode::parse).unwrap_or_default();
         let dom = Domain::lookup_by_name(&self.conn, name)
@@ -364,19 +382,22 @@ impl LibvirtCtx {
         match action {
             "start" => {
                 if !active {
-                    dom.create().map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                    dom.create()
+                        .map_err(|e| LibvirtError::Operation(e.to_string()))?;
                 }
             }
             "stop" => {
                 if active {
-                    dom.destroy().map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                    dom.destroy()
+                        .map_err(|e| LibvirtError::Operation(e.to_string()))?;
                 }
             }
             "reboot" => {
                 if active {
                     domain::reboot_vm_mode(&self.conn, name, power_mode)?;
                 } else {
-                    dom.create().map_err(|e| LibvirtError::Operation(e.to_string()))?;
+                    dom.create()
+                        .map_err(|e| LibvirtError::Operation(e.to_string()))?;
                 }
             }
             "reset" => {
@@ -400,11 +421,17 @@ impl LibvirtCtx {
             "resume" => {
                 domain::resume_vm(&self.conn, name)?;
             }
-            _ => return Err(LibvirtError::Invalid(format!("unknown power action: {action}"))),
+            _ => {
+                return Err(LibvirtError::Invalid(format!(
+                    "unknown power action: {action}"
+                )))
+            }
         }
         let dom = Domain::lookup_by_name(&self.conn, name)
             .map_err(|e| LibvirtError::NotFound(format!("VM '{name}': {e}")))?;
-        let info = dom.get_info().map_err(|e| LibvirtError::Operation(e.to_string()))?;
+        let info = dom
+            .get_info()
+            .map_err(|e| LibvirtError::Operation(e.to_string()))?;
         Ok(machina_core::libvirt::metrics::domain_state_label(info.state).to_string())
     }
 
@@ -419,12 +446,18 @@ impl LibvirtCtx {
         machina_core::libvirt::domain::delete_vm(&self.conn, name)
     }
 
-    pub fn get_vm_details(&self, name: &str) -> Result<machina_core::state::VmDetails, LibvirtError> {
+    pub fn get_vm_details(
+        &self,
+        name: &str,
+    ) -> Result<machina_core::state::VmDetails, LibvirtError> {
         machina_core::libvirt::domain::get_vm_details(&self.conn, name)
     }
 
     /// Start virt-install on a define-only guest using install metadata from the Machina spec.
-    pub fn install_defined_from_spec(&self, vm: &machina_spec::VirtualMachine) -> Result<(), LibvirtError> {
+    pub fn install_defined_from_spec(
+        &self,
+        vm: &machina_spec::VirtualMachine,
+    ) -> Result<(), LibvirtError> {
         let name = &vm.metadata.name;
         let xml = self.get_domain_xml(name)?;
         let disk_path = machina_core::libvirt::template_apply::primary_disk_path_from_xml(&xml)
@@ -443,11 +476,21 @@ impl LibvirtCtx {
         machina_core::libvirt::device::detach_disk(&self.conn, vm_name, target_dev)
     }
 
-    pub fn resize_disk(&self, vm_name: &str, target_dev: &str, size_gb: u64) -> Result<(), LibvirtError> {
+    pub fn resize_disk(
+        &self,
+        vm_name: &str,
+        target_dev: &str,
+        size_gb: u64,
+    ) -> Result<(), LibvirtError> {
         machina_core::libvirt::device::resize_block_device(&self.conn, vm_name, target_dev, size_gb)
     }
 
-    pub fn attach_nic(&self, vm_name: &str, network: &str, model: &str) -> Result<(), LibvirtError> {
+    pub fn attach_nic(
+        &self,
+        vm_name: &str,
+        network: &str,
+        model: &str,
+    ) -> Result<(), LibvirtError> {
         machina_core::libvirt::device::attach_interface(&self.conn, vm_name, network, model)
     }
 
@@ -465,6 +508,10 @@ impl LibvirtCtx {
 
     pub fn set_memory(&self, name: &str, memory_mb: u64) -> Result<(), LibvirtError> {
         machina_core::libvirt::resize::set_memory(&self.conn, name, memory_mb)
+    }
+
+    pub fn resolve_vnc_from_xml(&self, name: &str, xml: &str) -> Result<(String, u16), LibvirtError> {
+        machina_core::libvirt::vnc::resolve_vnc_tcp_xml(&self.conn, name, xml)
     }
 
     pub fn resolve_vnc(&mut self, name: &str) -> Result<(String, u16), LibvirtError> {
@@ -520,7 +567,12 @@ impl LibvirtCtx {
         )
     }
 
-    pub fn clone_vm(&self, source: &str, new_name: &str, clone_mode: &str) -> Result<String, LibvirtError> {
+    pub fn clone_vm(
+        &self,
+        source: &str,
+        new_name: &str,
+        clone_mode: &str,
+    ) -> Result<String, LibvirtError> {
         machina_core::libvirt::clone::clone_vm_with_disk(&self.conn, source, new_name, clone_mode)
     }
 
@@ -554,11 +606,16 @@ impl LibvirtCtx {
         machina_core::libvirt::snapshot::delete_snapshot(&self.conn, vm_name, snap_name)
     }
 
-    pub fn list_snapshots(&self, vm_name: &str) -> Result<Vec<(String, String, i64, bool)>, LibvirtError> {
-        Ok(machina_core::libvirt::snapshot::list_snapshots(&self.conn, vm_name)?
-            .into_iter()
-            .map(|s| (s.name, s.state, s.creation_time, s.is_current))
-            .collect())
+    pub fn list_snapshots(
+        &self,
+        vm_name: &str,
+    ) -> Result<Vec<(String, String, i64, bool)>, LibvirtError> {
+        Ok(
+            machina_core::libvirt::snapshot::list_snapshots(&self.conn, vm_name)?
+                .into_iter()
+                .map(|s| (s.name, s.state, s.creation_time, s.is_current))
+                .collect(),
+        )
     }
 
     pub fn revert_snapshot(&self, vm_name: &str, snap_name: &str) -> Result<(), LibvirtError> {
@@ -573,8 +630,7 @@ impl LibvirtCtx {
         new_disk_path: &str,
         revert_source: bool,
     ) -> Result<(String, String), LibvirtError> {
-        machina_spec::validate_name(new_name)
-            .map_err(|e| LibvirtError::Invalid(e.to_string()))?;
+        machina_spec::validate_name(new_name).map_err(|e| LibvirtError::Invalid(e.to_string()))?;
 
         if revert_source {
             self.revert_snapshot(vm_name, snap_name)?;
@@ -674,10 +730,17 @@ impl LibvirtCtx {
         Ok(dest_path.to_string())
     }
 
-    pub fn attach_disk(&self, vm_name: &str, disk_path: &str, target_dev: &str) -> Result<(), LibvirtError> {
+    pub fn attach_disk(
+        &self,
+        vm_name: &str,
+        disk_path: &str,
+        target_dev: &str,
+    ) -> Result<(), LibvirtError> {
         use std::process::Command;
         if !std::path::Path::new(disk_path).exists() {
-            return Err(LibvirtError::NotFound(format!("disk not found: {disk_path}")));
+            return Err(LibvirtError::NotFound(format!(
+                "disk not found: {disk_path}"
+            )));
         }
         let out = Command::new("virsh")
             .args([
@@ -759,8 +822,9 @@ impl LibvirtCtx {
     }
 
     pub fn guest_agent_action(&self, name: &str, action: &str) -> Result<String, LibvirtError> {
-        let result =
-            machina_core::libvirt::guest_agent_actions::run_guest_agent_action(&self.conn, name, action)?;
+        let result = machina_core::libvirt::guest_agent_actions::run_guest_agent_action(
+            &self.conn, name, action,
+        )?;
         serde_json::to_string(&result)
             .map_err(|e| LibvirtError::Internal(format!("serialize guest action: {e}")))
     }
@@ -835,9 +899,8 @@ fn define_cloned_domain(
     new_name: &str,
     new_disk_path: &str,
 ) -> Result<(), LibvirtError> {
-    let new_xml = replace_domain_name(source_xml, new_name).ok_or_else(|| {
-        LibvirtError::Operation("failed to replace domain name in XML".into())
-    })?;
+    let new_xml = replace_domain_name(source_xml, new_name)
+        .ok_or_else(|| LibvirtError::Operation("failed to replace domain name in XML".into()))?;
     let new_xml = remove_xml_element(&new_xml, "uuid");
     let new_xml = randomize_mac_addresses(&new_xml);
     let new_xml = replace_disk_path(&new_xml, new_disk_path);
@@ -960,15 +1023,17 @@ fn maybe_cloud_init_iso(
     let key = ci
         .and_then(|c| c.ssh_pubkey.as_deref())
         .unwrap_or(cloud.ssh_pubkey.as_str());
-    Ok(Some(machina_core::libvirt::extras::generate_cloud_init_iso(
-        "",
-        images_dir,
-        &vm.metadata.name,
-        user,
-        pass,
-        key,
-        None,
-    )?))
+    Ok(Some(
+        machina_core::libvirt::extras::generate_cloud_init_iso(
+            "",
+            images_dir,
+            &vm.metadata.name,
+            user,
+            pass,
+            key,
+            None,
+        )?,
+    ))
 }
 
 fn disk_backing_mismatch(disk_path: &str, expected_backing: &str) -> Result<bool, LibvirtError> {
@@ -1007,7 +1072,9 @@ fn create_linked_clone(backing: &str, path: &str) -> Result<(), LibvirtError> {
         .status()
         .map_err(|e| LibvirtError::Operation(format!("qemu-img: {e}")))?;
     if !status.success() {
-        return Err(LibvirtError::Operation("qemu-img linked clone failed".into()));
+        return Err(LibvirtError::Operation(
+            "qemu-img linked clone failed".into(),
+        ));
     }
     Ok(())
 }
@@ -1056,7 +1123,10 @@ fn cpu_compatible(a: &str, b: &str) -> bool {
 }
 
 fn libvirt_version_major(v: &str) -> u32 {
-    v.split('.').next().and_then(|s| s.parse().ok()).unwrap_or(0)
+    v.split('.')
+        .next()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
 }
 
 fn qemu_version_from_path() -> String {
@@ -1098,7 +1168,9 @@ fn vm_uses_virt_install(vm: &VirtualMachine) -> bool {
     };
     !label_str(labels, "virt_install_location").trim().is_empty()
         || label_bool(labels, "virt_install_pxe")
-        || !label_str(labels, "virt_install_install_os").trim().is_empty()
+        || !label_str(labels, "virt_install_install_os")
+            .trim()
+            .is_empty()
         || label_bool(labels, "virt_install_define_only")
 }
 
@@ -1116,8 +1188,12 @@ fn create_request_from_vm(
         .first()
         .map(|n| n.network.clone())
         .unwrap_or_else(|| "default".into());
-    let memory_mb = vm.memory_mib().map_err(|e| LibvirtError::Invalid(e.to_string()))?;
-    let disk_gb = vm.root_disk_gib().map_err(|e| LibvirtError::Invalid(e.to_string()))?;
+    let memory_mb = vm
+        .memory_mib()
+        .map_err(|e| LibvirtError::Invalid(e.to_string()))?;
+    let disk_gb = vm
+        .root_disk_gib()
+        .map_err(|e| LibvirtError::Invalid(e.to_string()))?;
     let iso = label_str(&labels, "install_iso").trim().to_string();
     let os_variant = label_str(&labels, "os_variant").trim().to_string();
     let mut req = CreateVmRequest {
@@ -1150,8 +1226,10 @@ fn create_request_from_vm(
             .trim()
             .to_string(),
         virt_install_define_only: label_bool(&labels, "virt_install_define_only"),
-        virt_install_path_in_use_check_off: label_bool(&labels, "virt_install_path_in_use_check_off")
-            || !disk_path.trim().is_empty(),
+        virt_install_path_in_use_check_off: label_bool(
+            &labels,
+            "virt_install_path_in_use_check_off",
+        ) || !disk_path.trim().is_empty(),
         root_disk_storage_pool: label_str(&labels, "root_disk_storage_pool")
             .trim()
             .to_string(),
@@ -1190,6 +1268,10 @@ fn create_request_from_vm(
     }
     if !disk_path.trim().is_empty() && Path::new(disk_path).exists() {
         req.existing_disk = disk_path.trim().to_string();
+    }
+    let virtio_win_iso = label_str(&labels, "virtio_win_iso").trim().to_string();
+    if !virtio_win_iso.is_empty() {
+        req.virtio_win_iso = virtio_win_iso;
     }
     Ok(req)
 }

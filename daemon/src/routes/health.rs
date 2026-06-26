@@ -145,10 +145,9 @@ async fn host_problems() -> Json<serde_json::Value> {
             }
         }
         if obs.cgroup.available {
-            if let (Some(cur), Some(max)) = (
-                obs.cgroup.memory_current_bytes,
-                obs.cgroup.memory_max_bytes,
-            ) {
+            if let (Some(cur), Some(max)) =
+                (obs.cgroup.memory_current_bytes, obs.cgroup.memory_max_bytes)
+            {
                 if max > 0 {
                     let pct = (cur as f64 / max as f64) * 100.0;
                     if pct >= 90.0 {

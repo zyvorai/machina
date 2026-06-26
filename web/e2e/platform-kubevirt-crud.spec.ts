@@ -22,6 +22,8 @@ test('K8s Workloads KubeVirt lifecycle actions call API', async ({ page }) => {
     && req.method() === 'DELETE',
   )
   await page.getByRole('button', { name: 'Delete' }).first().click()
+  // ConfirmDialog (React modal) — click the "Delete" confirm button
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click()
   await deleteReq
 })
 

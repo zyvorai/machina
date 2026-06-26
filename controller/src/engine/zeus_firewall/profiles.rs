@@ -2,7 +2,7 @@
 
 use machina_core::{profile_by_name, FirewallPlanRequest, FirewallProfile};
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProfileListItem {
@@ -13,13 +13,12 @@ pub struct ProfileListItem {
     pub stealth_level: String,
 }
 
-pub async fn list_profiles(pool: &PgPool) -> anyhow::Result<Vec<ProfileListItem>> {
-    let rows: Vec<(String, String, serde_json::Value)> = sqlx::query_as(
-        "SELECT name, display_name, spec_json FROM firewall_profiles ORDER BY name",
-    )
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+pub async fn list_profiles(pool: &SqlitePool) -> anyhow::Result<Vec<ProfileListItem>> {
+    let rows: Vec<(String, String, serde_json::Value)> =
+        sqlx::query_as("SELECT name, display_name, spec_json FROM firewall_profiles ORDER BY name")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
 
     if rows.is_empty() {
         return Ok(machina_core::builtin_profiles()
@@ -63,8 +62,7 @@ pub fn profile_item(p: &FirewallProfile) -> ProfileListItem {
 }
 
 pub fn plan_for_profile(name: &str, dry_run: bool) -> anyhow::Result<FirewallPlanRequest> {
-    profile_by_name(name)
-        .ok_or_else(|| anyhow::anyhow!("unknown profile {name}"))?;
+    profile_by_name(name).ok_or_else(|| anyhow::anyhow!("unknown profile {name}"))?;
     Ok(FirewallPlanRequest {
         profile: Some(name.into()),
         enable: Some(true),

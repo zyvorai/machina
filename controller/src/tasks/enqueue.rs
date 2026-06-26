@@ -17,7 +17,7 @@ pub async fn enqueue_task(
     let task_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO tasks (id, operation, status, resource_type, resource_id, host_id, payload)
-         VALUES ($1, $2, 'pending', $3, $4, $5, $6)",
+         VALUES (?, ?, 'pending', ?, ?, ?, ?)",
     )
     .bind(task_id)
     .bind(operation)
@@ -51,7 +51,7 @@ pub async fn write_audit(
 ) -> Result<(), ApiError> {
     sqlx::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(Uuid::new_v4())
     .bind(actor)

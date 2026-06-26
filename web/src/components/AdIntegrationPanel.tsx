@@ -165,10 +165,56 @@ export default function AdIntegrationPanel({ compact }: Props) {
           Service bind password
           <input
             type="password"
+            autoComplete="off"
             className={`${inputClass} mt-1`}
             placeholder={settings.bind_password_set ? '•••••••• (unchanged)' : 'Optional'}
             value={bindPassword}
             onChange={(e) => setBindPassword(e.target.value)}
+          />
+        </label>
+      </div>
+
+      <div className={`grid gap-3 ${compact ? 'md:grid-cols-3' : 'md:grid-cols-1'}`}>
+        <label className="block text-xs text-slate-400">
+          Admin group substrings (comma-separated)
+          <input
+            className={`${inputClass} mt-1`}
+            placeholder="Domain Admins, Machina-Admins"
+            value={settings.admin_group_substrings.join(', ')}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                admin_group_substrings: e.target.value.trim() === '' ? [] : e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+              })
+            }
+          />
+        </label>
+        <label className="block text-xs text-slate-400">
+          Operator group substrings (comma-separated)
+          <input
+            className={`${inputClass} mt-1`}
+            placeholder="Machina-Operators"
+            value={settings.operator_group_substrings.join(', ')}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                operator_group_substrings: e.target.value.trim() === '' ? [] : e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+              })
+            }
+          />
+        </label>
+        <label className="block text-xs text-slate-400">
+          Read-only group substrings (comma-separated)
+          <input
+            className={`${inputClass} mt-1`}
+            placeholder="Domain Users"
+            value={settings.readonly_group_substrings.join(', ')}
+            onChange={(e) =>
+              setSettings({
+                ...settings,
+                readonly_group_substrings: e.target.value.trim() === '' ? [] : e.target.value.split(',').map((s) => s.trim()).filter(Boolean),
+              })
+            }
           />
         </label>
       </div>
@@ -185,7 +231,7 @@ export default function AdIntegrationPanel({ compact }: Props) {
           </label>
           <label className="text-xs text-slate-400">
             Password
-            <input type="password" className={`${inputClass} mt-1`} value={testPass} onChange={(e) => setTestPass(e.target.value)} />
+            <input type="password" autoComplete="current-password" className={`${inputClass} mt-1`} value={testPass} onChange={(e) => setTestPass(e.target.value)} />
           </label>
           <button type="button" className="btn-secondary text-sm" disabled={testing || !testUser || !testPass} onClick={() => void testBind()}>
             {testing ? 'Testing…' : 'Test LDAP'}

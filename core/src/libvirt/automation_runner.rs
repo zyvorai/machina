@@ -13,8 +13,8 @@ use tracing::{info, warn};
 
 use super::automation::{
     fire_webhook, load_alert_rules, load_notification_channels, load_schedules,
-    load_snapshot_schedules, save_alert, save_schedules, save_snapshot_schedules, send_notification,
-    should_run_now, Alert, AlertRule, ScheduledAction, SnapshotSchedule,
+    load_snapshot_schedules, save_alert, save_schedules, save_snapshot_schedules,
+    send_notification, should_run_now, Alert, AlertRule, ScheduledAction, SnapshotSchedule,
 };
 use super::domain;
 use super::extras::get_host_stats;
@@ -165,9 +165,7 @@ fn evaluate_vm_rules(all_metrics: &[VmMetrics], rules: &[AlertRule]) {
 }
 
 fn evaluate_vm_down(manager: &LibvirtManager, rules: &[AlertRule]) {
-    let has_rule = rules
-        .iter()
-        .any(|r| r.enabled && r.condition == "vm_down");
+    let has_rule = rules.iter().any(|r| r.enabled && r.condition == "vm_down");
     if !has_rule {
         return;
     }
@@ -215,41 +213,36 @@ fn run_scheduled_action(manager: &LibvirtManager, action: &ScheduledAction) -> R
     let vm = action.vm_name.clone();
     let act = action.action.to_ascii_lowercase();
     manager
-        .with_conn(|conn| {
-            match act.as_str() {
-                "start" => domain::start_vm(conn, &vm),
-                "stop" => domain::stop_vm(conn, &vm),
-                "shutdown" => domain::shutdown_vm(conn, &vm),
-                "reboot" => domain::reboot_vm(conn, &vm),
-                "snapshot" => {
-                    let req = CreateSnapshotRequest {
-                        name: format!("sched-{}", chrono::Local::now().format("%Y%m%d-%H%M%S")),
-                        description: "Scheduled snapshot".into(),
-                        disk_only: true,
-                        storage_mode: String::new(),
-                        memory_snapshot: String::new(),
-                        memory_file: String::new(),
-                        external_disk_dir: String::new(),
-                        external_memory_dir: String::new(),
-                        disks: Vec::new(),
-                        atomic: true,
-                        reuse_external: false,
-                        quiesce: false,
-                    };
-                    snapshot::create_snapshot(conn, &vm, &req)
-                }
-                other => Err(crate::LibvirtError::Invalid(format!(
-                    "unknown scheduled action: {other}"
-                ))),
+        .with_conn(|conn| match act.as_str() {
+            "start" => domain::start_vm(conn, &vm),
+            "stop" => domain::stop_vm(conn, &vm),
+            "shutdown" => domain::shutdown_vm(conn, &vm),
+            "reboot" => domain::reboot_vm(conn, &vm),
+            "snapshot" => {
+                let req = CreateSnapshotRequest {
+                    name: format!("sched-{}", chrono::Local::now().format("%Y%m%d-%H%M%S")),
+                    description: "Scheduled snapshot".into(),
+                    disk_only: true,
+                    storage_mode: String::new(),
+                    memory_snapshot: String::new(),
+                    memory_file: String::new(),
+                    external_disk_dir: String::new(),
+                    external_memory_dir: String::new(),
+                    disks: Vec::new(),
+                    atomic: true,
+                    reuse_external: false,
+                    quiesce: false,
+                };
+                snapshot::create_snapshot(conn, &vm, &req)
             }
+            other => Err(crate::LibvirtError::Invalid(format!(
+                "unknown scheduled action: {other}"
+            ))),
         })
         .map_err(|e| e.to_string())
 }
 
-fn run_snapshot_schedule(
-    manager: &LibvirtManager,
-    sched: &SnapshotSchedule,
-) -> Result<(), String> {
+fn run_snapshot_schedule(manager: &LibvirtManager, sched: &SnapshotSchedule) -> Result<(), String> {
     let vm = sched.vm_name.clone();
     let snap_name = format!("auto-{}", chrono::Local::now().format("%Y%m%d-%H%M%S"));
     manager
@@ -291,7 +284,8 @@ fn snapshot_due(sched: &SnapshotSchedule) -> bool {
     if sched.last_run.is_empty() {
         return true;
     }
-    let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&sched.last_run, "%Y-%m-%d %H:%M:%S") else {
+    let Ok(ndt) = chrono::NaiveDateTime::parse_from_str(&sched.last_run, "%Y-%m-%d %H:%M:%S")
+    else {
         return true;
     };
     let Some(last) = chrono::Local.from_local_datetime(&ndt).single() else {

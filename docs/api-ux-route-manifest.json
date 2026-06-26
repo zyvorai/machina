@@ -68,6 +68,12 @@
     "/api/v1/guest-images/rhel-url": "page",
     "/api/v1/hypersdk/proxy": "page",
     "/api/v1/kubevirt/qcow2-bundle": "page",
-    "/api/v1/platform/controller": "page"
+    "/api/v1/platform/controller": "page",
+    "/api/v1/zeus-security/ingest/{id}": "documented",
+    "/api/v1/metrics/ingest/prometheus": "documented",
+    "/api/v1/metrics/ingest/remote-write": "documented",
+    "/api/v1/metrics/ingest/batch": "documented",
+    "/api/v1/zeus-security/sensors": "page",
+    "/api/v1/hosts/{id}/libvirt": "page"
   }
 }

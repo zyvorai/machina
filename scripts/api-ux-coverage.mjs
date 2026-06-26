@@ -27,6 +27,10 @@ const OUT_MD = path.join(ROOT, 'docs/api-ux-coverage.md')
 const DOCUMENTED = new Set([
   '/api/v1/health/ready',
   '/api/v1/metrics/prometheus',
+  '/api/v1/metrics/ingest/prometheus',
+  '/api/v1/metrics/ingest/remote-write',
+  '/api/v1/metrics/ingest/batch',
+  '/api/v1/zeus-security/ingest/{id}',
   '/api/v1/install.sh',
   '/install.sh',
   '/api/v1/hosts/join',
@@ -50,6 +54,7 @@ function surfaceForUiFile(file) {
   if (rel.startsWith('pages/platform/')) return 'page'
   if (rel.startsWith('components/platform/')) return 'page'
   if (rel.startsWith('components/ai/')) return 'page'
+  if (rel.startsWith('hooks/')) return 'page'
   if (rel.startsWith('pages/OpenStack')) return 'openstack'
   if (rel.startsWith('pages/K8s') || rel === 'pages/KataContainers.tsx') return 'k8s'
   if (rel.startsWith('pages/')) return 'classic'
@@ -85,23 +90,35 @@ function resolveApiModule(fromFile, spec) {
 function extractApiPaths(apiFile) {
   const src = readFile(apiFile)
   const paths = new Set()
-  for (const m of src.matchAll(/platformFetch(?:<[^>]*>)?\(\s*[`'"]([^`'"]+)[`'"]/g)) {
-    paths.add(normPath(m[1].split('?')[0]))
+  const addPath = (raw) => {
+    const stripped = raw.split('?')[0].replace(/\$\{[^}]+\}/g, '{id}')
+    paths.add(normPath(stripped))
   }
-  for (const m of src.matchAll(/[`'"](\/api\/v1[^`'"]*)[`'"]/g)) {
-    paths.add(normPath(m[1].split('?')[0]))
+  for (const m of src.matchAll(/platformFetch(?:<[^>]*>)?\(\s*`([^`]+)`/g)) {
+    addPath(m[1])
   }
-  for (const m of src.matchAll(/[`'"](\/openstack\/[^`'"]*)[`'"]/g)) {
-    paths.add(normPath(m[1].split('?')[0]))
+  for (const m of src.matchAll(/platformFetch(?:<[^>]*>)?\(\s*['"]([^'"]+)['"]/g)) {
+    addPath(m[1])
   }
-  for (const m of src.matchAll(/[`'"](\/k8s\/[^`'"]*)[`'"]/g)) {
-    paths.add(normPath(m[1].split('?')[0]))
+  for (const m of src.matchAll(/`(\/api\/v1[^`]+)`/g)) {
+    addPath(m[1])
+  }
+  for (const m of src.matchAll(/['"](\/api\/v1[^'"]*)['"]/g)) {
+    addPath(m[1])
+  }
+  for (const m of src.matchAll(/['"](\/openstack\/[^'"]*)['"]/g)) {
+    addPath(m[1])
+  }
+  for (const m of src.matchAll(/['"](\/k8s\/[^'"]*)['"]/g)) {
+    addPath(m[1])
   }
   return paths
 }
 
 function buildImportGraph() {
-  const uiFiles = walkUi(path.join(WEB_SRC, 'pages')).concat(walkUi(path.join(WEB_SRC, 'components')))
+  const uiFiles = walkUi(path.join(WEB_SRC, 'pages'))
+    .concat(walkUi(path.join(WEB_SRC, 'components')))
+    .concat(walkUi(path.join(WEB_SRC, 'hooks')))
   const byPath = new Map()
 
   for (const file of uiFiles) {

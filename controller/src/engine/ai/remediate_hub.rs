@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct RemediationItem {
@@ -20,14 +20,16 @@ pub struct RemediateHub {
     pub summary: String,
 }
 
-pub async fn hub(pool: &PgPool) -> anyhow::Result<RemediateHub> {
+pub async fn hub(pool: &SqlitePool) -> anyhow::Result<RemediateHub> {
     let cfg = crate::config::ControllerConfig::default();
     let sre = super::sre_remediate::propose(pool).await?;
     let compliance = super::compliance_remediate::propose(pool).await?;
     let power = super::fleet_power::optimize(pool).await?;
     let firewall = super::firewall_remediate::propose(pool).await?;
     let exposure_waste = super::exposure_finops::propose_waste(pool, &cfg).await.ok();
-    let joint = super::exposure_finops::joint_sre_finops(pool, &cfg).await.ok();
+    let joint = super::exposure_finops::joint_sre_finops(pool, &cfg)
+        .await
+        .ok();
 
     let mut items = Vec::new();
 
@@ -97,7 +99,7 @@ pub async fn hub(pool: &PgPool) -> anyhow::Result<RemediateHub> {
             label: r.label.clone(),
             review: r.review.clone(),
             action: r.action.clone(),
-            priority: 2 + i as u8,
+            priority: (2usize + i).min(u8::MAX as usize) as u8,
             risk: r.risk.clone(),
         });
     }
@@ -117,7 +119,8 @@ pub async fn hub(pool: &PgPool) -> anyhow::Result<RemediateHub> {
     items.sort_by_key(|i| i.priority);
 
     let summary = if items.is_empty() {
-        "Remediation hub clear — no open SRE, compliance, firewall, FinOps, or fleet actions.".into()
+        "Remediation hub clear — no open SRE, compliance, firewall, FinOps, or fleet actions."
+            .into()
     } else {
         format!(
             "{} unified remediation(s): {} SRE · {} firewall · {} FinOps · {} joint · {} compliance · {} fleet",

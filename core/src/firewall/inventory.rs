@@ -17,10 +17,7 @@ pub fn gather_firewall_inventory(hostname: &str) -> Result<FirewallInventory, Li
     enrich_port_exposure(&mut open_ports, &rules);
     let services = ports_to_services(&open_ports);
     let score = compute_firewall_score(&posture, &rules, &open_ports);
-    let profiles_available: Vec<String> = builtin_profiles()
-        .into_iter()
-        .map(|p| p.name)
-        .collect();
+    let profiles_available: Vec<String> = builtin_profiles().into_iter().map(|p| p.name).collect();
     let nftables_summary = if backend == crate::firewall::types::FirewallBackend::Nftables {
         nftables::ruleset_summary()
     } else {

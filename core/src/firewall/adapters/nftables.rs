@@ -61,21 +61,15 @@ impl FirewallAdapter for NftablesAdapter {
 
     fn snapshot_state(&self) -> Result<serde_json::Value, LibvirtError> {
         let ruleset = run_cmd("nft", &["-j", "list", "ruleset"]).unwrap_or_else(|_| "{}".into());
-        let parsed: serde_json::Value =
-            serde_json::from_str(&ruleset).unwrap_or_else(|_| serde_json::json!({ "raw": ruleset }));
+        let parsed: serde_json::Value = serde_json::from_str(&ruleset)
+            .unwrap_or_else(|_| serde_json::json!({ "raw": ruleset }));
         Ok(parsed)
     }
 }
 
 pub fn ruleset_summary() -> Option<String> {
     let ruleset = run_cmd("nft", &["list", "ruleset"]).ok()?;
-    let tables = ruleset
-        .lines()
-        .filter(|l| l.starts_with("table "))
-        .count();
-    let chains = ruleset
-        .lines()
-        .filter(|l| l.contains("chain "))
-        .count();
+    let tables = ruleset.lines().filter(|l| l.starts_with("table ")).count();
+    let chains = ruleset.lines().filter(|l| l.contains("chain ")).count();
     Some(format!("{tables} tables, {chains} chains"))
 }

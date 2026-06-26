@@ -39,6 +39,7 @@ export function useMissionControlFleet() {
   const [sshVm, setSshVm] = useState<PlatformVm | null>(null)
   const [migrateModal, setMigrateModal] = useState<{ vm: PlatformVm; destId: string; destName: string } | null>(null)
   const [dragVmId, setDragVmId] = useState<string | null>(null)
+  const [deleteVmTarget, setDeleteVmTarget] = useState<PlatformVm | null>(null)
 
   const hostMap = useMemo(() => new Map(hosts.map((h) => [h.id, h.hostname])), [hosts])
 
@@ -124,8 +125,7 @@ export function useMissionControlFleet() {
       toast.error('Snapshots apply to libvirt VMs only')
       return
     }
-    const name = window.prompt('Snapshot name', `snap-${Date.now()}`)?.trim()
-    if (!name) return
+    const name = `snap-${Date.now()}`
     try {
       const r = await createVmSnapshot(vm.id, name)
       toastQueuedOperation(toast, `Snapshot ${vm.name}`, r.task_id, tier)
@@ -135,12 +135,15 @@ export function useMissionControlFleet() {
     }
   }
 
-  const vmDeleteAction = async (vm: PlatformVm) => {
+  const vmDeleteAction = (vm: PlatformVm) => {
     if (vm.inventory_source === 'kubevirt') {
       toast.error('KubeVirt guests must be deleted from the cluster')
       return
     }
-    if (!window.confirm(`Delete ${vm.name}?`)) return
+    setDeleteVmTarget(vm)
+  }
+
+  const doVmDeleteAction = async (vm: PlatformVm) => {
     try {
       await queuePlatformVmDelete(vm, toast, tier)
       if (selectedVmId === vm.id) setSelectedVmId(null)
@@ -191,6 +194,9 @@ export function useMissionControlFleet() {
     vmPowerAction,
     vmSnapshotAction,
     vmDeleteAction,
+    doVmDeleteAction,
+    deleteVmTarget,
+    setDeleteVmTarget,
     adoptVm,
     tier,
   }

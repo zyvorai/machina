@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { MacGlassPanel } from './mac/PlatformMacUi'
+import ConfirmDialog from '../ConfirmDialog'
 import type { HostLinuxUpdates } from '../../api/platform'
 import { applyHostPackageUpgrade, previewHostPackageUpgrade } from '../../api/platform'
 import { runHostCockpitAction } from '../../api/platformHostCockpit'
@@ -22,6 +23,7 @@ export default function HostPackageKitPanel({ hostId, updates, maintenanceMode, 
   const [installPkg, setInstallPkg] = useState('')
   const [removePkg, setRemovePkg] = useState('')
   const [purge, setPurge] = useState(false)
+  const [confirmApplyAll, setConfirmApplyAll] = useState(false)
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true)
@@ -76,18 +78,14 @@ export default function HostPackageKitPanel({ hostId, updates, maintenanceMode, 
             type="button"
             className="btn-secondary text-xs"
             disabled={busy || !maintenanceMode}
-            onClick={() => void run(async () => {
-              if (!window.confirm('Apply all pending package upgrades on this host?')) return
-              const r = await applyHostPackageUpgrade(hostId)
-              toast.success(r.summary ?? `Task ${r.task_id}`)
-            })}
+            onClick={() => setConfirmApplyAll(true)}
           >
             Apply all updates
           </button>
         </div>
 
         <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
-          <input className="input text-xs" value={installPkg} onChange={(e) => setInstallPkg(e.target.value)} placeholder="Install package name" />
+          <input aria-label="Install package name" className="input text-xs" value={installPkg} onChange={(e) => setInstallPkg(e.target.value)} placeholder="Install package name" />
           <button
             type="button"
             className="btn-secondary text-xs"
@@ -103,7 +101,7 @@ export default function HostPackageKitPanel({ hostId, updates, maintenanceMode, 
         </div>
 
         <div className="grid gap-2 sm:grid-cols-[1fr_auto] items-center">
-          <input className="input text-xs" value={removePkg} onChange={(e) => setRemovePkg(e.target.value)} placeholder="Remove package name" />
+          <input aria-label="Remove package name" className="input text-xs" value={removePkg} onChange={(e) => setRemovePkg(e.target.value)} placeholder="Remove package name" />
           <div className="flex items-center gap-2">
             <label className="text-xs text-slate-500 inline-flex items-center gap-1">
               <input type="checkbox" checked={purge} onChange={(e) => setPurge(e.target.checked)} /> Purge
@@ -127,6 +125,21 @@ export default function HostPackageKitPanel({ hostId, updates, maintenanceMode, 
           <p className="text-xs text-amber-300/90">Enter maintenance mode before install/remove/apply operations.</p>
         ) : null}
       </div>
+      <ConfirmDialog
+        open={confirmApplyAll}
+        title="Apply all package updates"
+        message="Apply all pending package upgrades on this host?"
+        confirmLabel="Apply all"
+        variant="warning"
+        onCancel={() => setConfirmApplyAll(false)}
+        onConfirm={() => {
+          setConfirmApplyAll(false)
+          void run(async () => {
+            const r = await applyHostPackageUpgrade(hostId)
+            toast.success(r.summary ?? `Task ${r.task_id}`)
+          })
+        }}
+      />
     </MacGlassPanel>
   )
 }

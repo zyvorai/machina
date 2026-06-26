@@ -147,8 +147,7 @@ async fn fleet_status() -> Json<Value> {
                 }
                 if let Ok(stats) = fetch_peer_json(p, "/host/stats").await {
                     row.host_cpu_percent = stats.get("cpu_percent").and_then(|v| v.as_f64());
-                    row.host_memory_percent =
-                        stats.get("memory_percent").and_then(|v| v.as_f64());
+                    row.host_memory_percent = stats.get("memory_percent").and_then(|v| v.as_f64());
                 }
             }
             Err(e) => row.error = Some(e),
@@ -163,9 +162,7 @@ async fn fleet_status() -> Json<Value> {
     }))
 }
 
-async fn fleet_vms(
-    State(manager): State<LibvirtManager>,
-) -> Result<Json<Value>, AppError> {
+async fn fleet_vms(State(manager): State<LibvirtManager>) -> Result<Json<Value>, AppError> {
     let cfg = fleet_cfg();
     let mut rows: Vec<FleetVmRow> = Vec::new();
 
@@ -223,9 +220,7 @@ fn synthetic_peer_unreachable_alert(peer_name: &str, peer_url: &str) -> Alert {
     }
 }
 
-async fn fleet_metrics(
-    State(manager): State<LibvirtManager>,
-) -> Result<Json<Value>, AppError> {
+async fn fleet_metrics(State(manager): State<LibvirtManager>) -> Result<Json<Value>, AppError> {
     let cfg = fleet_cfg();
     let local_stats = machina_core::libvirt::extras::get_host_stats();
     let local_vms = manager.list_all_vms()?;
@@ -248,7 +243,10 @@ async fn fleet_metrics(
             });
             if let Ok(stats) = fetch_peer_json(p, "/host/stats").await {
                 row["reachable"] = json!(true);
-                let cpu = stats.get("cpu_percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let cpu = stats
+                    .get("cpu_percent")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 let mem = stats
                     .get("memory_percent")
                     .and_then(|v| v.as_f64())
@@ -267,12 +265,15 @@ async fn fleet_metrics(
                 row["reachable"] = json!(true);
                 if let Some(arr) = vms.as_array() {
                     row["vm_count"] = json!(arr.len());
-                    row["vms_running"] = json!(arr.iter().filter(|v| {
-                        v.get("state")
-                            .and_then(|s| s.as_str())
-                            .map(|s| s.eq_ignore_ascii_case("running"))
-                            .unwrap_or(false)
-                    }).count());
+                    row["vms_running"] = json!(arr
+                        .iter()
+                        .filter(|v| {
+                            v.get("state")
+                                .and_then(|s| s.as_str())
+                                .map(|s| s.eq_ignore_ascii_case("running"))
+                                .unwrap_or(false)
+                        })
+                        .count());
                 }
             }
             peers.push(row);
@@ -389,7 +390,10 @@ async fn compute_placement_candidates(
             };
             if let Ok(stats) = fetch_peer_json(p, "/host/stats").await {
                 row.reachable = true;
-                let cpu = stats.get("cpu_percent").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let cpu = stats
+                    .get("cpu_percent")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
                 let mem = stats
                     .get("memory_percent")
                     .and_then(|v| v.as_f64())
@@ -436,8 +440,16 @@ async fn compute_placement_candidates(
     }
 
     candidates.sort_by(|a, b| {
-        let sa = a.capacity.get("adjusted_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
-        let sb = b.capacity.get("adjusted_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let sa = a
+            .capacity
+            .get("adjusted_score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
+        let sb = b
+            .capacity
+            .get("adjusted_score")
+            .and_then(|v| v.as_f64())
+            .unwrap_or(0.0);
         sb.partial_cmp(&sa).unwrap_or(std::cmp::Ordering::Equal)
     });
     if let Some(best) = candidates.iter_mut().find(|c| c.reachable) {
@@ -526,11 +538,15 @@ async fn fleet_create_vm(
         })));
     }
 
-    let peer = cfg.peers.iter().find(|p| p.name == peer_name).ok_or_else(|| {
-        AppError::from(machina_core::LibvirtError::NotFound(format!(
-            "Unknown fleet peer '{peer_name}'"
-        )))
-    })?;
+    let peer = cfg
+        .peers
+        .iter()
+        .find(|p| p.name == peer_name)
+        .ok_or_else(|| {
+            AppError::from(machina_core::LibvirtError::NotFound(format!(
+                "Unknown fleet peer '{peer_name}'"
+            )))
+        })?;
 
     let base = peer.url.trim().trim_end_matches('/');
     let url = format!("{base}/api/v1/vms");
@@ -585,8 +601,7 @@ async fn fleet_alerts() -> Json<Value> {
                 match fetch_peer_json(p, "/alerts").await {
                     Ok(body) => {
                         if let Ok(alerts) = serde_json::from_value::<Vec<Alert>>(body) {
-                            row.unacknowledged =
-                                alerts.iter().filter(|a| !a.acknowledged).count();
+                            row.unacknowledged = alerts.iter().filter(|a| !a.acknowledged).count();
                             row.alerts = alerts;
                         } else {
                             row.error = Some("invalid alerts JSON".into());
@@ -771,7 +786,9 @@ async fn fleet_proxy_action(
         .map_err(|e| AppError::from(machina_core::LibvirtError::Operation(e.to_string())))?;
     let status = res.status().as_u16();
     let body: Value = res.json().await.unwrap_or(json!({}));
-    Ok(Json(json!({ "peer": peer_name, "status": status, "body": body })))
+    Ok(Json(
+        json!({ "peer": peer_name, "status": status, "body": body }),
+    ))
 }
 
 pub fn fleet_routes() -> Router<LibvirtManager> {
@@ -786,4 +803,3 @@ pub fn fleet_routes() -> Router<LibvirtManager> {
         .route("/fleet/vms", get(fleet_vms))
         .route("/fleet/peers/{peer}/proxy", post(fleet_proxy_action))
 }
-

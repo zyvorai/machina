@@ -81,14 +81,21 @@ pub fn insert_cdrom(
         let is_running = info.as_ref().map(|i| i.state == 1).unwrap_or(false);
 
         if is_running {
-            domain
-                .attach_device_flags(
-                    &xml,
-                    virt::sys::VIR_DOMAIN_AFFECT_LIVE | virt::sys::VIR_DOMAIN_AFFECT_CONFIG,
-                )
-                .map_err(|e| {
-                    LibvirtError::Operation(format!("Failed to attach CD-ROM to running VM: {e}"))
-                })?;
+            // Try live+config first. SATA can't be hotplugged — fall back to config-only
+            // so the drive appears on next boot without failing the whole operation.
+            let live_result = domain.attach_device_flags(
+                &xml,
+                virt::sys::VIR_DOMAIN_AFFECT_LIVE | virt::sys::VIR_DOMAIN_AFFECT_CONFIG,
+            );
+            if live_result.is_err() {
+                domain
+                    .attach_device_flags(&xml, virt::sys::VIR_DOMAIN_AFFECT_CONFIG)
+                    .map_err(|e| {
+                        LibvirtError::Operation(format!(
+                            "Failed to attach CD-ROM (stop the VM to hot-attach SATA): {e}"
+                        ))
+                    })?;
+            }
         } else {
             // For shutoff VMs — insert cdrom into XML definition
             let new_xml = insert_cdrom_into_xml(&vm_xml, &xml);

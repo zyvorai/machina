@@ -187,7 +187,10 @@ pub fn storage_inventory() -> Result<HostCockpitStorage, LibvirtError> {
             }
         }
     }
-    if let Some(o) = run_cmd("lvs", &["--noheadings", "-o", "vg_name,lv_name,lv_size,lv_attr"]) {
+    if let Some(o) = run_cmd(
+        "lvs",
+        &["--noheadings", "-o", "vg_name,lv_name,lv_size,lv_attr"],
+    ) {
         if o.status.success() {
             for line in stdout_lines(&o) {
                 let cols: Vec<&str> = line.split_whitespace().collect();
@@ -278,7 +281,11 @@ fn walk_lsblk(v: &serde_json::Value, out: &mut HostCockpitStorage) {
         if fstype.eq_ignore_ascii_case("crypto_LUKS") {
             out.luks.push(StorageLineItem {
                 name: name.into(),
-                detail: format!("{} · {}", fstype, node.get("size").and_then(|s| s.as_str()).unwrap_or("")),
+                detail: format!(
+                    "{} · {}",
+                    fstype,
+                    node.get("size").and_then(|s| s.as_str()).unwrap_or("")
+                ),
                 state: "encrypted".into(),
             });
         }
@@ -307,7 +314,10 @@ pub fn network_inventory() -> Result<HostCockpitNetwork, LibvirtError> {
         probed: true,
         ..Default::default()
     };
-    if let Some(o) = run_cmd("nmcli", &["-t", "-f", "NAME,UUID,TYPE,DEVICE,STATE", "con", "show"]) {
+    if let Some(o) = run_cmd(
+        "nmcli",
+        &["-t", "-f", "NAME,UUID,TYPE,DEVICE,STATE", "con", "show"],
+    ) {
         if o.status.success() {
             for line in stdout_lines(&o) {
                 let parts: Vec<&str> = line.split(':').collect();
@@ -346,7 +356,11 @@ pub fn network_inventory() -> Result<HostCockpitNetwork, LibvirtError> {
         out.connections.len(),
         out.bonds.len(),
         out.bridges.len(),
-        if out.firewalld.running { "active" } else { "inactive" },
+        if out.firewalld.running {
+            "active"
+        } else {
+            "inactive"
+        },
         if out.ovs.available {
             format!("{} bridge(s)", out.ovs.bridges.len())
         } else {
@@ -423,16 +437,25 @@ fn firewalld_state() -> FirewalldState {
                 name: zone.to_string(),
                 ..Default::default()
             };
-            if let Some(t) = run_cmd("firewall-cmd", &["--permanent", "--zone", zone, "--get-target"]) {
+            if let Some(t) = run_cmd(
+                "firewall-cmd",
+                &["--permanent", "--zone", zone, "--get-target"],
+            ) {
                 z.target = String::from_utf8_lossy(&t.stdout).trim().to_string();
             }
-            if let Some(s) = run_cmd("firewall-cmd", &["--permanent", "--zone", zone, "--list-services"]) {
+            if let Some(s) = run_cmd(
+                "firewall-cmd",
+                &["--permanent", "--zone", zone, "--list-services"],
+            ) {
                 z.services = String::from_utf8_lossy(&s.stdout)
                     .split_whitespace()
                     .map(str::to_string)
                     .collect();
             }
-            if let Some(p) = run_cmd("firewall-cmd", &["--permanent", "--zone", zone, "--list-ports"]) {
+            if let Some(p) = run_cmd(
+                "firewall-cmd",
+                &["--permanent", "--zone", zone, "--list-ports"],
+            ) {
                 z.ports = String::from_utf8_lossy(&p.stdout)
                     .split_whitespace()
                     .map(str::to_string)
@@ -481,7 +504,16 @@ pub fn system_inventory() -> Result<HostCockpitSystem, LibvirtError> {
     if let Some(o) = run_cmd("systemctl", &["--failed", "--no-legend", "--no-pager"]) {
         out.systemd_failed = stdout_lines(&o).len() as u32;
     }
-    if let Some(o) = run_cmd("systemctl", &["list-units", "--type=service", "--no-pager", "--no-legend", "--all"]) {
+    if let Some(o) = run_cmd(
+        "systemctl",
+        &[
+            "list-units",
+            "--type=service",
+            "--no-pager",
+            "--no-legend",
+            "--all",
+        ],
+    ) {
         for line in stdout_lines(&o).into_iter().take(40) {
             let cols: Vec<&str> = line.split_whitespace().collect();
             if cols.len() >= 5 {
@@ -495,7 +527,10 @@ pub fn system_inventory() -> Result<HostCockpitSystem, LibvirtError> {
             }
         }
     }
-    if let Some(o) = run_cmd("journalctl", &["-p", "err", "--since", "1 hour ago", "--no-pager", "-q"]) {
+    if let Some(o) = run_cmd(
+        "journalctl",
+        &["-p", "err", "--since", "1 hour ago", "--no-pager", "-q"],
+    ) {
         let lines = stdout_lines(&o);
         out.journal_errors_1h = lines.len() as u32;
         out.journal_recent = lines.into_iter().take(12).collect();
@@ -553,8 +588,11 @@ pub fn firewalld_add_service(zone: &str, service: &str) -> Result<String, Libvir
     } else {
         zone.trim()
     };
-    let o = run_cmd("firewall-cmd", &["--permanent", "--zone", zone, "--add-service", service])
-        .ok_or_else(|| LibvirtError::Operation("firewall-cmd unavailable".into()))?;
+    let o = run_cmd(
+        "firewall-cmd",
+        &["--permanent", "--zone", zone, "--add-service", service],
+    )
+    .ok_or_else(|| LibvirtError::Operation("firewall-cmd unavailable".into()))?;
     if !o.status.success() {
         return Err(LibvirtError::Operation(format!(
             "firewall-cmd add-service: {}",
@@ -581,7 +619,10 @@ pub fn selinux_set_enforce(enforcing: bool) -> Result<String, LibvirtError> {
             String::from_utf8_lossy(&o.stderr).trim()
         )));
     }
-    Ok(format!("SELinux set to {}", if enforcing { "Enforcing" } else { "Permissive" }))
+    Ok(format!(
+        "SELinux set to {}",
+        if enforcing { "Enforcing" } else { "Permissive" }
+    ))
 }
 
 #[cfg(not(target_os = "linux"))]
@@ -610,9 +651,13 @@ pub fn tuned_set_profile(_profile: &str) -> Result<String, LibvirtError> {
 #[cfg(target_os = "linux")]
 pub fn nm_create_bond(name: &str, ifaces: &[String]) -> Result<String, LibvirtError> {
     if ifaces.len() < 2 {
-        return Err(LibvirtError::Invalid("bond requires at least two interfaces".into()));
+        return Err(LibvirtError::Invalid(
+            "bond requires at least two interfaces".into(),
+        ));
     }
-    let args = ["con", "add", "type", "bond", "con-name", name, "ifname", name, "mode", "802.3ad"];
+    let args = [
+        "con", "add", "type", "bond", "con-name", name, "ifname", name, "mode", "802.3ad",
+    ];
     let o = run_cmd("nmcli", &args)
         .ok_or_else(|| LibvirtError::Operation("nmcli unavailable".into()))?;
     if !o.status.success() {
@@ -623,17 +668,31 @@ pub fn nm_create_bond(name: &str, ifaces: &[String]) -> Result<String, LibvirtEr
     }
     for iface in ifaces {
         let slave_args = [
-            "con", "add", "type", "bond-slave", "ifname", iface, "master", name, "con-name", &format!("{name}-{iface}"),
+            "con",
+            "add",
+            "type",
+            "bond-slave",
+            "ifname",
+            iface,
+            "master",
+            name,
+            "con-name",
+            &format!("{name}-{iface}"),
         ];
         let _ = run_cmd("nmcli", &slave_args);
     }
     let _ = run_cmd("nmcli", &["con", "up", name]);
-    Ok(format!("Created bond {name} with {} slave(s)", ifaces.len()))
+    Ok(format!(
+        "Created bond {name} with {} slave(s)",
+        ifaces.len()
+    ))
 }
 
 #[cfg(not(target_os = "linux"))]
 pub fn nm_create_bond(_name: &str, _ifaces: &[String]) -> Result<String, LibvirtError> {
-    Err(LibvirtError::Operation("NetworkManager requires Linux".into()))
+    Err(LibvirtError::Operation(
+        "NetworkManager requires Linux".into(),
+    ))
 }
 
 #[cfg(target_os = "linux")]
@@ -649,7 +708,14 @@ pub fn packagekit_state() -> PackageKitState {
         st.running = o.status.success() && !String::from_utf8_lossy(&o.stdout).contains("inactive");
     }
     st.summary = if st.running {
-        format!("PackageKit running{}", if st.version.is_empty() { String::new() } else { format!(" · {}", st.version) })
+        format!(
+            "PackageKit running{}",
+            if st.version.is_empty() {
+                String::new()
+            } else {
+                format!(" · {}", st.version)
+            }
+        )
     } else if st.available {
         "PackageKit installed but not running".into()
     } else {
@@ -676,21 +742,35 @@ pub fn packagekit_refresh() -> Result<String, LibvirtError> {
     let backend = crate::host_platform::detect_package_backend();
     match backend {
         "apt" => {
-            let o = run_cmd("apt-get", &["update"]).ok_or_else(|| LibvirtError::Operation("apt-get unavailable".into()))?;
+            let o = run_cmd("apt-get", &["update"])
+                .ok_or_else(|| LibvirtError::Operation("apt-get unavailable".into()))?;
             if !o.status.success() {
-                return Err(LibvirtError::Operation(String::from_utf8_lossy(&o.stderr).trim().to_string()));
+                return Err(LibvirtError::Operation(
+                    String::from_utf8_lossy(&o.stderr).trim().to_string(),
+                ));
             }
             Ok("apt cache refreshed".into())
         }
         "dnf" | "microdnf" | "yum" => {
-            let bin = if backend == "microdnf" { "microdnf" } else if backend == "yum" { "yum" } else { "dnf" };
-            let o = run_cmd(bin, &["makecache"]).ok_or_else(|| LibvirtError::Operation(format!("{bin} unavailable")))?;
+            let bin = if backend == "microdnf" {
+                "microdnf"
+            } else if backend == "yum" {
+                "yum"
+            } else {
+                "dnf"
+            };
+            let o = run_cmd(bin, &["makecache"])
+                .ok_or_else(|| LibvirtError::Operation(format!("{bin} unavailable")))?;
             if !o.status.success() {
-                return Err(LibvirtError::Operation(String::from_utf8_lossy(&o.stderr).trim().to_string()));
+                return Err(LibvirtError::Operation(
+                    String::from_utf8_lossy(&o.stderr).trim().to_string(),
+                ));
             }
             Ok(format!("{bin} cache refreshed"))
         }
-        other => Err(LibvirtError::Operation(format!("refresh not implemented for {other}"))),
+        other => Err(LibvirtError::Operation(format!(
+            "refresh not implemented for {other}"
+        ))),
     }
 }
 
@@ -702,33 +782,67 @@ pub fn packagekit_refresh() -> Result<String, LibvirtError> {
 #[cfg(target_os = "linux")]
 pub fn nm_create_team(name: &str, ifaces: &[String], runner: &str) -> Result<String, LibvirtError> {
     if ifaces.len() < 2 {
-        return Err(LibvirtError::Invalid("team requires at least two interfaces".into()));
+        return Err(LibvirtError::Invalid(
+            "team requires at least two interfaces".into(),
+        ));
     }
-    let runner_json = if runner.is_empty() { "loadbalance" } else { runner };
+    let runner_json = if runner.is_empty() {
+        "loadbalance"
+    } else {
+        runner
+    };
     let cfg = format!("{{\"runner\":\"{runner_json}\"}}");
-    let args = ["con", "add", "type", "team", "con-name", name, "ifname", name, "config", &cfg];
-    let o = run_cmd("nmcli", &args).ok_or_else(|| LibvirtError::Operation("nmcli unavailable".into()))?;
+    let args = [
+        "con", "add", "type", "team", "con-name", name, "ifname", name, "config", &cfg,
+    ];
+    let o = run_cmd("nmcli", &args)
+        .ok_or_else(|| LibvirtError::Operation("nmcli unavailable".into()))?;
     if !o.status.success() {
-        return Err(LibvirtError::Operation(format!("nmcli team: {}", String::from_utf8_lossy(&o.stderr).trim())));
+        return Err(LibvirtError::Operation(format!(
+            "nmcli team: {}",
+            String::from_utf8_lossy(&o.stderr).trim()
+        )));
     }
     for iface in ifaces {
         let slave = format!("{name}-{iface}");
-        let slave_args = ["con", "add", "type", "team-slave", "ifname", iface, "master", name, "con-name", &slave];
+        let slave_args = [
+            "con",
+            "add",
+            "type",
+            "team-slave",
+            "ifname",
+            iface,
+            "master",
+            name,
+            "con-name",
+            &slave,
+        ];
         let _ = run_cmd("nmcli", &slave_args);
     }
     let _ = run_cmd("nmcli", &["con", "up", name]);
-    Ok(format!("Created team {name} ({runner_json}) with {} slave(s)", ifaces.len()))
+    Ok(format!(
+        "Created team {name} ({runner_json}) with {} slave(s)",
+        ifaces.len()
+    ))
 }
 
 #[cfg(not(target_os = "linux"))]
-pub fn nm_create_team(_name: &str, _ifaces: &[String], _runner: &str) -> Result<String, LibvirtError> {
-    Err(LibvirtError::Operation("NetworkManager requires Linux".into()))
+pub fn nm_create_team(
+    _name: &str,
+    _ifaces: &[String],
+    _runner: &str,
+) -> Result<String, LibvirtError> {
+    Err(LibvirtError::Operation(
+        "NetworkManager requires Linux".into(),
+    ))
 }
 
 #[cfg(target_os = "linux")]
 pub fn nm_create_vlan(name: &str, parent: &str, vlan_id: u32) -> Result<String, LibvirtError> {
     if parent.is_empty() || vlan_id == 0 || vlan_id > 4094 {
-        return Err(LibvirtError::Invalid("vlan requires parent interface and id 1-4094".into()));
+        return Err(LibvirtError::Invalid(
+            "vlan requires parent interface and id 1-4094".into(),
+        ));
     }
     let con_name = if name.is_empty() {
         format!("{parent}.{vlan_id}")
@@ -736,10 +850,16 @@ pub fn nm_create_vlan(name: &str, parent: &str, vlan_id: u32) -> Result<String, 
         name.to_string()
     };
     let id = vlan_id.to_string();
-    let args = ["con", "add", "type", "vlan", "con-name", &con_name, "dev", parent, "id", &id];
-    let o = run_cmd("nmcli", &args).ok_or_else(|| LibvirtError::Operation("nmcli unavailable".into()))?;
+    let args = [
+        "con", "add", "type", "vlan", "con-name", &con_name, "dev", parent, "id", &id,
+    ];
+    let o = run_cmd("nmcli", &args)
+        .ok_or_else(|| LibvirtError::Operation("nmcli unavailable".into()))?;
     if !o.status.success() {
-        return Err(LibvirtError::Operation(format!("nmcli vlan: {}", String::from_utf8_lossy(&o.stderr).trim())));
+        return Err(LibvirtError::Operation(format!(
+            "nmcli vlan: {}",
+            String::from_utf8_lossy(&o.stderr).trim()
+        )));
     }
     let _ = run_cmd("nmcli", &["con", "up", &con_name]);
     Ok(format!("Created VLAN {con_name} on {parent}"))
@@ -747,7 +867,9 @@ pub fn nm_create_vlan(name: &str, parent: &str, vlan_id: u32) -> Result<String, 
 
 #[cfg(not(target_os = "linux"))]
 pub fn nm_create_vlan(_name: &str, _parent: &str, _vlan_id: u32) -> Result<String, LibvirtError> {
-    Err(LibvirtError::Operation("NetworkManager requires Linux".into()))
+    Err(LibvirtError::Operation(
+        "NetworkManager requires Linux".into(),
+    ))
 }
 
 #[cfg(target_os = "linux")]
@@ -760,16 +882,22 @@ pub fn nm_create_wifi(ssid: &str, password: &str) -> Result<String, LibvirtError
     } else {
         vec!["dev", "wifi", "connect", ssid, "password", password]
     };
-    let o = run_cmd("nmcli", &args).ok_or_else(|| LibvirtError::Operation("nmcli unavailable".into()))?;
+    let o = run_cmd("nmcli", &args)
+        .ok_or_else(|| LibvirtError::Operation("nmcli unavailable".into()))?;
     if !o.status.success() {
-        return Err(LibvirtError::Operation(format!("nmcli wifi: {}", String::from_utf8_lossy(&o.stderr).trim())));
+        return Err(LibvirtError::Operation(format!(
+            "nmcli wifi: {}",
+            String::from_utf8_lossy(&o.stderr).trim()
+        )));
     }
     Ok(format!("Connected to Wi-Fi network {ssid}"))
 }
 
 #[cfg(not(target_os = "linux"))]
 pub fn nm_create_wifi(_ssid: &str, _password: &str) -> Result<String, LibvirtError> {
-    Err(LibvirtError::Operation("NetworkManager requires Linux".into()))
+    Err(LibvirtError::Operation(
+        "NetworkManager requires Linux".into(),
+    ))
 }
 
 #[cfg(target_os = "linux")]
@@ -782,24 +910,46 @@ pub fn nm_create_wireguard(
     allowed_ips: &str,
 ) -> Result<String, LibvirtError> {
     if name.is_empty() || address.is_empty() || peer_public_key.is_empty() || endpoint.is_empty() {
-        return Err(LibvirtError::Invalid("wireguard requires name, address, peer key, endpoint".into()));
+        return Err(LibvirtError::Invalid(
+            "wireguard requires name, address, peer key, endpoint".into(),
+        ));
     }
     let mut args = vec![
-        "con", "add", "type", "wireguard", "con-name", name, "ifname", name,
-        "ipv4.method", "manual", "ipv4.addresses", address,
-        "wireguard.peer-public-key", peer_public_key,
-        "wireguard.peer-endpoint", endpoint,
+        "con",
+        "add",
+        "type",
+        "wireguard",
+        "con-name",
+        name,
+        "ifname",
+        name,
+        "ipv4.method",
+        "manual",
+        "ipv4.addresses",
+        address,
+        "wireguard.peer-public-key",
+        peer_public_key,
+        "wireguard.peer-endpoint",
+        endpoint,
     ];
     if !private_key.is_empty() {
         args.push("wireguard.private-key");
         args.push(private_key);
     }
-    let allowed = if allowed_ips.is_empty() { "0.0.0.0/0" } else { allowed_ips };
+    let allowed = if allowed_ips.is_empty() {
+        "0.0.0.0/0"
+    } else {
+        allowed_ips
+    };
     args.push("wireguard.peer-routes");
     args.push(allowed);
-    let o = run_cmd("nmcli", &args).ok_or_else(|| LibvirtError::Operation("nmcli unavailable".into()))?;
+    let o = run_cmd("nmcli", &args)
+        .ok_or_else(|| LibvirtError::Operation("nmcli unavailable".into()))?;
     if !o.status.success() {
-        return Err(LibvirtError::Operation(format!("nmcli wireguard: {}", String::from_utf8_lossy(&o.stderr).trim())));
+        return Err(LibvirtError::Operation(format!(
+            "nmcli wireguard: {}",
+            String::from_utf8_lossy(&o.stderr).trim()
+        )));
     }
     let _ = run_cmd("nmcli", &["con", "up", name]);
     Ok(format!("Created WireGuard profile {name}"))
@@ -814,5 +964,7 @@ pub fn nm_create_wireguard(
     _endpoint: &str,
     _allowed_ips: &str,
 ) -> Result<String, LibvirtError> {
-    Err(LibvirtError::Operation("NetworkManager requires Linux".into()))
+    Err(LibvirtError::Operation(
+        "NetworkManager requires Linux".into(),
+    ))
 }

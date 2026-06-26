@@ -1,13 +1,17 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::agent_client;
 
 /// Import libvirt storage pools from a host into the platform `storage_pools` table.
-pub async fn sync_host_storage(pool: &PgPool, host_id: Uuid, agent_addr: &str) -> anyhow::Result<usize> {
-    let cluster_id: Uuid = sqlx::query_scalar("SELECT cluster_id FROM hosts WHERE id = $1")
+pub async fn sync_host_storage(
+    pool: &SqlitePool,
+    host_id: Uuid,
+    agent_addr: &str,
+) -> anyhow::Result<usize> {
+    let cluster_id: Uuid = sqlx::query_scalar("SELECT cluster_id FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;
@@ -20,7 +24,11 @@ pub async fn sync_host_storage(pool: &PgPool, host_id: Uuid, agent_addr: &str) -
         if sp.name.is_empty() {
             continue;
         }
-        let path = if sp.path.is_empty() { None } else { Some(sp.path) };
+        let path = if sp.path.is_empty() {
+            None
+        } else {
+            Some(sp.path)
+        };
         let capacity_gib = sp.capacity_gib.round() as i64;
         let used_gib = sp.used_gib.round() as i64;
         let backend = if sp.backend.is_empty() {
@@ -30,7 +38,7 @@ pub async fn sync_host_storage(pool: &PgPool, host_id: Uuid, agent_addr: &str) -
         };
         let result = sqlx::query(
             "INSERT INTO storage_pools (id, cluster_id, name, storage_class, backend, path, capacity_gib, used_gib)
-             VALUES ($1, $2, $3, 'silver', $4, $5, $6, $7)
+             VALUES (?, ?, ?, 'silver', ?, ?, ?, ?)
              ON CONFLICT (cluster_id, name) DO UPDATE SET
                backend = EXCLUDED.backend,
                path = COALESCE(EXCLUDED.path, storage_pools.path),
@@ -53,9 +61,9 @@ pub async fn sync_host_storage(pool: &PgPool, host_id: Uuid, agent_addr: &str) -
     Ok(imported)
 }
 
-pub async fn discover_all_online(pool: &PgPool) -> anyhow::Result<usize> {
+pub async fn discover_all_online(pool: &SqlitePool) -> anyhow::Result<usize> {
     let hosts: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, agent_grpc_addr FROM hosts WHERE state = 'online' ORDER BY hostname",
+        "SELECT id, agent_grpc_addr FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 200",
     )
     .fetch_all(pool)
     .await?;

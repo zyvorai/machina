@@ -47,7 +47,9 @@ impl NatsTaskBus {
 impl TaskBus for NatsTaskBus {
     async fn publish(&self, subject: &str, msg: &TaskMessage) -> anyhow::Result<()> {
         let payload = serde_json::to_vec(msg)?;
-        self.client.publish(subject.to_string(), payload.into()).await?;
+        self.client
+            .publish(subject.to_string(), payload.into())
+            .await?;
         Ok(())
     }
 }

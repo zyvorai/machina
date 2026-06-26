@@ -25,6 +25,7 @@ import {
   ArrowRight, Monitor, Wifi, Cable, X, Sliders, Copy, Check, Search, Route,
 } from 'lucide-react'
 import { ChoiceCard, ChoiceCardDenseGrid } from '../components/ChoiceCards'
+import ConfirmDialog from '../components/ConfirmDialog'
 import PageLayout from '../components/PageLayout'
 import { formatUserError } from '../utils/apiError'
 import { statusBgClass, statusSurfaceClasses, statusToneClass } from '../utils/semanticColors'
@@ -86,6 +87,7 @@ export default function HostNetworkingPage() {
   const [routeDev, setRouteDev] = useState('')
   const [routeTableStr, setRouteTableStr] = useState('')
   const [routeBusy, setRouteBusy] = useState(false)
+  const [confirmRoute, setConfirmRoute] = useState(false)
   const [ifaceDiag, setIfaceDiag] = useState<Record<string, string>>({})
   const [ifaceDiagLoading, setIfaceDiagLoading] = useState<string | null>(null)
   const [ifaceFilter, setIfaceFilter] = useState('')
@@ -185,20 +187,16 @@ export default function HostNetworkingPage() {
     } finally { setLoading(false) }
   }, [toast])
 
-  const applyKernelRoute = useCallback(async () => {
+  const applyKernelRoute = useCallback(() => {
     const dest = routeDest.trim()
     if (!dest) {
       toast.error('Enter a destination (CIDR or "default").')
       return
     }
-    const verb = routeOp === 'add' ? 'Add' : 'Delete'
-    if (
-      !window.confirm(
-        `${verb} this ${routeFamily} route to "${dest}"? Incorrect static routes can break host or guest networking.`,
-      )
-    ) {
-      return
-    }
+    setConfirmRoute(true)
+  }, [routeDest, toast])
+
+  const doApplyKernelRoute = useCallback(async () => {
     let table: number | undefined
     const ts = routeTableStr.trim()
     if (ts !== '') {
@@ -209,6 +207,7 @@ export default function HostNetworkingPage() {
       }
       table = t
     }
+    const dest = routeDest.trim()
     const via = routeVia.trim()
     const dev = routeDev.trim()
     setRouteBusy(true)
@@ -437,7 +436,7 @@ export default function HostNetworkingPage() {
                 const from = nodes.find(n => n.id === e.from)
                 const to = nodes.find(n => n.id === e.to)
                 if (!from || !to) return null
-                return <line key={i} x1={from.x + 60} y1={from.y + 20} x2={to.x - 60} y2={to.y + 20} stroke="#334155" strokeWidth="2" strokeDasharray="6 3" />
+                return <line key={`${e.from}-${e.to}`} x1={from.x + 60} y1={from.y + 20} x2={to.x - 60} y2={to.y + 20} stroke="#334155" strokeWidth="2" strokeDasharray="6 3" />
               })}
 
               {/* Nodes */}
@@ -469,7 +468,7 @@ export default function HostNetworkingPage() {
             <button onClick={() => setDialog('portforward')} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition flex items-center gap-1"><Plus className="w-4 h-4" /> Add Rule</button>
           </div>
           <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-            <table className="w-full">
+            <table className="w-full" aria-label="Port forwarding rules">
               <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400"><th className="px-6 py-3">Protocol</th><th className="px-6 py-3">Host Port</th><th className="px-6 py-3">VM Destination</th><th className="px-6 py-3">Description</th><th className="px-6 py-3 text-right">Actions</th></tr></thead>
               <tbody className="divide-y divide-slate-700/30">
                 {portForwards.map(r => (
@@ -502,7 +501,7 @@ export default function HostNetworkingPage() {
                     <div className={`w-2.5 h-2.5 rounded-full ${statusBgClass(br.state === 'up' ? 'ok' : 'neutral')}`} />
                     <span className="font-semibold">{br.name}</span>
                   </div>
-                  {!br.name.startsWith('virbr') && <button onClick={() => handleDeleteBridge(br.name)} className="p-1 hover:bg-red-600/20 rounded" title="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>}
+                  {!br.name.startsWith('virbr') && <button onClick={() => handleDeleteBridge(br.name)} className="p-1 hover:bg-red-600/20 rounded" title="Delete" aria-label="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>}
                 </div>
                 <div className="space-y-1 text-sm">
                   <div className="flex justify-between text-slate-400"><span>MAC</span><span className="font-mono text-xs">{br.mac}</span></div>
@@ -531,7 +530,7 @@ export default function HostNetworkingPage() {
           {/* Physical interfaces available */}
           <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
             <div className="px-6 py-3 border-b border-slate-700/50"><span className="text-sm font-semibold text-slate-300">Host Interfaces</span></div>
-            <table className="w-full">
+            <table className="w-full" aria-label="Host network interfaces">
               <thead><tr className="border-b border-slate-700/50 text-left text-xs text-slate-500"><th className="px-6 py-2">Name</th><th className="px-6 py-2">Type</th><th className="px-6 py-2">State</th><th className="px-6 py-2">MAC</th><th className="px-6 py-2">IP</th><th className="px-6 py-2">MTU</th><th className="px-6 py-2">Master</th></tr></thead>
               <tbody className="divide-y divide-slate-700/30 text-sm">
                 {hostIfaces.map(i => (
@@ -558,7 +557,7 @@ export default function HostNetworkingPage() {
             <button onClick={() => setDialog('firewall')} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition flex items-center gap-1"><Plus className="w-4 h-4" /> Add Rule</button>
           </div>
           <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-            <table className="w-full">
+            <table className="w-full" aria-label="Firewall rules">
               <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400"><th className="px-6 py-3">VM IP</th><th className="px-6 py-3">Direction</th><th className="px-6 py-3">Protocol</th><th className="px-6 py-3">Port</th><th className="px-6 py-3">Action</th><th className="px-6 py-3">Description</th><th className="px-6 py-3 text-right">Actions</th></tr></thead>
               <tbody className="divide-y divide-slate-700/30">
                 {firewallRules.map(r => (
@@ -719,7 +718,7 @@ export default function HostNetworkingPage() {
 
           {sysctlData && (
             <ul className={`text-xs space-y-1 list-disc list-inside rounded-lg px-4 py-3 ${statusSurfaceClasses('warn')}`}>
-              {sysctlData.notes.map((n, i) => <li key={i}>{n}</li>)}
+              {(sysctlData.notes ?? []).map((n) => <li key={n}>{n}</li>)}
             </ul>
           )}
 
@@ -729,7 +728,7 @@ export default function HostNetworkingPage() {
 
           {sysctlData && (
             <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden overflow-x-auto">
-              <table className="w-full min-w-[640px]">
+              <table className="w-full min-w-[640px]" aria-label="sysctl parameters">
                 <thead>
                   <tr className="border-b border-slate-700/50 text-left text-xs text-slate-500">
                     <th className="px-4 py-3">Parameter</th>
@@ -739,7 +738,7 @@ export default function HostNetworkingPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-700/30 text-sm font-mono">
-                  {sysctlData.rows.map(row => (
+                  {(sysctlData.rows ?? []).map(row => (
                     <tr key={row.key} className="table-row-hover">
                       <td className="px-4 py-2 text-slate-300 whitespace-nowrap">{row.key}</td>
                       <td className="px-4 py-2 text-cyan-400/90 break-all">{row.recommended}</td>
@@ -813,7 +812,7 @@ export default function HostNetworkingPage() {
               )}
               {lldp && lldp.neighbors.length > 0 ? (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
+                  <table className="w-full text-xs" aria-label="LLDP neighbors">
                     <thead>
                       <tr className="text-slate-500 border-b border-slate-700/40">
                         <th className="text-left py-2 pr-3">Local IF</th>
@@ -1030,6 +1029,15 @@ export default function HostNetworkingPage() {
           )}
         </div>
       )}
+      <ConfirmDialog
+        open={confirmRoute}
+        title={routeOp === 'add' ? `Add ${routeFamily} route` : `Delete ${routeFamily} route`}
+        message={`${routeOp === 'add' ? 'Add' : 'Delete'} this ${routeFamily} route to "${routeDest.trim()}"? Incorrect static routes can break host or guest networking.`}
+        confirmLabel={routeOp === 'add' ? 'Add route' : 'Delete route'}
+        variant="warning"
+        onCancel={() => setConfirmRoute(false)}
+        onConfirm={() => { setConfirmRoute(false); void doApplyKernelRoute() }}
+      />
     </PageLayout>
   )
 }

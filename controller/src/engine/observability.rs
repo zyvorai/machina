@@ -2,7 +2,7 @@
 // SLO dashboards + API trace inventory (Phase 31).
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -49,9 +49,9 @@ pub struct TraceQuery {
     pub limit: Option<i64>,
 }
 
-pub async fn overview(pool: &PgPool) -> anyhow::Result<ObservabilityOverview> {
+pub async fn overview(pool: &SqlitePool) -> anyhow::Result<ObservabilityOverview> {
     let policies = sqlx::query_as(
-        "SELECT id, name, target, objective_pct::float8, window_hours, description FROM slo_policies ORDER BY name",
+        "SELECT id, name, target, objective_pct, window_hours, description FROM slo_policies ORDER BY name",
     )
     .fetch_all(pool)
     .await?;
@@ -62,15 +62,19 @@ pub async fn overview(pool: &PgPool) -> anyhow::Result<ObservabilityOverview> {
     }
 
     let trace_count_1h: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM api_trace_spans WHERE recorded_at > NOW() - INTERVAL '1 hour'",
+        "SELECT COUNT(*) FROM api_trace_spans WHERE recorded_at > datetime('now', '-1 hours')",
     )
     .fetch_one(pool)
     .await?;
 
+    let p95_offset = ((trace_count_1h * 5 / 100) - 1).max(0);
     let p95: Option<i32> = sqlx::query_scalar(
-        "SELECT PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)::int
-         FROM api_trace_spans WHERE recorded_at > NOW() - INTERVAL '1 hour'",
+        "SELECT duration_ms FROM api_trace_spans
+         WHERE recorded_at > datetime('now', '-1 hours')
+         ORDER BY duration_ms DESC
+         LIMIT 1 OFFSET ?",
     )
+    .bind(p95_offset)
     .fetch_optional(pool)
     .await?;
 
@@ -94,7 +98,7 @@ pub async fn overview(pool: &PgPool) -> anyhow::Result<ObservabilityOverview> {
     })
 }
 
-async fn evaluate_slo(pool: &PgPool, policy: &SloPolicyRow) -> anyhow::Result<SloStatusItem> {
+async fn evaluate_slo(pool: &SqlitePool, policy: &SloPolicyRow) -> anyhow::Result<SloStatusItem> {
     let (current_pct, burn_rate) = match policy.name.as_str() {
         "api-availability" => api_availability_slo(pool, policy.window_hours).await?,
         "task-success" => task_success_slo(pool, policy.window_hours).await?,
@@ -121,9 +125,9 @@ async fn evaluate_slo(pool: &PgPool, policy: &SloPolicyRow) -> anyhow::Result<Sl
     })
 }
 
-async fn api_availability_slo(pool: &PgPool, window_hours: i32) -> anyhow::Result<(f64, f64)> {
+async fn api_availability_slo(pool: &SqlitePool, window_hours: i32) -> anyhow::Result<(f64, f64)> {
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM api_trace_spans WHERE recorded_at > NOW() - ($1 || ' hours')::interval",
+        "SELECT COUNT(*) FROM api_trace_spans WHERE recorded_at > datetime('now', '-' || ? || ' hours')",
     )
     .bind(window_hours)
     .fetch_one(pool)
@@ -133,7 +137,7 @@ async fn api_availability_slo(pool: &PgPool, window_hours: i32) -> anyhow::Resul
     }
     let ok: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM api_trace_spans
-         WHERE recorded_at > NOW() - ($1 || ' hours')::interval AND status_code < 500",
+         WHERE recorded_at > datetime('now', '-' || ? || ' hours') AND status_code < 500",
     )
     .bind(window_hours)
     .fetch_one(pool)
@@ -142,9 +146,9 @@ async fn api_availability_slo(pool: &PgPool, window_hours: i32) -> anyhow::Resul
     Ok((pct, ((100.0 - pct) / 100.0).max(0.0)))
 }
 
-async fn task_success_slo(pool: &PgPool, window_hours: i32) -> anyhow::Result<(f64, f64)> {
+async fn task_success_slo(pool: &SqlitePool, window_hours: i32) -> anyhow::Result<(f64, f64)> {
     let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM tasks WHERE created_at > NOW() - ($1 || ' hours')::interval AND status IN ('completed', 'failed')",
+        "SELECT COUNT(*) FROM tasks WHERE created_at > datetime('now', '-' || ? || ' hours') AND status IN ('completed', 'failed')",
     )
     .bind(window_hours)
     .fetch_one(pool)
@@ -153,7 +157,7 @@ async fn task_success_slo(pool: &PgPool, window_hours: i32) -> anyhow::Result<(f
         return Ok((100.0, 0.0));
     }
     let ok: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM tasks WHERE created_at > NOW() - ($1 || ' hours')::interval AND status = 'completed'",
+        "SELECT COUNT(*) FROM tasks WHERE created_at > datetime('now', '-' || ? || ' hours') AND status = 'completed'",
     )
     .bind(window_hours)
     .fetch_one(pool)
@@ -162,7 +166,7 @@ async fn task_success_slo(pool: &PgPool, window_hours: i32) -> anyhow::Result<(f
     Ok((pct, ((100.0 - pct) / 100.0).max(0.0)))
 }
 
-async fn host_availability_slo(pool: &PgPool) -> anyhow::Result<(f64, f64)> {
+async fn host_availability_slo(pool: &SqlitePool) -> anyhow::Result<(f64, f64)> {
     let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await?;
@@ -176,10 +180,11 @@ async fn host_availability_slo(pool: &PgPool) -> anyhow::Result<(f64, f64)> {
     Ok((pct, ((100.0 - pct) / 100.0).max(0.0)))
 }
 
-pub async fn list_traces(pool: &PgPool, limit: i64) -> anyhow::Result<Vec<TraceSpanRow>> {
+pub async fn list_traces(pool: &SqlitePool, limit: i64) -> anyhow::Result<Vec<TraceSpanRow>> {
     sqlx::query_as(
-        "SELECT id, method, path, status_code, duration_ms, recorded_at
-         FROM api_trace_spans ORDER BY recorded_at DESC LIMIT $1",
+        "SELECT id, method, path, status_code, duration_ms,
+                strftime('%Y-%m-%dT%H:%M:%SZ', recorded_at) AS recorded_at
+         FROM api_trace_spans ORDER BY recorded_at DESC LIMIT ?",
     )
     .bind(limit.clamp(1, 200))
     .fetch_all(pool)
@@ -188,7 +193,7 @@ pub async fn list_traces(pool: &PgPool, limit: i64) -> anyhow::Result<Vec<TraceS
 }
 
 pub async fn record_trace(
-    pool: &PgPool,
+    pool: &SqlitePool,
     method: &str,
     path: &str,
     status_code: i32,
@@ -196,7 +201,7 @@ pub async fn record_trace(
 ) {
     let path = if path.len() > 256 { &path[..256] } else { path };
     let _ = sqlx::query(
-        "INSERT INTO api_trace_spans (id, method, path, status_code, duration_ms) VALUES ($1, $2, $3, $4, $5)",
+        "INSERT INTO api_trace_spans (id, method, path, status_code, duration_ms, recorded_at) VALUES (?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))",
     )
     .bind(Uuid::new_v4())
     .bind(method)
@@ -207,15 +212,15 @@ pub async fn record_trace(
     .await;
 
     let _ = sqlx::query(
-        "DELETE FROM api_trace_spans WHERE id IN (
-            SELECT id FROM api_trace_spans ORDER BY recorded_at DESC OFFSET 5000
+        "DELETE FROM api_trace_spans WHERE id NOT IN (
+            SELECT id FROM api_trace_spans ORDER BY recorded_at DESC LIMIT 5000
          )",
     )
     .execute(pool)
     .await;
 }
 
-pub async fn prometheus_slo_gauges(pool: &PgPool) -> String {
+pub async fn prometheus_slo_gauges(pool: &SqlitePool) -> String {
     let ov = overview(pool).await.ok();
     let Some(ov) = ov else {
         return String::new();

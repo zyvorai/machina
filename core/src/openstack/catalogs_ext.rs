@@ -28,7 +28,9 @@ pub struct OpenStackServerGroup {
     pub members: Vec<String>,
 }
 
-pub async fn list_volume_types(cfg: &OpenStackConfig) -> Result<Vec<OpenStackVolumeType>, LibvirtError> {
+pub async fn list_volume_types(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackVolumeType>, LibvirtError> {
     if !probe_cinder_reachable(cfg).await {
         return Ok(Vec::new());
     }
@@ -63,7 +65,9 @@ pub async fn list_volume_types(cfg: &OpenStackConfig) -> Result<Vec<OpenStackVol
     Ok(out)
 }
 
-pub async fn list_server_groups(cfg: &OpenStackConfig) -> Result<Vec<OpenStackServerGroup>, LibvirtError> {
+pub async fn list_server_groups(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackServerGroup>, LibvirtError> {
     let session = connect_session(cfg).await?;
     #[derive(Deserialize)]
     struct Resp {
@@ -217,7 +221,10 @@ pub async fn delete_server_group(cfg: &OpenStackConfig, id: &str) -> Result<(), 
     Ok(())
 }
 
-pub async fn get_flavor(cfg: &OpenStackConfig, flavor_id: &str) -> Result<super::resources::OpenStackFlavor, LibvirtError> {
+pub async fn get_flavor(
+    cfg: &OpenStackConfig,
+    flavor_id: &str,
+) -> Result<super::resources::OpenStackFlavor, LibvirtError> {
     let id = flavor_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("flavor id is required".into()));

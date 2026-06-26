@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Bot } from 'lucide-react'
 import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
 import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
@@ -55,6 +56,7 @@ export default function PlatformAiProviders({ embedded }: { embedded?: boolean }
   const [baseUrl, setBaseUrl] = useState('')
   const [modelId, setModelId] = useState('gpt-4o-mini')
   const [apiKey, setApiKey] = useState('')
+  const [deleteProviderId, setDeleteProviderId] = useState<string | null>(null)
 
   const syncRuleDrafts = useCallback((rows: RoutingRuleRow[]) => {
     const drafts: Record<string, RuleDraft> = {}
@@ -134,13 +136,13 @@ export default function PlatformAiProviders({ embedded }: { embedded?: boolean }
     >
       <MacGlassPanel title="Add provider" subtitle="API keys are stored encrypted and never returned on GET">
         <div className="grid md:grid-cols-2 gap-3">
-          <input className="input" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
-          <select className="input" value={kind} onChange={(e) => setKind(e.target.value)}>
+          <input className="input" aria-label="Provider name" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <select className="input" aria-label="Provider kind" value={kind} onChange={(e) => setKind(e.target.value)}>
             {PROVIDER_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
           </select>
-          <input className="input md:col-span-2" placeholder="Base URL (optional — Ollama/vLLM/Azure)" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
-          <input className="input" placeholder="Default model" value={modelId} onChange={(e) => setModelId(e.target.value)} />
-          <input className="input" type="password" placeholder="API key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
+          <input aria-label="Base URL" className="input md:col-span-2" placeholder="Base URL (optional — Ollama/vLLM/Azure)" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} />
+          <input aria-label="Default model ID" className="input" placeholder="Default model" value={modelId} onChange={(e) => setModelId(e.target.value)} />
+          <input aria-label="API key" className="input" type="password" autoComplete="off" placeholder="API key" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
         </div>
         <button
           type="button"
@@ -188,13 +190,7 @@ export default function PlatformAiProviders({ embedded }: { embedded?: boolean }
                   } catch (e: unknown) { toast.error(formatUserError(e)) }
                 }}>Make default</button>
               )}
-              <button type="button" className="btn-secondary text-xs" onClick={async () => {
-                try {
-                  await deleteAiProvider(p.id)
-                  toast.success('Deleted')
-                  await load()
-                } catch (e: unknown) { toast.error(formatUserError(e)) }
-              }}>Delete</button>
+              <button type="button" className="btn-secondary text-xs" onClick={() => setDeleteProviderId(p.id)}>Delete</button>
             </div>
           ))}
           {providers.length === 0 && <p className="text-sm text-slate-500">No providers yet — add one above or configure legacy Zeus AI in General.</p>}
@@ -215,6 +211,7 @@ export default function PlatformAiProviders({ embedded }: { embedded?: boolean }
               <div key={tc} className="grid gap-2 sm:grid-cols-[10rem_1fr_1fr_auto_auto] items-center text-sm border border-white/[0.06] rounded-lg p-2">
                 <span className="font-medium text-slate-200">{TASK_CLASS_LABELS[tc]}</span>
                 <select
+                  aria-label="Provider"
                   className="input text-xs"
                   value={draft.provider_id}
                   onChange={(e) => {
@@ -227,6 +224,7 @@ export default function PlatformAiProviders({ embedded }: { embedded?: boolean }
                   {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
                 <select
+                  aria-label="Model"
                   className="input text-xs"
                   value={draft.model_id}
                   disabled={!draft.provider_id}
@@ -252,6 +250,19 @@ export default function PlatformAiProviders({ embedded }: { embedded?: boolean }
           )}
         </div>
       </MacGlassPanel>
+    <ConfirmDialog
+      open={deleteProviderId !== null}
+      title="Delete AI Provider"
+      message={`Delete provider "${providers.find((p) => p.id === deleteProviderId)?.name}"? Any routing rules using this provider will fall back to defaults.`}
+      confirmLabel="Delete"
+      variant="danger"
+      onCancel={() => setDeleteProviderId(null)}
+      onConfirm={async () => {
+        try { if (!deleteProviderId) return; await deleteAiProvider(deleteProviderId); toast.success('Deleted'); await load() }
+        catch (e: unknown) { toast.error(formatUserError(e)) }
+        finally { setDeleteProviderId(null) }
+      }}
+    />
     </PlatformPageChrome>
   )
 }

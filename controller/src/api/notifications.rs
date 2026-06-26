@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Path, Query, State};
+use axum::Extension;
 use axum::Json;
 use serde::Serialize;
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -32,13 +34,15 @@ fn default_limit() -> i64 {
 
 pub async fn list_notifications(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<NotificationQuery>,
 ) -> Result<Json<Vec<NotificationRow>>, ApiError> {
+    require_operator(&actor)?;
     let limit = q.limit.clamp(1, 500);
     let rows = if q.undelivered {
         sqlx::query_as::<_, NotificationRow>(
             "SELECT id, kind, payload, delivered, created_at, delivered_at
-             FROM notification_outbox WHERE delivered = FALSE ORDER BY created_at DESC LIMIT $1",
+             FROM notification_outbox WHERE delivered = FALSE ORDER BY created_at DESC LIMIT ?",
         )
         .bind(limit)
         .fetch_all(&state.pool)
@@ -46,7 +50,7 @@ pub async fn list_notifications(
     } else {
         sqlx::query_as::<_, NotificationRow>(
             "SELECT id, kind, payload, delivered, created_at, delivered_at
-             FROM notification_outbox ORDER BY created_at DESC LIMIT $1",
+             FROM notification_outbox ORDER BY created_at DESC LIMIT ?",
         )
         .bind(limit)
         .fetch_all(&state.pool)
@@ -57,10 +61,12 @@ pub async fn list_notifications(
 
 pub async fn mark_notification_delivered(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     sqlx::query(
-        "UPDATE notification_outbox SET delivered = TRUE, delivered_at = NOW() WHERE id = $1",
+        "UPDATE notification_outbox SET delivered = TRUE, delivered_at = datetime('now') WHERE id = ?",
     )
     .bind(id)
     .execute(&state.pool)

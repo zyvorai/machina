@@ -38,6 +38,8 @@ export type ServiceMapEdge = {
   id: string
   source: string
   target: string
+  source_key?: string
+  target_key?: string
   health?: string
   flow_count?: number
   dropped_count?: number
@@ -49,7 +51,7 @@ export type NetworkCanvasPayload = {
   topology: TopologyGraph
   flows: { flows?: PacketWolfFlow[]; note?: string }
   flow_stats: { dropped?: number; forwarded?: number; dropped_count?: number; allowed?: number }
-  anomalies: { anomalies?: Array<{ summary?: string; severity?: string; host_id?: string }>; note?: string }
+  anomalies: { anomalies?: Array<{ summary?: string; description?: string; severity?: string; host_id?: string }>; note?: string }
   packetwolf: {
     enabled: boolean
     reachable: boolean
@@ -67,12 +69,12 @@ export type NetworkCanvasPayload = {
       overlays?: { top_talker_nodes?: string[]; attack_path_workloads?: string[] }
     }
     workloads?: { workloads?: Array<{ namespace: string; name: string; status?: string }> }
-    timeline?: { events?: Array<{ summary?: string; severity?: string; timestamp?: string }> }
-    threats?: { threats?: Array<{ title?: string; severity?: string; summary?: string }> }
+    timeline?: { events?: Array<{ summary?: string; message?: string; severity?: string; timestamp?: string; kind?: string }> }
+    threats?: { threats?: Array<{ title?: string; description?: string; severity?: string; summary?: string; kind?: string }> }
     top_talkers?: { talkers?: Array<{ name?: string; flows?: number }> }
     k8s_nodes?: { nodes?: Array<{ name: string; status: string; pods_count?: number }> }
     flow_stats?: Record<string, unknown>
-    anomalies?: { anomalies?: Array<{ summary?: string }> }
+    anomalies?: { anomalies?: Array<{ summary?: string; description?: string }> }
     note?: string
   }
 }

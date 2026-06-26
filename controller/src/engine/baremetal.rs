@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -61,7 +61,7 @@ pub struct BaremetalCapacityPlan {
     pub summary: String,
 }
 
-pub async fn list_servers(pool: &PgPool) -> anyhow::Result<Vec<BaremetalServer>> {
+pub async fn list_servers(pool: &SqlitePool) -> anyhow::Result<Vec<BaremetalServer>> {
     let rows = sqlx::query_as::<_, BaremetalServer>(
         "SELECT id, hostname, bmc_address, bmc_type, state, cpu_cores, memory_mib,
                 firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan, created_at
@@ -72,13 +72,16 @@ pub async fn list_servers(pool: &PgPool) -> anyhow::Result<Vec<BaremetalServer>>
     Ok(rows)
 }
 
-pub async fn register(pool: &PgPool, body: &RegisterBaremetalBody) -> anyhow::Result<BaremetalServer> {
+pub async fn register(
+    pool: &SqlitePool,
+    body: &RegisterBaremetalBody,
+) -> anyhow::Result<BaremetalServer> {
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO baremetal_servers
          (id, hostname, bmc_address, bmc_type, cpu_cores, memory_mib, state,
           firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan)
-         VALUES ($1, $2, $3, $4, $5, $6, 'registered', $7, $8, $9, $10)",
+         VALUES (?, ?, ?, ?, ?, ?, 'registered', ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(body.hostname.trim())
@@ -93,12 +96,17 @@ pub async fn register(pool: &PgPool, body: &RegisterBaremetalBody) -> anyhow::Re
     .execute(pool)
     .await?;
 
-    let _ = crate::engine::zeus_firewall::metal::upsert_gitops_policy(pool, body.hostname.trim(), &body.firewall_profile).await;
+    let _ = crate::engine::zeus_firewall::metal::upsert_gitops_policy(
+        pool,
+        body.hostname.trim(),
+        &body.firewall_profile,
+    )
+    .await;
 
     sqlx::query_as::<_, BaremetalServer>(
         "SELECT id, hostname, bmc_address, bmc_type, state, cpu_cores, memory_mib,
                 firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan, created_at
-         FROM baremetal_servers WHERE id = $1",
+         FROM baremetal_servers WHERE id = ?",
     )
     .bind(id)
     .fetch_one(pool)
@@ -107,15 +115,16 @@ pub async fn register(pool: &PgPool, body: &RegisterBaremetalBody) -> anyhow::Re
 }
 
 pub async fn link_host_firewall_profile(
-    pool: &PgPool,
+    pool: &SqlitePool,
     baremetal_id: Uuid,
     host_id: Uuid,
 ) -> anyhow::Result<()> {
-    let profile: String = sqlx::query_scalar("SELECT firewall_profile FROM baremetal_servers WHERE id = $1")
-        .bind(baremetal_id)
-        .fetch_one(pool)
-        .await?;
-    sqlx::query("UPDATE hosts SET baremetal_origin_id = $1, notes = COALESCE(notes, '') || $2 WHERE id = $3")
+    let profile: String =
+        sqlx::query_scalar("SELECT firewall_profile FROM baremetal_servers WHERE id = ?")
+            .bind(baremetal_id)
+            .fetch_one(pool)
+            .await?;
+    sqlx::query("UPDATE hosts SET baremetal_origin_id = ?, notes = COALESCE(notes, '') || ? WHERE id = ?")
         .bind(baremetal_id)
         .bind(format!("\n[zeus] metal profile {profile} (policy stub until agent apply)"))
         .bind(host_id)
@@ -129,15 +138,16 @@ pub fn plan_capacity(query: &str) -> BaremetalCapacityPlan {
     let engineers = ql
         .split_whitespace()
         .find_map(|w| w.parse::<i32>().ok())
-        .unwrap_or(100);
+        .unwrap_or(100)
+        .clamp(1, 100_000);
     let servers_needed = ((engineers as f64) / 25.0).ceil() as i32;
     let cores_per = 64;
     let mem_gib_per = 512;
     BaremetalCapacityPlan {
         query: query.into(),
         servers_needed,
-        total_cpu_cores: servers_needed * cores_per,
-        total_memory_gib: servers_needed * mem_gib_per,
+        total_cpu_cores: servers_needed.saturating_mul(cores_per),
+        total_memory_gib: servers_needed.saturating_mul(mem_gib_per),
         summary: format!(
             "For ~{engineers} AI engineers: {servers_needed} bare-metal servers ({cores_per} cores, {mem_gib_per} GiB each)"
         ),
@@ -163,7 +173,7 @@ pub struct BmcPowerResult {
 }
 
 pub async fn set_power(
-    pool: &PgPool,
+    pool: &SqlitePool,
     id: Uuid,
     body: &BmcPowerBody,
 ) -> anyhow::Result<BmcPowerResult> {
@@ -175,7 +185,7 @@ pub async fn set_power(
     let row: BaremetalServer = sqlx::query_as(
         "SELECT id, hostname, bmc_address, bmc_type, state, cpu_cores, memory_mib,
                 firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan, created_at
-         FROM baremetal_servers WHERE id = $1",
+         FROM baremetal_servers WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -204,7 +214,7 @@ pub async fn set_power(
         });
     }
 
-    sqlx::query("UPDATE baremetal_servers SET state = $1 WHERE id = $2")
+    sqlx::query("UPDATE baremetal_servers SET state = ? WHERE id = ?")
         .bind(new_state)
         .bind(id)
         .execute(pool)
@@ -229,11 +239,11 @@ pub struct BaremetalProvisionPlan {
     pub summary: String,
 }
 
-pub async fn provision_preview(pool: &PgPool, id: Uuid) -> anyhow::Result<BaremetalProvisionPlan> {
+pub async fn provision_preview(pool: &SqlitePool, id: Uuid) -> anyhow::Result<BaremetalProvisionPlan> {
     let row: BaremetalServer = sqlx::query_as(
         "SELECT id, hostname, bmc_address, bmc_type, state, cpu_cores, memory_mib,
                 firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan, created_at
-         FROM baremetal_servers WHERE id = $1",
+         FROM baremetal_servers WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -241,9 +251,15 @@ pub async fn provision_preview(pool: &PgPool, id: Uuid) -> anyhow::Result<Bareme
     .ok_or_else(|| anyhow::anyhow!("server not found"))?;
 
     let steps = vec![
-        format!("PXE boot {} via BMC {} (VLAN {})", row.hostname, row.bmc_address, row.pxe_vlan),
+        format!(
+            "PXE boot {} via BMC {} (VLAN {})",
+            row.hostname, row.bmc_address, row.pxe_vlan
+        ),
         "Match hardware profile to image catalog (Ubuntu 24.04 / RHEL 9)".into(),
-        format!("Apply Zeus profile {} on provisioning network", row.firewall_profile),
+        format!(
+            "Apply Zeus profile {} on provisioning network",
+            row.firewall_profile
+        ),
         "Register host in Machina fleet after first boot".into(),
     ];
 

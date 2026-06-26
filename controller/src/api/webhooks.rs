@@ -14,7 +14,7 @@ use crate::state::AppState;
 pub struct WebhookRow {
     pub id: Uuid,
     pub url: String,
-    pub events: Vec<String>,
+    pub events: sqlx::types::Json<Vec<String>>,
     pub enabled: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -40,24 +40,61 @@ pub async fn list_webhooks(
     Ok(Json(rows))
 }
 
+fn validate_webhook_url(url: &str) -> Result<(), ApiError> {
+    let parsed = url::Url::parse(url)
+        .map_err(|_| ApiError::bad_request("webhook url is not a valid URL"))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        _ => return Err(ApiError::bad_request("webhook url must use http or https")),
+    }
+    let host = parsed
+        .host_str()
+        .ok_or_else(|| ApiError::bad_request("webhook url has no host"))?;
+    // Reject loopback / private / link-local to prevent SSRF.
+    let blocked = matches!(
+        host,
+        "localhost" | "127.0.0.1" | "::1" | "0.0.0.0"
+    ) || host.starts_with("10.")
+        || host.starts_with("192.168.")
+        || host.starts_with("169.254.")
+        || host.starts_with("fc")
+        || host.starts_with("fd");
+    // Also block 172.16.0.0/12 range.
+    let blocked = blocked || {
+        if let Some(rest) = host.strip_prefix("172.") {
+            rest.split('.')
+                .next()
+                .and_then(|s| s.parse::<u8>().ok())
+                .is_some_and(|n| (16..=31).contains(&n))
+        } else {
+            false
+        }
+    };
+    if blocked {
+        return Err(ApiError::bad_request(
+            "webhook url must not target private or loopback addresses",
+        ));
+    }
+    Ok(())
+}
+
 pub async fn create_webhook(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<CreateWebhookBody>,
 ) -> Result<Json<WebhookRow>, ApiError> {
     require_admin(&actor)?;
+    validate_webhook_url(&body.url)?;
     let id = Uuid::new_v4();
-    sqlx::query(
-        "INSERT INTO webhooks (id, url, events, secret) VALUES ($1, $2, $3, $4)",
-    )
-    .bind(id)
-    .bind(&body.url)
-    .bind(&body.events)
-    .bind(&body.secret)
-    .execute(&state.pool)
-    .await?;
+    sqlx::query("INSERT INTO webhooks (id, url, events, secret) VALUES (?, ?, ?, ?)")
+        .bind(id)
+        .bind(&body.url)
+        .bind(serde_json::to_string(&body.events).unwrap_or_else(|_| "[]".into()))
+        .bind(&body.secret)
+        .execute(&state.pool)
+        .await?;
     let row = sqlx::query_as::<_, WebhookRow>(
-        "SELECT id, url, events, enabled, created_at FROM webhooks WHERE id = $1",
+        "SELECT id, url, events, enabled, created_at FROM webhooks WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -71,14 +108,16 @@ pub async fn delete_webhook(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    sqlx::query("DELETE FROM webhook_deliveries WHERE webhook_id = $1")
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("DELETE FROM webhook_deliveries WHERE webhook_id = ?")
         .bind(id)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM webhooks WHERE id = $1")
+    sqlx::query("DELETE FROM webhooks WHERE id = ?")
         .bind(id)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
+    tx.commit().await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
@@ -88,12 +127,12 @@ pub async fn toggle_webhook(
     Path(id): Path<Uuid>,
 ) -> Result<Json<WebhookRow>, ApiError> {
     require_admin(&actor)?;
-    sqlx::query("UPDATE webhooks SET enabled = NOT enabled WHERE id = $1")
+    sqlx::query("UPDATE webhooks SET enabled = NOT enabled WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
     let row = sqlx::query_as::<_, WebhookRow>(
-        "SELECT id, url, events, enabled, created_at FROM webhooks WHERE id = $1",
+        "SELECT id, url, events, enabled, created_at FROM webhooks WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -138,8 +177,8 @@ pub async fn list_webhook_deliveries(
         sqlx::query_as::<_, WebhookDeliveryRow>(
             "SELECT id, webhook_id, url, event_kind, attempts, max_attempts, status, last_error,
                     next_retry_at, created_at
-             FROM webhook_deliveries WHERE status = $1
-             ORDER BY created_at DESC LIMIT $2",
+             FROM webhook_deliveries WHERE status = ?
+             ORDER BY created_at DESC LIMIT ?",
         )
         .bind(status)
         .bind(limit)
@@ -149,7 +188,7 @@ pub async fn list_webhook_deliveries(
         sqlx::query_as::<_, WebhookDeliveryRow>(
             "SELECT id, webhook_id, url, event_kind, attempts, max_attempts, status, last_error,
                     next_retry_at, created_at
-             FROM webhook_deliveries ORDER BY created_at DESC LIMIT $1",
+             FROM webhook_deliveries ORDER BY created_at DESC LIMIT ?",
         )
         .bind(limit)
         .fetch_all(&state.pool)
@@ -173,25 +212,22 @@ pub async fn purge_webhook_deliveries(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
     let status = body.status.as_deref();
-    let url_pat = body
-        .url_contains
-        .as_deref()
-        .map(|s| format!("%{s}%"));
+    let url_pat = body.url_contains.as_deref().map(|s| format!("%{s}%"));
     let deleted = if let (Some(st), Some(url)) = (status, url_pat.as_deref()) {
-        sqlx::query("DELETE FROM webhook_deliveries WHERE status = $1 AND url LIKE $2")
+        sqlx::query("DELETE FROM webhook_deliveries WHERE status = ? AND url LIKE ?")
             .bind(st)
             .bind(url)
             .execute(&state.pool)
             .await?
             .rows_affected()
     } else if let Some(st) = status {
-        sqlx::query("DELETE FROM webhook_deliveries WHERE status = $1")
+        sqlx::query("DELETE FROM webhook_deliveries WHERE status = ?")
             .bind(st)
             .execute(&state.pool)
             .await?
             .rows_affected()
     } else if let Some(url) = url_pat.as_deref() {
-        sqlx::query("DELETE FROM webhook_deliveries WHERE url LIKE $1")
+        sqlx::query("DELETE FROM webhook_deliveries WHERE url LIKE ?")
             .bind(url)
             .execute(&state.pool)
             .await?
@@ -212,14 +248,14 @@ pub async fn retry_webhook_delivery(
     require_admin(&actor)?;
     sqlx::query(
         "UPDATE webhook_deliveries SET status = 'pending', attempts = 0, last_error = '',
-         next_retry_at = NOW() WHERE id = $1",
+         next_retry_at = datetime('now') WHERE id = ?",
     )
     .bind(id)
     .execute(&state.pool)
     .await?;
     let row = sqlx::query_as::<_, WebhookDeliveryRow>(
         "SELECT id, webhook_id, url, event_kind, attempts, max_attempts, status, last_error,
-                next_retry_at, created_at FROM webhook_deliveries WHERE id = $1",
+                next_retry_at, created_at FROM webhook_deliveries WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)

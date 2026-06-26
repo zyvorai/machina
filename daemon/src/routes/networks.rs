@@ -19,8 +19,7 @@ async fn list_networks(
     Extension(actor): Extension<RequestActor>,
     Query(conn_q): Query<ConnQuery>,
 ) -> Result<Json<Vec<NetworkInfo>>, AppError> {
-    let rows =
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, network::list_networks).await?;
+    let rows = spawn_libvirt_actor(manager, Some(&actor), conn_q, network::list_networks).await?;
     Ok(Json(rows))
 }
 

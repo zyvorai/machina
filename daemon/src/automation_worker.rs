@@ -32,10 +32,8 @@ pub fn spawn_automation_worker(manager: LibvirtManager) {
             let res = tokio::task::spawn_blocking(move || run_automation_tick(&mgr)).await;
             match res {
                 Ok(()) => {
-                    AUTOMATION_LAST_TICK_UNIX.store(
-                        chrono::Utc::now().timestamp(),
-                        Ordering::Relaxed,
-                    );
+                    AUTOMATION_LAST_TICK_UNIX
+                        .store(chrono::Utc::now().timestamp(), Ordering::Relaxed);
                 }
                 Err(e) => tracing::warn!("automation worker join error: {e}"),
             }

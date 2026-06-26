@@ -1,6 +1,9 @@
 # shellcheck shell=bash
 # Shared helpers for Machina E2E tests (sourced by e2e-test.sh).
 
+# shellcheck source=e2e-auth.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/e2e-auth.sh"
+
 e2e_ok()   { echo "  ✅ $*"; (( E2E_PASS++ )) || true; }
 e2e_fail() { echo "  ❌ $*"; (( E2E_FAIL++ )) || true; }
 e2e_warn() { echo "  ⚠️  $*"; }
@@ -48,16 +51,50 @@ e2e_assert_json_true() {
 }
 
 e2e_login() {
-  e2e_hdr "LOGIN"
-  local r
+  e2e_auth_resolve_mode
+  local mode
+  mode="$(e2e_auth_effective_mode)"
+  e2e_hdr "LOGIN (${E2E_AUTH_MODE:-auto} → ${mode})"
+
+  if e2e_auth_login_skipped; then
+    e2e_warn "OIDC-only host — password login skipped (set E2E_AUTH_MODE=pam|ldap or disable OIDC-only)"
+    e2e_fail "password login unavailable for auth mode oidc"
+    return 1
+  fi
+
+  e2e_auth_apply_credentials
+  if [[ -z "${E2E_LOGIN_USER:-}" || -z "${E2E_LOGIN_PASSWORD:-}" ]]; then
+    e2e_fail "missing credentials for auth mode ${mode} (set E2E_USER/E2E_PASSWORD or E2E_LDAP_USER/E2E_LDAP_PASS)"
+    return 1
+  fi
+
+  local r expected_source
   r="$(${E2E_CURL} -c "$E2E_COOKIE" -X POST "${E2E_BASE}/api/v1/auth/login" \
     -H "Content-Type: application/json" \
-    -d "{\"username\":\"${E2E_USER}\",\"password\":\"${E2E_PASSWORD}\"}")"
+    -d "{\"username\":\"${E2E_LOGIN_USER}\",\"password\":\"${E2E_LOGIN_PASSWORD}\"}")"
   echo "  $r"
   e2e_assert_json_key "$r" "status" "login returns status"
   if ! echo "$r" | grep -q '"status":"ok"'; then
-    e2e_fail "PAM auth rejected — check username/password"
+    local hint="login failed — check username/password"
+    case "$mode" in
+      ldap) hint="LDAP auth rejected — set E2E_LDAP_USER (UPN) and E2E_LDAP_PASS, or pass --auth ldap" ;;
+      pam) hint="PAM auth rejected — set E2E_USER/E2E_PASSWORD, or pass --auth pam" ;;
+      auto) hint="login failed — try --auth pam|ldap or set E2E_LDAP_* for Active Directory" ;;
+    esac
+    e2e_fail "$hint"
     return 1
+  fi
+
+  expected_source="$(e2e_auth_expected_source)"
+  if [[ -n "$expected_source" ]]; then
+    if echo "$r" | grep -q "\"auth_source\":\"${expected_source}\""; then
+      e2e_ok "auth_source ${expected_source}"
+    else
+      e2e_fail "auth_source — expected ${expected_source}, got: $r"
+      return 1
+    fi
+  elif echo "$r" | grep -q '"auth_source"'; then
+    e2e_ok "auth_source present"
   fi
   return 0
 }

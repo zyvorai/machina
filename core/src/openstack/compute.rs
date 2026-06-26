@@ -121,8 +121,7 @@ pub async fn test_connection(cfg: &OpenStackConfig) -> OpenStackConnectionStatus
 }
 
 pub fn connection_status_skeleton(cfg: &OpenStackConfig) -> OpenStackConnectionStatus {
-    let cloud_name =
-        effective_cloud_name_for_config(cfg).unwrap_or_else(|| cfg.cloud_name.clone());
+    let cloud_name = effective_cloud_name_for_config(cfg).unwrap_or_else(|| cfg.cloud_name.clone());
     OpenStackConnectionStatus {
         enabled: cfg.enabled,
         configured: is_openstack_configured(cfg),
@@ -177,10 +176,7 @@ pub async fn list_instances(
     if params.limit.is_none() && params.marker.is_none() {
         return list_instances_all(cfg, params.search, params.status).await;
     }
-    let has_search = params
-        .search
-        .map(|s| !s.trim().is_empty())
-        .unwrap_or(false);
+    let has_search = params.search.map(|s| !s.trim().is_empty()).unwrap_or(false);
     if has_search {
         return list_instances_search_paged(cfg, params).await;
     }
@@ -195,7 +191,9 @@ async fn list_instances_all(
     let session = connect_session(cfg).await?;
     let cloud = Cloud::from(session.clone());
     let summaries = cloud.list_servers().await.map_err(map_openstack_err)?;
-    let search_l = search.map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
+    let search_l = search
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty());
     let status_l = status_filter
         .map(|s| s.trim().to_uppercase())
         .filter(|s| !s.is_empty());
@@ -252,7 +250,10 @@ async fn list_instances_search_paged(
     let cloud = Cloud::from(session.clone());
     let flavor_cache = flavor_name_cache(&cloud).await;
 
-    let mut marker = params.marker.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+    let mut marker = params
+        .marker
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty());
     let mut out = Vec::new();
     let mut pages_fetched = 0u32;
     let mut nova_has_more = false;
@@ -260,7 +261,10 @@ async fn list_instances_search_paged(
     let mut total_scanned = 0usize;
     let mut search_truncated = false;
 
-    while out.len() < limit && pages_fetched < MAX_SEARCH_SCAN_PAGES && total_scanned < MAX_SEARCH_MATCHES {
+    while out.len() < limit
+        && pages_fetched < MAX_SEARCH_SCAN_PAGES
+        && total_scanned < MAX_SEARCH_MATCHES
+    {
         let fetch_limit = MAX_PAGE_LIMIT;
         let limit_str = fetch_limit.to_string();
         let mut query: Vec<(String, String)> = vec![("limit".into(), limit_str)];
@@ -367,7 +371,10 @@ async fn list_instances_paged(
     let cloud = Cloud::from(session.clone());
     let flavor_cache = flavor_name_cache(&cloud).await;
 
-    let mut marker = params.marker.map(|m| m.trim().to_string()).filter(|m| !m.is_empty());
+    let mut marker = params
+        .marker
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty());
     let mut out = Vec::new();
     let mut pages_fetched = 0u32;
     let mut nova_has_more = false;
@@ -437,11 +444,7 @@ async fn list_instances_paged(
         marker = last_nova_id.clone();
     }
 
-    let next_marker = if nova_has_more {
-        last_nova_id
-    } else {
-        None
-    };
+    let next_marker = if nova_has_more { last_nova_id } else { None };
 
     Ok(ListInstancesResult {
         instances: out,
@@ -460,7 +463,10 @@ fn enrich_instance_flavor_names(inst: &mut OpenStackInstance, cache: &HashMap<St
     }
 }
 
-pub async fn get_instance(cfg: &OpenStackConfig, id: &str) -> Result<OpenStackInstance, LibvirtError> {
+pub async fn get_instance(
+    cfg: &OpenStackConfig,
+    id: &str,
+) -> Result<OpenStackInstance, LibvirtError> {
     let session = connect_session(cfg).await?;
     fetch_nova_server(&session, id).await
 }
@@ -507,7 +513,10 @@ pub async fn reboot_instance(
     } else {
         RebootType::Hard
     };
-    server.reboot(reboot_type).await.map_err(map_openstack_err)?;
+    server
+        .reboot(reboot_type)
+        .await
+        .map_err(map_openstack_err)?;
     Ok(())
 }
 
@@ -519,8 +528,8 @@ pub async fn delete_instance(cfg: &OpenStackConfig, id: &str) -> Result<(), Libv
 }
 
 pub async fn force_delete_instance(cfg: &OpenStackConfig, id: &str) -> Result<(), LibvirtError> {
-    use osauth::services::COMPUTE;
     use super::auth::{connect_session, map_osauth_err};
+    use osauth::services::COMPUTE;
     let session = connect_session(cfg).await?;
     session
         .post(COMPUTE, &["servers", id.trim(), "action"])

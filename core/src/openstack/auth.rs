@@ -126,10 +126,7 @@ pub fn effective_cloud_name_for_config(cfg: &OpenStackConfig) -> Option<String> 
 
 fn apply_openstack_env(cfg: &OpenStackConfig) {
     if let Some(path) = resolve_clouds_yaml_path(cfg) {
-        std::env::set_var(
-            "OS_CLIENT_CONFIG_FILE",
-            path.to_string_lossy().as_ref(),
-        );
+        std::env::set_var("OS_CLIENT_CONFIG_FILE", path.to_string_lossy().as_ref());
     }
     if !cfg.region.trim().is_empty() {
         std::env::set_var("OS_REGION_NAME", cfg.region.trim());
@@ -140,7 +137,8 @@ fn apply_openstack_env(cfg: &OpenStackConfig) {
 pub async fn connect_session(cfg: &OpenStackConfig) -> Result<Session, LibvirtError> {
     if !cfg.enabled {
         return Err(LibvirtError::Invalid(
-            "OpenStack management is disabled; set [openstack] enabled = true in machina config".into(),
+            "OpenStack management is disabled; set [openstack] enabled = true in machina config"
+                .into(),
         ));
     }
 
@@ -185,8 +183,8 @@ pub async fn connect_session(cfg: &OpenStackConfig) -> Result<Session, LibvirtEr
                 project: IdOrName::from_name(project),
                 domain: Some(IdOrName::from_name(domain)),
             };
-            let auth = auth::Password::new(cfg.auth_url.trim(), user, pass, domain)?
-                .with_scope(scope);
+            let auth =
+                auth::Password::new(cfg.auth_url.trim(), user, pass, domain)?.with_scope(scope);
             return Session::new(auth).await;
         }
 
@@ -214,7 +212,9 @@ pub async fn connect_session(cfg: &OpenStackConfig) -> Result<Session, LibvirtEr
 /// Keystone catalog on Packstack registers identity at `:5000` without `/v3`, and root
 /// version discovery returns `{"versions":{"values":[...]}}` which osauth cannot parse.
 /// Pin the identity API root from `auth_url` (always `/v3`) before any identity calls.
-pub(crate) async fn connect_identity_session(cfg: &OpenStackConfig) -> Result<Session, LibvirtError> {
+pub(crate) async fn connect_identity_session(
+    cfg: &OpenStackConfig,
+) -> Result<Session, LibvirtError> {
     use osauth::services::{GenericService, VersionSelector};
 
     const IDENTITY: GenericService = GenericService::new("identity", VersionSelector::Major(3));
@@ -284,7 +284,10 @@ mod tests {
         std::fs::write(&yaml, "clouds:\n  packstack:\n").expect("write yaml");
         let mut cfg = OpenStackConfig::default();
         cfg.clouds_yaml_path = yaml.to_string_lossy().into_owned();
-        assert_eq!(resolve_clouds_yaml_path(&cfg).as_deref(), Some(yaml.as_path()));
+        assert_eq!(
+            resolve_clouds_yaml_path(&cfg).as_deref(),
+            Some(yaml.as_path())
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -307,7 +310,10 @@ mod tests {
         let mut cfg = OpenStackConfig::default();
         cfg.cloud_name = "explicit".into();
         cfg.default_os_cloud = "fallback".into();
-        assert_eq!(effective_cloud_name_for_config(&cfg).as_deref(), Some("explicit"));
+        assert_eq!(
+            effective_cloud_name_for_config(&cfg).as_deref(),
+            Some("explicit")
+        );
     }
 
     #[test]
@@ -318,7 +324,10 @@ mod tests {
         std::fs::write(&yaml, "clouds:\n  fromfile:\n").expect("write yaml");
         let mut cfg = OpenStackConfig::default();
         cfg.clouds_yaml_path = yaml.to_string_lossy().into_owned();
-        assert_eq!(effective_cloud_name_for_config(&cfg).as_deref(), Some("fromfile"));
+        assert_eq!(
+            effective_cloud_name_for_config(&cfg).as_deref(),
+            Some("fromfile")
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Link } from 'react-router'
 import { AlertTriangle, Clock, HardDrive, Layers, Loader2, Plus, RefreshCw, Shield } from 'lucide-react'
 import ErrorBanner from '../../components/ErrorBanner'
@@ -97,6 +98,10 @@ export default function PlatformStorage() {
   const [volumeCapacityGb, setVolumeCapacityGb] = useState(10)
   const [volumeFormat, setVolumeFormat] = useState('qcow2')
   const [volumeSaving, setVolumeSaving] = useState(false)
+  const [confirmVolume, setConfirmVolume] = useState<{ poolId: string; volName: string; poolName: string } | null>(null)
+  const [confirmPoolId, setConfirmPoolId] = useState<string | null>(null)
+  const [resizePool, setResizePool] = useState<{ id: string; name: string; currentGib: number } | null>(null)
+  const [resizePoolInput, setResizePoolInput] = useState('')
 
   const tierName = (id?: string | null) => tiers.find((t) => t.id === id)?.name ?? null
 
@@ -262,7 +267,6 @@ export default function PlatformStorage() {
   }
 
   const removeVolume = async (poolId: string, volName: string) => {
-    if (!window.confirm(`Delete volume ${volName}?`)) return
     setVolumesLoading(poolId)
     try {
       await deleteStoragePoolVolume(poolId, volName)
@@ -480,6 +484,7 @@ export default function PlatformStorage() {
                     {tiers.length > 0 && (
                       <div className="flex gap-2">
                         <select
+                          aria-label="Storage tier"
                           className="input text-xs flex-1"
                           value={bindDraft[p.id] ?? p.tier_id ?? ''}
                           onChange={(e) => setBindDraft((d) => ({ ...d, [p.id]: e.target.value }))}
@@ -616,7 +621,7 @@ export default function PlatformStorage() {
                                     className="btn-danger text-[10px]"
                                     disabled={volumesLoading === p.id}
                                     data-testid={`pool-volume-delete-${p.name}-${v.name}`}
-                                    onClick={() => void removeVolume(p.id, v.name)}
+                                    onClick={() => setConfirmVolume({ poolId: p.id, volName: v.name, poolName: p.name })}
                                   >
                                     Delete
                                   </button>
@@ -655,24 +660,14 @@ export default function PlatformStorage() {
                     <button
                       type="button"
                       className="btn-secondary text-xs w-full"
-                      onClick={async () => {
-                        const next = window.prompt('Capacity (GiB)', String(p.capacity_gib || 100))
-                        if (!next) return
-                        try {
-                          await patchStoragePool(p.id, { capacity_gib: Number(next) })
-                          toast.success('Pool updated')
-                          await load(false)
-                        } catch (e: unknown) {
-                          toast.error(formatUserError(e))
-                        }
+                      onClick={() => {
+                        setResizePoolInput(String(p.capacity_gib || 100))
+                        setResizePool({ id: p.id, name: p.name, currentGib: p.capacity_gib || 100 })
                       }}
                     >
                       Edit capacity
                     </button>
-                    <button type="button" className="btn-danger text-xs w-full" onClick={async () => {
-                      if (!window.confirm(`Remove pool ${p.name} from the hypervisor and inventory?`)) return
-                      try { await deleteStoragePool(p.id); toast.success('Pool removed'); await load(false) } catch (e: unknown) { toast.error(formatUserError(e)) }
-                    }}>Remove from host & inventory</button>
+                    <button type="button" className="btn-danger text-xs w-full" onClick={() => setConfirmPoolId(p.id)}>Remove from host & inventory</button>
                   </article>
                 )
               })}
@@ -687,7 +682,7 @@ export default function PlatformStorage() {
             <p className="text-sm text-slate-400">No tiers — run migration 028 to seed defaults.</p>
           ) : (
             <div className="overflow-x-auto -mx-2">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" aria-label="Storage tiers">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-white/[0.06]">
                     <th className="py-2 px-2">Name</th>
@@ -724,7 +719,7 @@ export default function PlatformStorage() {
             <p className="text-sm text-slate-400">No SLA policies — import pools first.</p>
           ) : (
             <div className="overflow-x-auto -mx-2">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" aria-label="Backup SLA policies">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-white/[0.06]">
                     <th className="py-2 px-2">Pool</th>
@@ -815,6 +810,86 @@ export default function PlatformStorage() {
         </div>
       </MacSheet>
       {tab === 'disks' && <FleetSettingsPane kind="storage" />}
+      <ConfirmDialog
+        open={confirmVolume !== null}
+        title="Delete Volume"
+        message={`Permanently delete volume "${confirmVolume?.volName}" from pool "${confirmVolume?.poolName}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setConfirmVolume(null)}
+        onConfirm={async () => {
+          if (!confirmVolume) return
+          try { await removeVolume(confirmVolume.poolId, confirmVolume.volName) }
+          catch (e: unknown) { toast.error(formatUserError(e)) }
+          finally { setConfirmVolume(null) }
+        }}
+      />
+      <ConfirmDialog
+        open={confirmPoolId !== null}
+        title="Remove Storage Pool"
+        message={`Remove pool "${rows.find((p) => p.id === confirmPoolId)?.name}" from the hypervisor and inventory? This cannot be undone.`}
+        confirmLabel="Remove"
+        variant="danger"
+        onCancel={() => setConfirmPoolId(null)}
+        onConfirm={async () => {
+          try { await deleteStoragePool(confirmPoolId!); toast.success('Pool removed'); await load(false) }
+          catch (e: unknown) { toast.error(formatUserError(e)) }
+          finally { setConfirmPoolId(null) }
+        }}
+      />
+      {resizePool && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={() => setResizePool(null)}>
+          <div className="bg-slate-800 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-sm mx-4" onClick={(e) => e.stopPropagation()}>
+            <div className="p-5 border-b border-slate-700/50">
+              <span className="text-lg font-semibold">Edit pool capacity</span>
+              <p className="text-sm text-slate-400 mt-1">Pool: {resizePool.name}</p>
+            </div>
+            <div className="p-5 space-y-3">
+              <label className="block text-sm text-slate-400">Capacity (GiB)</label>
+              <input
+                type="number"
+                min={1}
+                className="input-field w-full"
+                value={resizePoolInput}
+                onChange={(e) => setResizePoolInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const n = Number(resizePoolInput)
+                    if (!n || n < 1) return
+                    const id = resizePool.id
+                    setResizePool(null)
+                    void patchStoragePool(id, { capacity_gib: n })
+                      .then(() => { toast.success('Pool updated'); void load(false) })
+                      .catch((err: unknown) => toast.error(formatUserError(err)))
+                  } else if (e.key === 'Escape') {
+                    setResizePool(null)
+                  }
+                }}
+                autoFocus
+              />
+            </div>
+            <div className="flex justify-end gap-3 px-5 pb-5">
+              <button type="button" onClick={() => setResizePool(null)} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition">Cancel</button>
+              <button
+                type="button"
+                disabled={!resizePoolInput || Number(resizePoolInput) < 1}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm text-white font-medium transition disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={() => {
+                  const n = Number(resizePoolInput)
+                  if (!n || n < 1) return
+                  const id = resizePool.id
+                  setResizePool(null)
+                  void patchStoragePool(id, { capacity_gib: n })
+                    .then(() => { toast.success('Pool updated'); void load(false) })
+                    .catch((err: unknown) => toast.error(formatUserError(err)))
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </PlatformPageChrome>
   )
 }

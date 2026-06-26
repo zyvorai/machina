@@ -39,7 +39,7 @@ export default function MachinaVmTroubleshootPanel({
           Autonomous troubleshooter
         </h3>
         <div className="flex gap-2">
-          <select className="input text-xs" value={activeSymptom} onChange={(e) => setActiveSymptom(e.target.value)}>
+          <select aria-label="Troubleshoot symptom" className="input text-xs" value={activeSymptom} onChange={(e) => setActiveSymptom(e.target.value)}>
             <option value="slow">VM is slow</option>
             <option value="unreachable">Unreachable</option>
             <option value="disk">Disk issues</option>

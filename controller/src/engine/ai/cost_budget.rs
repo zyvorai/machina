@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct BudgetAlert {
@@ -21,7 +21,7 @@ pub struct CostBudgetReport {
     pub summary: String,
 }
 
-pub async fn analyze(pool: &PgPool) -> anyhow::Result<CostBudgetReport> {
+pub async fn analyze(pool: &SqlitePool) -> anyhow::Result<CostBudgetReport> {
     let cost = super::cost::analyze(pool).await?;
     let attribution = super::cost_attribution::attribute(pool).await?;
 

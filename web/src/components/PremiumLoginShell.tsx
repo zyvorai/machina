@@ -149,9 +149,9 @@ export function PremiumLoginShell({
           {!isSecure ? <div className="login-spotlight" aria-hidden /> : null}
 
           {!isSecure
-            ? orbs.map((orb, i) => (
+            ? orbs.map((orb) => (
                 <div
-                  key={i}
+                  key={`${orb.hue}-${orb.size}`}
                   className={`login-orb login-orb-${orb.hue ?? 'blue'}`}
                   style={
                     {

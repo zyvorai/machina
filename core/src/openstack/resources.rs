@@ -52,8 +52,7 @@ pub struct OpenStackKeyPair {
     pub fingerprint: Option<String>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-#[derive(serde::Serialize)]
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub struct CreateInstanceRequest {
     pub name: String,
     pub flavor: String,
@@ -115,8 +114,8 @@ pub async fn create_flavor(
     cfg: &OpenStackConfig,
     req: &CreateFlavorRequest,
 ) -> Result<OpenStackFlavor, LibvirtError> {
-    use osauth::services::COMPUTE;
     use super::auth::{connect_session, map_json_err, map_osauth_err};
+    use osauth::services::COMPUTE;
     let name = req.name.trim();
     if name.is_empty() {
         return Err(LibvirtError::Invalid("flavor name is required".into()));
@@ -164,8 +163,8 @@ pub async fn create_flavor(
 }
 
 pub async fn delete_flavor(cfg: &OpenStackConfig, flavor_id: &str) -> Result<(), LibvirtError> {
-    use osauth::services::COMPUTE;
     use super::auth::{connect_session, map_osauth_err};
+    use osauth::services::COMPUTE;
     let id = flavor_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("flavor id is required".into()));
@@ -196,7 +195,10 @@ pub async fn list_networks(cfg: &OpenStackConfig) -> Result<Vec<OpenStackNetwork
     Ok(out)
 }
 
-pub async fn get_network(cfg: &OpenStackConfig, network_id: &str) -> Result<OpenStackNetwork, LibvirtError> {
+pub async fn get_network(
+    cfg: &OpenStackConfig,
+    network_id: &str,
+) -> Result<OpenStackNetwork, LibvirtError> {
     let id = network_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("network id is required".into()));
@@ -235,7 +237,10 @@ pub async fn list_images(cfg: &OpenStackConfig) -> Result<Vec<OpenStackImage>, L
     Ok(out)
 }
 
-pub async fn get_image(cfg: &OpenStackConfig, image_id: &str) -> Result<OpenStackImage, LibvirtError> {
+pub async fn get_image(
+    cfg: &OpenStackConfig,
+    image_id: &str,
+) -> Result<OpenStackImage, LibvirtError> {
     let id = image_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("image id is required".into()));
@@ -384,7 +389,10 @@ pub async fn create_instance(
             if name.is_empty() {
                 continue;
             }
-            let mut s = cloud.get_server(server.id()).await.map_err(map_openstack_err)?;
+            let mut s = cloud
+                .get_server(server.id())
+                .await
+                .map_err(map_openstack_err)?;
             let _ = s
                 .action(ServerAction::AddSecurityGroup {
                     name: name.to_string(),
@@ -408,9 +416,9 @@ async fn create_instance_with_server_group(
     boot_vol: Option<&str>,
     boot_img: Option<&str>,
 ) -> Result<openstack::compute::Server, LibvirtError> {
+    use super::auth::{connect_session, map_json_err, map_osauth_err};
     use base64::Engine;
     use osauth::services::COMPUTE;
-    use super::auth::{connect_session, map_json_err, map_osauth_err};
 
     let session = connect_session(cfg).await?;
     let mut server = serde_json::json!({
@@ -441,9 +449,10 @@ async fn create_instance_with_server_group(
         }
     }
     if !net_ids.is_empty() {
-        server["networks"] = serde_json::json!(
-            net_ids.iter().map(|n| serde_json::json!({ "uuid": n })).collect::<Vec<_>>()
-        );
+        server["networks"] = serde_json::json!(net_ids
+            .iter()
+            .map(|n| serde_json::json!({ "uuid": n }))
+            .collect::<Vec<_>>());
     }
     if let Some(ref key) = req.key_name {
         if !key.trim().is_empty() {
@@ -583,7 +592,9 @@ pub struct OpenStackAttachedVolume {
 
 /// Cinder volumes attached to a Nova instance (read-only).
 /// All Cinder volumes in the project (for attach UI).
-pub async fn list_cinder_volumes(cfg: &OpenStackConfig) -> Result<Vec<OpenStackAttachedVolume>, LibvirtError> {
+pub async fn list_cinder_volumes(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackAttachedVolume>, LibvirtError> {
     if !probe_cinder_reachable(cfg).await {
         return Ok(Vec::new());
     }

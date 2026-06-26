@@ -5,13 +5,18 @@ use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use axum::Extension;
+
 use crate::api::ApiError;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 pub async fn convert_vm_spice_to_vnc(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let (name, host_id) = crate::api::vm_row::vm_agent_row_libvirt(&state, id).await?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await
@@ -40,9 +45,11 @@ pub struct VmGraphicsBody {
 
 pub async fn add_vm_graphics(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<VmGraphicsBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let (name, host_id) = crate::api::vm_row::vm_agent_row_libvirt(&state, id).await?;
     let listen = body
         .listen
@@ -75,9 +82,11 @@ pub async fn add_vm_graphics(
 
 pub async fn remove_vm_graphics(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<VmGraphicsBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let (name, host_id) = crate::api::vm_row::vm_agent_row_libvirt(&state, id).await?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await

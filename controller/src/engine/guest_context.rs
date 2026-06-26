@@ -6,7 +6,7 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use tokio::sync::{RwLock, Semaphore};
 use uuid::Uuid;
 
@@ -98,7 +98,10 @@ pub fn from_health_report(
     if let Some(o) = obs {
         if let Some(arr) = o.get("ip_addresses").and_then(|v| v.as_array()) {
             for item in arr {
-                let ip_type = item.get("ip_type").and_then(|x| x.as_str()).unwrap_or("ipv4");
+                let ip_type = item
+                    .get("ip_type")
+                    .and_then(|x| x.as_str())
+                    .unwrap_or("ipv4");
                 if ip_type != "ipv4" {
                     continue;
                 }
@@ -235,7 +238,7 @@ pub fn context_chip(s: &GuestAiSnapshot) -> String {
 }
 
 pub async fn snapshot_for_vm(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     vm_id: Uuid,
     refresh: bool,
@@ -250,7 +253,7 @@ pub async fn snapshot_for_vm(
     }
 
     let row: (String, String, String) = sqlx::query_as(
-        "SELECT name, observed_state, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, observed_state, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(vm_id)
     .fetch_optional(pool)
@@ -276,7 +279,7 @@ pub async fn invalidate_vm(vm_id: Uuid) {
 }
 
 pub async fn gather_fleet_snapshots(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     vm_ids: Vec<Uuid>,
     refresh: bool,
@@ -290,7 +293,7 @@ pub async fn gather_fleet_snapshots(
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.ok();
             let row: Option<(String, String)> = sqlx::query_as(
-                "SELECT observed_state, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+                "SELECT observed_state, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
             )
             .bind(id)
             .fetch_optional(&pool)

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, RefreshCw, ScrollText, Terminal } from 'lucide-react'
+import { AlertTriangle, RefreshCw, ScrollText, Terminal, X } from 'lucide-react'
 import {
   MacGlassPanel,
   MacStatWidget,
@@ -140,22 +140,40 @@ export default function PlatformEvents({ embedded }: { embedded?: boolean } = {}
       />
 
       <div className="flex flex-wrap items-center gap-2">
-        <input
-          className="input text-sm max-w-xs font-mono"
-          placeholder="Filter messages…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+        <div className="relative max-w-xs">
+          <input
+            className={`input text-sm w-full font-mono ${query ? 'pr-8' : ''}`}
+            aria-label="Filter log messages"
+            placeholder="Filter messages…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          {query && (
+            <button type="button" aria-label="Clear filter" onClick={() => setQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       </div>
 
       <MacGlassPanel title="Platform events" subtitle="GET /api/v1/events — controller event bus">
         <div className="flex flex-wrap gap-2 mb-3">
-          <input
-            className="input text-sm max-w-xs font-mono"
-            placeholder="Filter by kind (e.g. host.sync)"
-            value={eventKind}
-            onChange={(e) => setEventKind(e.target.value)}
-          />
+          <div className="relative max-w-xs">
+            <input
+              className={`input text-sm w-full font-mono ${eventKind ? 'pr-8' : ''}`}
+              aria-label="Filter by event kind"
+              placeholder="Filter by kind (e.g. host.sync)"
+              value={eventKind}
+              onChange={(e) => setEventKind(e.target.value)}
+            />
+            {eventKind && (
+              <button type="button" aria-label="Clear kind filter" onClick={() => setEventKind('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <button type="button" className="btn-secondary text-xs" onClick={() => void load()}>
             Apply
           </button>

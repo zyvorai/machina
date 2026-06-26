@@ -21,8 +21,10 @@ export default function MachineFinderBriefing({ state }: Props) {
     setLoading(true)
     void getFleetSummary()
       .then((r) => {
-        setSummaryText(r.summary)
-        setAlerts(r.alerts ?? [])
+        setSummaryText(
+          `${r.aggregate_vm_count} VMs across ${r.reachable_peers}/${r.peer_count} peers · $${r.aggregate_monthly_usd.toFixed(0)}/mo est.`,
+        )
+        setAlerts([])
       })
       .catch(() => {
         setSummaryText(null)

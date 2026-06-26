@@ -235,9 +235,8 @@ pub fn probe_smart_health(devices: &[String]) -> Vec<SmartDiskHealth> {
                         String::from_utf8_lossy(&o.stderr)
                     );
                     let lower = text.to_ascii_lowercase();
-                    let passed = lower.contains("passed")
-                        || lower.contains("ok")
-                        || o.status.success();
+                    let passed =
+                        lower.contains("passed") || lower.contains("ok") || o.status.success();
                     let summary: String = text
                         .lines()
                         .find(|l| {
@@ -444,7 +443,9 @@ pub fn read_hwmon_temps() -> Vec<HwmonTemp> {
         };
         for entry in entries.flatten() {
             let fname = entry.file_name().to_string_lossy().to_string();
-            let Some(idx) = fname.strip_prefix("temp").and_then(|r| r.strip_suffix("_input"))
+            let Some(idx) = fname
+                .strip_prefix("temp")
+                .and_then(|r| r.strip_suffix("_input"))
             else {
                 continue;
             };

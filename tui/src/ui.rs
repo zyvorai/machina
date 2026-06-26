@@ -1903,10 +1903,7 @@ fn render_bottom_bar(frame: &mut Frame, area: Rect, state: &AppState) {
                 .unwrap_or("");
             Line::from(vec![
                 Span::styled("name: ", ORANGE_BOLD),
-                Span::styled(
-                    name,
-                    TEXT_STYLE.add_modifier(Modifier::UNDERLINED),
-                ),
+                Span::styled(name, TEXT_STYLE.add_modifier(Modifier::UNDERLINED)),
                 Span::styled("_  Enter next · Esc cancel", DARK_ORANGE_STYLE),
             ])
         }
@@ -2071,7 +2068,9 @@ fn render_openstack_overview(frame: &mut Frame, area: Rect, state: &AppState) {
         }
         Some(s) if s.configured => format!(
             "Configured · not connected · {}",
-            s.error.as_deref().unwrap_or("run openstack-wire-cloud.sh on host")
+            s.error
+                .as_deref()
+                .unwrap_or("run openstack-wire-cloud.sh on host")
         ),
         _ => "OpenStack not configured ([openstack] in /etc/machina/config.toml)".to_string(),
     };
@@ -2098,12 +2097,15 @@ fn render_openstack_overview(frame: &mut Frame, area: Rect, state: &AppState) {
         ]));
     }
 
-    let table = Table::new(rows, [
-        Constraint::Percentage(28),
-        Constraint::Length(12),
-        Constraint::Length(10),
-        Constraint::Min(20),
-    ])
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Percentage(28),
+            Constraint::Length(12),
+            Constraint::Length(10),
+            Constraint::Min(20),
+        ],
+    )
     .block(content_block(state, " OpenStack instances "))
     .column_spacing(1);
 
@@ -2128,12 +2130,15 @@ fn render_openstack_images_table(frame: &mut Frame, area: Rect, state: &AppState
             Cell::from(truncate_str(&img.id, 36)),
         ]));
     }
-    let table = Table::new(rows, [
-        Constraint::Percentage(35),
-        Constraint::Length(12),
-        Constraint::Length(10),
-        Constraint::Min(18),
-    ])
+    let table = Table::new(
+        rows,
+        [
+            Constraint::Percentage(35),
+            Constraint::Length(12),
+            Constraint::Length(10),
+            Constraint::Min(18),
+        ],
+    )
     .block(content_block(state, " Glance images "))
     .column_spacing(1);
     frame.render_widget(table, area);
@@ -2186,13 +2191,11 @@ fn render_openstack_instance_detail(frame: &mut Frame, area: Rect, state: &AppSt
                 ]),
                 Line::from(vec![
                     Span::styled("  SGs:    ", LABEL_STYLE),
-                    Span::raw(
-                        if i.security_groups.is_empty() {
-                            "—".to_string()
-                        } else {
-                            i.security_groups.join(", ")
-                        },
-                    ),
+                    Span::raw(if i.security_groups.is_empty() {
+                        "—".to_string()
+                    } else {
+                        i.security_groups.join(", ")
+                    }),
                 ]),
                 Line::from(""),
                 Line::from(Span::styled("  Attached volumes", LABEL_STYLE)),
@@ -2200,7 +2203,10 @@ fn render_openstack_instance_detail(frame: &mut Frame, area: Rect, state: &AppSt
             for v in &state.openstack_instance_volumes {
                 lines.push(Line::from(format!(
                     "    {}  {} GB  {}  {}",
-                    v.device, v.size_gb, v.name, truncate_str(&v.id, 12)
+                    v.device,
+                    v.size_gb,
+                    v.name,
+                    truncate_str(&v.id, 12)
                 )));
             }
             if state.openstack_instance_volumes.is_empty() {
@@ -2334,10 +2340,7 @@ fn render_openstack_create_wizard(frame: &mut Frame, area: Rect, state: &AppStat
                     Span::styled("Network: ", LABEL_STYLE),
                     Span::raw(network),
                 ]),
-                Line::from(vec![
-                    Span::styled("Key:     ", LABEL_STYLE),
-                    Span::raw(key),
-                ]),
+                Line::from(vec![Span::styled("Key:     ", LABEL_STYLE), Span::raw(key)]),
                 Line::from(""),
                 Line::from(Span::styled(
                     "Enter to create · Backspace to edit · Esc to cancel",
@@ -2424,10 +2427,7 @@ fn render_openstack_create_wizard(frame: &mut Frame, area: Rect, state: &AppStat
                             };
                             Row::new(vec![
                                 Cell::from(k.name.as_str()).style(style),
-                                Cell::from(
-                                    k.fingerprint.as_deref().unwrap_or("—"),
-                                )
-                                .style(style),
+                                Cell::from(k.fingerprint.as_deref().unwrap_or("—")).style(style),
                             ])
                         })
                         .collect(),
@@ -2443,9 +2443,7 @@ fn render_openstack_create_wizard(frame: &mut Frame, area: Rect, state: &AppStat
                     OpenStackCreateStep::Network => {
                         "No Neutron networks available — check Neutron on the host"
                     }
-                    OpenStackCreateStep::Keypair => {
-                        "No keypairs — press n to skip"
-                    }
+                    OpenStackCreateStep::Keypair => "No keypairs — press n to skip",
                     _ => "No items",
                 };
                 let p = Paragraph::new(Line::from(Span::styled(msg, WARNING_COLOR)));
@@ -2487,9 +2485,7 @@ fn render_openstack_create_wizard(frame: &mut Frame, area: Rect, state: &AppStat
                     _ => vec!["Name"],
                 };
                 let table = Table::new(rows, widths)
-                    .header(
-                        Row::new(header_cells).style(ORANGE_BOLD).bottom_margin(0),
-                    )
+                    .header(Row::new(header_cells).style(ORANGE_BOLD).bottom_margin(0))
                     .column_spacing(1);
                 frame.render_widget(table, inner);
                 let hint_y = popup.y + popup.height.saturating_sub(2);

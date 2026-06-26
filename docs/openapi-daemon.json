@@ -9316,6 +9316,92 @@
         }
       }
     },
+    "/api/v1/system/auth/ldap-settings": {
+      "get": {
+        "summary": "GET /api/v1/system/auth/ldap-settings",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/system/auth/ldap-test": {
+      "post": {
+        "summary": "POST /api/v1/system/auth/ldap-test",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/auth/oidc-settings": {
+      "get": {
+        "summary": "GET /api/v1/system/auth/oidc-settings",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/system/auth/saml-settings": {
+      "get": {
+        "summary": "GET /api/v1/system/auth/saml-settings",
+        "tags": [
+          "system"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/system/create-vm-defaults": {
       "get": {
         "summary": "GET /api/v1/system/create-vm-defaults",
@@ -10649,9 +10735,87 @@
         }
       }
     },
+    "/api/v1/vms/{name}/graphics/add": {
+      "post": {
+        "summary": "POST /api/v1/vms/{name}/graphics/add",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/vms/{name}/graphics/convert-to-vnc": {
       "post": {
         "summary": "POST /api/v1/vms/{name}/graphics/convert-to-vnc",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vms/{name}/graphics/remove": {
+      "post": {
+        "summary": "POST /api/v1/vms/{name}/graphics/remove",
         "tags": [
           "vms"
         ],

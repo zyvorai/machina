@@ -14,7 +14,11 @@ use super::auth::{connect_session, map_osauth_err};
 use super::compute::get_instance;
 use super::resources::snapshot_instance;
 
-async fn server_action(cfg: &OpenStackConfig, id: &str, body: serde_json::Value) -> Result<(), LibvirtError> {
+async fn server_action(
+    cfg: &OpenStackConfig,
+    id: &str,
+    body: serde_json::Value,
+) -> Result<(), LibvirtError> {
     let session = connect_session(cfg).await?;
     session
         .post(COMPUTE, &["servers", id.trim(), "action"])
@@ -26,11 +30,21 @@ async fn server_action(cfg: &OpenStackConfig, id: &str, body: serde_json::Value)
 }
 
 pub async fn shelve_instance(cfg: &OpenStackConfig, id: &str) -> Result<(), LibvirtError> {
-    server_action(cfg, id, serde_json::json!({ "shelve": serde_json::Value::Null })).await
+    server_action(
+        cfg,
+        id,
+        serde_json::json!({ "shelve": serde_json::Value::Null }),
+    )
+    .await
 }
 
 pub async fn unshelve_instance(cfg: &OpenStackConfig, id: &str) -> Result<(), LibvirtError> {
-    server_action(cfg, id, serde_json::json!({ "unshelve": serde_json::Value::Null })).await
+    server_action(
+        cfg,
+        id,
+        serde_json::json!({ "unshelve": serde_json::Value::Null }),
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -101,7 +115,12 @@ pub async fn rescue_instance(
 }
 
 pub async fn unrescue_instance(cfg: &OpenStackConfig, id: &str) -> Result<(), LibvirtError> {
-    server_action(cfg, id, serde_json::json!({ "unrescue": serde_json::Value::Null })).await
+    server_action(
+        cfg,
+        id,
+        serde_json::json!({ "unrescue": serde_json::Value::Null }),
+    )
+    .await
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -200,7 +219,11 @@ pub async fn attach_interface(
     id: &str,
     req: &AttachInterfaceRequest,
 ) -> Result<OpenStackInstanceInterface, LibvirtError> {
-    let port = req.port_id.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let port = req
+        .port_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
     let net = req
         .network_id
         .as_deref()

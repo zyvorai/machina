@@ -48,22 +48,21 @@ const DEFAULT_NETWORK_TEMPLATE: &str = "/usr/share/libvirt/networks/default.xml"
 
 /// Re-define the packaged `default` NAT network when libvirt cannot create `virbr0` (stale state).
 pub fn repair_default_network(conn: &Connect) -> Result<(), LibvirtError> {
-    let xml = std::fs::read_to_string(DEFAULT_NETWORK_TEMPLATE).map_err(|e| {
-        LibvirtError::Operation(format!("read {DEFAULT_NETWORK_TEMPLATE}: {e}"))
-    })?;
+    let xml = std::fs::read_to_string(DEFAULT_NETWORK_TEMPLATE)
+        .map_err(|e| LibvirtError::Operation(format!("read {DEFAULT_NETWORK_TEMPLATE}: {e}")))?;
     if let Ok(net) = Network::lookup_by_name(conn, "default") {
         if net.is_active().unwrap_or(false) {
             let _ = net.destroy();
         }
         let _ = net.undefine();
     }
-    Network::define_xml(conn, &xml).map_err(|e| {
-        LibvirtError::Operation(format!("Failed to redefine default network: {e}"))
-    })?;
+    Network::define_xml(conn, &xml)
+        .map_err(|e| LibvirtError::Operation(format!("Failed to redefine default network: {e}")))?;
     let net = lookup_network(conn, "default")?;
     let _ = net.set_autostart(true);
-    net.create()
-        .map_err(|e| LibvirtError::Operation(format!("Failed to start repaired default network: {e}")))?;
+    net.create().map_err(|e| {
+        LibvirtError::Operation(format!("Failed to start repaired default network: {e}"))
+    })?;
     Ok(())
 }
 

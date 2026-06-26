@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Query, State};
+use axum::Extension;
 use axum::Json;
 use serde::Serialize;
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -30,13 +32,16 @@ fn default_limit() -> i64 {
 
 pub async fn list_events(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<EventQuery>,
 ) -> Result<Json<Vec<EventRow>>, ApiError> {
+    require_operator(&actor)?;
     let limit = q.limit.clamp(1, 500);
     let rows = if let Some(kind) = q.kind.filter(|k| !k.is_empty()) {
         sqlx::query_as::<_, EventRow>(
-            "SELECT id, kind, message, created_at FROM events
-             WHERE kind LIKE $1 ORDER BY created_at DESC LIMIT $2",
+            "SELECT id, kind, message,
+                    strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+             FROM events WHERE kind LIKE ? ORDER BY created_at DESC LIMIT ?",
         )
         .bind(format!("%{kind}%"))
         .bind(limit)
@@ -44,7 +49,9 @@ pub async fn list_events(
         .await?
     } else {
         sqlx::query_as::<_, EventRow>(
-            "SELECT id, kind, message, created_at FROM events ORDER BY created_at DESC LIMIT $1",
+            "SELECT id, kind, message,
+                    strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+             FROM events ORDER BY created_at DESC LIMIT ?",
         )
         .bind(limit)
         .fetch_all(&state.pool)

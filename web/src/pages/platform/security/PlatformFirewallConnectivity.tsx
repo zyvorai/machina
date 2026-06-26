@@ -45,8 +45,8 @@ export default function PlatformFirewallConnectivity() {
     >
       <MacGlassPanel title="Simulation">
         <div className="flex flex-wrap gap-2 mb-4 max-w-xl">
-          <input className="input text-sm flex-1 min-w-[8rem]" value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="host id or local" />
-          <input className="input text-sm flex-1 min-w-[8rem]" value={profile} onChange={(e) => setProfile(e.target.value)} placeholder="profile" />
+          <input aria-label="Target host ID" className="input text-sm flex-1 min-w-[8rem]" value={targetId} onChange={(e) => setTargetId(e.target.value)} placeholder="host id or local" />
+          <input aria-label="Firewall profile" className="input text-sm flex-1 min-w-[8rem]" value={profile} onChange={(e) => setProfile(e.target.value)} placeholder="profile" />
           <button type="button" className="btn-primary text-sm" onClick={run}>Simulate</button>
         </div>
         {summary && <p className="text-sm text-slate-400 mb-4">{summary}</p>}

@@ -87,7 +87,7 @@ export default function VmDetailActionBar({
   const isMissing = observedState === 'missing'
   const isRunning = observedState === 'running'
   const isPaused = observedState === 'paused'
-  const isStopped = observedState === 'stopped' || observedState === 'shut off'
+  const isStopped = observedState === 'stopped' || observedState === 'shut off' || observedState === 'shutoff'
   const agentOk = guestHealth?.install_state === 'running' && guestHealth.agent_ping
 
   const primaryPower = (() => {

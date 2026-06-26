@@ -37,25 +37,27 @@ async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
 
     for (vm_id, name, desired, observed) in rows {
         tracing::info!("reconcile VM {name}: desired={desired} observed={observed}");
-        let host_id: Option<Uuid> =
-            sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
-                .bind(vm_id)
-                .fetch_optional(&state.pool)
-                .await?;
+        let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            .bind(vm_id)
+            .fetch_optional(&state.pool)
+            .await?;
 
         let Some(host_id) = host_id else {
             continue;
         };
 
-        let action = if desired == "running" && !matches!(observed.as_str(), "running" | "blocked") {
+        let action = if desired == "running" && !matches!(observed.as_str(), "running" | "blocked")
+        {
             "start"
-        } else if desired == "stopped" && matches!(observed.as_str(), "running" | "blocked" | "paused") {
+        } else if desired == "stopped"
+            && matches!(observed.as_str(), "running" | "blocked" | "paused")
+        {
             "stop"
         } else {
             continue;
         };
 
-        let _ = enqueue_task(
+        if let Err(e) = enqueue_task(
             &state,
             "vm.power",
             serde_json::json!({
@@ -67,9 +69,14 @@ async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
             Some(vm_id),
             Some(host_id),
         )
-        .await;
+        .await
+        {
+            tracing::warn!(vm_id = %vm_id, action, "reconcile enqueue failed: {}", e.message);
+        }
 
-        let _ = vm_lifecycle::sync_phase_from_observed(&state.pool, vm_id).await;
+        if let Err(e) = vm_lifecycle::sync_phase_from_observed(&state.pool, vm_id).await {
+            tracing::warn!(vm_id = %vm_id, "reconcile sync_phase failed: {e:#}");
+        }
     }
     Ok(())
 }

@@ -27,7 +27,7 @@ tower-http = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "uuid", "chrono", "json", "migrate"] }
 tonic = { version = "0.12", features = ["tls", "tls-roots"] }
 futures-util = { workspace = true }
 tokio-stream = { workspace = true }
@@ -42,8 +42,10 @@ sha2 = "0.10"
 hmac = "0.12"
 jsonwebtoken = "9"
 urlencoding = "2"
+url = { workspace = true }
 hex = "0.4"
 rand = { workspace = true }
+aes-gcm = { workspace = true }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tokio-tungstenite = "0.28"
 libvirt-guac-bridge = { path = "../guac-bridge" }

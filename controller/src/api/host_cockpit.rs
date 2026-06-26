@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Path, Query, State};
+use axum::Extension;
 use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Deserialize)]
@@ -18,9 +20,10 @@ async fn host_cockpit_query(
     host_id: Uuid,
     action: &str,
 ) -> Result<serde_json::Value, ApiError> {
-    let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let (_, agent_addr) =
+        crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut client = crate::agent_client::connect(&agent_addr)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -31,9 +34,11 @@ async fn host_cockpit_query(
 
 pub async fn host_cockpit_inventory(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Query(q): Query<CockpitSectionQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let section = q.section.as_deref().unwrap_or("all");
     let storage = if section == "all" || section == "storage" {
         Some(host_cockpit_query(&state, id, "cockpit.storage").await?)
@@ -67,12 +72,15 @@ pub struct CockpitActionBody {
 
 pub async fn host_cockpit_action(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<CockpitActionBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    require_operator(&actor)?;
+    let (_, agent_addr) =
+        crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, id)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut client = crate::agent_client::connect(&agent_addr)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;

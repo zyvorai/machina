@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -67,13 +67,17 @@ const CONTENT_SELECT: &str = "SELECT id, name, kind, path, size_gib, status, cat
 
 pub async fn list_content_images(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<ListContentQuery>,
 ) -> Result<Json<Vec<ContentImageRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = if let Some(ref status) = q.status {
-        sqlx::query_as::<_, ContentImageRow>(&format!("{CONTENT_SELECT} WHERE status = $1 ORDER BY name"))
-            .bind(status)
-            .fetch_all(&state.pool)
-            .await?
+        sqlx::query_as::<_, ContentImageRow>(&format!(
+            "{CONTENT_SELECT} WHERE status = ? ORDER BY name"
+        ))
+        .bind(status)
+        .fetch_all(&state.pool)
+        .await?
     } else {
         sqlx::query_as::<_, ContentImageRow>(&format!("{CONTENT_SELECT} ORDER BY name"))
             .fetch_all(&state.pool)
@@ -87,6 +91,7 @@ pub async fn create_content_image(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<CreateContentImageBody>,
 ) -> Result<Json<ContentImageRow>, ApiError> {
+    require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_one(&state.pool)
@@ -94,7 +99,7 @@ pub async fn create_content_image(
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO content_images (id, cluster_id, name, kind, path, size_gib, status, category, description, submitted_by, checksum)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7, $8, $9, $10)",
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(cluster_id)
@@ -116,48 +121,54 @@ pub async fn approve_content_image(
     Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<ContentImageRow>, ApiError> {
+    require_operator(&actor)?;
     let now = Utc::now();
     let updated = sqlx::query(
-        "UPDATE content_images SET status = 'available', approved_by = $2, approved_at = $3, rejected_reason = NULL
-         WHERE id = $1 AND status IN ('pending', 'rejected')",
+        "UPDATE content_images SET status = 'available', approved_by = ?, approved_at = ?, rejected_reason = NULL
+         WHERE id = ? AND status IN ('pending', 'rejected')",
     )
-    .bind(id)
     .bind(&actor.username)
     .bind(now)
+    .bind(id)
     .execute(&state.pool)
     .await?;
     if updated.rows_affected() == 0 {
-        return Err(ApiError::bad_request("image not found or not pending approval"));
+        return Err(ApiError::bad_request(
+            "image not found or not pending approval",
+        ));
     }
     fetch_content_row(&state, id).await
 }
 
 pub async fn reject_content_image(
     State(state): State<AppState>,
-    Extension(_actor): Extension<AuthUser>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<RejectContentBody>,
 ) -> Result<Json<ContentImageRow>, ApiError> {
+    require_operator(&actor)?;
     let reason = body
         .reason
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "Rejected by administrator".into());
     let updated = sqlx::query(
-        "UPDATE content_images SET status = 'rejected', approved_by = NULL, approved_at = NULL, rejected_reason = $2
-         WHERE id = $1 AND status = 'pending'",
+        "UPDATE content_images SET status = 'rejected', approved_by = NULL, approved_at = NULL, rejected_reason = ?
+         WHERE id = ? AND status = 'pending'",
     )
-    .bind(id)
     .bind(&reason)
+    .bind(id)
     .execute(&state.pool)
     .await?;
     if updated.rows_affected() == 0 {
-        return Err(ApiError::bad_request("image not found or not pending approval"));
+        return Err(ApiError::bad_request(
+            "image not found or not pending approval",
+        ));
     }
     fetch_content_row(&state, id).await
 }
 
 async fn fetch_content_row(state: &AppState, id: Uuid) -> Result<Json<ContentImageRow>, ApiError> {
-    let row = sqlx::query_as::<_, ContentImageRow>(&format!("{CONTENT_SELECT} WHERE id = $1"))
+    let row = sqlx::query_as::<_, ContentImageRow>(&format!("{CONTENT_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;

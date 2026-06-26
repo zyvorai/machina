@@ -53,7 +53,7 @@ function OpenStackKeypairsContent() {
     >
       <div className="rounded-xl border border-slate-700 p-4 space-y-3">
         <div className="flex flex-wrap gap-2">
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name"
+          <input aria-label="Keypair name" value={name} onChange={(e) => setName(e.target.value)} placeholder="name"
             className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm" />
           <button type="button" className="px-3 py-1.5 rounded-lg bg-sky-600 text-sm text-white"
             onClick={async () => {
@@ -74,7 +74,7 @@ function OpenStackKeypairsContent() {
             Create / import
           </button>
         </div>
-        <textarea value={publicKey} onChange={(e) => setPublicKey(e.target.value)} rows={3}
+        <textarea aria-label="SSH public key" value={publicKey} onChange={(e) => setPublicKey(e.target.value)} rows={3}
           placeholder="Optional: paste public key (ssh-rsa AAAA...). Leave empty to let Nova generate."
           className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono" />
       </div>

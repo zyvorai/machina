@@ -238,6 +238,7 @@ export interface EnforcementPolicy {
   scope?: string
   applied_hosts?: string[]
   description?: string
+  backend?: string
 }
 
 export interface EnforcementStatus {
@@ -247,7 +248,19 @@ export interface EnforcementStatus {
   applied_hosts?: string[]
   blocked_events?: number
   summary?: string
+  attached?: boolean
+  default_deny?: boolean
+  api_mode?: string
 }
+
+export const attachEnforcement = () =>
+  platformFetch<EnforcementStatus>('/api/v1/zeus-security/enforcement/attach', { method: 'POST', body: '{}' })
+
+export const syncEnforcement = () =>
+  platformFetch<EnforcementStatus>('/api/v1/zeus-security/enforcement/sync', { method: 'POST', body: '{}' })
+
+export const detachEnforcement = () =>
+  platformFetch<EnforcementStatus>('/api/v1/zeus-security/enforcement/detach', { method: 'POST', body: '{}' })
 
 export const getEnforcementStatus = () =>
   platformFetch<EnforcementStatus>('/api/v1/zeus-security/enforcement/status')

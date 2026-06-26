@@ -2,7 +2,7 @@
 // Zeus Security Fabric — fleet risk aggregation and PacketWolf orchestration.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::config::ControllerConfig;
 use crate::engine::ai::security_graph;
@@ -17,7 +17,7 @@ pub struct ZeusSecurityStatus {
 }
 
 pub async fn status(cfg: &ControllerConfig) -> ZeusSecurityStatus {
-    let pw = packetwolf_bridge::status(cfg);
+    let pw = packetwolf_bridge::status_async(cfg).await;
     ZeusSecurityStatus {
         fabric_reachable: pw.reachable,
         packetwolf: pw,
@@ -34,7 +34,10 @@ pub struct FleetThreatSummary {
     pub security_graph_summary: String,
 }
 
-pub async fn fleet_threat(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<FleetThreatSummary> {
+pub async fn fleet_threat(
+    pool: &SqlitePool,
+    cfg: &ControllerConfig,
+) -> anyhow::Result<FleetThreatSummary> {
     let pw = packetwolf_bridge::fleet_threat_summary(cfg).await;
     let overview = zeus_firewall::overview(pool, cfg).await?;
     let graph = security_graph::build_graph(pool).await?;
@@ -85,7 +88,7 @@ pub async fn fleet_timeline(cfg: &ControllerConfig, hours: u32) -> serde_json::V
     packetwolf_bridge::fleet_timeline(cfg, hours).await
 }
 
-pub async fn sync_security_alerts(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<usize> {
+pub async fn sync_security_alerts(pool: &SqlitePool, cfg: &ControllerConfig) -> anyhow::Result<usize> {
     let pw = packetwolf_bridge::fetch_anomalies(cfg).await;
     let anomalies = pw
         .get("anomalies")
@@ -98,7 +101,11 @@ pub async fn sync_security_alerts(pool: &PgPool, cfg: &ControllerConfig) -> anyh
             .and_then(|v| v.as_str())
             .is_some_and(|s| s == "critical" || s == "high")
     }) {
-        let summary = a.get("summary").and_then(|v| v.as_str()).unwrap_or("Security alert");
+        let summary = a
+            .get("summary")
+            .or_else(|| a.get("description"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("Security alert");
         let host_id = a.get("host_id").and_then(|v| v.as_str()).unwrap_or("");
         if insert_security_alert(pool, summary, host_id, a).await? {
             inserted += 1;
@@ -126,7 +133,7 @@ pub async fn sync_security_alerts(pool: &PgPool, cfg: &ControllerConfig) -> anyh
 }
 
 async fn insert_security_alert(
-    pool: &PgPool,
+    pool: &SqlitePool,
     summary: &str,
     host_id: &str,
     detail: &serde_json::Value,
@@ -142,7 +149,7 @@ async fn insert_security_alert(
     let exists: bool = sqlx::query_scalar(
         "SELECT EXISTS(
             SELECT 1 FROM notification_outbox
-            WHERE kind = 'security.alert' AND payload->>'title' = $1 AND created_at > NOW() - INTERVAL '1 hour'
+            WHERE kind = 'security.alert' AND json_extract(payload, '$.title') = ? AND created_at > datetime('now', '-1 hours')
         )",
     )
     .bind(summary)
@@ -152,7 +159,7 @@ async fn insert_security_alert(
     if exists {
         return Ok(false);
     }
-    sqlx::query("INSERT INTO notification_outbox (id, kind, payload) VALUES ($1, $2, $3)")
+    sqlx::query("INSERT INTO notification_outbox (id, kind, payload) VALUES (?, ?, ?)")
         .bind(id)
         .bind("security.alert")
         .bind(payload)

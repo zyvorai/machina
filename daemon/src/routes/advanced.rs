@@ -11,9 +11,8 @@ use std::collections::HashMap;
 use machina_core::libvirt::guest_agent::GuestIpAddress;
 use machina_core::libvirt::{
     boot, capabilities, cdrom, domain, domain_job, emulator, extras, filesystem, guest_agent,
-    guest_health,
-    host_cpu, hostdev_pci, migrate, net_xml, network, node_device, numa_tune, nwfilter,
-    save_restore, secret, storage,
+    guest_health, host_cpu, hostdev_pci, migrate, net_xml, network, node_device, numa_tune,
+    nwfilter, save_restore, secret, storage,
 };
 use machina_core::{LibvirtError, LibvirtManager};
 
@@ -152,7 +151,10 @@ async fn insert_cdrom_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let target = req.target.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| cdrom::insert_cdrom(conn, &name2, &req.iso_path, &req.target)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        cdrom::insert_cdrom(conn, &name2, &req.iso_path, &req.target)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "inserted", "name": name, "target": target }),
     ))
@@ -166,7 +168,10 @@ async fn eject_cdrom_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let target2 = target.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| cdrom::eject_cdrom(conn, &name2, &target2)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        cdrom::eject_cdrom(conn, &name2, &target2)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "ejected", "name": name, "target": target }),
     ))
@@ -191,9 +196,10 @@ async fn add_share_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let tag = req.mount_tag.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
-            filesystem::add_virtiofs_share(conn, &name2, &req.source_dir, &req.mount_tag, req.xattr)
-        }).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        filesystem::add_virtiofs_share(conn, &name2, &req.source_dir, &req.mount_tag, req.xattr)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "shared", "name": name, "mount_tag": tag }),
     ))
@@ -207,7 +213,10 @@ async fn remove_share_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let tag2 = mount_tag.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| filesystem::remove_share(conn, &name2, &tag2)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        filesystem::remove_share(conn, &name2, &tag2)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "removed", "name": name, "mount_tag": mount_tag }),
     ))
@@ -222,7 +231,10 @@ async fn managed_save_handler(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| save_restore::managed_save(conn, &name2)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        save_restore::managed_save(conn, &name2)
+    })
+    .await?;
     Ok(Json(serde_json::json!({ "status": "saved", "name": name })))
 }
 
@@ -233,7 +245,10 @@ async fn managed_save_remove_handler(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| save_restore::managed_save_remove(conn, &name2)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        save_restore::managed_save_remove(conn, &name2)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "removed", "name": name }),
     ))
@@ -246,7 +261,10 @@ async fn has_managed_save_handler(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
-    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| save_restore::has_managed_save(conn, &name2)).await;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        save_restore::has_managed_save(conn, &name2)
+    })
+    .await;
     let has_save = result?;
     Ok(Json(
         serde_json::json!({ "name": name, "has_managed_save": has_save }),
@@ -261,7 +279,10 @@ async fn get_boot_config_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| boot::get_boot_config(conn, &name)).await;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        boot::get_boot_config(conn, &name)
+    })
+    .await;
     Ok(Json(serde_json::json!(result?)))
 }
 
@@ -279,7 +300,10 @@ async fn set_boot_order_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let devices = req.devices.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| boot::set_boot_order(conn, &name2, &devices)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        boot::set_boot_order(conn, &name2, &devices)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "ok", "name": name, "boot_devices": req.devices }),
     ))
@@ -337,9 +361,10 @@ async fn migrate_handler(
     if req.paused {
         xf |= virt::sys::VIR_MIGRATE_PAUSED;
     }
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
-            migrate::migrate_vm_uri(conn, &name2, &dest_uri, live, params.as_ref(), xf)
-        }).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        migrate::migrate_vm_uri(conn, &name2, &dest_uri, live, params.as_ref(), xf)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "migrated", "name": name, "destination": destination }),
     ))
@@ -352,7 +377,10 @@ async fn migrate_get_max_speed_handler(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
-    let mib = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| migrate::migrate_get_max_speed(conn, &name2)).await;
+    let mib = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        migrate::migrate_get_max_speed(conn, &name2)
+    })
+    .await;
     Ok(Json(
         serde_json::json!({ "name": name, "mib_per_sec": mib? }),
     ))
@@ -372,7 +400,10 @@ async fn migrate_set_max_speed_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let mib = req.mib_per_sec;
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| migrate::migrate_set_max_speed(conn, &name2, mib)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        migrate::migrate_set_max_speed(conn, &name2, mib)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "ok", "name": name, "mib_per_sec": mib }),
     ))
@@ -392,7 +423,10 @@ async fn migrate_set_max_downtime_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let ns = req.downtime_ns;
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| migrate::migrate_set_max_downtime(conn, &name2, ns)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        migrate::migrate_set_max_downtime(conn, &name2, ns)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "ok", "name": name, "downtime_ns": ns }),
     ))
@@ -405,7 +439,10 @@ async fn get_numa_tune_handler(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
-    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| numa_tune::get_numa_tune(conn, &name2)).await;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        numa_tune::get_numa_tune(conn, &name2)
+    })
+    .await;
     Ok(Json(serde_json::json!(result?)))
 }
 
@@ -418,7 +455,10 @@ async fn set_numa_tune_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let body = req;
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| numa_tune::set_numa_tune(conn, &name2, &body)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        numa_tune::set_numa_tune(conn, &name2, &body)
+    })
+    .await?;
     Ok(Json(serde_json::json!({ "status": "ok", "name": name })))
 }
 
@@ -436,7 +476,10 @@ async fn pin_emulator_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let cpus = req.cpus.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| emulator::pin_emulator(conn, &name2, &cpus)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        emulator::pin_emulator(conn, &name2, &cpus)
+    })
+    .await?;
     Ok(Json(serde_json::json!({ "status": "ok", "name": name })))
 }
 
@@ -455,7 +498,10 @@ async fn compare_cpu_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let xml = req.cpu_xml.clone();
     let flags = req.flags;
-    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| host_cpu::compare_cpu(conn, &xml, flags)).await;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        host_cpu::compare_cpu(conn, &xml, flags)
+    })
+    .await;
     Ok(Json(serde_json::json!(result?)))
 }
 
@@ -466,7 +512,10 @@ async fn job_info_handler(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
-    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| domain_job::job_info(conn, &name2)).await;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        domain_job::job_info(conn, &name2)
+    })
+    .await;
     Ok(Json(result?))
 }
 
@@ -485,7 +534,10 @@ async fn job_stats_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
     let flags = query.flags;
-    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| domain_job::job_stats_u32(conn, &name2, flags)).await;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        domain_job::job_stats_u32(conn, &name2, flags)
+    })
+    .await;
     Ok(Json(result?))
 }
 
@@ -496,8 +548,13 @@ async fn get_capabilities_handler(
     Extension(actor): Extension<RequestActor>,
     Query(conn_q): Query<ConnQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let result =
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, capabilities::get_capabilities).await?;
+    let result = spawn_libvirt_actor(
+        manager,
+        Some(&actor),
+        conn_q,
+        capabilities::get_capabilities,
+    )
+    .await?;
     Ok(Json(serde_json::json!(result)))
 }
 
@@ -539,7 +596,10 @@ async fn get_node_device_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Xml, AppError> {
-    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| node_device::get_node_device_xml(conn, &name)).await;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        node_device::get_node_device_xml(conn, &name)
+    })
+    .await;
     Ok(Xml(result?))
 }
 
@@ -561,7 +621,10 @@ async fn get_nwfilter_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Xml, AppError> {
-    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| nwfilter::get_nwfilter_xml(conn, &name)).await;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        nwfilter::get_nwfilter_xml(conn, &name)
+    })
+    .await;
     Ok(Xml(result?))
 }
 
@@ -572,7 +635,10 @@ async fn delete_nwfilter_handler(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| nwfilter::delete_nwfilter(conn, &name2)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        nwfilter::delete_nwfilter(conn, &name2)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "deleted", "name": name }),
     ))
@@ -590,7 +656,10 @@ async fn define_nwfilter_handler(
     Json(req): Json<DefineNwfilterRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let xml = req.xml;
-    let name =     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| nwfilter::define_nwfilter(conn, &xml)).await?;
+    let name = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        nwfilter::define_nwfilter(conn, &xml)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "defined", "name": name }),
     ))
@@ -603,8 +672,7 @@ async fn list_secrets_handler(
     Extension(actor): Extension<RequestActor>,
     Query(conn_q): Query<ConnQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let result =
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, secret::list_secrets).await?;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, secret::list_secrets).await?;
     Ok(Json(serde_json::json!(result)))
 }
 
@@ -615,7 +683,10 @@ async fn delete_secret_handler(
     Path(uuid): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let uuid2 = uuid.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| secret::delete_secret(conn, &uuid2)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        secret::delete_secret(conn, &uuid2)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "deleted", "uuid": uuid }),
     ))
@@ -651,9 +722,10 @@ async fn define_secret_handler(
     let xml = req.xml.clone();
     let validate = req.validate_xml;
     let svf = req.set_value_flags;
-    let uuid =     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
-            secret::define_secret_with_value(conn, &xml, value_bytes.as_deref(), validate, svf)
-        }).await?;
+    let uuid = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        secret::define_secret_with_value(conn, &xml, value_bytes.as_deref(), validate, svf)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "defined", "uuid": uuid }),
     ))
@@ -675,7 +747,10 @@ async fn attach_pci_hostdev_handler(
     let pci = req.pci.clone();
     let pci_for_task = pci.clone();
     let name2 = name.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| hostdev_pci::attach_pci_hostdev(conn, &name2, &pci_for_task)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        hostdev_pci::attach_pci_hostdev(conn, &name2, &pci_for_task)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "pci_attached", "name": name, "pci": pci }),
     ))
@@ -692,7 +767,10 @@ async fn detach_pci_hostdev_handler(
     let pci = req.pci.clone();
     let pci_for_task = pci.clone();
     let name2 = name.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| hostdev_pci::detach_pci_hostdev(conn, &name2, &pci_for_task)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        hostdev_pci::detach_pci_hostdev(conn, &name2, &pci_for_task)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "pci_detached", "name": name, "pci": pci }),
     ))
@@ -706,7 +784,10 @@ async fn detach_nodedev_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_usb_pci(&actor)?;
     let dev = devname.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| node_device::detach_node_device(conn, &dev)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        node_device::detach_node_device(conn, &dev)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "nodedev_detached", "name": devname }),
     ))
@@ -720,7 +801,10 @@ async fn reattach_nodedev_handler(
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_usb_pci(&actor)?;
     let dev = devname.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| node_device::reattach_node_device(conn, &dev)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        node_device::reattach_node_device(conn, &dev)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "nodedev_reattached", "name": devname }),
     ))
@@ -747,9 +831,10 @@ async fn create_pool_handler(
     Json(req): Json<CreatePoolRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let req_name = req.name.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
-            storage::create_pool(conn, &req.name, &req.pool_type, &req.target_path)
-        }).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        storage::create_pool(conn, &req.name, &req.pool_type, &req.target_path)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "created", "name": req_name }),
     ))
@@ -762,7 +847,10 @@ async fn delete_pool_handler(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| storage::delete_pool(conn, &name2)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        storage::delete_pool(conn, &name2)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "deleted", "name": name }),
     ))
@@ -774,7 +862,10 @@ async fn get_pool_xml_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Xml, AppError> {
-    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| storage::get_pool_xml(conn, &name)).await;
+    let result = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        storage::get_pool_xml(conn, &name)
+    })
+    .await;
     Ok(Xml(result?))
 }
 
@@ -801,7 +892,10 @@ async fn resize_volume_handler(
     let capacity = req.capacity_gb.ceil() as u64;
     let pool2 = pool.clone();
     let vol2 = vol.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| storage::resize_volume(conn, &pool2, &vol2, capacity)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        storage::resize_volume(conn, &pool2, &vol2, capacity)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "resized", "pool": pool, "volume": vol, "capacity_gb": capacity }),
     ))
@@ -822,7 +916,10 @@ async fn clone_volume_handler(
     let pool2 = pool.clone();
     let vol2 = vol.clone();
     let new_name = req.new_name.clone();
-        spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| storage::clone_volume(conn, &pool2, &vol2, &new_name)).await?;
+    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+        storage::clone_volume(conn, &pool2, &vol2, &new_name)
+    })
+    .await?;
     Ok(Json(
         serde_json::json!({ "status": "cloned", "pool": pool, "source": vol, "clone": req.new_name }),
     ))
@@ -853,7 +950,10 @@ pub fn advanced_routes() -> Router<LibvirtManager> {
         // Guest agent
         .route("/vms/{name}/interfaces", get(get_interfaces))
         .route("/vms/{name}/hostname", get(get_hostname))
-        .route("/vms/{name}/guest-observability", get(get_guest_observability))
+        .route(
+            "/vms/{name}/guest-observability",
+            get(get_guest_observability),
+        )
         .route("/vms/{name}/guest-health", get(get_guest_health))
         // CD-ROM
         .route("/vms/{name}/cdrom/insert", post(insert_cdrom_handler))

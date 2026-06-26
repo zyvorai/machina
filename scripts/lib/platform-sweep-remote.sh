@@ -15,7 +15,7 @@ curl_api() {
 
 info "Platform sweep on $(hostname)"
 
-systemctl enable machina-agent machina-controller postgresql 2>/dev/null || true
+systemctl enable machina-agent machina-controller 2>/dev/null || true
 systemctl start libvirtd 2>/dev/null || true
 systemctl restart machina-agent 2>/dev/null || warn "machina-agent restart failed"
 sleep 2

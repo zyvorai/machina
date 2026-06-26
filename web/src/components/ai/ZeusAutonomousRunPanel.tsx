@@ -8,6 +8,7 @@ import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
 import { hubLinkClasses } from '../../utils/semanticColors'
 import { MacGlassPanel } from '../platform/mac/PlatformMacUi'
+import ConfirmDialog from '../ConfirmDialog'
 
 export default function ZeusAutonomousRunPanel() {
   const toast = useToastContext()
@@ -19,6 +20,7 @@ export default function ZeusAutonomousRunPanel() {
   const [steps, setSteps] = useState<Array<{ title: string; detail: string }>>([])
   const [plannedAgent, setPlannedAgent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [showExecuteConfirm, setShowExecuteConfirm] = useState(false)
 
   useEffect(() => {
     void listZeusAgents().then(setAgents).catch(() => setAgents([]))
@@ -44,7 +46,6 @@ export default function ZeusAutonomousRunPanel() {
   const runExecute = async () => {
     const text = goal.trim()
     if (!text) return
-    if (!window.confirm('Execute this autonomous Zeus plan on the fleet? Risky steps may queue for approval.')) return
     setExecuting(true)
     setError(null)
     try {
@@ -61,6 +62,16 @@ export default function ZeusAutonomousRunPanel() {
   }
 
   return (
+    <>
+    <ConfirmDialog
+      open={showExecuteConfirm}
+      title="Execute Autonomous Plan"
+      message="Execute this autonomous Zeus plan on the fleet? Risky steps may queue for approval before running."
+      confirmLabel="Execute"
+      variant="danger"
+      onCancel={() => setShowExecuteConfirm(false)}
+      onConfirm={() => { setShowExecuteConfirm(false); void runExecute() }}
+    />
     <MacGlassPanel
       title="Autonomous run"
       subtitle="Dry-run a multi-step Zeus goal, then execute with confirmation"
@@ -92,7 +103,7 @@ export default function ZeusAutonomousRunPanel() {
             type="button"
             className="btn-primary text-xs"
             disabled={executing || steps.length === 0 || !goal.trim()}
-            onClick={() => void runExecute()}
+            onClick={() => setShowExecuteConfirm(true)}
           >
             {executing ? 'Executing…' : 'Execute plan'}
           </button>
@@ -115,5 +126,6 @@ export default function ZeusAutonomousRunPanel() {
         )}
       </div>
     </MacGlassPanel>
+    </>
   )
 }

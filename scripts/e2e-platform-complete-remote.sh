@@ -6,6 +6,8 @@
 #   E2E_INCLUDE_MOCK=1 VSPASS='…' ./scripts/e2e-platform-complete-remote.sh sus HOST
 #
 # Optional env:
+#   E2E_AUTH_MODE          — pam | ldap | oidc | auto (default auto)
+#   E2E_LDAP_USER/PASS     — UPN login when --auth ldap or LDAP enabled on host
 #   E2E_INCLUDE_MOCK=1     — also run mocked Playwright (npm run test:e2e) locally
 #   E2E_SKIP_FULL=1        — skip e2e-full-test-remote
 #   E2E_SKIP_UX_FLOW=1     — skip e2e-platform-ux-flow-remote
@@ -29,6 +31,9 @@ if [[ -z "$PASS" ]]; then
 fi
 
 export VSPASS="$PASS"
+export E2E_AUTH_MODE="${E2E_AUTH_MODE:-auto}"
+export E2E_LDAP_USER="${E2E_LDAP_USER:-}"
+export E2E_LDAP_PASS="${E2E_LDAP_PASS:-}"
 export MACHINA_E2E_BYPASS_SECRET="${MACHINA_E2E_BYPASS_SECRET:-}"
 export E2E_PLATFORM_USER="${E2E_PLATFORM_USER:-sus}"
 export E2E_PLATFORM_PASS="${E2E_PLATFORM_PASS:-$PASS}"
@@ -91,9 +96,14 @@ if [[ "${E2E_SKIP_LIVE_SPECS:-0}" != "1" ]]; then
     if ! npm run playwright -- install chromium >/dev/null 2>&1; then
       npm run test:e2e:install
     fi
-    export PLAYWRIGHT_LIVE_URL='${BASE}'
-    export PLAYWRIGHT_LIVE_USER='${USER}'
-    export PLAYWRIGHT_LIVE_PASS='${PASS}'
+    # shellcheck source=lib/e2e-auth.sh
+    source '${SCRIPT_DIR}/lib/e2e-auth.sh'
+    export E2E_USER='${USER}'
+    export E2E_PASSWORD='${PASS}'
+    export E2E_AUTH_MODE='${E2E_AUTH_MODE:-auto}'
+    export E2E_LDAP_USER='${E2E_LDAP_USER:-}'
+    export E2E_LDAP_PASS='${E2E_LDAP_PASS:-}'
+    e2e_export_playwright_live_env '${BASE}' '${USER}' '${PASS}'
     npm run test:e2e -- --workers=1 --timeout=300000 \
       e2e/platform-live.spec.ts \
       e2e/platform-live-vm-create.spec.ts \

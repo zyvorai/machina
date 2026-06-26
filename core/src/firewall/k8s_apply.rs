@@ -19,12 +19,20 @@ pub fn compile_k8s_policies(
 ) -> Result<Vec<K8sPolicyManifest>, LibvirtError> {
     let profile = profile_by_name(profile_name)
         .ok_or_else(|| LibvirtError::Invalid(format!("Unknown profile: {profile_name}")))?;
-    let safe_ns = if namespace.is_empty() { "default" } else { namespace };
+    let safe_ns = if namespace.is_empty() {
+        "default"
+    } else {
+        namespace
+    };
     let safe_name = format!(
         "zeus-{}",
         profile_name
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_lowercase() } else { '-' })
+            .map(|c| if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            })
             .collect::<String>()
     );
 
@@ -51,9 +59,7 @@ pub fn compile_k8s_policies(
                 rule.ports
             )
         };
-        ingress.push(format!(
-            "    - from:\n    {from}\n      ports:{port_block}"
-        ));
+        ingress.push(format!("    - from:\n    {from}\n      ports:{port_block}"));
     }
 
     let np_yaml = format!(
@@ -135,9 +141,19 @@ pub fn k8s_cluster_ready() -> bool {
 }
 
 pub fn detect_k8s_backend() -> FirewallBackend {
-    if run_cmd("kubectl", &["get", "ciliumnetworkpolicies", "-A", "--request-timeout=3s"]).is_ok() {
+    if run_cmd(
+        "kubectl",
+        &["get", "ciliumnetworkpolicies", "-A", "--request-timeout=3s"],
+    )
+    .is_ok()
+    {
         FirewallBackend::Cilium
-    } else if run_cmd("kubectl", &["get", "networkpolicy", "-A", "--request-timeout=3s"]).is_ok() {
+    } else if run_cmd(
+        "kubectl",
+        &["get", "networkpolicy", "-A", "--request-timeout=3s"],
+    )
+    .is_ok()
+    {
         FirewallBackend::K8sNetworkPolicy
     } else {
         FirewallBackend::Unknown

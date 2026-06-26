@@ -62,8 +62,9 @@ usage() {
     cat <<'EOF'
 deploy-remote.sh USER@HOST | USER HOST [PASSWORD] [--sync-only|--quick|--install-only|--bins-only|--e2e|--e2e-libvirt-desktop|--platform|--cleanup|--prune-sources|--dry-run]
         [--skip-platform-e2e|--skip-daemon-e2e]
+        [--e2e-auth pam|ldap|oidc|auto]
         [--remote-build|--remote-check] [--bind ADDR] [--open-firewall|--disable-firewalld]
-        [--with-guacamole] [--guacamole-port PORT] [--no-start] [--deps-only] [extra install.sh args...]
+        [--with-guacamole] [--guacamole-port PORT] [--with-packetwolf] [--no-start] [--deps-only] [extra install.sh args...]
 
 Prefer: ./scripts/deploy remote USER@HOST [flags]  |  ./scripts/deploy status
 
@@ -90,8 +91,9 @@ Examples:
   deploy-remote.sh 185.165.240.5 sus --quick    # HOST USER (auto-swapped)
   VSPASS=max deploy-remote.sh sus 185.165.240.5 --quick --e2e --platform
   VSPASS=max deploy-remote.sh sus 212.8.252.194 --platform --e2e --bind 0.0.0.0
-  deploy-remote.sh sus 212.8.252.194 --quick --platform --e2e --bind 0.0.0.0 --disable-firewalld
+  VSPASS=max deploy-remote.sh sus 212.8.252.194 --platform --e2e --e2e-auth ldap --bind 0.0.0.0 --disable-firewalld
   deploy-remote.sh sus@host --with-guacamole --bind 0.0.0.0 --open-firewall
+  deploy-remote.sh sus 212.8.252.194 --platform --with-packetwolf --quick
   deploy-remote.sh sus 212.8.252.194 --install-only --platform --prune-sources
   deploy-remote.sh sus@host --remote-check    # fast compile smoke after rsync
   deploy-remote.sh sus@host --remote-build   # full release build on server, then exit
@@ -101,6 +103,7 @@ Examples:
   deploy-remote.sh check    deploy-remote.sh check sus@host
 
 Env: DEPLOY_HOST DEPLOY_USER SSH_PORT SSHPASS REMOTE_DIR HEALTH_URL STRICT SYNC_ONLY
+     E2E_AUTH_MODE E2E_LDAP_USER E2E_LDAP_PASS (post-deploy --e2e login; default auto)
 
 After each rsync, the script runs sudo chown on the deploy tree so interrupted
 sudo builds cannot leave root-owned target/ (cargo EACCES on --quick).
@@ -288,7 +291,10 @@ SKIP_PLATFORM_E2E=false
 SKIP_DAEMON_E2E=false
 SKIP_LIVE_UX=false
 RUN_LIBVIRT_DESKTOP_E2E=false
+E2E_AUTH_MODE="${E2E_AUTH_MODE:-auto}"
 WITH_GUACAMOLE=false
+WITH_PACKETWOLF=false
+PACKETWOLF_E2E=false
 GUACAMOLE_PORT=8081
 
 parse_flags() {
@@ -304,7 +310,10 @@ parse_flags() {
             --skip-platform-e2e) SKIP_PLATFORM_E2E=true; shift ;;
             --skip-daemon-e2e) SKIP_DAEMON_E2E=true; shift ;;
             --skip-live-ux) SKIP_LIVE_UX=true; shift ;;
+            --e2e-auth) E2E_AUTH_MODE="${2:?pam|ldap|oidc|auto}"; shift 2 ;;
             --with-guacamole) WITH_GUACAMOLE=true; shift ;;
+            --with-packetwolf) WITH_PACKETWOLF=true; shift ;;
+            --packetwolf-e2e) PACKETWOLF_E2E=true; shift ;;
             --guacamole-port) GUACAMOLE_PORT="${2:?}"; shift 2 ;;
             --cleanup) CLEANUP=true; shift ;;
             --open-firewall) OPEN_FW=true; shift ;;
@@ -417,6 +426,8 @@ if $QUICK; then MODE_LABEL="Quick — incremental make release web + install (--
 if $INSTALL_ONLY; then MODE_LABEL="Install-only — copy existing binaries, no cargo/npm"; fi
 if $INSTALL_PLATFORM; then MODE_LABEL+=" + platform (PostgreSQL, controller :5093, agent)"; fi
 if $WITH_GUACAMOLE; then MODE_LABEL+=" + Guacamole (Docker :${GUACAMOLE_PORT})"; fi
+if $WITH_PACKETWOLF; then MODE_LABEL+=" + PacketWolf (../packetwolf :9443)"; fi
+if $PACKETWOLF_E2E; then MODE_LABEL+=" + PacketWolf E2E tiers"; fi
 if $PRUNE_SOURCES; then MODE_LABEL+=" + prune sources after install"; fi
 
 TOTAL_STEPS=4
@@ -476,6 +487,19 @@ if [[ -f "$GUESTKIT_SRC/Cargo.toml" ]]; then
     ok "GuestKit synced → ${REMOTE}:${GUESTKIT_REMOTE}"
 else
     warn "No sibling ../guestkit — ensure path ../../guestkit exists on remote for controller build"
+fi
+
+PACKETWOLF_SRC="$(cd "$REPO/.." && pwd)/packetwolf"
+PACKETWOLF_REMOTE="$(dirname "$REMOTE_DIR")/packetwolf"
+if $WITH_PACKETWOLF && [[ -f "$PACKETWOLF_SRC/Cargo.toml" ]]; then
+    tip "Syncing sibling PacketWolf repo for co-deploy"
+    ssh_r_bash "$REMOTE" "mkdir -p $(dirname "$REMOTE_DIR")/packetwolf"
+    rsync_r \
+        --exclude='target/' --exclude='node_modules/' --exclude='.git/' --exclude='web-ui/dist/' \
+        "$PACKETWOLF_SRC/" "$REMOTE:$PACKETWOLF_REMOTE/" || warn "packetwolf rsync failed"
+    ok "PacketWolf synced → ${REMOTE}:${PACKETWOLF_REMOTE}"
+elif $WITH_PACKETWOLF; then
+    warn "No sibling ../packetwolf — --with-packetwolf will try remote deploy script only"
 fi
 
 # If a previous run left root-owned files under the tree (e.g. interrupted sudo), cargo fails with EACCES.
@@ -558,7 +582,7 @@ if [ ! -x target/release/machina-daemon ] || [ ! -f web/dist/index.html ]; then
   echo 'Missing target/release/machina-daemon or web/dist — run --quick once first' >&2
   exit 1
 fi
-sudo bash install.sh${QUICK_OPTS}
+${MACHINA_LICENSE_KEY:+export MACHINA_LICENSE_KEY=\"$MACHINA_LICENSE_KEY\"; }sudo -E bash install.sh${QUICK_OPTS}
 for bin in machina-controller machina-agent; do
   if [ -x target/release/\$bin ]; then
     sudo install -m755 target/release/\$bin /usr/local/bin/\$bin
@@ -566,15 +590,17 @@ for bin in machina-controller machina-agent; do
 done
 " || die "install-only failed"
     else
-        phase 3 "$TOTAL_STEPS" "Build & install (quick path)" "make release web (incremental) + install.sh --skip-build"
-        # Build as SSH user (rustup cargo on PATH); install.sh copies artifacts only (--skip-build).
+        phase 3 "$TOTAL_STEPS" "Build & install (quick path)" "deps-only → make release web (incremental) + install.sh --skip-build"
+        # Ensure system deps (protobuf-compiler, libvirt-dev, etc.) are present before building.
+        # install.sh --deps-only is idempotent and fast when deps are already installed.
         ssh_r_bash "$REMOTE" "
 set -euo pipefail
 export PATH=\"\${HOME}/.cargo/bin:/usr/local/cargo/bin:/usr/local/bin:/usr/bin:\${PATH}\"
 export CARGO_BUILD_JOBS=${REMOTE_CARGO_BUILD_JOBS}
 cd $REMOTE_DIR
+sudo bash install.sh --deps-only --no-tests
 make release web
-sudo bash install.sh${QUICK_OPTS}
+${MACHINA_LICENSE_KEY:+export MACHINA_LICENSE_KEY=\"$MACHINA_LICENSE_KEY\"; }sudo -E bash install.sh${QUICK_OPTS}
 for bin in machina-controller machina-agent; do
   if [ -x target/release/\$bin ]; then
     sudo install -m755 target/release/\$bin /usr/local/bin/\$bin
@@ -582,14 +608,24 @@ for bin in machina-controller machina-agent; do
 done
 " || die "quick build failed"
     fi
-    phase 4 "$TOTAL_STEPS" "Reload systemd & restart Machina services" "daemon-reload — always restart daemon, controller, agent"
-    ssh_r_bash "$REMOTE" "sudo cp ${REMOTE_DIR}/contrib/machina-daemon.service ${REMOTE_DIR}/contrib/machina-controller.service ${REMOTE_DIR}/contrib/machina-agent.service /usr/lib/systemd/system/ 2>/dev/null || true; sudo systemctl daemon-reload && sudo systemctl restart machina-daemon machina-controller machina-agent" || die "service restart failed"
+    phase 4 "$TOTAL_STEPS" "Reload systemd & restart Machina services" "daemon-reload — restart daemon; controller+agent only if active"
+    ssh_r_bash "$REMOTE" "
+set -euo pipefail
+sudo cp ${REMOTE_DIR}/contrib/machina-daemon.service ${REMOTE_DIR}/contrib/machina-controller.service ${REMOTE_DIR}/contrib/machina-agent.service /usr/lib/systemd/system/ 2>/dev/null || true
+sudo systemctl daemon-reload
+sudo systemctl restart machina-daemon
+for svc in machina-controller machina-agent; do
+  if systemctl is-enabled \"\$svc\" &>/dev/null || systemctl is-active \"\$svc\" &>/dev/null; then
+    sudo systemctl restart \"\$svc\" || true
+  fi
+done
+" || die "service restart failed"
 else
     phase 3 "$TOTAL_STEPS" "Run installer on remote" "sudo install.sh — tooling, build, unit files, optional firewall"
     ssh_r_bash "$REMOTE" "
 set -euo pipefail
 cd $REMOTE_DIR
-sudo bash install.sh${OPTS}${REMOTE_INST}
+${MACHINA_LICENSE_KEY:+export MACHINA_LICENSE_KEY=\"$MACHINA_LICENSE_KEY\"; }sudo -E bash install.sh${OPTS}${REMOTE_INST}
 " || die "install failed"
 fi
 
@@ -609,9 +645,16 @@ sudo bash scripts/install-platform.sh${PLATFORM_OPTS}
     ssh_r_bash "$REMOTE" "sudo bash $REMOTE_DIR/scripts/lib/platform-sweep-remote.sh" || warn "platform postflight had issues (non-fatal)"
 fi
 
+if $WITH_PACKETWOLF; then
+    # shellcheck source=lib/install-packetwolf-remote.sh
+    source "${SCRIPT_DIR}/lib/install-packetwolf-remote.sh"
+    phase "$((SNAPSHOT_PHASE))" "$TOTAL_STEPS" "Install / refresh PacketWolf" "sibling ../packetwolf deploy-remote --quick"
+    install_packetwolf_on_remote || warn "PacketWolf co-deploy had issues (non-fatal)"
+fi
+
 phase "$SNAPSHOT_PHASE" "$TOTAL_STEPS" "Service snapshot" "machina-daemon + libvirtd + platform status"
 ssh_r_bash "$REMOTE" "
-for svc in machina-daemon libvirtd machina-controller machina-agent postgresql; do
+for svc in machina-daemon libvirtd machina-controller machina-agent; do
   st=\$(systemctl is-active \$svc 2>/dev/null || echo unknown)
   if [ \"\$st\" = active ]; then
     echo \"✅ \$svc: running\"
@@ -656,24 +699,33 @@ deploy_ui_checklist "libvirtd" "$(ssh_r_bash "$REMOTE" 'systemctl is-active libv
 if $INSTALL_PLATFORM; then
     deploy_ui_checklist "machina-controller" "$(ssh_r_bash "$REMOTE" 'systemctl is-active machina-controller 2>/dev/null || echo unknown' | tr -d '\r')"
     deploy_ui_checklist "machina-agent" "$(ssh_r_bash "$REMOTE" 'systemctl is-active machina-agent 2>/dev/null || echo unknown' | tr -d '\r')"
-    deploy_ui_checklist "postgresql" "$(ssh_r_bash "$REMOTE" 'systemctl is-active postgresql 2>/dev/null || echo unknown' | tr -d '\r')"
+    deploy_ui_kv "🗄️" "DB" "sqlite:///var/lib/machina/controller.db"
     deploy_ui_kv "🎛️" "Platform API" "http://${HOST}:5093/api/v1/health"
 fi
 
 deploy_ui_celebrate "Ship it!"
-machina_print_success "$HOST" "$ELAPSED" "./scripts/deploy remote ${USER}@${HOST} --quick"
+machina_print_success "$HOST" "$ELAPSED" "$USER" "$($INSTALL_PLATFORM && echo '--platform' || true)"
 deploy_ui_kv "🔗" "SSH" "ssh ${USER}@${HOST}"
 deploy_ui_kv "🌐" "UI" "https://${HOST}:5092/"
 if $WITH_GUACAMOLE; then
     deploy_ui_kv "🖥️" "Guacamole" "http://${HOST}:${GUACAMOLE_PORT}/guacamole/"
 fi
 tip "Trust the browser once for the self-signed TLS cert, or terminate TLS upstream."
-tip "Fast redeploy (no rebuild): ./scripts/deploy remote ${USER}@${HOST} --install-only --platform"
+if $INSTALL_PLATFORM; then
+    tip "Fast redeploy (no rebuild): ./scripts/deploy remote ${USER}@${HOST} --install-only --platform"
+else
+    tip "Add --platform to also install/update machina-controller + PostgreSQL."
+fi
 tip "After first --quick, prune sources: add --prune-sources (keeps target/ + web/dist/ on server)"
 tip "HOST USER also works: ./scripts/deploy-remote.sh ${HOST} ${USER} --install-only"
 
 if $RUN_E2E; then
-    if [[ -n "${VSPASS:-}" || -n "${SSHPASS:-}" ]]; then
+    if [[ -n "${VSPASS:-}" || -n "${SSHPASS:-}" || -n "${E2E_LDAP_PASS:-}" ]]; then
+        # shellcheck source=lib/e2e-auth.sh
+        source "${SCRIPT_DIR}/lib/e2e-auth.sh"
+        export E2E_AUTH_MODE
+        export E2E_USER="${USER}"
+        export E2E_PASSWORD="${VSPASS:-${SSHPASS:-}}"
         if $INSTALL_PLATFORM && ! $SKIP_PLATFORM_E2E; then
             deploy_ui_highlight "🧪 Post-deploy full E2E (daemon + platform proxy + controller)"
             info "Waiting for agent gRPC :50051 before install smoke…"
@@ -689,7 +741,9 @@ exit 1
             if $SKIP_DAEMON_E2E; then FULL_E2E_FLAGS+=(--skip-daemon-e2e); fi
             FULL_E2E_OK=true
             API_E2E_SUMMARY="not run"
-            if "${SCRIPT_DIR}/e2e-full-test-remote.sh" "$USER" "$HOST" "${FULL_E2E_FLAGS[@]}"; then
+            if env VSPASS="$E2E_PASSWORD" E2E_AUTH_MODE="$E2E_AUTH_MODE" \
+                E2E_LDAP_USER="${E2E_LDAP_USER:-}" E2E_LDAP_PASS="${E2E_LDAP_PASS:-}" \
+                "${SCRIPT_DIR}/e2e-full-test-remote.sh" "$USER" "$HOST" --auth "$E2E_AUTH_MODE" "${FULL_E2E_FLAGS[@]}"; then
                 deploy_ui_celebrate "Full E2E passed"
                 API_E2E_SUMMARY="passed"
             else
@@ -701,18 +755,17 @@ exit 1
             VM_E2E_SUMMARY="not run"
             if ! $SKIP_LIVE_UX; then
                 deploy_ui_highlight "🧪 Post-deploy live UX wiring (Playwright)"
-                LIVE_PW="${VSPASS:-${SSHPASS:-}}"
+                LIVE_PW="${VSPASS:-${SSHPASS:-${E2E_LDAP_PASS:-}}}"
                 LIVE_BASE="https://${HOST}:5092"
-                if PLAYWRIGHT_LIVE_URL="${LIVE_BASE}" PLAYWRIGHT_LIVE_USER="${USER}" PLAYWRIGHT_LIVE_PASS="${LIVE_PW}" \
-                    npm --prefix "${SCRIPT_DIR}/../web" run test:e2e:live-ux; then
+                e2e_export_playwright_live_env "$LIVE_BASE" "$USER" "$LIVE_PW"
+                if npm --prefix "${SCRIPT_DIR}/../web" run test:e2e:live-ux; then
                     deploy_ui_celebrate "Live UX wiring passed"
                 else
                     warn "Live UX wiring failed (deploy itself succeeded)"
                     LIVE_E2E_OK=false
                 fi
                 deploy_ui_highlight "🧪 Post-deploy live VM create/delete (Playwright)"
-                if PLAYWRIGHT_LIVE_URL="${LIVE_BASE}" PLAYWRIGHT_LIVE_USER="${USER}" PLAYWRIGHT_LIVE_PASS="${LIVE_PW}" \
-                    npm --prefix "${SCRIPT_DIR}/../web" run test:e2e -- --workers=1 --timeout=300000 \
+                if npm --prefix "${SCRIPT_DIR}/../web" run test:e2e -- --workers=1 --timeout=300000 \
                     e2e/platform-live-access.spec.ts \
                     e2e/platform-live-vm-create.spec.ts \
                     e2e/platform-live-machine-finder-delete.spec.ts \
@@ -737,7 +790,7 @@ exit 1
                     LIVE_E2E_OK=false
                 fi
             fi
-            SERVICES_SUMMARY="$(ssh_r_bash "$REMOTE" 'for u in machina-daemon libvirtd machina-controller machina-agent postgresql; do printf "%s=%s\n" "$u" "$(systemctl is-active "$u" 2>/dev/null || echo unknown)"; done' | tr -d '\r')"
+            SERVICES_SUMMARY="$(ssh_r_bash "$REMOTE" 'for u in machina-daemon libvirtd machina-controller machina-agent; do printf "%s=%s\n" "$u" "$(systemctl is-active "$u" 2>/dev/null || echo unknown)"; done' | tr -d '\r')"
             OVERALL="PASS"
             if ! $FULL_E2E_OK || ! $LIVE_E2E_OK; then OVERALL="FAIL"; fi
             "${SCRIPT_DIR}/lib/send-deploy-report.sh" "$HOST" \
@@ -747,6 +800,21 @@ exit 1
                 --overall "$OVERALL" || true
             if [[ "$STRICT" == "1" ]] && { ! $FULL_E2E_OK || ! $LIVE_E2E_OK; }; then
                 die "STRICT=1: post-deploy E2E failed (API=${API_E2E_SUMMARY}, live=${LIVE_E2E_OK}, vm=${VM_E2E_SUMMARY})"
+            fi
+            if $WITH_PACKETWOLF || $PACKETWOLF_E2E; then
+                deploy_ui_highlight "🐺 Post-deploy PacketWolf integration E2E"
+                PW_E2E_OK=true
+                if PACKETWOLF_VERIFY_API_KEY="${PACKETWOLF_VERIFY_API_KEY:-${PACKETWOLF_ADMIN_API_KEY:-Admin@321}}" \
+                    PACKETWOLF_TEST_TIERS="${PACKETWOLF_TEST_TIERS:-zeus,runtime}" \
+                    "${SCRIPT_DIR}/e2e-packetwolf-remote.sh" "$USER" "$HOST"; then
+                    deploy_ui_celebrate "PacketWolf E2E passed"
+                else
+                    warn "PacketWolf E2E failed (deploy itself succeeded)"
+                    PW_E2E_OK=false
+                fi
+                if [[ "$STRICT" == "1" ]] && ! $PW_E2E_OK; then
+                    die "STRICT=1: PacketWolf E2E failed"
+                fi
             fi
         elif ! $SKIP_DAEMON_E2E; then
             deploy_ui_highlight "🧪 Post-deploy E2E (daemon :5092)"
@@ -759,7 +827,7 @@ exit 1
             warn "E2E skipped (--skip-daemon-e2e with --skip-platform-e2e or no platform install)"
         fi
     else
-        warn "E2E skipped: set VSPASS (or SSHPASS) for PAM login on :5092"
+        warn "E2E skipped: set VSPASS/SSHPASS (PAM) or E2E_LDAP_* (LDAP), and optional --e2e-auth pam|ldap|auto"
     fi
 fi
 printf '\n'

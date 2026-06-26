@@ -2,7 +2,7 @@
 
 use machina_spec::PlacementRecommendation;
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -13,7 +13,7 @@ struct HostLoad {
     memory_used_mib: i64,
     memory_total_mib: i64,
     vm_count: i32,
-    tags: Vec<String>,
+    tags: sqlx::types::Json<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -28,24 +28,24 @@ pub struct PlacementRecommendationRow {
     pub score: f32,
 }
 
-pub async fn compute_recommendations(pool: &PgPool) -> anyhow::Result<Vec<PlacementRecommendationRow>> {
-    let threshold: f32 = sqlx::query_scalar(
-        "SELECT drs_cpu_threshold FROM clusters ORDER BY created_at LIMIT 1",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or(85.0);
+pub async fn compute_recommendations(
+    pool: &SqlitePool,
+) -> anyhow::Result<Vec<PlacementRecommendationRow>> {
+    let threshold: f32 =
+        sqlx::query_scalar("SELECT drs_cpu_threshold FROM clusters ORDER BY created_at LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .unwrap_or(85.0);
 
-    let placement_policy: String = sqlx::query_scalar(
-        "SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or_else(|_| "balanced".into());
+    let placement_policy: String =
+        sqlx::query_scalar("SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .unwrap_or_else(|_| "balanced".into());
 
     let hosts: Vec<HostLoad> = sqlx::query_as(
         "SELECT id, hostname, cpu_percent, memory_used_mib, memory_total_mib, vm_count,
-                COALESCE(tags, '{}') AS tags
+                COALESCE(tags, '[]') AS tags
          FROM hosts WHERE state = 'online' AND maintenance_mode = FALSE",
     )
     .fetch_all(pool)
@@ -55,8 +55,8 @@ pub async fn compute_recommendations(pool: &PgPool) -> anyhow::Result<Vec<Placem
         return Ok(Vec::new());
     }
 
-    let vms: Vec<(Uuid, String, Uuid, i64, Vec<String>)> = sqlx::query_as(
-        "SELECT v.id, v.name, v.host_id, v.memory_mib, COALESCE(v.tags, '{}') AS tags FROM vms v
+    let vms: Vec<(Uuid, String, Uuid, i64, sqlx::types::Json<Vec<String>>)> = sqlx::query_as(
+        "SELECT v.id, v.name, v.host_id, v.memory_mib, COALESCE(v.tags, '[]') AS tags FROM vms v
          JOIN hosts h ON h.id = v.host_id
          WHERE v.desired_state = 'running' AND h.state = 'online'",
     )
@@ -80,8 +80,13 @@ pub async fn compute_recommendations(pool: &PgPool) -> anyhow::Result<Vec<Placem
                 continue;
             }
             let dest_mem_pct = pct(dest.memory_used_mib, dest.memory_total_mib);
-            let mut score = dest_score(&placement_policy, dest.cpu_percent, dest_mem_pct, dest.vm_count);
-            score += tag_affinity_score(&vm_tags, &dest.tags);
+            let mut score = dest_score(
+                &placement_policy,
+                dest.cpu_percent,
+                dest_mem_pct,
+                dest.vm_count,
+            );
+            score += tag_affinity_score(&*vm_tags, &*dest.tags);
             if score <= 0.0 {
                 continue;
             }
@@ -116,22 +121,27 @@ pub async fn compute_recommendations(pool: &PgPool) -> anyhow::Result<Vec<Placem
         let _ = memory_mib;
     }
 
-    out.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    out.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     Ok(out)
 }
 
 pub async fn persist_recommendations(
-    pool: &PgPool,
+    pool: &SqlitePool,
     rows: &[PlacementRecommendationRow],
 ) -> anyhow::Result<()> {
+    let mut tx = pool.begin().await?;
     sqlx::query("UPDATE placement_recommendations SET status = 'superseded' WHERE status = 'open'")
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
     for row in rows.iter().take(50) {
         sqlx::query(
             "INSERT INTO placement_recommendations (id, vm_id, from_host_id, to_host_id, reason, score)
-             VALUES ($1, $2, $3, $4, $5, $6)",
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4())
         .bind(Uuid::parse_str(&row.vm_id)?)
@@ -139,9 +149,10 @@ pub async fn persist_recommendations(
         .bind(Uuid::parse_str(&row.to_host_id)?)
         .bind(&row.reason)
         .bind(row.score)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 
@@ -189,24 +200,23 @@ struct HostCandidate {
     memory_used_mib: i64,
     memory_total_mib: i64,
     vm_count: i32,
-    tags: Vec<String>,
+    tags: sqlx::types::Json<Vec<String>>,
 }
 
 pub async fn pick_host_for_vm(
-    pool: &PgPool,
+    pool: &SqlitePool,
     vm_tags: &[String],
     _memory_mib: i64,
 ) -> anyhow::Result<Uuid> {
-    let placement_policy: String = sqlx::query_scalar(
-        "SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1",
-    )
-    .fetch_one(pool)
-    .await
-    .unwrap_or_else(|_| "balanced".into());
+    let placement_policy: String =
+        sqlx::query_scalar("SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1")
+            .fetch_one(pool)
+            .await
+            .unwrap_or_else(|_| "balanced".into());
 
     let hosts: Vec<HostCandidate> = sqlx::query_as(
         "SELECT id, cpu_percent, memory_used_mib, memory_total_mib, vm_count,
-                COALESCE(tags, '{}') AS tags
+                COALESCE(tags, '[]') AS tags
          FROM hosts WHERE state = 'online' AND maintenance_mode = FALSE",
     )
     .fetch_all(pool)
@@ -223,7 +233,7 @@ pub async fn pick_host_for_vm(
         if score <= 0.0 {
             continue;
         }
-        score += tag_affinity_score(vm_tags, &h.tags);
+        score += tag_affinity_score(vm_tags, &*h.tags);
         if best.map(|(_, s)| score > s).unwrap_or(true) {
             best = Some((h.id, score));
         }

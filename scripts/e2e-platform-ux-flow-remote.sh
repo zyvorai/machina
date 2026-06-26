@@ -8,7 +8,7 @@ USER="${1:?USER}"
 HOST="${2:?HOST}"
 BASE="http://${HOST}:5093"
 export E2E_PLATFORM_BASE="${BASE%/}"
-export E2E_PLATFORM_USER="${E2E_PLATFORM_USER:-machina-e2e}"
+export E2E_PLATFORM_USER="${E2E_PLATFORM_USER:-admin}"
 export E2E_PLATFORM_PASS="${E2E_PLATFORM_PASS:-admin}"
 # When set on the controller (see contrib/machina-platform.default), curl sends X-Machina-E2E.
 export MACHINA_E2E_BYPASS_SECRET="${MACHINA_E2E_BYPASS_SECRET:-}"

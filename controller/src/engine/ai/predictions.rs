@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use serde::Serialize;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use super::capacity;
@@ -27,7 +27,7 @@ pub struct PredictionsReport {
     pub summary: String,
 }
 
-pub async fn unified(pool: &PgPool) -> anyhow::Result<PredictionsReport> {
+pub async fn unified(pool: &SqlitePool) -> anyhow::Result<PredictionsReport> {
     let mut predictions = Vec::new();
 
     let sre = sre_predict::forecast(pool).await?;
@@ -87,7 +87,7 @@ pub async fn unified(pool: &PgPool) -> anyhow::Result<PredictionsReport> {
 
     // SMART / linux health stub from fleet
     let smart_warn: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM hosts WHERE state = 'online' AND tags::text ILIKE '%smart_warn%'",
+        "SELECT COUNT(*) FROM hosts WHERE state = 'online' AND tags LIKE '%smart_warn%'",
     )
     .fetch_optional(pool)
     .await
@@ -112,7 +112,10 @@ pub async fn unified(pool: &PgPool) -> anyhow::Result<PredictionsReport> {
         format!(
             "{} prediction(s) — top: {}",
             predictions.len(),
-            predictions.first().map(|p| p.message.as_str()).unwrap_or("")
+            predictions
+                .first()
+                .map(|p| p.message.as_str())
+                .unwrap_or("")
         )
     };
 
@@ -125,7 +128,7 @@ pub async fn unified(pool: &PgPool) -> anyhow::Result<PredictionsReport> {
 }
 
 /// Open ai_incidents for high/critical predictions within 72h horizon (deduped by resource).
-pub async fn promote_critical(pool: &PgPool, predictions: &[Prediction]) -> anyhow::Result<()> {
+pub async fn promote_critical(pool: &SqlitePool, predictions: &[Prediction]) -> anyhow::Result<()> {
     use super::incident_commander::{self, CreateIncidentRequest};
 
     for p in predictions {
@@ -138,9 +141,11 @@ pub async fn promote_critical(pool: &PgPool, predictions: &[Prediction]) -> anyh
             "SELECT EXISTS(
                 SELECT 1 FROM ai_incidents
                 WHERE status IN ('open', 'investigating')
-                  AND (title ILIKE $1 OR summary ILIKE $1 OR affected_resources::text ILIKE $1)
+                  AND (title LIKE ? OR summary LIKE ? OR affected_resources LIKE ?)
             )",
         )
+        .bind(format!("%{}%", p.resource))
+        .bind(format!("%{}%", p.resource))
         .bind(format!("%{}%", p.resource))
         .fetch_one(pool)
         .await
@@ -167,13 +172,13 @@ pub async fn promote_critical(pool: &PgPool, predictions: &[Prediction]) -> anyh
         )
         .await?;
         let _ = sqlx::query(
-            "INSERT INTO events (kind, severity, message, resource_type, resource_id)
-             VALUES ('prediction', $1, $2, $3, $4)",
+            "INSERT INTO events (id, kind, message, resource_type, resource_id, payload) VALUES (?, 'prediction', ?, ?, ?, ?)",
         )
-        .bind(&p.severity)
+        .bind(uuid::Uuid::new_v4())
         .bind(&p.message)
         .bind(&p.resource_kind)
         .bind(p.resource.clone())
+        .bind(serde_json::json!({"severity": &p.severity}))
         .execute(pool)
         .await;
         let _ = id;
@@ -201,7 +206,7 @@ pub struct RightsizingReport {
     pub estimated_monthly_savings_usd: f64,
 }
 
-pub async fn rightsizing_report(pool: &PgPool) -> anyhow::Result<RightsizingReport> {
+pub async fn rightsizing_report(pool: &SqlitePool) -> anyhow::Result<RightsizingReport> {
     let cost_analysis = cost::analyze(pool).await?;
     let sre = match sre_remediate::propose(pool).await {
         Ok(r) => r,
@@ -217,7 +222,7 @@ pub async fn rightsizing_report(pool: &PgPool) -> anyhow::Result<RightsizingRepo
         "SELECT v.id, v.name, v.memory_mib, m.memory_used_mib FROM vms v
          JOIN vm_metrics m ON m.vm_id = v.id
          WHERE v.observed_state = 'running'
-           AND m.memory_used_mib::float / NULLIF(v.memory_mib, 0) < 0.35
+           AND CAST(m.memory_used_mib AS REAL) / NULLIF(v.memory_mib, 0) < 0.35
          ORDER BY v.memory_mib DESC LIMIT 30",
     )
     .fetch_all(pool)
@@ -242,7 +247,7 @@ pub async fn rightsizing_report(pool: &PgPool) -> anyhow::Result<RightsizingRepo
 
     let idle: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT id, name FROM vms WHERE observed_state = 'stopped'
-         AND updated_at < NOW() - interval '30 days' LIMIT 20",
+         AND updated_at < datetime('now', '-30 days') LIMIT 20",
     )
     .fetch_all(pool)
     .await

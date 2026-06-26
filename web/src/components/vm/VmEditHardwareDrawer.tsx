@@ -130,6 +130,9 @@ export default function VmEditHardwareDrawer({
       <button type="button" className="fixed inset-0 z-[85] bg-black/50 backdrop-blur-sm" aria-label="Close Edit Hardware" onClick={onClose} />
       <aside
         className="fixed top-0 right-0 z-[90] h-full w-full max-w-lg bg-slate-950/98 border-l border-white/10 shadow-2xl flex flex-col overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit hardware"
         data-testid="vm-edit-hardware-drawer"
       >
         <header className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
@@ -137,7 +140,7 @@ export default function VmEditHardwareDrawer({
             <h2 className="font-semibold text-slate-100">Edit Hardware</h2>
             <p className="text-xs text-slate-500">{vmName}</p>
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 rounded hover:bg-white/10 text-slate-400"><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded hover:bg-white/10 text-slate-400"><X className="w-5 h-5" aria-hidden="true" /></button>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-2">
@@ -252,6 +255,7 @@ export default function VmEditHardwareDrawer({
                     {id === 'xml' && (
                       <>
                         <textarea
+                          aria-label="Domain XML"
                           className="input w-full font-mono text-xs min-h-[12rem]"
                           value={xmlDraft || domainXml}
                           onChange={(e) => setXmlDraft(e.target.value)}

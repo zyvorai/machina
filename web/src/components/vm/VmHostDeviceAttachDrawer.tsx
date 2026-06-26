@@ -156,6 +156,9 @@ export default function VmHostDeviceAttachDrawer({
       />
       <aside
         className="fixed top-0 right-0 z-[95] h-full w-full max-w-lg bg-slate-950/98 border-l border-white/10 shadow-2xl flex flex-col overflow-hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Attach host device"
         data-testid="vm-hostdev-attach-drawer"
       >
         <header className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
@@ -165,7 +168,7 @@ export default function VmHostDeviceAttachDrawer({
             </h2>
             <p className="text-xs text-slate-500">{vmName} · attach, detach, and IOMMU hints</p>
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 rounded hover:bg-white/10 text-slate-400"><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded hover:bg-white/10 text-slate-400"><X className="w-5 h-5" aria-hidden="true" /></button>
         </header>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-4">

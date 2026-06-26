@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -42,7 +42,7 @@ pub struct AttackPathResult {
     pub summary: String,
 }
 
-pub async fn build_graph(pool: &PgPool) -> anyhow::Result<SecurityGraph> {
+pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<SecurityGraph> {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
@@ -52,7 +52,11 @@ pub async fn build_graph(pool: &PgPool) -> anyhow::Result<SecurityGraph> {
             .await?;
     for (id, name, role) in users {
         let nid = format!("user-{id}");
-        let risk = if role == "admin" { Some("high".into()) } else { Some("medium".into()) };
+        let risk = if role == "admin" {
+            Some("high".into())
+        } else {
+            Some("medium".into())
+        };
         nodes.push(SecurityGraphNode {
             id: nid.clone(),
             kind: "user".into(),
@@ -153,18 +157,18 @@ pub async fn build_graph(pool: &PgPool) -> anyhow::Result<SecurityGraph> {
     Ok(SecurityGraph { nodes, edges })
 }
 
-pub async fn attack_path(pool: &PgPool, q: &AttackPathQuery) -> anyhow::Result<AttackPathResult> {
+pub async fn attack_path(pool: &SqlitePool, q: &AttackPathQuery) -> anyhow::Result<AttackPathResult> {
     let graph = build_graph(pool).await?;
     let target_id: Option<Uuid> = if let Ok(u) = Uuid::parse_str(&q.target_vm) {
         Some(u)
     } else {
-        sqlx::query_scalar("SELECT id FROM vms WHERE name = $1")
+        sqlx::query_scalar("SELECT id FROM vms WHERE name = ?")
             .bind(&q.target_vm)
             .fetch_optional(pool)
             .await?
     };
     let target_label = if let Some(id) = target_id {
-        sqlx::query_scalar::<_, String>("SELECT name FROM vms WHERE id = $1")
+        sqlx::query_scalar::<_, String>("SELECT name FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(pool)
             .await?
@@ -175,18 +179,29 @@ pub async fn attack_path(pool: &PgPool, q: &AttackPathQuery) -> anyhow::Result<A
 
     let vm_node = if let Some(id) = target_id {
         format!("vm-{id}")
-    } else if let Some(n) = graph.nodes.iter().find(|n| n.kind == "vm" && n.label.eq_ignore_ascii_case(&q.target_vm)) {
+    } else if let Some(n) = graph
+        .nodes
+        .iter()
+        .find(|n| n.kind == "vm" && n.label.eq_ignore_ascii_case(&q.target_vm))
+    {
         n.id.clone()
     } else {
         format!("vm-{}", q.target_vm)
     };
-    let source_node = if q.source.to_lowercase().contains("admin") || q.source.to_lowercase().contains("attacker") {
-        graph.nodes.iter().find(|n| n.kind == "user" && n.risk.as_deref() == Some("high"))
+    let source_node = if q.source.to_lowercase().contains("admin")
+        || q.source.to_lowercase().contains("attacker")
+    {
+        graph
+            .nodes
+            .iter()
+            .find(|n| n.kind == "user" && n.risk.as_deref() == Some("high"))
             .or_else(|| graph.nodes.iter().find(|n| n.kind == "user"))
             .map(|n| n.id.clone())
             .unwrap_or_else(|| "api-keys".into())
     } else {
-        graph.nodes.iter()
+        graph
+            .nodes
+            .iter()
             .find(|n| n.label.eq_ignore_ascii_case(&q.source))
             .map(|n| n.id.clone())
             .unwrap_or_else(|| format!("user-{}", q.source))
@@ -198,7 +213,11 @@ pub async fn attack_path(pool: &PgPool, q: &AttackPathQuery) -> anyhow::Result<A
     if source_node.starts_with("user-") || source_node == "api-keys" {
         path.push("cluster".into());
         edge_labels.push("authenticates → cluster".into());
-        if let Some(host_edge) = graph.edges.iter().find(|e| e.to == vm_node || e.to.starts_with("vm-")) {
+        if let Some(host_edge) = graph
+            .edges
+            .iter()
+            .find(|e| e.to == vm_node || e.to.starts_with("vm-"))
+        {
             if let Some(host) = graph.nodes.iter().find(|n| n.id == host_edge.from) {
                 path.push(host.id.clone());
                 edge_labels.push(format!("manages → {}", host.label));
@@ -208,7 +227,11 @@ pub async fn attack_path(pool: &PgPool, q: &AttackPathQuery) -> anyhow::Result<A
     path.push(vm_node.clone());
     edge_labels.push(format!("runs → {target_label}"));
 
-    let risk_score = if source_node == "api-keys" { 0.88 } else { 0.72 };
+    let risk_score = if source_node == "api-keys" {
+        0.88
+    } else {
+        0.72
+    };
     let hop_count = edge_labels.len();
 
     Ok(AttackPathResult {

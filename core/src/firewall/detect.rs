@@ -39,7 +39,10 @@ pub fn detect_backend() -> FirewallBackend {
             }
         }
     }
-    if let Ok(output) = Command::new(find_bin("nft")).args(["list", "ruleset"]).output() {
+    if let Ok(output) = Command::new(find_bin("nft"))
+        .args(["list", "ruleset"])
+        .output()
+    {
         if output.status.success() && !output.stdout.is_empty() {
             return FirewallBackend::Nftables;
         }

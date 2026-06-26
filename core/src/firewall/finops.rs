@@ -66,7 +66,10 @@ pub fn public_port_finops_alert(ports: &[OpenPort]) -> Option<String> {
     }
     Some(format!(
         "{critical} critical + {public_warn} public warning port(s) — est ${:.0}/mo exposure waste",
-        ports.iter().map(|p| port_monthly_cost(p, false)).sum::<f64>()
+        ports
+            .iter()
+            .map(|p| port_monthly_cost(p, false))
+            .sum::<f64>()
     ))
 }
 
@@ -98,7 +101,9 @@ pub fn profile_exposure_multiplier(profile: Option<&str>, hostname: &str) -> f64
     if hl.contains("gpu") || profile.is_some_and(|p| p.contains("Gpu") || p.contains("GPU")) {
         return GPU_EXPOSURE_MULTIPLIER;
     }
-    if hl.contains("storage") || hl.contains("ceph") || hl.contains("nfs")
+    if hl.contains("storage")
+        || hl.contains("ceph")
+        || hl.contains("nfs")
         || profile.is_some_and(|p| p.contains("Storage"))
     {
         return STORAGE_EXPOSURE_MULTIPLIER;

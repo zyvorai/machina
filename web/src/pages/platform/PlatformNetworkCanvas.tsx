@@ -125,7 +125,8 @@ export default function PlatformNetworkCanvas() {
     }
     const pw = data?.anomalies?.anomalies ?? data?.network_pulse?.anomalies?.anomalies ?? []
     for (const a of pw.slice(0, 8)) {
-      if (a.summary) found.push(a.summary)
+      const text = a.summary ?? a.description
+      if (text) found.push(text)
     }
     return found
   }, [data])
@@ -204,11 +205,13 @@ export default function PlatformNetworkCanvas() {
           <MacGlassPanel title="Threat pulse" subtitle="PacketWolf /api/v1/network/threats">
             <ul className="text-xs space-y-2">
               {threats.slice(0, 6).map((t, i) => {
-                const threat = t as { title?: string; severity?: string; summary?: string; host_id?: string; suggested_kind?: string; suggested_match?: string; port?: number }
+                const threat = t as { title?: string; description?: string; severity?: string; summary?: string; kind?: string; host_id?: string; suggested_kind?: string; suggested_match?: string; port?: number }
+                const title = threat.title ?? threat.kind ?? 'Threat'
+                const detail = threat.summary ?? threat.description
                 return (
-                <li key={i} className="border-b border-white/[0.04] pb-2 space-y-1">
-                  <span className={statusToneClass(threat.severity === 'critical' ? 'error' : 'warn')}>{threat.title ?? 'Threat'}</span>
-                  {threat.summary && <p className="text-slate-500 mt-0.5">{threat.summary}</p>}
+                <li key={`${String(threat.host_id ?? '')}-${String(threat.kind ?? title)}-${i}`} className="border-b border-white/[0.04] pb-2 space-y-1">
+                  <span className={statusToneClass(threat.severity === 'critical' ? 'error' : 'warn')}>{title}</span>
+                  {detail && <p className="text-slate-500 mt-0.5">{detail}</p>}
                   <EbpfActionMenu
                     hostId={threat.host_id}
                     suggestedKind={threat.suggested_kind ?? 'deny_port'}
@@ -295,11 +298,12 @@ export default function PlatformNetworkCanvas() {
           <MacGlassPanel title="Fleet timeline" subtitle="PacketWolf network + correlation events">
             <ul className="text-xs space-y-2 max-h-48 overflow-y-auto">
               {timelineEvents.slice(0, 20).map((ev, i) => {
-                const row = ev as { summary?: string; severity?: string; timestamp?: string; kind?: string }
+                const row = ev as { summary?: string; message?: string; severity?: string; timestamp?: string; kind?: string; type?: string }
+                const label = row.summary ?? row.message ?? row.kind ?? row.type ?? 'Event'
                 return (
-                  <li key={`${row.timestamp ?? i}-${row.summary ?? i}`} className="border-b border-white/[0.04] pb-2">
+                  <li key={`${row.timestamp ?? i}-${label}`} className="border-b border-white/[0.04] pb-2">
                     <span className={statusToneClass(row.severity === 'critical' || row.severity === 'high' ? 'error' : 'neutral')}>
-                      {row.summary ?? row.kind ?? 'Event'}
+                      {label}
                     </span>
                     {row.timestamp && <p className="text-slate-500 mt-0.5">{row.timestamp}</p>}
                   </li>

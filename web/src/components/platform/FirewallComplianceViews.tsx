@@ -29,7 +29,7 @@ export function ComplianceReportSummary({ report }: { report: Record<string, unk
             const detail = String(row.detail ?? row.message ?? row.description ?? '')
             const target = row.target_id ?? row.host_id
             return (
-              <li key={i} className="rounded-lg border border-white/[0.06] bg-slate-950/30 px-3 py-2 text-sm">
+              <li key={title} className="rounded-lg border border-white/[0.06] bg-slate-950/30 px-3 py-2 text-sm">
                 <p className="text-slate-200 font-medium">{title}</p>
                 {detail && <p className="text-xs text-slate-500 mt-0.5">{detail}</p>}
                 {target != null && target !== '' && (
@@ -60,7 +60,7 @@ export function PacketwolfAnomalySummary({ data }: { data: Record<string, unknow
           {anomalies.slice(0, 15).map((item, i) => {
             const row = asRecord(item) ?? { detail: String(item) }
             return (
-              <li key={i} className={`rounded-lg px-3 py-2 text-sm ${statusSurfaceClasses('warn')}`}>
+              <li key={String(row.type ?? row.anomaly ?? row.title ?? i)} className={`rounded-lg px-3 py-2 text-sm ${statusSurfaceClasses('warn')}`}>
                 <p className={statusToneClass('warn')}>{String(row.type ?? row.anomaly ?? row.title ?? `Anomaly ${i + 1}`)}</p>
                 <p className={`text-xs mt-0.5 opacity-70 ${statusToneClass('warn')}`}>{String(row.detail ?? row.message ?? row.description ?? '')}</p>
               </li>

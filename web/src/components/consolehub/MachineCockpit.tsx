@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import type { ReactNode } from 'react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { ConsoleViewportProvider, useConsoleViewport } from './ConsoleViewportContext'
 import { ConsoleClipboardProvider } from './ConsoleClipboardContext'
@@ -36,7 +36,7 @@ import type { ConsoleExperienceMode } from '../../utils/consoleExperienceMode'
 import { vmSemanticKind } from '../../utils/vmVisual'
 import { isDisplayProtocol } from '../../utils/consoleExperienceMode'
 import { downloadCanvasScreenshot, saveVmPosterScreenshot } from '../../utils/vmPosterScreenshot'
-import { spectatorCinemaPath } from '../../utils/consoleExperienceMode'
+import { getDefaultLens, spectatorCinemaPath } from '../../utils/consoleExperienceMode'
 import { useConsoleAccessPolicy } from '../../hooks/useConsoleAccessPolicy'
 import { useConsoleSessionRecorder } from '../../hooks/useConsoleSessionRecorder'
 import { useVmHardware } from '../../hooks/useVmHardware'
@@ -112,6 +112,7 @@ function CockpitInner({
   const vp = useConsoleViewport()
   const { setProtocol, setMode, setConnected } = vp
   const access = useConsoleAccessPolicy(plan, session)
+  const lensInitialized = useRef(false)
   const [lens, setLens] = useState<ConsoleLens>('display')
   const [commandCenter, setCommandCenter] = useState(false)
   const [ccTab, setCcTab] = useState<CommandCenterTab>('Overview')
@@ -162,14 +163,23 @@ function CockpitInner({
     if (loading) setConnected(false)
   }, [activeProtocol, loading, setProtocol, setMode, setConnected])
 
+  // Reset the lens guard when navigating to a different VM so the new plan picks its own default.
   useEffect(() => {
-    if (plan?.recommended === 'serial') {
-      setLens('serial')
-      if (experienceMode === 'cinema') onExperienceModeChange?.('studio')
-    } else if (plan?.recommended === 'spice' || plan?.recommended === 'webrtc_spice' || plan?.recommended === 'novnc') {
-      setLens('display')
+    lensInitialized.current = false
+  }, [vmId])
+
+  // Cockpit pattern: set the default lens ONCE when the plan first arrives.
+  // Decision is made from VM capabilities (native.available, console_type, webrtc_spice_available),
+  // not from the backend `recommended` string — mirrors getDefaultConsole() in cockpit/pkg/machines.
+  useEffect(() => {
+    if (!plan || lensInitialized.current) return
+    lensInitialized.current = true
+    const defaultLens = getDefaultLens(plan)
+    setLens(defaultLens)
+    if (defaultLens === 'serial' && experienceMode === 'cinema') {
+      onExperienceModeChange?.('studio')
     }
-  }, [plan?.recommended, experienceMode, onExperienceModeChange])
+  }, [plan, experienceMode, onExperienceModeChange])
 
   const switchLens = useCallback(
     (next: ConsoleLens | 'native_ssh') => {
@@ -195,11 +205,17 @@ function CockpitInner({
       toast.info('Read-only session — cannot send keys')
       return
     }
+    // Prefer noVNC-native key injection (works without qemu-guest-agent).
+    if (vp.sendCtrlAltDel) {
+      vp.sendCtrlAltDel()
+      toast.success('Sent Ctrl+Alt+Del')
+      return
+    }
     try {
       await sendGuestKey(vmName, { preset: 'ctrl_alt_del' })
       toast.success('Sent Ctrl+Alt+Del')
     } catch {
-      toast.error('Could not send key')
+      toast.error('Could not send key — install qemu-guest-agent in the VM or connect via VNC')
     }
   }
 
@@ -690,7 +706,6 @@ function CockpitInner({
         activeProtocol={activeProtocol}
         onProtocolChange={onProtocolChange}
         recommended={plan?.recommended}
-        osHint={plan?.os_hint}
       />
       <MachineCanvas vmState={vmState} healthScore={healthScore} className="flex-1">
         {loading ? (

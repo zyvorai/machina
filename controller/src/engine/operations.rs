@@ -2,7 +2,7 @@
 // Operations — runbook catalog, execution history, compliance showback (Phase 29).
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -71,17 +71,16 @@ pub struct ExecuteRunbookRequest {
     pub context: serde_json::Value,
 }
 
-pub async fn overview(pool: &PgPool) -> anyhow::Result<OperationsOverview> {
+pub async fn overview(pool: &SqlitePool) -> anyhow::Result<OperationsOverview> {
     ensure_showback_snapshots(pool).await?;
 
-    let runbook_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM ops_runbook_catalog WHERE enabled = true",
-    )
-    .fetch_one(pool)
-    .await?;
+    let runbook_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM ops_runbook_catalog WHERE enabled = true")
+            .fetch_one(pool)
+            .await?;
 
     let executions_24h: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM ops_runbook_executions WHERE created_at > NOW() - INTERVAL '24 hours'",
+        "SELECT COUNT(*) FROM ops_runbook_executions WHERE created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await?;
@@ -106,7 +105,7 @@ pub async fn overview(pool: &PgPool) -> anyhow::Result<OperationsOverview> {
     })
 }
 
-pub async fn list_catalog(pool: &PgPool) -> anyhow::Result<Vec<RunbookCatalogRow>> {
+pub async fn list_catalog(pool: &SqlitePool) -> anyhow::Result<Vec<RunbookCatalogRow>> {
     sqlx::query_as(
         "SELECT id, incident, title, category, severity, auto_trigger, enabled
          FROM ops_runbook_catalog WHERE enabled = true ORDER BY category, title",
@@ -116,10 +115,13 @@ pub async fn list_catalog(pool: &PgPool) -> anyhow::Result<Vec<RunbookCatalogRow
     .map_err(|e| e.into())
 }
 
-pub async fn list_executions(pool: &PgPool, limit: i64) -> anyhow::Result<Vec<RunbookExecutionRow>> {
+pub async fn list_executions(
+    pool: &SqlitePool,
+    limit: i64,
+) -> anyhow::Result<Vec<RunbookExecutionRow>> {
     sqlx::query_as(
         "SELECT id, incident, status, steps_json, actor, summary, created_at
-         FROM ops_runbook_executions ORDER BY created_at DESC LIMIT $1",
+         FROM ops_runbook_executions ORDER BY created_at DESC LIMIT ?",
     )
     .bind(limit.clamp(1, 100))
     .fetch_all(pool)
@@ -128,13 +130,13 @@ pub async fn list_executions(pool: &PgPool, limit: i64) -> anyhow::Result<Vec<Ru
 }
 
 pub async fn execute_runbook(
-    pool: &PgPool,
+    pool: &SqlitePool,
     incident: &str,
     actor: &str,
     context: &serde_json::Value,
 ) -> anyhow::Result<RunbookExecuteResult> {
     let catalog: Option<(String,)> = sqlx::query_as(
-        "SELECT title FROM ops_runbook_catalog WHERE incident = $1 AND enabled = true",
+        "SELECT title FROM ops_runbook_catalog WHERE incident = ? AND enabled = true",
     )
     .bind(incident)
     .fetch_optional(pool)
@@ -146,7 +148,7 @@ pub async fn execute_runbook(
 
     sqlx::query(
         "INSERT INTO ops_runbook_executions (id, incident, status, steps_json, actor, summary)
-         VALUES ($1, $2, 'completed', $3, $4, $5)",
+         VALUES (?, ?, 'completed', ?, ?, ?)",
     )
     .bind(execution_id)
     .bind(incident)
@@ -164,17 +166,26 @@ pub async fn execute_runbook(
         title,
         steps: rb.steps,
         commands: rb.commands,
-        summary: rb.summary.unwrap_or_else(|| format!("Runbook generated for {incident}")),
+        summary: rb
+            .summary
+            .unwrap_or_else(|| format!("Runbook generated for {incident}")),
     })
 }
 
-pub async fn showback_overview(pool: &PgPool, _cfg: &ControllerConfig) -> anyhow::Result<ShowbackOverview> {
+pub async fn showback_overview(
+    pool: &SqlitePool,
+    _cfg: &ControllerConfig,
+) -> anyhow::Result<ShowbackOverview> {
     ensure_showback_snapshots(pool).await?;
 
     let rows: Vec<(String, f64, String, i32)> = sqlx::query_as(
-        "SELECT DISTINCT ON (project_name) project_name, cost_usd::float8, compliance_grade, vm_count
-         FROM ops_showback_snapshots
-         ORDER BY project_name, captured_at DESC",
+        "SELECT s.project_name, s.cost_usd, s.compliance_grade, s.vm_count
+         FROM ops_showback_snapshots s
+         WHERE s.captured_at = (
+             SELECT MAX(s2.captured_at) FROM ops_showback_snapshots s2
+             WHERE s2.project_name = s.project_name
+         )
+         ORDER BY s.project_name",
     )
     .fetch_all(pool)
     .await?;
@@ -223,7 +234,7 @@ pub async fn showback_overview(pool: &PgPool, _cfg: &ControllerConfig) -> anyhow
     })
 }
 
-async fn ensure_showback_snapshots(pool: &PgPool) -> anyhow::Result<()> {
+async fn ensure_showback_snapshots(pool: &SqlitePool) -> anyhow::Result<()> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ops_showback_snapshots")
         .fetch_one(pool)
         .await?;
@@ -244,11 +255,11 @@ async fn ensure_showback_snapshots(pool: &PgPool) -> anyhow::Result<()> {
             .unwrap_or(0);
         sqlx::query(
             "INSERT INTO ops_showback_snapshots (id, project_name, cost_usd, compliance_grade, vm_count)
-             VALUES ($1, 'default', $2, 'B', $3)",
+             VALUES (?, 'default', ?, 'B', ?)",
         )
         .bind(Uuid::new_v4())
         .bind((vm_count as f64) * 12.0)
-        .bind(vm_count as i32)
+        .bind(vm_count)
         .execute(pool)
         .await?;
         return Ok(());
@@ -260,27 +271,29 @@ async fn ensure_showback_snapshots(pool: &PgPool) -> anyhow::Result<()> {
         .map(|c| c.grade.clone())
         .unwrap_or_else(|| "B".into());
 
+    let mut tx = pool.begin().await?;
     for (name,) in projects {
         let vm_count: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM vms WHERE COALESCE(NULLIF(TRIM(project), ''), 'default') = $1",
+            "SELECT COUNT(*) FROM vms WHERE COALESCE(NULLIF(TRIM(project), ''), 'default') = ?",
         )
         .bind(&name)
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await
         .unwrap_or(0);
 
         let cost = (vm_count as f64) * 18.5 + 25.0;
         sqlx::query(
             "INSERT INTO ops_showback_snapshots (id, project_name, cost_usd, compliance_grade, vm_count)
-             VALUES ($1, $2, $3, $4, $5)",
+             VALUES (?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4())
         .bind(&name)
         .bind(cost)
         .bind(if vm_count > 5 { "C" } else { grade.as_str() })
-        .bind(vm_count as i32)
-        .execute(pool)
+        .bind(vm_count)
+        .execute(&mut *tx)
         .await?;
     }
+    tx.commit().await?;
     Ok(())
 }

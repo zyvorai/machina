@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Link, useNavigate } from 'react-router'
 import { ArrowRightLeft, CheckCircle2, AlertTriangle, XCircle, ExternalLink, Play, Loader2 } from 'lucide-react'
 import { MacGlassPanel, MacListRow } from '../../components/platform/mac/PlatformMacUi'
@@ -62,6 +63,7 @@ export default function PlatformMigration() {
   const [jobStatus, setJobStatus] = useState<string | null>(null)
   const [planSummary, setPlanSummary] = useState<string | null>(null)
   const [jobPolling, setJobPolling] = useState(false)
+  const [confirmMigration, setConfirmMigration] = useState<{ vm: ScanVm; force: boolean } | null>(null)
   const [gkJobs, setGkJobs] = useState<GuestkitJobRow[]>([])
   const [gkCaps, setGkCaps] = useState<string | null>(null)
   const [hsProxyPath, setHsProxyPath] = useState('/providers')
@@ -97,8 +99,8 @@ export default function PlatformMigration() {
   const migrateVm = async (vm: ScanVm, force = false) => {
     if (!hypersdk || vm.name.startsWith('(')) return
     if (!force && vm.status === 'check' && vm.advisor?.risks?.length) {
-      const risks = vm.advisor.risks.slice(0, 5).join('\n• ')
-      if (!window.confirm(`Migration advisor warnings:\n• ${risks}\n\nContinue anyway?`)) return
+      setConfirmMigration({ vm, force: true })
+      return
     }
     setMigrating(vm.name)
     try {
@@ -287,7 +289,7 @@ export default function PlatformMigration() {
       {hypersdk && status?.reachable && (
         <MacGlassPanel title="HyperSDK proxy explorer" subtitle="Provider-specific API paths via HyperSDK proxy.">
           <div className="flex flex-wrap gap-2 items-end mb-3">
-            <input className="input text-sm flex-1 min-w-[12rem]" value={hsProxyPath} onChange={(e) => setHsProxyPath(e.target.value)} placeholder="/providers" />
+            <input aria-label="HyperSDK proxy path" className="input text-sm flex-1 min-w-[12rem]" value={hsProxyPath} onChange={(e) => setHsProxyPath(e.target.value)} placeholder="/providers" />
             <button
               type="button"
               className="btn-secondary text-xs"
@@ -396,8 +398,8 @@ export default function PlatformMigration() {
                       {vm.advisor.firewall_migration_summary && (
                         <p className="text-blue-200/90">Firewall: {vm.advisor.firewall_migration_summary}</p>
                       )}
-                      {vm.advisor.risks.length > 0 && (
-                        <ul className={`list-disc pl-4 ${statusToneClass('warn')}`}>{vm.advisor.risks.slice(0, 3).map((r, i) => <li key={i}>{r}</li>)}</ul>
+                      {(vm.advisor.risks ?? []).length > 0 && (
+                        <ul className={`list-disc pl-4 ${statusToneClass('warn')}`}>{(vm.advisor.risks ?? []).slice(0, 3).map((r) => <li key={r}>{r}</li>)}</ul>
                       )}
                     </div>
                   )}
@@ -431,6 +433,19 @@ export default function PlatformMigration() {
       </section>
       </>
       )}
+      <ConfirmDialog
+        open={confirmMigration !== null}
+        title="Migration Advisor Warnings"
+        message={`Migration advisor warnings:\n• ${(confirmMigration?.vm.advisor?.risks ?? []).slice(0, 5).join('\n• ')}\n\nContinue anyway?`}
+        confirmLabel="Continue"
+        variant="warning"
+        onCancel={() => setConfirmMigration(null)}
+        onConfirm={() => {
+          const m = confirmMigration
+          setConfirmMigration(null)
+          if (m) void migrateVm(m.vm, true)
+        }}
+      />
     </PlatformPageChrome>
   )
 }

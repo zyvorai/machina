@@ -6,15 +6,18 @@ use std::sync::{Arc, Mutex};
 
 use clap::{Parser, Subcommand};
 use machina_agent::console_ws::{self, ConsoleProxyState};
-use machina_agent::libvirt_ops::LibvirtCtx;
 use machina_agent::grpc::AgentService;
+use machina_agent::libvirt_ops::LibvirtCtx;
 use machina_agent::pb::host_agent_server::HostAgentServer;
 use machina_agent::state::shared_state;
 use tonic::transport::{Identity, Server, ServerTlsConfig};
 use tracing::info;
 
 #[derive(Parser)]
-#[command(name = "machina-agent", about = "Machina host agent (libvirt executor)")]
+#[command(
+    name = "machina-agent",
+    about = "Machina host agent (libvirt executor)"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -82,10 +85,13 @@ async fn run_join(
         "agent_console_addr": console_addr,
         "libvirt_uri": cli.libvirt_uri,
     });
-    let url = format!(
-        "{}/api/v1/hosts/join",
-        controller.trim_end_matches('/')
-    );
+    let url = format!("{}/api/v1/hosts/join", controller.trim_end_matches('/'));
+    if controller.starts_with("http://") {
+        tracing::warn!(
+            "Joining controller over plaintext HTTP — enrollment token will be transmitted \
+             unencrypted. Use HTTPS in production."
+        );
+    }
     let client = reqwest::Client::new();
     let resp = client.post(&url).json(&body).send().await?;
     if !resp.status().is_success() {
@@ -119,16 +125,24 @@ async fn run_serve(cli: &Cli) -> anyhow::Result<()> {
     tokio::try_join!(
         async {
             let mut builder = Server::builder();
-            if let (Ok(cert_path), Ok(key_path)) = (
+            match (
                 std::env::var("MACHINA_AGENT_TLS_CERT"),
                 std::env::var("MACHINA_AGENT_TLS_KEY"),
             ) {
-                if Path::new(&cert_path).exists() && Path::new(&key_path).exists() {
+                (Ok(cert_path), Ok(key_path))
+                    if Path::new(&cert_path).exists() && Path::new(&key_path).exists() =>
+                {
                     let cert = tokio::fs::read_to_string(&cert_path).await?;
                     let key = tokio::fs::read_to_string(&key_path).await?;
                     let tls = ServerTlsConfig::new().identity(Identity::from_pem(cert, key));
                     builder = builder.tls_config(tls)?;
                     info!("agent gRPC TLS enabled");
+                }
+                _ => {
+                    tracing::warn!(
+                        "MACHINA_AGENT_TLS_CERT/MACHINA_AGENT_TLS_KEY not set — \
+                         gRPC serving UNENCRYPTED plaintext; set env vars in production"
+                    );
                 }
             }
             builder

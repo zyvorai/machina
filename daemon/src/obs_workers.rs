@@ -60,14 +60,16 @@ impl ObservabilityWorkers {
         stats: Arc<DaemonStats>,
         http_metrics: Arc<HttpMetrics>,
     ) {
-        if let Some(old) = self.otlp_cancel.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        if let Some(old) = self
+            .otlp_cancel
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take()
+        {
             old.cancel();
         }
         let token = CancellationToken::new();
-        *self
-            .otlp_cancel
-            .lock()
-            .unwrap_or_else(|e| e.into_inner()) = Some(token.clone());
+        *self.otlp_cancel.lock().unwrap_or_else(|e| e.into_inner()) = Some(token.clone());
         otlp_worker::spawn_otlp_worker(manager, stats, http_metrics, token);
     }
 

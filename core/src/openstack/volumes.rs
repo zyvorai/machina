@@ -101,7 +101,10 @@ pub async fn create_cinder_volume(
     })
 }
 
-pub async fn delete_cinder_volume(cfg: &OpenStackConfig, volume_id: &str) -> Result<(), LibvirtError> {
+pub async fn delete_cinder_volume(
+    cfg: &OpenStackConfig,
+    volume_id: &str,
+) -> Result<(), LibvirtError> {
     let id = volume_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("volume_id is required".into()));
@@ -129,7 +132,10 @@ pub async fn extend_cinder_volume(
         .await
         .map_err(map_osauth_err)?;
     let cloud = connect_cloud(cfg).await?;
-    let vol = cloud.get_volume(volume_id).await.map_err(map_openstack_err)?;
+    let vol = cloud
+        .get_volume(volume_id)
+        .await
+        .map_err(map_openstack_err)?;
     Ok(OpenStackAttachedVolume {
         id: vol.id().clone(),
         name: vol.name().clone(),
@@ -353,7 +359,10 @@ pub async fn retype_cinder_volume(
         .await
         .map_err(map_osauth_err)?;
     let cloud = connect_cloud(cfg).await?;
-    let vol = cloud.get_volume(volume_id).await.map_err(map_openstack_err)?;
+    let vol = cloud
+        .get_volume(volume_id)
+        .await
+        .map_err(map_openstack_err)?;
     Ok(OpenStackAttachedVolume {
         id: vol.id().clone(),
         name: vol.name().clone(),
@@ -488,7 +497,9 @@ pub async fn create_volume_transfer(
     let vol = req.volume_id.trim();
     let name = req.name.trim();
     if vol.is_empty() || name.is_empty() {
-        return Err(LibvirtError::Invalid("volume_id and name are required".into()));
+        return Err(LibvirtError::Invalid(
+            "volume_id and name are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let body = serde_json::json!({
@@ -530,7 +541,9 @@ pub async fn accept_volume_transfer(
     let tid = req.transfer_id.trim();
     let key = req.auth_key.trim();
     if tid.is_empty() || key.is_empty() {
-        return Err(LibvirtError::Invalid("transfer_id and auth_key are required".into()));
+        return Err(LibvirtError::Invalid(
+            "transfer_id and auth_key are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let body = serde_json::json!({
@@ -565,7 +578,10 @@ pub async fn accept_volume_transfer(
     })
 }
 
-pub async fn delete_volume_transfer(cfg: &OpenStackConfig, transfer_id: &str) -> Result<(), LibvirtError> {
+pub async fn delete_volume_transfer(
+    cfg: &OpenStackConfig,
+    transfer_id: &str,
+) -> Result<(), LibvirtError> {
     let id = transfer_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("transfer_id is required".into()));
@@ -632,7 +648,10 @@ pub async fn update_cinder_volume(
         .await
         .map_err(map_osauth_err)?;
     let cloud = connect_cloud(cfg).await?;
-    let vol = cloud.get_volume(volume_id).await.map_err(map_openstack_err)?;
+    let vol = cloud
+        .get_volume(volume_id)
+        .await
+        .map_err(map_openstack_err)?;
     let att = vol.attachments().into_iter().next();
     Ok(OpenStackAttachedVolume {
         id: vol.id().clone(),
@@ -717,7 +736,10 @@ pub async fn create_volume_from_image(
     })
 }
 
-pub async fn delete_cinder_snapshot(cfg: &OpenStackConfig, snapshot_id: &str) -> Result<(), LibvirtError> {
+pub async fn delete_cinder_snapshot(
+    cfg: &OpenStackConfig,
+    snapshot_id: &str,
+) -> Result<(), LibvirtError> {
     let id = snapshot_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("snapshot_id is required".into()));
@@ -753,7 +775,9 @@ pub async fn upload_volume_to_image(
     let id = volume_id.trim();
     let name = req.image_name.trim();
     if id.is_empty() || name.is_empty() {
-        return Err(LibvirtError::Invalid("volume id and image_name are required".into()));
+        return Err(LibvirtError::Invalid(
+            "volume id and image_name are required".into(),
+        ));
     }
     let disk_format = req
         .disk_format

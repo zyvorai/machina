@@ -50,7 +50,8 @@ pub fn get_pending_config(conn: &Connect, name: &str) -> Result<PendingConfig, L
 
     let mut changes = diff_configs(&active_xml, &inactive_xml);
 
-    if changes.is_empty() && normalize_for_compare(&active_xml) != normalize_for_compare(&inactive_xml)
+    if changes.is_empty()
+        && normalize_for_compare(&active_xml) != normalize_for_compare(&inactive_xml)
     {
         changes.push(PendingChange {
             category: "domain".into(),
@@ -120,10 +121,7 @@ fn vcpu_spec(xml: &str) -> String {
 fn memory_kib(xml: &str) -> u64 {
     crate::xml::extract_text(xml, "memory")
         .and_then(|s| s.parse().ok())
-        .or_else(|| {
-            crate::xml::extract_attr(xml, "memory", "value")
-                .and_then(|s| s.parse().ok())
-        })
+        .or_else(|| crate::xml::extract_attr(xml, "memory", "value").and_then(|s| s.parse().ok()))
         .unwrap_or(0)
 }
 
@@ -150,11 +148,15 @@ fn diff_disks(active: &str, inactive: &str, out: &mut Vec<PendingChange>) {
         match active_map.get(target) {
             Some(active_fp) if active_fp != fp => out.push(PendingChange {
                 category: "disk".into(),
-                summary: format!("Disk {target} settings differ between running and persistent config"),
+                summary: format!(
+                    "Disk {target} settings differ between running and persistent config"
+                ),
             }),
             None => out.push(PendingChange {
                 category: "disk".into(),
-                summary: format!("Disk {target} added in persistent config (not active until shutdown)"),
+                summary: format!(
+                    "Disk {target} added in persistent config (not active until shutdown)"
+                ),
             }),
             _ => {}
         }
@@ -217,8 +219,7 @@ fn fs_fingerprint(f: &FilesystemInfo) -> String {
 fn diff_filesystems(active: &str, inactive: &str, out: &mut Vec<PendingChange>) {
     let active_fs = super::domain::parse_filesystems_for_diff(active);
     let inactive_fs = super::domain::parse_filesystems_for_diff(inactive);
-    let active_set: std::collections::BTreeSet<_> =
-        active_fs.iter().map(fs_fingerprint).collect();
+    let active_set: std::collections::BTreeSet<_> = active_fs.iter().map(fs_fingerprint).collect();
     let inactive_set: std::collections::BTreeSet<_> =
         inactive_fs.iter().map(fs_fingerprint).collect();
     if active_set != inactive_set {

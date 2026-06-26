@@ -1,6 +1,6 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 struct CatalogTemplate {
@@ -410,39 +410,40 @@ const RETIRED_TEMPLATE_NAMES: &[&str] = &[
 ];
 
 /// Remove marketplace rows that are no longer in the bundled catalog (e.g. fedora-40).
-pub async fn prune_stale_marketplace_templates(pool: &PgPool) -> anyhow::Result<u64> {
-    let retired = sqlx::query("DELETE FROM templates WHERE name = ANY($1)")
-        .bind(RETIRED_TEMPLATE_NAMES)
+pub async fn prune_stale_marketplace_templates(pool: &SqlitePool) -> anyhow::Result<u64> {
+    let retired_json = serde_json::to_string(RETIRED_TEMPLATE_NAMES).unwrap_or_default();
+    let retired = sqlx::query("DELETE FROM templates WHERE name IN (SELECT value FROM json_each(?))")
+        .bind(retired_json)
         .execute(pool)
         .await?
         .rows_affected();
 
-    let names: Vec<String> = CATALOG.iter().map(|t| t.name.to_string()).collect();
-    let versions: Vec<String> = CATALOG.iter().map(|t| t.version.to_string()).collect();
+    let catalog_json = serde_json::to_string(
+        &CATALOG.iter().map(|t| serde_json::json!({"name": t.name, "version": t.version})).collect::<Vec<_>>()
+    ).unwrap_or_else(|_| "[]".into());
     let result = sqlx::query(
-        r#"DELETE FROM templates t
-           WHERE t.marketplace = TRUE
-             AND NOT EXISTS (
-               SELECT 1
-               FROM UNNEST($1::text[], $2::text[]) AS c(name, version)
-               WHERE c.name = t.name AND c.version = t.version
-             )"#,
+        "DELETE FROM templates
+         WHERE marketplace = TRUE
+           AND NOT EXISTS (
+             SELECT 1 FROM json_each(?) j
+             WHERE json_extract(j.value, '$.name') = templates.name
+               AND json_extract(j.value, '$.version') = templates.version
+           )",
     )
-    .bind(&names)
-    .bind(&versions)
+    .bind(&catalog_json)
     .execute(pool)
     .await?;
     Ok(retired + result.rows_affected())
 }
 
 /// Insert bundled marketplace templates (idempotent).
-pub async fn seed_default_templates(pool: &PgPool) -> anyhow::Result<usize> {
+pub async fn seed_default_templates(pool: &SqlitePool) -> anyhow::Result<usize> {
     let mut inserted = 0usize;
     for t in CATALOG {
         let fw = catalog_firewall_profile(t);
         let result = sqlx::query(
             "INSERT INTO templates (id, name, version, source_disk, cloud_init, os_family, category, workload, description, featured, marketplace, icon, firewall_profile, approval_status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, $11, $12, 'approved')
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, ?, 'approved')
              ON CONFLICT (name, version) DO UPDATE SET
                firewall_profile = EXCLUDED.firewall_profile,
                workload = EXCLUDED.workload,
@@ -485,11 +486,13 @@ pub fn download_url_for(name: &str, version: &str) -> Option<&'static str> {
 }
 
 pub fn download_url_for_ref(template_ref: &str) -> Option<&'static str> {
-    let (name, version) = template_ref.split_once('@').unwrap_or((template_ref, "1.0.0"));
+    let (name, version) = template_ref
+        .split_once('@')
+        .unwrap_or((template_ref, "1.0.0"));
     download_url_for(name, version)
 }
 
-pub async fn ensure_default_templates(pool: &PgPool) -> anyhow::Result<()> {
+pub async fn ensure_default_templates(pool: &SqlitePool) -> anyhow::Result<()> {
     seed_default_templates(pool).await?;
     Ok(())
 }

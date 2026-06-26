@@ -198,6 +198,7 @@ function MigratePicker({
     <div>
       <p className="text-xs font-medium text-slate-400 mb-1">Migrate to</p>
       <select
+        aria-label="Migrate VM to host"
         className="w-full text-xs rounded-lg bg-slate-900 border border-white/10 px-2 py-1.5"
         defaultValue=""
         onChange={(e) => {

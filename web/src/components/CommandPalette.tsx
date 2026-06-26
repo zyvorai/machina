@@ -199,7 +199,9 @@ export default function CommandPalette({ onOpenHelp, spotlight = false }: Comman
 
   // Focus input when opened
   useEffect(() => {
-    if (open) setTimeout(() => inputRef.current?.focus(), 50)
+    if (!open) return
+    const id = setTimeout(() => inputRef.current?.focus(), 50)
+    return () => clearTimeout(id)
   }, [open])
 
   const platformConnected = Boolean(info?.control_plane?.proxy_url)
@@ -845,6 +847,9 @@ export default function CommandPalette({ onOpenHelp, spotlight = false }: Comman
         >
           <div className="fixed inset-x-0 top-[15%] mx-auto max-w-lg px-4" onClick={(e) => e.stopPropagation()}>
             <motion.div
+              role="dialog"
+              aria-modal
+              aria-label="Command palette"
               initial={{ opacity: 0, scale: 0.96, y: -8 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.96, y: -8 }}
@@ -858,6 +863,7 @@ export default function CommandPalette({ onOpenHelp, spotlight = false }: Comman
             <input
               ref={inputRef}
               type="text"
+              aria-label={spotlight ? 'Zeus — search or ask' : 'Search command palette'}
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder={spotlight ? 'Zeus — search or ask…' : 'Search or type > import networks…'}

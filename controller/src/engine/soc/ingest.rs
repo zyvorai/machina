@@ -2,13 +2,13 @@
 
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
 use crate::engine::packetwolf_bridge;
 
-pub async fn ingest_recent(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<IngestStats> {
+pub async fn ingest_recent(pool: &SqlitePool, cfg: &ControllerConfig) -> anyhow::Result<IngestStats> {
     let mut stats = IngestStats::default();
     stats.firewall += ingest_firewall_timeline(pool).await?;
     stats.audit += ingest_audit_logs(pool).await?;
@@ -25,29 +25,29 @@ pub struct IngestStats {
     pub packetwolf: usize,
 }
 
-async fn watermark(pool: &PgPool, source: &str) -> anyhow::Result<DateTime<Utc>> {
-    let ts: DateTime<Utc> = sqlx::query_scalar(
-        "SELECT last_at FROM soc_ingest_watermarks WHERE source = $1",
-    )
-    .bind(source)
-    .fetch_one(pool)
-    .await?;
-    Ok(ts)
+async fn watermark(pool: &SqlitePool, source: &str) -> anyhow::Result<DateTime<Utc>> {
+    let ts: Option<DateTime<Utc>> =
+        sqlx::query_scalar("SELECT last_at FROM soc_ingest_watermarks WHERE source = ?")
+            .bind(source)
+            .fetch_optional(pool)
+            .await?;
+    Ok(ts.unwrap_or_else(|| Utc::now() - chrono::Duration::days(7)))
 }
 
-async fn advance_watermark(pool: &PgPool, source: &str, ts: DateTime<Utc>) -> anyhow::Result<()> {
+async fn advance_watermark(pool: &SqlitePool, source: &str, ts: DateTime<Utc>) -> anyhow::Result<()> {
     sqlx::query(
-        "UPDATE soc_ingest_watermarks SET last_at = GREATEST(last_at, $2) WHERE source = $1",
+        "UPDATE soc_ingest_watermarks SET last_at = CASE WHEN last_at > ? THEN last_at ELSE ? END WHERE source = ?",
     )
-    .bind(source)
     .bind(ts)
+    .bind(ts)
+    .bind(source)
     .execute(pool)
     .await?;
     Ok(())
 }
 
 async fn insert_event(
-    pool: &PgPool,
+    pool: &SqlitePool,
     occurred_at: DateTime<Utc>,
     source: &str,
     category: &str,
@@ -61,10 +61,11 @@ async fn insert_event(
     dedupe_key: Option<&str>,
 ) -> anyhow::Result<bool> {
     let r = sqlx::query(
-        "INSERT INTO soc_events (occurred_at, source, category, severity, host_id, vm_id, actor, summary, ecs_json, raw_ref, dedupe_key)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        "INSERT INTO soc_events (id, occurred_at, source, category, severity, host_id, vm_id, actor, summary, ecs_json, raw_ref, dedupe_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING",
     )
+    .bind(Uuid::new_v4())
     .bind(occurred_at)
     .bind(source)
     .bind(category)
@@ -81,7 +82,7 @@ async fn insert_event(
     Ok(r.rows_affected() > 0)
 }
 
-async fn ingest_firewall_timeline(pool: &PgPool) -> anyhow::Result<usize> {
+async fn ingest_firewall_timeline(pool: &SqlitePool) -> anyhow::Result<usize> {
     let since = watermark(pool, "firewall_timeline").await?;
     let rows: Vec<(
         String,
@@ -92,8 +93,9 @@ async fn ingest_firewall_timeline(pool: &PgPool) -> anyhow::Result<usize> {
         DateTime<Utc>,
         Value,
     )> = sqlx::query_as(
-        "SELECT target_kind, target_id, kind, summary, actor, created_at, detail_json
-         FROM firewall_timeline WHERE created_at > $1 ORDER BY created_at ASC LIMIT 2000",
+        "SELECT target_kind, target_id, kind, summary, actor,
+                strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at, detail_json
+         FROM firewall_timeline WHERE strftime('%Y-%m-%dT%H:%M:%SZ', created_at) > ? ORDER BY created_at ASC LIMIT 2000",
     )
     .bind(since)
     .fetch_all(pool)
@@ -163,16 +165,24 @@ fn firewall_severity(kind: &str, detail: &Value) -> String {
     "low".into()
 }
 
-async fn ingest_audit_logs(pool: &PgPool) -> anyhow::Result<usize> {
+async fn ingest_audit_logs(pool: &SqlitePool) -> anyhow::Result<usize> {
     let since = watermark(pool, "audit_logs").await?;
-    let rows: Vec<(Uuid, String, String, Option<String>, Option<Uuid>, Value, DateTime<Utc>)> =
-        sqlx::query_as(
-            "SELECT id, actor, action, resource_type, resource_id, detail, created_at
-             FROM audit_logs WHERE created_at > $1 ORDER BY created_at ASC LIMIT 2000",
-        )
-        .bind(since)
-        .fetch_all(pool)
-        .await?;
+    let rows: Vec<(
+        Uuid,
+        String,
+        String,
+        Option<String>,
+        Option<Uuid>,
+        Value,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
+        "SELECT id, actor, action, resource_type, resource_id, detail,
+                strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+             FROM audit_logs WHERE strftime('%Y-%m-%dT%H:%M:%SZ', created_at) > ? ORDER BY created_at ASC LIMIT 2000",
+    )
+    .bind(since)
+    .fetch_all(pool)
+    .await?;
 
     let mut n = 0usize;
     let mut max_ts = since;
@@ -225,16 +235,24 @@ fn audit_severity(action: &str) -> String {
     }
 }
 
-async fn ingest_platform_events(pool: &PgPool) -> anyhow::Result<usize> {
+async fn ingest_platform_events(pool: &SqlitePool) -> anyhow::Result<usize> {
     let since = watermark(pool, "platform_events").await?;
-    let rows: Vec<(Uuid, String, Option<String>, Option<Uuid>, String, Value, DateTime<Utc>)> =
-        sqlx::query_as(
-            "SELECT id, kind, resource_type, resource_id, message, payload, created_at
-             FROM events WHERE created_at > $1 ORDER BY created_at ASC LIMIT 1000",
-        )
-        .bind(since)
-        .fetch_all(pool)
-        .await?;
+    let rows: Vec<(
+        Uuid,
+        String,
+        Option<String>,
+        Option<Uuid>,
+        String,
+        Value,
+        DateTime<Utc>,
+    )> = sqlx::query_as(
+        "SELECT id, kind, resource_type, resource_id, message, payload,
+                strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+             FROM events WHERE strftime('%Y-%m-%dT%H:%M:%SZ', created_at) > ? ORDER BY created_at ASC LIMIT 1000",
+    )
+    .bind(since)
+    .fetch_all(pool)
+    .await?;
 
     let mut n = 0usize;
     let mut max_ts = since;
@@ -277,7 +295,7 @@ async fn ingest_platform_events(pool: &PgPool) -> anyhow::Result<usize> {
     Ok(n)
 }
 
-async fn ingest_packetwolf(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<usize> {
+async fn ingest_packetwolf(pool: &SqlitePool, cfg: &ControllerConfig) -> anyhow::Result<usize> {
     if !cfg.packetwolf_enabled {
         return Ok(0);
     }
@@ -307,21 +325,33 @@ async fn ingest_packetwolf(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Res
             .get("anomaly_type")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown");
-        let dedupe = format!(
-            "pw:{}:{}",
-            anomaly_type,
-            a.get("detected_at")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-        );
+        let anomaly_id = a
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("");
+        let dedupe = if !anomaly_id.is_empty() {
+            format!("pw:id:{anomaly_id}")
+        } else {
+            format!(
+                "pw:{}:{}",
+                anomaly_type,
+                a.get("detected_at").and_then(|v| v.as_str()).unwrap_or("")
+            )
+        };
+        let source_ns = a.get("source_namespace").and_then(|v| v.as_str());
+        let source_pod = a.get("source_pod").and_then(|v| v.as_str());
         let ecs = json!({
-            "@timestamp": now.to_rfc3339(),
+            "@timestamp": a.get("detected_at").and_then(|v| v.as_str()).unwrap_or(&now.to_rfc3339()),
             "event.dataset": "machina.packetwolf",
             "event.category": ["intrusion_detection"],
             "event.kind": "alert",
             "event.severity": severity_to_ecs(severity),
             "message": summary,
             "machina.packetwolf.anomaly_type": anomaly_type,
+            "machina.packetwolf.anomaly_id": anomaly_id,
+            "kubernetes.namespace": source_ns,
+            "kubernetes.pod.name": source_pod,
+            "source.ip": a.get("source_ip"),
         });
         if insert_event(
             pool,

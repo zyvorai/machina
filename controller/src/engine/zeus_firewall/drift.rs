@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use machina_core::FirewallInventory;
@@ -23,16 +23,16 @@ pub fn checksum_inventory(inv: &FirewallInventory) -> String {
 }
 
 pub async fn save_snapshot(
-    pool: &PgPool,
+    pool: &SqlitePool,
     target_kind: &str,
     target_id: Uuid,
     inv: &FirewallInventory,
 ) -> anyhow::Result<()> {
     let checksum = checksum_inventory(inv);
     sqlx::query(
-        "INSERT INTO firewall_posture_snapshots (target_kind, target_id, checksum, posture_json)
-         VALUES ($1, $2, $3, $4)",
+        "INSERT INTO firewall_posture_snapshots (id, target_kind, target_id, checksum, posture_json) VALUES (?, ?, ?, ?, ?)",
     )
+    .bind(uuid::Uuid::new_v4())
     .bind(target_kind)
     .bind(target_id)
     .bind(&checksum)
@@ -43,14 +43,14 @@ pub async fn save_snapshot(
 }
 
 pub async fn detect_drift(
-    pool: &PgPool,
+    pool: &SqlitePool,
     target_kind: &str,
     target_id: Uuid,
     current: &FirewallInventory,
 ) -> anyhow::Result<DriftReport> {
     let row: Option<(String, serde_json::Value)> = sqlx::query_as(
         "SELECT checksum, posture_json FROM firewall_posture_snapshots
-         WHERE target_kind = $1 AND target_id = $2 ORDER BY captured_at DESC LIMIT 1",
+         WHERE target_kind = ? AND target_id = ? ORDER BY captured_at DESC LIMIT 1",
     )
     .bind(target_kind)
     .bind(target_id)

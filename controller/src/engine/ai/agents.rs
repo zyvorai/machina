@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use super::context::AssembledContext;
@@ -17,16 +17,66 @@ pub struct ZeusAgentInfo {
 
 pub fn catalog() -> Vec<ZeusAgentInfo> {
     vec![
-        agent("auto", "Auto", "Zeus picks the best specialist for your request.", TaskClass::Infrastructure),
-        agent("architect", "Zeus Architect", "Designs infrastructure and environments.", TaskClass::Infrastructure),
-        agent("devops", "Zeus DevOps", "CI/CD, runbooks, and operational automation.", TaskClass::CodeGeneration),
-        agent("kubernetes", "Zeus Kubernetes", "Cluster and workload operations.", TaskClass::Infrastructure),
-        agent("security", "Zeus Security", "Threat detection and security posture.", TaskClass::SecurityAnalysis),
-        agent("cost", "Zeus Cost Optimizer", "Cloud cost analysis and FinOps.", TaskClass::Research),
-        agent("observability", "Zeus Observability", "Logs, metrics, traces, and root cause.", TaskClass::LongContext),
-        agent("sre", "Zeus SRE", "Incident response and VM health.", TaskClass::LongContext),
-        agent("ai_engineer", "Zeus AI Engineer", "LLM deployment and inference stacks.", TaskClass::CodeGeneration),
-        agent("database", "Zeus Database Expert", "Database tuning and optimization.", TaskClass::LongContext),
+        agent(
+            "auto",
+            "Auto",
+            "Zeus picks the best specialist for your request.",
+            TaskClass::Infrastructure,
+        ),
+        agent(
+            "architect",
+            "Zeus Architect",
+            "Designs infrastructure and environments.",
+            TaskClass::Infrastructure,
+        ),
+        agent(
+            "devops",
+            "Zeus DevOps",
+            "CI/CD, runbooks, and operational automation.",
+            TaskClass::CodeGeneration,
+        ),
+        agent(
+            "kubernetes",
+            "Zeus Kubernetes",
+            "Cluster and workload operations.",
+            TaskClass::Infrastructure,
+        ),
+        agent(
+            "security",
+            "Zeus Security",
+            "Threat detection and security posture.",
+            TaskClass::SecurityAnalysis,
+        ),
+        agent(
+            "cost",
+            "Zeus Cost Optimizer",
+            "Cloud cost analysis and FinOps.",
+            TaskClass::Research,
+        ),
+        agent(
+            "observability",
+            "Zeus Observability",
+            "Logs, metrics, traces, and root cause.",
+            TaskClass::LongContext,
+        ),
+        agent(
+            "sre",
+            "Zeus SRE",
+            "Incident response and VM health.",
+            TaskClass::LongContext,
+        ),
+        agent(
+            "ai_engineer",
+            "Zeus AI Engineer",
+            "LLM deployment and inference stacks.",
+            TaskClass::CodeGeneration,
+        ),
+        agent(
+            "database",
+            "Zeus Database Expert",
+            "Database tuning and optimization.",
+            TaskClass::LongContext,
+        ),
     ]
 }
 
@@ -53,31 +103,56 @@ pub fn resolve_agent_id(raw: Option<&str>) -> String {
 pub fn pick_agent(message: &str, page_hint: Option<&str>) -> String {
     let ml = message.to_ascii_lowercase();
     let page = page_hint.unwrap_or("").to_ascii_lowercase();
-    if ml.contains("kubernetes") || ml.contains("k8s") || ml.contains("pod") || page.contains("k8s") {
+    if ml.contains("kubernetes") || ml.contains("k8s") || ml.contains("pod") || page.contains("k8s")
+    {
         return "kubernetes".into();
     }
-    if ml.contains("security") || ml.contains("firewall") || ml.contains("threat") || page.contains("security") {
+    if ml.contains("security")
+        || ml.contains("firewall")
+        || ml.contains("threat")
+        || page.contains("security")
+    {
         return "security".into();
     }
     if ml.contains("cost") || ml.contains("finops") || ml.contains("budget") {
         return "cost".into();
     }
-    if ml.contains("terraform") || ml.contains("ansible") || ml.contains("deploy") || ml.contains("pipeline") {
+    if ml.contains("terraform")
+        || ml.contains("ansible")
+        || ml.contains("deploy")
+        || ml.contains("pipeline")
+    {
         return "devops".into();
     }
-    if ml.contains("latency") || ml.contains("incident") || ml.contains("doctor") || ml.contains("health") {
+    if ml.contains("latency")
+        || ml.contains("incident")
+        || ml.contains("doctor")
+        || ml.contains("health")
+    {
         return "sre".into();
     }
     if ml.contains("database") || ml.contains("postgres") || ml.contains("mysql") {
         return "database".into();
     }
-    if ml.contains("vllm") || ml.contains("ollama") || ml.contains("inference") || ml.contains("gpu") {
+    if ml.contains("vllm")
+        || ml.contains("ollama")
+        || ml.contains("inference")
+        || ml.contains("gpu")
+    {
         return "ai_engineer".into();
     }
-    if ml.contains("design") || ml.contains("environment") || ml.contains("blueprint") || ml.contains("scale") {
+    if ml.contains("design")
+        || ml.contains("environment")
+        || ml.contains("blueprint")
+        || ml.contains("scale")
+    {
         return "architect".into();
     }
-    if ml.contains("log") || ml.contains("metric") || ml.contains("trace") || ml.contains("root cause") {
+    if ml.contains("log")
+        || ml.contains("metric")
+        || ml.contains("trace")
+        || ml.contains("root cause")
+    {
         return "observability".into();
     }
     "sre".into()
@@ -125,7 +200,7 @@ pub struct ZeusChatResponse {
 }
 
 pub async fn chat(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &crate::config::ControllerConfig,
     body: &ZeusChatBody,
     user_id: Option<&str>,
@@ -135,17 +210,28 @@ pub async fn chat(
     } else {
         resolve_agent_id(body.agent.as_deref())
     };
-    let base = super::build_copilot_base(pool, cfg, &body.message, body.vm_id, body.host_id, body.vm_ids.clone()).await?;
+    let base = super::build_copilot_base(
+        pool,
+        cfg,
+        &body.message,
+        body.vm_id,
+        body.host_id,
+        body.vm_ids.clone(),
+    )
+    .await?;
     let mut reply = base.reply;
     let task_class = TaskClass::from_agent(&agent_id);
-    let memory = super::memory_store::recall_for_user(pool, user_id, 3).await.unwrap_or_default();
+    let memory = super::memory_store::recall_for_user(pool, user_id, 3)
+        .await
+        .unwrap_or_default();
     let memory_text = memory.join("\n");
     let system = system_prompt(&agent_id);
+    let safe_message = body.message.chars().take(8192).collect::<String>();
+    let ctx: String = base.ctx_json.chars().take(16384).collect();
     let user_prompt = format!(
-        "Agent: {agent_id}\nPage: {}\nMemory:\n{memory_text}\nContext: {}\nUser: {}",
+        "Agent: {agent_id}\nPage: {}\n<memory>\n{memory_text}\n</memory>\nContext: {}\n<user_message>\n{safe_message}\n</user_message>",
         body.page_path.as_deref().unwrap_or(""),
-        base.ctx_json,
-        body.message
+        ctx,
     );
     let mut deterministic = true;
     if let Ok(Some(llm_text)) = super::llm::complete(
@@ -172,15 +258,11 @@ pub async fn chat(
     })
 }
 
-pub async fn save_preference(
-    pool: &PgPool,
-    user_id: &str,
-    agent_id: &str,
-) -> anyhow::Result<()> {
+pub async fn save_preference(pool: &SqlitePool, user_id: &str, agent_id: &str) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO ai_user_preferences (user_id, default_agent, updated_at)
-         VALUES ($1, $2, NOW())
-         ON CONFLICT (user_id) DO UPDATE SET default_agent = EXCLUDED.default_agent, updated_at = NOW()",
+         VALUES (?, ?, datetime('now'))
+         ON CONFLICT (user_id) DO UPDATE SET default_agent = EXCLUDED.default_agent, updated_at = datetime('now')",
     )
     .bind(user_id)
     .bind(agent_id)
@@ -189,9 +271,9 @@ pub async fn save_preference(
     Ok(())
 }
 
-pub async fn get_preference(pool: &PgPool, user_id: &str) -> anyhow::Result<String> {
+pub async fn get_preference(pool: &SqlitePool, user_id: &str) -> anyhow::Result<String> {
     let agent: Option<String> =
-        sqlx::query_scalar("SELECT default_agent FROM ai_user_preferences WHERE user_id = $1")
+        sqlx::query_scalar("SELECT default_agent FROM ai_user_preferences WHERE user_id = ?")
             .bind(user_id)
             .fetch_optional(pool)
             .await?;

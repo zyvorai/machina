@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { useSearchParams } from 'react-router'
 import { Eye, Shield, ShieldBan, Server, Ban, Trash2 } from 'lucide-react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import {
   MacGlassPanel,
   MacListRow,
@@ -13,13 +14,16 @@ import {
 import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import {
   applyEnforcementPolicy,
+  attachEnforcement,
   createEnforcementPolicy,
   deleteEnforcementPolicy,
+  detachEnforcement,
   getAgentSecurityBundle,
   getEnforcementPolicies,
   getEnforcementPolicyTetragon,
   getEnforcementStatus,
   patchEnforcementPolicy,
+  syncEnforcement,
   type EnforcementPolicy,
   type EnforcementStatus,
 } from '../../api/zeusSecurity'
@@ -38,6 +42,7 @@ const KINDS = [
   { id: 'deny_file', label: 'Deny file', hint: '/etc/shadow' },
   { id: 'deny_cap', label: 'Deny capability', hint: 'CAP_NET_RAW' },
   { id: 'deny_namespace', label: 'Deny K8s namespace', hint: 'kube-system' },
+  { id: 'tc_allow', label: 'TC egress allow', hint: '8.8.8.8:53/udp' },
 ] as const
 
 function matchPlaceholder(kind: string): string {
@@ -61,6 +66,7 @@ export default function PlatformRuntimeEnforcement() {
   const [previewOpen, setPreviewOpen] = useState(false)
   const [previewYaml, setPreviewYaml] = useState('')
   const [previewTitle, setPreviewTitle] = useState('')
+  const [confirmDeletePolicyId, setConfirmDeletePolicyId] = useState<string | null>(null)
 
   const onlineHosts = useMemo(
     () => hosts.filter((h) => h.state === 'online'),
@@ -139,7 +145,11 @@ export default function PlatformRuntimeEnforcement() {
   }
 
   const removePolicy = (policyId: string) => {
-    if (!window.confirm('Delete this enforcement policy? Agents will remove the TracingPolicy on next sync.')) return
+    setConfirmDeletePolicyId(policyId)
+  }
+
+  const doDeletePolicy = (policyId: string) => {
+    setConfirmDeletePolicyId(null)
     void deleteEnforcementPolicy(policyId)
       .then((r) => {
         notifyTasks(r.summary, r.task_ids)
@@ -212,6 +222,40 @@ export default function PlatformRuntimeEnforcement() {
         </div>
       )}
 
+      {status?.api_mode === 'production_tc' && (
+        <MacGlassPanel title="PacketWolf TC enforcement" subtitle={status.summary}>
+          <div className="p-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => void syncEnforcement().then(() => { toast.success('BPF map synced'); void load() }).catch((e: unknown) => toast.error(formatUserError(e)))}
+            >
+              Sync BPF map
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => void attachEnforcement().then(() => { toast.success('TC enforcement attached'); void load() }).catch((e: unknown) => toast.error(formatUserError(e)))}
+            >
+              Attach
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => void detachEnforcement().then(() => { toast.success('TC enforcement detached'); void load() }).catch((e: unknown) => toast.error(formatUserError(e)))}
+            >
+              Detach
+            </button>
+            {status.attached != null && (
+              <span className="text-xs text-slate-400 self-center">
+                BPF {status.attached ? 'attached' : 'detached'}
+                {status.default_deny ? ' · defaultDeny' : ''}
+              </span>
+            )}
+          </div>
+        </MacGlassPanel>
+      )}
+
       <MacGlassPanel title="Target hosts" subtitle="Online hosts only — select targets for apply">
         {onlineHosts.length === 0 ? (
           <p className="text-sm text-slate-500 p-3">No online hosts. Enroll agents first.</p>
@@ -249,7 +293,7 @@ export default function PlatformRuntimeEnforcement() {
             <MacListRow
               key={p.id}
               title={p.name}
-              subtitle={`${p.kind} · ${p.match}${p.enabled === false ? ' · disabled' : ''}${p.scope ? ` · ${p.scope}` : ''}`}
+              subtitle={`${p.kind} · ${p.match}${p.enabled === false ? ' · disabled' : ''}${p.scope ? ` · ${p.scope}` : ''}${p.backend ? ` · ${p.backend}` : ''}`}
               trailing={
                 <div className="flex flex-wrap gap-1 justify-end">
                   <button type="button" className="btn-secondary text-xs" onClick={() => p.id && applyToSelected(p.id)}>
@@ -281,15 +325,16 @@ export default function PlatformRuntimeEnforcement() {
 
       <MacGlassPanel title="Create policy" subtitle="Generates Tetragon TracingPolicy on apply">
         <div className="p-3 space-y-3">
-          <input className="input text-sm w-full" placeholder="Policy name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="input text-sm w-full" aria-label="Policy name" placeholder="Policy name" value={name} onChange={(e) => setName(e.target.value)} />
           <div className="flex flex-wrap gap-2">
-            <select className="input text-sm" value={kind} onChange={(e) => setKind(e.target.value)}>
+            <select className="input text-sm" aria-label="Policy kind" value={kind} onChange={(e) => setKind(e.target.value)}>
               {KINDS.map((k) => (
                 <option key={k.id} value={k.id}>{k.label}</option>
               ))}
             </select>
             <input
               className="input text-sm flex-1 min-w-[12rem]"
+              aria-label="Match pattern"
               placeholder={matchPlaceholder(kind)}
               value={match}
               onChange={(e) => setMatch(e.target.value)}
@@ -319,6 +364,15 @@ export default function PlatformRuntimeEnforcement() {
           {previewYaml}
         </pre>
       </MacSheet>
+      <ConfirmDialog
+        open={confirmDeletePolicyId !== null}
+        title="Delete Enforcement Policy"
+        message="Delete this enforcement policy? Agents will remove the TracingPolicy on next sync."
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setConfirmDeletePolicyId(null)}
+        onConfirm={() => { if (confirmDeletePolicyId) doDeletePolicy(confirmDeletePolicyId) }}
+      />
     </PlatformPageChrome>
   )
 }

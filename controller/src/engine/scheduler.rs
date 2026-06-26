@@ -25,13 +25,13 @@ pub fn spawn(state: AppState) {
 async fn run_due(state: &AppState) -> anyhow::Result<()> {
     let due: Vec<(Uuid, Uuid, String, bool)> = sqlx::query_as(
         "SELECT id, host_id, action, evacuate FROM maintenance_schedules
-         WHERE status = 'pending' AND run_at <= NOW()",
+         WHERE status = 'pending' AND run_at <= datetime('now') LIMIT 100",
     )
     .fetch_all(&state.pool)
     .await?;
 
     for (id, host_id, action, evacuate) in due {
-        let _ = enqueue_task(
+        match enqueue_task(
             state,
             "host.maintenance",
             serde_json::json!({
@@ -43,11 +43,18 @@ async fn run_due(state: &AppState) -> anyhow::Result<()> {
             Some(host_id),
             Some(host_id),
         )
-        .await;
-        sqlx::query("UPDATE maintenance_schedules SET status = 'queued' WHERE id = $1")
-            .bind(id)
-            .execute(&state.pool)
-            .await?;
+        .await
+        {
+            Ok(_) => {
+                sqlx::query("UPDATE maintenance_schedules SET status = 'queued' WHERE id = ?")
+                    .bind(id)
+                    .execute(&state.pool)
+                    .await?;
+            }
+            Err(e) => {
+                tracing::warn!(schedule_id = %id, "maintenance task enqueue failed, will retry next tick: {}", e.message);
+            }
+        }
     }
     Ok(())
 }

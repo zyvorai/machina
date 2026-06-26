@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -32,7 +32,7 @@ pub struct GitOpsSyncResult {
     pub sync_id: Uuid,
 }
 
-pub async fn export_policies(pool: &PgPool) -> anyhow::Result<GitOpsExport> {
+pub async fn export_policies(pool: &SqlitePool) -> anyhow::Result<GitOpsExport> {
     let rows: Vec<(String, String)> =
         sqlx::query_as("SELECT name, spec_yaml FROM firewall_policies ORDER BY name")
             .fetch_all(pool)
@@ -50,22 +50,26 @@ pub async fn export_policies(pool: &PgPool) -> anyhow::Result<GitOpsExport> {
 }
 
 pub async fn sync_policies(
-    pool: &PgPool,
+    pool: &SqlitePool,
     req: GitOpsSyncRequest,
     actor: &str,
 ) -> anyhow::Result<GitOpsSyncResult> {
+    let mut tx = pool.begin().await?;
     let mut upserted = 0usize;
     let mut removed = 0usize;
 
     if req.replace {
         let names: Vec<String> = req.policies.iter().map(|p| p.name.clone()).collect();
         if names.is_empty() {
-            let r = sqlx::query("DELETE FROM firewall_policies").execute(pool).await?;
+            let r = sqlx::query("DELETE FROM firewall_policies")
+                .execute(&mut *tx)
+                .await?;
             removed = r.rows_affected() as usize;
         } else {
-            let r = sqlx::query("DELETE FROM firewall_policies WHERE NOT (name = ANY($1::text[]))")
-                .bind(&names)
-                .execute(pool)
+            let names_json = serde_json::to_string(&names).unwrap_or_default();
+            let r = sqlx::query("DELETE FROM firewall_policies WHERE name NOT IN (SELECT value FROM json_each(?))")
+                .bind(&names_json)
+                .execute(&mut *tx)
                 .await?;
             removed = r.rows_affected() as usize;
         }
@@ -73,28 +77,26 @@ pub async fn sync_policies(
 
     for policy in &req.policies {
         let existing: Option<Uuid> =
-            sqlx::query_scalar("SELECT id FROM firewall_policies WHERE name = $1")
+            sqlx::query_scalar("SELECT id FROM firewall_policies WHERE name = ?")
                 .bind(&policy.name)
-                .fetch_optional(pool)
+                .fetch_optional(&mut *tx)
                 .await?;
 
         if let Some(id) = existing {
             sqlx::query(
-                "UPDATE firewall_policies SET spec_yaml = $1, updated_at = NOW() WHERE id = $2",
+                "UPDATE firewall_policies SET spec_yaml = ?, updated_at = datetime('now') WHERE id = ?",
             )
             .bind(&policy.spec_yaml)
             .bind(id)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
         } else {
-            sqlx::query(
-                "INSERT INTO firewall_policies (id, name, spec_yaml) VALUES ($1, $2, $3)",
-            )
-            .bind(Uuid::new_v4())
-            .bind(&policy.name)
-            .bind(&policy.spec_yaml)
-            .execute(pool)
-            .await?;
+            sqlx::query("INSERT INTO firewall_policies (id, name, spec_yaml) VALUES (?, ?, ?)")
+                .bind(Uuid::new_v4())
+                .bind(&policy.name)
+                .bind(&policy.spec_yaml)
+                .execute(&mut *tx)
+                .await?;
         }
         upserted += 1;
     }
@@ -102,14 +104,16 @@ pub async fn sync_policies(
     let sync_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO firewall_policy_sync_log (id, direction, policy_count, actor, detail_json)
-         VALUES ($1, 'import', $2, $3, $4)",
+         VALUES (?, 'import', ?, ?, ?)",
     )
     .bind(sync_id)
-    .bind(upserted as i32)
+    .bind(upserted as i64)
     .bind(actor)
     .bind(serde_json::json!({ "replace": req.replace, "removed": removed }))
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     Ok(GitOpsSyncResult {
         upserted,

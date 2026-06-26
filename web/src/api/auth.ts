@@ -29,12 +29,14 @@ export interface AuthProviders {
   pam: { enabled: boolean }
   ldap: { enabled: boolean }
   oidc: { enabled: boolean; button_label: string }
+  saml?: { enabled: boolean; button_label: string; login_available?: boolean }
 }
 
 const DEFAULT_PROVIDERS: AuthProviders = {
   pam: { enabled: true },
   ldap: { enabled: false },
   oidc: { enabled: false, button_label: 'Sign in with SSO' },
+  saml: { enabled: false, button_label: 'Sign in with SAML', login_available: false },
 }
 
 /** Map daemon JSON (OIDC/PAM) to a known role; unknown shapes become `undefined` so callers can apply `?? fallback`. */
@@ -121,10 +123,22 @@ function normalizeAuthProviders(raw: unknown): AuthProviders {
     if (typeof bl === 'string' && bl.trim()) buttonLabel = bl
   }
 
+  const samlIn = o.saml
+  let samlEnabled = false
+  let samlLabel = DEFAULT_PROVIDERS.saml?.button_label ?? 'Sign in with SAML'
+  let samlLoginAvailable = false
+  if (typeof samlIn === 'object' && samlIn !== null) {
+    samlEnabled = Boolean((samlIn as { enabled?: unknown }).enabled)
+    const bl = (samlIn as { button_label?: unknown }).button_label
+    if (typeof bl === 'string' && bl.trim()) samlLabel = bl
+    samlLoginAvailable = Boolean((samlIn as { login_available?: unknown }).login_available)
+  }
+
   return {
     pam: { enabled: pamEnabled },
     ldap: { enabled: ldapEnabled },
     oidc: { enabled: oidcEnabled, button_label: buttonLabel },
+    saml: { enabled: samlEnabled, button_label: samlLabel, login_available: samlLoginAvailable },
   }
 }
 
@@ -186,4 +200,17 @@ export async function getAuthProviders(): Promise<AuthProviders> {
 
 export function beginOidcLogin(): void {
   window.location.assign(`${API}/auth/oidc/login`)
+}
+
+/** Exchange platform JWT from `?token=` deep link for a browser session cookie. */
+export async function exchangeTokenForSession(token: string): Promise<{ username: string }> {
+  const res = await fetch(`${API}/auth/token/session`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify({ token }),
+  })
+  if (!res.ok) throw await parseResponseError(res)
+  const body = (await res.json()) as { username?: string }
+  return { username: body.username ?? '' }
 }

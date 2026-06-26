@@ -44,6 +44,36 @@ export function consoleModeSearchParam(mode: ConsoleExperienceMode): string {
   return `mode=${mode}`
 }
 
+/** Minimal plan shape needed for default-lens / protocol selection. */
+interface PlanSnapshot {
+  native: { console_type: string; available: boolean }
+  webrtc_spice_available: boolean
+  protocols: string[]
+}
+
+/**
+ * Cockpit pattern: choose the default console lens from VM capabilities.
+ * Graphical display (VNC → SPICE) always wins over serial.
+ * Serial is only the default when the VM has no display device at all.
+ */
+export function getDefaultLens(plan: PlanSnapshot): 'display' | 'serial' {
+  if (plan.native.available || plan.native.console_type === 'vnc') return 'display'
+  if (plan.webrtc_spice_available || plan.native.console_type === 'spice') return 'display'
+  if ((plan.protocols ?? []).includes('serial')) return 'serial'
+  return 'display'
+}
+
+/**
+ * Cockpit pattern: choose the initial active protocol from VM capabilities.
+ * VNC → 'novnc', SPICE → 'spice', fallback serial → 'serial', else 'novnc'.
+ */
+export function getDefaultProtocol(plan: PlanSnapshot): string {
+  if (plan.native.available || plan.native.console_type === 'vnc') return 'novnc'
+  if (plan.webrtc_spice_available || plan.native.console_type === 'spice') return 'spice'
+  if ((plan.protocols ?? []).includes('serial')) return 'serial'
+  return 'novnc'
+}
+
 export function isDisplayProtocol(protocol: string): boolean {
   return (
     protocol === 'novnc'

@@ -36,8 +36,7 @@ pub fn create_app(manager: LibvirtManager, config: MachinaConfig) -> Router {
         move || s.active_session_count()
     }));
     let http_metrics = Arc::new(HttpMetrics::new());
-    let metrics_history_store =
-        MetricsHistoryStore::new(config.metrics_history.max_points);
+    let metrics_history_store = MetricsHistoryStore::new(config.metrics_history.max_points);
     let obs_workers = Arc::new(ObservabilityWorkers::new());
     obs_workers.start(
         &manager,
@@ -92,8 +91,8 @@ pub fn create_app(manager: LibvirtManager, config: MachinaConfig) -> Router {
         .layer(Extension(ssh_terminal_cfg))
         .with_state(manager);
 
-    let consolehub_proxy = routes::consolehub_proxy_routes()
-        .layer(Extension(console_session_store));
+    let consolehub_proxy =
+        routes::consolehub_proxy_routes().layer(Extension(console_session_store));
 
     let mut router = Router::new()
         .nest("/api/v1", api)

@@ -1,9 +1,10 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router'
 import { ArrowLeft, Copy, Play, Square, RotateCcw, Trash2, Terminal, MoveRight, Archive, HardDrive, Activity, Shield, ExternalLink, Monitor, Pause, Power, Server, Loader2, Network, ToggleLeft, ToggleRight, FolderOpen, Cpu } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import GuestToolsStrip from '../../components/platform/GuestToolsStrip'
 import GuestAgentDiagnosticsPanel, {
   GuestAgentHeaderPill,
@@ -275,6 +276,14 @@ export default function PlatformVmDetail() {
   const [sshDialogOpen, setSshDialogOpen] = useState(false)
   const [portForwardRules, setPortForwardRules] = useState<VmPortForwardRule[]>([])
   const [consolePlan, setConsolePlan] = useState<ConsoleHubPlan | null>(null)
+  const [vmConfirmOp, setVmConfirmOp] = useState<'delete' | 'delete_kubevirt' | 'remove_stale' | 'retire' | null>(null)
+  const [snapConfirmMsg, setSnapConfirmMsg] = useState<{ message: string; action: string } | null>(null)
+  const snapActionRef = useRef<(() => Promise<void>) | null>(null)
+
+  const migrationDisks = useMemo(
+    () => (libvirtDetails?.disks ?? []).filter((d) => d.device === 'disk' && d.source),
+    [libvirtDetails],
+  )
 
   const canBrowseHost = sessionRole === 'admin'
 
@@ -284,13 +293,13 @@ export default function PlatformVmDetail() {
     try {
       const [v, h, policy, spec, snaps, bks, tline, dsk, mtr] = await Promise.all([
         getPlatformVm(id),
-        listPlatformHosts(),
-        getVmHaPolicy(id),
-        getPlatformVmSpec(id),
-        listVmSnapshots(id),
-        listVmBackups(id),
+        listPlatformHosts().catch(() => [] as PlatformHost[]),
+        getVmHaPolicy(id).catch(() => ({ enabled: false, restart_attempts: 3, restart_priority: 'medium', fence_on_failure: false, anti_affinity: false }) as HaPolicy),
+        getPlatformVmSpec(id).catch(() => null),
+        listVmSnapshots(id).catch(() => [] as SnapshotRecord[]),
+        listVmBackups(id).catch(() => [] as BackupRecord[]),
         listVmTimeline(id).catch(() => [] as VmTimelineEntry[]),
-        getVmDisks(id),
+        getVmDisks(id).catch(() => [] as VmDiskRow[]),
         getPlatformVmMetrics(id).catch(() => null),
       ])
       setVm(v)
@@ -590,7 +599,7 @@ export default function PlatformVmDetail() {
   }, [tab, id, loadComputeTopology, loadGuestPorts, loadGuestServices, loadLibvirtDetails, loadDomainXml, vm?.inventory_source])
 
   useEffect(() => {
-    if (tab !== 'snapshots' || !id || vm?.inventory_source === 'kubevirt') {
+    if (tab !== 'snapshots' || !id || !vm || vm.inventory_source === 'kubevirt') {
       setSnapPrecheck(null)
       return
     }
@@ -641,7 +650,11 @@ export default function PlatformVmDetail() {
         toast.error(pre.message || `${action} blocked`)
         return
       }
-      if (pre.message && !window.confirm(`${pre.message}\n\nContinue with ${action}?`)) return
+      if (pre.message) {
+        snapActionRef.current = async () => act(label, run)
+        setSnapConfirmMsg({ message: pre.message, action })
+        return
+      }
       await act(label, run)
     } catch (e: unknown) {
       toast.error(formatUserError(e))
@@ -740,7 +753,7 @@ export default function PlatformVmDetail() {
         vmName: vm.name,
         observedState: vm.observed_state,
         guestIp,
-        healthScore: health?.score ? Number.parseInt(health.score, 10) : null,
+        healthScore: health?.score != null ? (Number.isNaN(Number.parseInt(String(health.score), 10)) ? null : Number.parseInt(String(health.score), 10)) : null,
         doctor,
         blockers: detailBlockers,
       })
@@ -839,15 +852,12 @@ export default function PlatformVmDetail() {
             spotlightPrefill={spotlightPrefill}
             onSsh={() => setSshDialogOpen(true)}
             onOpenHardware={() => setHardwareDrawerOpen(true)}
-            onDelete={() => {
-              if (!window.confirm('Delete this VM permanently?')) return
-              void queueVmDelete('Delete queued')
-            }}
+            onDelete={() => setVmConfirmOp('delete')}
             onPopout={!isPopout ? () => openCenterPopout(`/platform/vms/${id}`) : undefined}
             act={act}
             power={{
               onInstall: canInstall ? () => void act('Install queued', () => installPlatformVm(id)) : undefined,
-              onStart: (vm.observed_state === 'stopped' || vm.observed_state === 'shut off') && !canInstall
+              onStart: (vm.observed_state === 'stopped' || vm.observed_state === 'shut off' || vm.observed_state === 'shutoff') && !canInstall
                 ? () => void act('Start queued', () => vmPower(id, 'start'))
                 : undefined,
               onResume: vm.observed_state === 'paused'
@@ -932,10 +942,7 @@ export default function PlatformVmDetail() {
                 <button
                   type="button"
                   className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-red-500/15 text-red-200 border border-red-500/35 hover:bg-red-500/25"
-                  onClick={() => {
-                    if (!window.confirm(`Delete KubeVirt VM ${vm.k8s_namespace ?? 'default'}/${vm.name}?`)) return
-                    void act('Delete requested', () => deleteK8sKubevirtVm(vm.k8s_namespace ?? 'default', vm.name))
-                  }}
+                  onClick={() => setVmConfirmOp('delete_kubevirt')}
                 >
                   <Trash2 className="w-3.5 h-3.5" /> Delete CR
                 </button>
@@ -991,7 +998,7 @@ export default function PlatformVmDetail() {
               observedState={vm.observed_state}
               guestIp={guestIp}
               hostLabel={hostLabel}
-              healthScore={health?.score ? Number.parseInt(health.score, 10) : null}
+              healthScore={health?.score != null ? Number.parseInt(String(health.score), 10) : null}
               doctorScore={doctor?.score_numeric ?? null}
               sshExposed={Boolean(sshNatHostPort(portForwardRules))}
               blockers={detailBlockers}
@@ -1023,10 +1030,7 @@ export default function PlatformVmDetail() {
               <button
                 type="button"
                 className="btn-danger text-sm"
-                onClick={() => {
-                  if (!window.confirm('Remove this stale VM record from the platform?')) return
-                  void queueVmDelete('Stale VM removed')
-                }}
+                onClick={() => setVmConfirmOp('remove_stale')}
               >
                 <Trash2 className="w-4 h-4" /> Remove stale record
               </button>
@@ -1200,7 +1204,7 @@ export default function PlatformVmDetail() {
                 <div className="flex flex-wrap items-center gap-2 text-sm rounded-xl border border-violet-500/20 bg-violet-950/20 px-4 py-3">
                   <span className="text-slate-300">
                     Doctor: <span className="font-semibold text-violet-200">{doctor.score_numeric}/100</span>
-                    {doctor.issues.length > 0 ? ` · ${doctor.issues.length} issue(s)` : ' · all checks passed'}
+                    {(doctor.issues?.length ?? 0) > 0 ? ` · ${doctor.issues.length} issue(s)` : ' · all checks passed'}
                   </span>
                   <button type="button" className={`text-xs ${hubLinkClasses()}`} onClick={() => setTab('doctor')}>
                     Full report →
@@ -1315,7 +1319,9 @@ export default function PlatformVmDetail() {
             </MacGlassPanel>
           )}
 
-          {tab === 'devices' && vm.inventory_source !== 'kubevirt' && (
+          {tab === 'devices' && (vm.inventory_source === 'kubevirt' ? (
+            <PlatformEmptyState title="Not available" subtitle="Device management requires a libvirt-managed VM." />
+          ) : (
             <VmDevicesPanel
               vmId={id}
               hostId={vm.host_id}
@@ -1325,7 +1331,7 @@ export default function PlatformVmDetail() {
               vmState={vm.observed_state}
               onChanged={() => void loadDomainXml()}
             />
-          )}
+          ))}
 
           {tab === 'disks' && (
             <div className="space-y-4 pt-2" data-testid="vm-disks-panel">
@@ -1485,7 +1491,7 @@ export default function PlatformVmDetail() {
                   <button
                     type="button"
                     className="btn-secondary"
-                    disabled={vm.managed === false || !resizeTarget || !resizeGb}
+                    disabled={vm.managed === false || !resizeTarget || !resizeGb || Number.isNaN(Number(resizeGb))}
                     onClick={() => void act('Resize disk queued', () => resizeVmDisk(id, resizeTarget, Number(resizeGb)))}
                   >
                     Resize
@@ -1514,6 +1520,7 @@ export default function PlatformVmDetail() {
                       ) : null}
                       <div className="flex gap-2">
                         <input
+                          aria-label="ISO path"
                           className="input flex-1 min-w-0 font-mono text-xs"
                           value={isoPath}
                           onChange={(e) => setIsoPath(e.target.value)}
@@ -1709,7 +1716,7 @@ export default function PlatformVmDetail() {
                   lastRefreshedAt={guestHealthRefreshedAt}
                   onRefresh={() => void loadGuestHealth()}
                   onStartVm={
-                    vm.observed_state === 'stopped' || vm.observed_state === 'shut off'
+                    vm.observed_state === 'stopped' || vm.observed_state === 'shut off' || vm.observed_state === 'shutoff'
                       ? () => void act('Start queued', () => vmPower(id, 'start'))
                       : undefined
                   }
@@ -1767,14 +1774,14 @@ export default function PlatformVmDetail() {
                 {!guestServicesLoading && !guestServicesError && guestServices && (
                   <>
                     <p className="text-xs text-slate-500 mb-3">{guestServices.summary}</p>
-                    {guestServices.services.length === 0 ? (
+                    {(guestServices.services ?? []).length === 0 ? (
                       <PlatformEmptyState
                         icon={Server}
                         title="No guest services"
                         subtitle="The guest agent did not report any service inventory for this VM."
                       />
                     ) : (
-                      guestServices.services.map((s, i) => (
+                      (guestServices.services ?? []).map((s, i) => (
                         <MacListRow key={`${s.name}-${i}`} title={s.name} subtitle={`${s.status} · ${s.detail}`} />
                       ))
                     )}
@@ -1827,11 +1834,11 @@ export default function PlatformVmDetail() {
                       {guestPorts.summary}
                       {!guestPorts.agent_reachable && ' · Guest agent unreachable — install Guest Tools'}
                     </p>
-                    {guestPorts.ports.length === 0 ? (
+                    {(guestPorts.ports ?? []).length === 0 ? (
                       <p className="text-sm text-slate-500">No listening ports reported inside the guest.</p>
                     ) : (
                       <div className="space-y-1">
-                        {guestPorts.ports.map((p) => (
+                        {(guestPorts.ports ?? []).map((p) => (
                           <MacListRow
                             key={`${p.port}-${p.protocol}`}
                             title={`${p.port}/${p.protocol}`}
@@ -1875,7 +1882,7 @@ export default function PlatformVmDetail() {
                             className="btn-secondary text-xs"
                             onClick={() => {
                               const name = e.label.replace(/^Snapshot:\s*/, '')
-                              void act('Revert queued', () => revertVmSnapshot(id, name))
+                              void runSnapshotAction(name, 'revert', () => revertVmSnapshot(id, name), 'Revert queued')
                             }}
                           >
                             Revert
@@ -1891,7 +1898,7 @@ export default function PlatformVmDetail() {
                   </ul>
                 </div>
               )}
-              <input className="input w-full max-w-xs" value={snapName} onChange={(e) => setSnapName(e.target.value)} placeholder="snap-01" />
+              <input aria-label="Snapshot name" className="input w-full max-w-xs" value={snapName} onChange={(e) => setSnapName(e.target.value)} placeholder="snap-01" />
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button
                   type="button"
@@ -1902,7 +1909,7 @@ export default function PlatformVmDetail() {
                     void getVmGuestAiInsights(id, { focus: 'snapshot' })
                       .then((r) => {
                         setSnapAiHint(r)
-                        const quiesceRec = r.recommendations.find((x) => x.action === 'snapshot.quiesce')
+                        const quiesceRec = (r.recommendations ?? []).find((x) => x.action === 'snapshot.quiesce')
                         if (quiesceRec) setSnapQuiesce(true)
                       })
                       .catch((e: unknown) => toast.error(formatUserError(e)))
@@ -1922,7 +1929,7 @@ export default function PlatformVmDetail() {
                 <label className="flex items-center gap-2">
                   <input type="checkbox" checked={snapQuiesce} onChange={(e) => setSnapQuiesce(e.target.checked)} /> Guest quiesce
                 </label>
-                <select className="input text-xs max-w-[140px]" value={snapStorageMode} onChange={(e) => setSnapStorageMode(e.target.value)}>
+                <select aria-label="Snapshot storage mode" className="input text-xs max-w-[140px]" value={snapStorageMode} onChange={(e) => setSnapStorageMode(e.target.value)}>
                   <option value="">Storage: auto</option>
                   <option value="internal">Internal</option>
                   <option value="external">External</option>
@@ -2049,9 +2056,11 @@ export default function PlatformVmDetail() {
             </div>
           )}
 
-          {tab === 'logs' && vm.inventory_source !== 'kubevirt' && (
+          {tab === 'logs' && (vm.inventory_source === 'kubevirt' ? (
+            <PlatformEmptyState title="Not available" subtitle="QEMU logs are only available for libvirt-managed VMs." />
+          ) : (
             <VmQemuLogsPanel vmId={id} vmName={vm.name} />
-          )}
+          ))}
 
           {tab === 'settings' && (
             <div className="space-y-4">
@@ -2090,6 +2099,7 @@ export default function PlatformVmDetail() {
                   <p className="text-xs text-slate-500 mb-2">Libvirt domain rename (guest must be shut off).</p>
                   <div className="flex flex-wrap gap-2">
                     <input
+                      aria-label="New VM name"
                       className="input flex-1 min-w-[12rem]"
                       value={renameDraft || vm.name}
                       onChange={(e) => setRenameDraft(e.target.value)}
@@ -2183,7 +2193,7 @@ export default function PlatformVmDetail() {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm"><MoveRight className="w-4 h-4" /> Live migrate</h3>
-                    <select className="input w-full mb-2" value={destHost} onChange={(e) => setDestHost(e.target.value)}>
+                    <select aria-label="Destination host" className="input w-full mb-2" value={destHost} onChange={(e) => setDestHost(e.target.value)}>
                       {hosts.map((h) => <option key={h.id} value={h.id}>{h.hostname}</option>)}
                     </select>
                     <div className="flex flex-wrap gap-3 mb-2 text-xs text-slate-400">
@@ -2220,9 +2230,9 @@ export default function PlatformVmDetail() {
                           onChange={(e) => setMigrateDisksUri(e.target.value)}
                         />
                       </label>
-                      {(libvirtDetails?.disks ?? []).filter((d) => d.device === 'disk' && d.source).length > 0 ? (
+                      {migrationDisks.length > 0 ? (
                         <div className="sm:col-span-2 flex flex-wrap gap-2">
-                          {(libvirtDetails?.disks ?? []).filter((d) => d.device === 'disk' && d.source).map((d) => (
+                          {migrationDisks.map((d) => (
                             <button
                               key={d.target}
                               type="button"
@@ -2255,7 +2265,7 @@ export default function PlatformVmDetail() {
                         onClick={() => void act('Migration queued', () => vmMigrate(id, {
                           dest_host_id: destHost,
                           live: migrateLive,
-                          bandwidth_mib: migrateBandwidth ? Number(migrateBandwidth) : undefined,
+                          bandwidth_mib: migrateBandwidth && !Number.isNaN(Number(migrateBandwidth)) ? Number(migrateBandwidth) : undefined,
                           postcopy: migratePostcopy,
                           undefine_source: migrateUndefineSource,
                           tunnelled: migrateTunnelled,
@@ -2268,7 +2278,7 @@ export default function PlatformVmDetail() {
                       </button>
                     </div>
                     {precheck && (
-                      <ul className="text-xs mt-2 space-y-1">{precheck.checks.map((c) => (
+                      <ul className="text-xs mt-2 space-y-1">{(precheck.checks ?? []).map((c) => (
                         <li key={c.name} className={statusToneClass(c.passed ? 'ok' : 'error')}>
                           {c.name}: {c.message}
                           {c.remediation && !c.passed && (
@@ -2285,8 +2295,8 @@ export default function PlatformVmDetail() {
                   </div>
                   <div>
                     <h3 className="font-semibold mb-2 flex items-center gap-2 text-sm"><Copy className="w-4 h-4" /> Clone</h3>
-                    <input className="input w-full mb-2" placeholder="new-vm-name" value={cloneName} onChange={(e) => setCloneName(e.target.value)} />
-                    <select className="input w-full mb-2 text-sm" value={cloneMode} onChange={(e) => setCloneMode(e.target.value as 'linked' | 'full')}>
+                    <input aria-label="Clone name" className="input w-full mb-2" placeholder="new-vm-name" value={cloneName} onChange={(e) => setCloneName(e.target.value)} />
+                    <select aria-label="Clone mode" className="input w-full mb-2 text-sm" value={cloneMode} onChange={(e) => setCloneMode(e.target.value as 'linked' | 'full')}>
                       <option value="linked">Linked clone (thin)</option>
                       <option value="full">Full clone (independent disk)</option>
                     </select>
@@ -2303,10 +2313,7 @@ export default function PlatformVmDetail() {
                     type="button"
                     className="btn-secondary text-sm"
                     disabled={vm.lifecycle_phase === 'retired'}
-                    onClick={() => {
-                      if (!window.confirm('Retire this VM? It will be stopped and cannot be started until restored manually.')) return
-                      void act('VM retired', () => retirePlatformVm(id, true))
-                    }}
+                    onClick={() => setVmConfirmOp('retire')}
                   >
                     Retire VM
                   </button>
@@ -2358,8 +2365,8 @@ export default function PlatformVmDetail() {
               </MacGlassPanel>
               {vm.inventory_source !== 'kubevirt' && (
                 <MacGlassPanel title="Publish golden template">
-                  <input className="input w-full mb-2 text-sm" placeholder="template-name" value={publishTplName} onChange={(e) => setPublishTplName(e.target.value)} />
-                  <input className="input w-full mb-2 text-sm" placeholder="version" value={publishTplVersion} onChange={(e) => setPublishTplVersion(e.target.value)} />
+                  <input aria-label="Template name" className="input w-full mb-2 text-sm" placeholder="template-name" value={publishTplName} onChange={(e) => setPublishTplName(e.target.value)} />
+                  <input aria-label="Template version" className="input w-full mb-2 text-sm" placeholder="version" value={publishTplVersion} onChange={(e) => setPublishTplVersion(e.target.value)} />
                   <button
                     type="button"
                     className="btn-secondary text-sm"
@@ -2482,6 +2489,55 @@ export default function PlatformVmDetail() {
           )}
         </>
       )}
+      <ConfirmDialog
+        open={vmConfirmOp === 'delete'}
+        title="Delete VM Permanently"
+        message="Delete this VM permanently? All disks and configuration will be removed. This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setVmConfirmOp(null)}
+        onConfirm={() => { setVmConfirmOp(null); void queueVmDelete('Delete queued') }}
+      />
+      <ConfirmDialog
+        open={vmConfirmOp === 'delete_kubevirt'}
+        title="Delete KubeVirt VM"
+        message={`Delete KubeVirt VirtualMachine ${vm?.k8s_namespace ?? 'default'}/${vm?.name ?? ''}? The CR will be removed from the cluster.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setVmConfirmOp(null)}
+        onConfirm={() => { setVmConfirmOp(null); if (vm) void act('Delete requested', () => deleteK8sKubevirtVm(vm.k8s_namespace ?? 'default', vm.name)) }}
+      />
+      <ConfirmDialog
+        open={vmConfirmOp === 'remove_stale'}
+        title="Remove Stale VM Record"
+        message="Remove this stale VM record from the platform? The VM no longer exists in the hypervisor inventory."
+        confirmLabel="Remove"
+        variant="danger"
+        onCancel={() => setVmConfirmOp(null)}
+        onConfirm={() => { setVmConfirmOp(null); void queueVmDelete('Stale VM removed') }}
+      />
+      <ConfirmDialog
+        open={vmConfirmOp === 'retire'}
+        title="Retire VM"
+        message="Retire this VM? It will be stopped and cannot be started until restored manually."
+        confirmLabel="Retire"
+        variant="warning"
+        onCancel={() => setVmConfirmOp(null)}
+        onConfirm={() => { setVmConfirmOp(null); if (id) void act('VM retired', () => retirePlatformVm(id, true)) }}
+      />
+      <ConfirmDialog
+        open={snapConfirmMsg !== null}
+        title={`Confirm ${snapConfirmMsg?.action ?? 'Action'}`}
+        message={`${snapConfirmMsg?.message ?? ''}\n\nContinue with ${snapConfirmMsg?.action ?? 'this action'}?`}
+        confirmLabel="Continue"
+        variant="warning"
+        onCancel={() => { setSnapConfirmMsg(null); snapActionRef.current = null }}
+        onConfirm={async () => {
+          setSnapConfirmMsg(null)
+          if (snapActionRef.current) await snapActionRef.current()
+          snapActionRef.current = null
+        }}
+      />
     </PageLayout>
   )
 }

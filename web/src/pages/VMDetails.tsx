@@ -1185,7 +1185,7 @@ export default function VMDetailsPage() {
               </span>
             ))}
             <form className="inline-flex items-center gap-1" onSubmit={async (e) => { e.preventDefault(); const tag = newTag.trim(); if (!tag || vmTags.includes(tag)) return; const next = [...vmTags, tag]; try { await apiSetVmTags(vm.name, next); setVmTags(next); setNewTag('') } catch (e: unknown) { toast.error(formatUserError(e)) } }}>
-              <input type="text" value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="+ tag" className="w-16 px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-xs focus:outline-none focus:border-blue-500 text-slate-300" />
+              <input type="text" aria-label="Add tag" value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="+ tag" className="w-16 px-1.5 py-0.5 bg-slate-800 border border-slate-700 rounded text-xs focus:outline-none focus:border-blue-500 text-slate-300" />
             </form>
           </div>
         </div>
@@ -1378,7 +1378,7 @@ export default function VMDetailsPage() {
               <p className="text-xs text-slate-500">
                 Rows merge libvirt DHCP <strong className="text-slate-400">lease</strong>, kernel <strong className="text-slate-400">ARP</strong>, then QEMU guest <strong className="text-slate-400">agent</strong>; first hit wins per address. When libvirt exposes DHCP leases, machina adds hostname/expiry; PTR (reverse DNS) is resolved on the hypervisor when possible.
               </p>
-              {guestIps.map((ip, i) => {
+              {guestIps.map((ip) => {
                 const { xmlGateway, heuristicGateway } = guestIpv4GatewayHints(
                   ip,
                   vm,
@@ -1391,7 +1391,7 @@ export default function VMDetailsPage() {
                       : `DHCP expires in ~${Math.max(1, Math.round(ip.lease_seconds_remaining / 60))} min`
                     : null
                 return (
-                  <div key={i} className="py-3 border-b border-slate-700/30 space-y-2">
+                  <div key={ip.address} className="py-3 border-b border-slate-700/30 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <span className={`text-sm font-medium ${statusToneClass('info')}`}>
@@ -1529,7 +1529,7 @@ export default function VMDetailsPage() {
                 <InfoRow label="Guest hostname" value={guestObs.hostname} />
               )}
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm" aria-label="Filesystem mounts">
                   <thead>
                     <tr className="text-left text-slate-400 border-b border-slate-700/50">
                       <th className="py-2 pr-4 font-medium">Mount</th>
@@ -1699,11 +1699,11 @@ export default function VMDetailsPage() {
             <button onClick={() => openDialog('attach-disk')} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition flex items-center gap-1"><Plus className="w-4 h-4" /> Attach Disk</button>
           </div>
           <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-            <table className="w-full">
+            <table className="w-full" aria-label="Disk devices">
               <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400"><th className="px-6 py-3">Target</th><th className="px-6 py-3">Bus</th><th className="px-6 py-3">Cache</th><th className="px-6 py-3">Device</th><th className="px-6 py-3">Driver</th><th className="px-6 py-3">Source</th><th className="px-6 py-3 text-right">Actions</th></tr></thead>
               <tbody className="divide-y divide-slate-700/30">
-                {vm.disks.map((d, i) => (
-                  <tr key={i} className="table-row-hover">
+                {vm.disks.map((d) => (
+                  <tr key={d.target} className="table-row-hover">
                     <td className="px-6 py-3 font-mono text-sm">{d.target}</td>
                     <td className="px-6 py-3 text-sm text-slate-400">{d.bus || '—'}</td>
                     <td className="px-6 py-3 text-sm text-slate-400">{d.cache || '—'}</td>
@@ -1826,11 +1826,11 @@ export default function VMDetailsPage() {
             <button onClick={() => { setNicNetwork(networks[0]?.name || 'default'); setDialog('attach-nic') }} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition flex items-center gap-1"><Plus className="w-4 h-4" /> Add NIC</button>
           </div>
           <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-            <table className="w-full">
+            <table className="w-full" aria-label="Network interfaces">
               <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400"><th className="px-6 py-3">MAC Address</th><th className="px-6 py-3">Source</th><th className="px-6 py-3">Model</th><th className="px-6 py-3 text-right">Actions</th></tr></thead>
               <tbody className="divide-y divide-slate-700/30">
-                {vm.interfaces.map((iface, i) => (
-                  <tr key={i} className="table-row-hover">
+                {vm.interfaces.map((iface) => (
+                  <tr key={iface.mac_address} className="table-row-hover">
                     <td className="px-6 py-3 font-mono text-sm">{iface.mac_address}</td>
                     <td className="px-6 py-3 text-sm">{iface.source}</td>
                     <td className="px-6 py-3 text-sm">{iface.model}</td>
@@ -1875,7 +1875,7 @@ export default function VMDetailsPage() {
             {snapshots.length === 0 ? (
               <div className="p-8 text-center text-slate-500">No snapshots. Create one to save the current VM state.</div>
             ) : (
-              <table className="w-full">
+              <table className="w-full" aria-label="VM snapshots">
                 <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400"><th className="px-6 py-3">Snapshot</th><th className="px-6 py-3">State</th><th className="px-6 py-3">Created</th><th className="px-6 py-3">Current</th><th className="px-6 py-3 text-right">Actions</th></tr></thead>
                 <tbody className="divide-y divide-slate-700/30">
                   <SnapshotTableRows
@@ -1986,7 +1986,7 @@ export default function VMDetailsPage() {
                 </div>
               </div>
               <div className="bg-slate-900/40 rounded-lg border border-slate-700/40 overflow-hidden">
-                <table className="w-full">
+                <table className="w-full" aria-label="virtio-fs shares">
                   <thead>
                     <tr className="border-b border-slate-700/50 text-left text-xs text-slate-500">
                       <th className="px-5 py-2">Mount tag</th>
@@ -2059,11 +2059,11 @@ export default function VMDetailsPage() {
               </button>
             </div>
             <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-              <table className="w-full">
+              <table className="w-full" aria-label="USB devices">
                 <thead><tr className="border-b border-slate-700/50 text-left text-xs text-slate-500"><th className="px-6 py-2">Bus</th><th className="px-6 py-2">Device</th><th className="px-6 py-2">ID</th><th className="px-6 py-2">Description</th><th className="px-6 py-2 text-right">Actions</th></tr></thead>
                 <tbody className="divide-y divide-slate-700/30 text-sm">
-                  {usbDevices.map((d, i) => (
-                    <tr key={i} className="table-row-hover">
+                  {usbDevices.map((d) => (
+                    <tr key={`${d.vendor_id}:${d.product_id}`} className="table-row-hover">
                       <td className="px-6 py-2 font-mono text-xs">{d.bus}</td>
                       <td className="px-6 py-2 font-mono text-xs">{d.device}</td>
                       <td className={`px-6 py-2 font-mono ${statusToneClass('info')}`}>{d.vendor_id}:{d.product_id}</td>
@@ -2091,11 +2091,11 @@ export default function VMDetailsPage() {
           <div className="space-y-4">
             <h3 className="text-lg font-semibold flex items-center gap-2"><Monitor className="w-5 h-5 text-purple-400" /> PCI Devices</h3>
             <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-              <table className="w-full">
+              <table className="w-full" aria-label="PCI devices">
                 <thead><tr className="border-b border-slate-700/50 text-left text-xs text-slate-500"><th className="px-6 py-2">Slot</th><th className="px-6 py-2">Class</th><th className="px-6 py-2">Vendor</th><th className="px-6 py-2">Device</th><th className="px-6 py-2">IOMMU Group</th></tr></thead>
                 <tbody className="divide-y divide-slate-700/30 text-sm">
-                  {pciDevices.map((d, i) => (
-                    <tr key={i} className="table-row-hover">
+                  {pciDevices.map((d) => (
+                    <tr key={d.slot} className="table-row-hover">
                       <td className={`px-6 py-2 font-mono text-xs ${statusToneClass('info')}`}>{d.slot}</td>
                       <td className="px-6 py-2 text-slate-300">{d.class}</td>
                       <td className="px-6 py-2 text-slate-300">{d.vendor}</td>
@@ -2119,11 +2119,11 @@ export default function VMDetailsPage() {
                 {iommuGroups.map((g) => (
                   <div key={g.group_id} className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
                     <div className="px-5 py-2.5 bg-slate-800/80 border-b border-slate-700/50 text-sm font-medium text-orange-400">Group {g.group_id} ({g.devices.length} device{g.devices.length !== 1 ? 's' : ''})</div>
-                    <table className="w-full">
+                    <table className="w-full" aria-label="IOMMU group devices">
                       <thead><tr className="border-b border-slate-700/50 text-left text-xs text-slate-500"><th className="px-5 py-2">BDF</th><th className="px-5 py-2">Vendor</th><th className="px-5 py-2">Device</th></tr></thead>
                       <tbody className="divide-y divide-slate-700/30 text-sm">
-                        {g.devices.map((d, i) => (
-                          <tr key={i} className="table-row-hover">
+                        {g.devices.map((d) => (
+                          <tr key={d.bdf} className="table-row-hover">
                             <td className={`px-5 py-2 font-mono text-xs ${statusToneClass('info')}`}>{d.bdf}</td>
                             <td className="px-5 py-2 text-slate-300">{d.vendor || '-'}</td>
                             <td className="px-5 py-2 text-slate-300">{d.device_name || '-'}</td>
@@ -2216,7 +2216,7 @@ export default function VMDetailsPage() {
             <div className="flex flex-wrap gap-3 items-end">
               <div>
                 <label className="block text-xs text-slate-400 mb-1">Disk target</label>
-                <select value={blockDisk} onChange={(e) => setBlockDisk(e.target.value)} className="input-field min-w-[120px]">
+                <select aria-label="Disk target" value={blockDisk} onChange={(e) => setBlockDisk(e.target.value)} className="input-field min-w-[120px]">
                   <option value="">Select…</option>
                   {vm.disks.filter((d) => d.device === 'disk').map((d) => (
                     <option key={d.target} value={d.target}>{d.target}</option>
@@ -2290,7 +2290,7 @@ export default function VMDetailsPage() {
             <h3 className="text-lg font-semibold">PCI passthrough (VFIO)</h3>
             <p className="text-xs text-slate-400">BDF like <code className="text-slate-300">0000:03:00.0</code>. Detach the node device from the host first when required.</p>
             <div className="flex flex-wrap gap-2 items-end">
-              <input value={pciBdf} onChange={(e) => setPciBdf(e.target.value)} placeholder="0000:03:00.0" className="input-field flex-1 min-w-[200px]" />
+              <input aria-label="PCI BDF address" value={pciBdf} onChange={(e) => setPciBdf(e.target.value)} placeholder="0000:03:00.0" className="input-field flex-1 min-w-[200px]" />
               <button
                 type="button"
                 disabled={!canUsbPci}
@@ -2336,7 +2336,7 @@ export default function VMDetailsPage() {
             <h3 className="text-lg font-semibold">Host node device</h3>
             <p className="text-xs text-slate-400">Name from <strong className="text-slate-300">Devices</strong> page or <code className="text-slate-300">pci_0000_03_00_0</code> style libvirt id.</p>
             <div className="flex flex-wrap gap-2 items-end">
-              <input value={nodedevName} onChange={(e) => setNodedevName(e.target.value)} placeholder="pci_0000_03_00_0" className="input-field flex-1 min-w-[220px]" />
+              <input aria-label="Host node device name" value={nodedevName} onChange={(e) => setNodedevName(e.target.value)} placeholder="pci_0000_03_00_0" className="input-field flex-1 min-w-[220px]" />
               <button
                 type="button"
                 disabled={!canUsbPci}
@@ -2398,7 +2398,7 @@ export default function VMDetailsPage() {
           <div className="px-6 py-3 border-b border-slate-700/50 flex items-center justify-between">
             <span className="text-sm text-slate-400">QEMU Log ({`/var/log/libvirt/qemu/${vm.name}.log`})</span>
             <div className="flex items-center gap-3">
-              <select value={logsLines} onChange={(e) => setLogsLines(parseInt(e.target.value))} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300">
+              <select aria-label="Log lines" value={logsLines} onChange={(e) => setLogsLines(parseInt(e.target.value))} className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-slate-300">
                 <option value={500}>500 lines</option>
                 <option value={1000}>1000 lines</option>
                 <option value={2000}>2000 lines</option>
@@ -2636,6 +2636,7 @@ export default function VMDetailsPage() {
                             <div className="min-w-[160px]">
                               <label className="block text-xs text-slate-500 mb-1">Snapshot</label>
                               <select
+                                aria-label="Snapshot mode"
                                 value={d.snapshot || ''}
                                 onChange={(e) => {
                                   const v = e.target.value
@@ -2684,7 +2685,7 @@ export default function VMDetailsPage() {
               <p className="text-sm text-slate-400 mb-3">Drag to reorder boot devices. VM must be restarted for changes to take effect.</p>
               <div className="space-y-2">
                 {bootDevices.map((dev, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
+                  <div key={dev} className="flex items-center gap-2 bg-slate-900 border border-slate-700 rounded-lg px-3 py-2">
                     <span className="text-xs text-slate-500 w-4">{i + 1}.</span>
                     <span className="flex-1 text-sm font-medium">{dev}</span>
                     <button onClick={() => moveBootDevice(i, -1)} disabled={i === 0} className="p-0.5 hover:bg-slate-700 rounded disabled:opacity-30" aria-label="Move up"><ChevronUp className="w-4 h-4" /></button>
@@ -2709,8 +2710,8 @@ export default function VMDetailsPage() {
               {cdromDisks.length > 0 && (
                 <div className="mb-4 p-3 bg-slate-900 rounded-lg border border-slate-700">
                   <span className="text-xs text-slate-500 block mb-2">Current CD-ROM devices:</span>
-                  {cdromDisks.map((d, i) => (
-                    <div key={i} className="flex items-center justify-between py-1">
+                  {cdromDisks.map((d) => (
+                    <div key={d.target} className="flex items-center justify-between py-1">
                       <span className="text-sm"><span className={`font-mono ${statusToneClass('info')}`}>{d.target}</span> {d.source ? <span className="text-slate-400 text-xs ml-2">{d.source.split('/').pop()}</span> : <span className="text-slate-500 text-xs ml-2">(empty)</span>}</span>
                       {d.source && <button onClick={() => { if (name) { ejectCdrom(name, d.target, conn).then(() => { toast.success('CD-ROM ejected'); setDialog(null); load() }).catch((e: unknown) => toast.error(`Eject failed: ${formatUserError(e)}`)) } }} className={`px-2 py-0.5 rounded text-xs transition ${statusBadgeClasses('error')}`}>Eject</button>}
                     </div>
@@ -2856,7 +2857,7 @@ export default function VMDetailsPage() {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-sm text-slate-400 mb-1">Bus</label>
-                  <select value={tuneBus} onChange={(e) => setTuneBus(e.target.value)} className="input-field">
+                  <select aria-label="Bus" value={tuneBus} onChange={(e) => setTuneBus(e.target.value)} className="input-field">
                     <option value="">no change</option>
                     <option value="virtio">virtio</option>
                     <option value="sata">sata</option>
@@ -2866,7 +2867,7 @@ export default function VMDetailsPage() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-400 mb-1">Cache</label>
-                  <select value={tuneCache} onChange={(e) => setTuneCache(e.target.value)} className="input-field">
+                  <select aria-label="Cache" value={tuneCache} onChange={(e) => setTuneCache(e.target.value)} className="input-field">
                     <option value="">no change</option>
                     <option value="none">none</option>
                     <option value="writethrough">writethrough</option>
@@ -2875,7 +2876,7 @@ export default function VMDetailsPage() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-400 mb-1">Discard</label>
-                  <select value={tuneDiscard} onChange={(e) => setTuneDiscard(e.target.value)} className="input-field">
+                  <select aria-label="Discard" value={tuneDiscard} onChange={(e) => setTuneDiscard(e.target.value)} className="input-field">
                     <option value="">no change</option>
                     <option value="unmap">unmap</option>
                     <option value="ignore">ignore</option>
@@ -2883,7 +2884,7 @@ export default function VMDetailsPage() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-400 mb-1">Read-only</label>
-                  <select value={tuneRo} onChange={(e) => setTuneRo(e.target.value)} className="input-field">
+                  <select aria-label="Read-only" value={tuneRo} onChange={(e) => setTuneRo(e.target.value)} className="input-field">
                     <option value="">no change</option>
                     <option value="true">yes</option>
                     <option value="false">no</option>
@@ -2891,7 +2892,7 @@ export default function VMDetailsPage() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-400 mb-1">Shareable</label>
-                  <select value={tuneShare} onChange={(e) => setTuneShare(e.target.value)} className="input-field">
+                  <select aria-label="Shareable" value={tuneShare} onChange={(e) => setTuneShare(e.target.value)} className="input-field">
                     <option value="">no change</option>
                     <option value="true">yes</option>
                     <option value="false">no</option>
@@ -2905,7 +2906,7 @@ export default function VMDetailsPage() {
             <DialogBox title="Tune network interface" icon={<Sliders className={`w-5 h-5 ${statusToneClass('warn')}`} />} onClose={() => setDialog(null)} onConfirm={handleNicTune} confirmLabel="Apply">
               <p className="text-xs text-slate-500 mb-2 font-mono">{tuneMac}</p>
               <label className="block text-sm text-slate-400 mb-1">Model</label>
-              <select value={tuneNicModel} onChange={(e) => setTuneNicModel(e.target.value)} className="input-field">
+              <select aria-label="NIC model" value={tuneNicModel} onChange={(e) => setTuneNicModel(e.target.value)} className="input-field">
                 <option value="virtio">virtio</option>
                 <option value="e1000">e1000</option>
                 <option value="e1000e">e1000e</option>
@@ -2920,7 +2921,7 @@ export default function VMDetailsPage() {
           {dialog === 'firmware' && (
             <DialogBox title="Guest firmware" icon={<Settings className="w-5 h-5 text-orange-400" />} onClose={() => setDialog(null)} onConfirm={handleFirmwareSet} confirmLabel="Apply">
               <p className={`text-xs mb-2 ${statusToneClass('warn')}`}>Changing firmware can make a guest unbootable if disk layout/OS does not match. Prefer shutoff VMs.</p>
-              <select value={fwChoice} onChange={(e) => setFwChoice(e.target.value as 'bios' | 'uefi')} className="input-field">
+              <select aria-label="Firmware type" value={fwChoice} onChange={(e) => setFwChoice(e.target.value as 'bios' | 'uefi')} className="input-field">
                 <option value="bios">BIOS (SeaBIOS)</option>
                 <option value="uefi">UEFI (OVMF)</option>
               </select>
@@ -2930,13 +2931,13 @@ export default function VMDetailsPage() {
           {dialog === 'watchdog' && (
             <DialogBox title="Attach watchdog" icon={<Settings className={`w-5 h-5 ${statusToneClass('error')}`} />} onClose={() => setDialog(null)} onConfirm={handleWatchdogAttach} confirmLabel="Attach">
               <label className="block text-sm text-slate-400 mb-1">Model</label>
-              <select value={wdModel} onChange={(e) => setWdModel(e.target.value)} className="input-field">
+              <select aria-label="Watchdog model" value={wdModel} onChange={(e) => setWdModel(e.target.value)} className="input-field">
                 <option value="i6300esb">i6300esb</option>
                 <option value="ib700">ib700</option>
                 <option value="diag288">diag288</option>
               </select>
               <label className="block text-sm text-slate-400 mb-1 mt-3">Action</label>
-              <select value={wdAction} onChange={(e) => setWdAction(e.target.value)} className="input-field">
+              <select aria-label="Watchdog action" value={wdAction} onChange={(e) => setWdAction(e.target.value)} className="input-field">
                 <option value="reset">reset</option>
                 <option value="shutdown">shutdown</option>
                 <option value="poweroff">poweroff</option>
@@ -2949,7 +2950,7 @@ export default function VMDetailsPage() {
 
           {dialog === 'sound' && (
             <DialogBox title="Attach sound" icon={<Settings className="w-5 h-5 text-cyan-400" />} onClose={() => setDialog(null)} onConfirm={handleSoundAttach} confirmLabel="Attach">
-              <select value={sndModel} onChange={(e) => setSndModel(e.target.value)} className="input-field">
+              <select aria-label="Sound model" value={sndModel} onChange={(e) => setSndModel(e.target.value)} className="input-field">
                 <option value="ich6">ich6 (Intel HD Audio)</option>
                 <option value="ich9">ich9</option>
                 <option value="ac97">ac97</option>
@@ -2967,7 +2968,7 @@ export default function VMDetailsPage() {
 
           {dialog === 'video' && (
             <DialogBox title="Video model" icon={<Monitor className="w-5 h-5 text-purple-400" />} onClose={() => setDialog(null)} onConfirm={handleVideoSet} confirmLabel="Apply">
-              <select value={vidModel} onChange={(e) => setVidModel(e.target.value)} className="input-field">
+              <select aria-label="Video model" value={vidModel} onChange={(e) => setVidModel(e.target.value)} className="input-field">
                 <option value="qxl">qxl (SPICE)</option>
                 <option value="virtio">virtio</option>
                 <option value="vga">vga</option>
@@ -3423,6 +3424,12 @@ function EditableRow({ label, value, onEdit }: { label: string; value: string | 
 }
 
 function DialogOverlay({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in" role="dialog" aria-modal="true" onClick={onClose}>
       {children}
@@ -3444,7 +3451,11 @@ function DialogBox({ title, icon, onClose, onConfirm, confirmLabel, children, co
     ? 'bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed'
     : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed'
   return (
-    <div className="bg-slate-800 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-md mx-4 animate-fade-in" onClick={(e) => e.stopPropagation()}>
+    <form
+      className="bg-slate-800 border border-slate-700/50 rounded-2xl shadow-2xl w-full max-w-md mx-4 animate-fade-in"
+      onClick={(e) => e.stopPropagation()}
+      onSubmit={(e) => { e.preventDefault(); if (!confirmDisabled) onConfirm() }}
+    >
       <div className="p-5 border-b border-slate-700/50 flex items-center justify-between">
         <span className="text-lg font-semibold flex items-center gap-2">{icon} {title}</span>
         <button type="button" onClick={onClose} className="p-1 hover:bg-slate-700 rounded transition" aria-label="Close"><X className="w-4 h-4 text-slate-400" /></button>
@@ -3452,8 +3463,8 @@ function DialogBox({ title, icon, onClose, onConfirm, confirmLabel, children, co
       <div className="p-5 space-y-1">{children}</div>
       <div className="flex justify-end gap-3 px-5 pb-5">
         <button type="button" onClick={onClose} className="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-sm font-medium transition">Cancel</button>
-        <button type="button" onClick={onConfirm} disabled={confirmDisabled} className={`px-4 py-2 rounded-lg text-sm text-white font-medium transition ${confirmClass}`}>{confirmLabel}</button>
+        <button type="submit" disabled={confirmDisabled} className={`px-4 py-2 rounded-lg text-sm text-white font-medium transition ${confirmClass}`}>{confirmLabel}</button>
       </div>
-    </div>
+    </form>
   )
 }

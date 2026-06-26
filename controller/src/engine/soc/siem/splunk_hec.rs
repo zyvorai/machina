@@ -1,15 +1,18 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde_json::json;
-use sqlx::PgPool;
-use uuid::Uuid;
+use sqlx::SqlitePool;
 
 use super::{
-    fetch_unexported_alerts, fetch_unexported_events, integration_err, integration_ok, mark_exported,
-    AlertRow, EventRow, IntegrationRow,
+    fetch_unexported_alerts, fetch_unexported_events, integration_err, integration_ok,
+    mark_exported, AlertRow, EventRow, IntegrationRow,
 };
 
-pub async fn forward(pool: &PgPool, integ: &IntegrationRow, controller_id: &str) -> anyhow::Result<usize> {
+pub async fn forward(
+    pool: &SqlitePool,
+    integ: &IntegrationRow,
+    controller_id: &str,
+) -> anyhow::Result<usize> {
     let url = integ
         .config_json
         .get("url")
@@ -17,7 +20,11 @@ pub async fn forward(pool: &PgPool, integ: &IntegrationRow, controller_id: &str)
         .unwrap_or("")
         .trim()
         .trim_end_matches('/');
-    let token = integ.config_json.get("token").and_then(|v| v.as_str()).unwrap_or("");
+    let token = integ
+        .config_json
+        .get("token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if url.is_empty() || token.is_empty() {
         return Ok(0);
     }
@@ -147,12 +154,19 @@ async fn post_hec(
     let status = res.status();
     if !status.is_success() {
         let text = res.text().await.unwrap_or_default();
-        anyhow::bail!("hec status {}: {}", status, text.chars().take(200).collect::<String>());
+        anyhow::bail!(
+            "hec status {}: {}",
+            status,
+            text.chars().take(200).collect::<String>()
+        );
     }
     Ok(())
 }
 
-pub async fn test_connection(config: &serde_json::Value, controller_id: &str) -> anyhow::Result<String> {
+pub async fn test_connection(
+    config: &serde_json::Value,
+    controller_id: &str,
+) -> anyhow::Result<String> {
     let url = config.get("url").and_then(|v| v.as_str()).unwrap_or("");
     let token = config.get("token").and_then(|v| v.as_str()).unwrap_or("");
     if url.is_empty() || token.is_empty() {

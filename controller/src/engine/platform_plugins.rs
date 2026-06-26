@@ -2,7 +2,7 @@
 // Platform plugin marketplace — catalog inventory and install stubs.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -33,7 +33,7 @@ pub struct PluginInstallResult {
     pub summary: String,
 }
 
-pub async fn marketplace_overview(pool: &PgPool) -> anyhow::Result<MarketplaceOverview> {
+pub async fn marketplace_overview(pool: &SqlitePool) -> anyhow::Result<MarketplaceOverview> {
     let plugins: Vec<PluginRow> = sqlx::query_as(
         "SELECT id, slug, name, category, description, version, author, featured, installed
          FROM platform_plugins ORDER BY featured DESC, category, name",
@@ -55,7 +55,7 @@ pub async fn marketplace_overview(pool: &PgPool) -> anyhow::Result<MarketplaceOv
     })
 }
 
-pub async fn install_plugin(pool: &PgPool, slug: &str) -> anyhow::Result<PluginInstallResult> {
+pub async fn install_plugin(pool: &SqlitePool, slug: &str) -> anyhow::Result<PluginInstallResult> {
     let slug = slug.trim();
     if slug.is_empty() {
         anyhow::bail!("slug required");
@@ -63,14 +63,14 @@ pub async fn install_plugin(pool: &PgPool, slug: &str) -> anyhow::Result<PluginI
 
     let row: PluginRow = sqlx::query_as(
         "SELECT id, slug, name, category, description, version, author, featured, installed
-         FROM platform_plugins WHERE slug = $1",
+         FROM platform_plugins WHERE slug = ?",
     )
     .bind(slug)
     .fetch_optional(pool)
     .await?
     .ok_or_else(|| anyhow::anyhow!("plugin not found: {slug}"))?;
 
-    sqlx::query("UPDATE platform_plugins SET installed = TRUE WHERE slug = $1")
+    sqlx::query("UPDATE platform_plugins SET installed = TRUE WHERE slug = ?")
         .bind(slug)
         .execute(pool)
         .await?;
@@ -86,11 +86,11 @@ pub async fn install_plugin(pool: &PgPool, slug: &str) -> anyhow::Result<PluginI
     })
 }
 
-pub async fn uninstall_plugin(pool: &PgPool, slug: &str) -> anyhow::Result<PluginInstallResult> {
+pub async fn uninstall_plugin(pool: &SqlitePool, slug: &str) -> anyhow::Result<PluginInstallResult> {
     let slug = slug.trim();
     let row: PluginRow = sqlx::query_as(
         "SELECT id, slug, name, category, description, version, author, featured, installed
-         FROM platform_plugins WHERE slug = $1",
+         FROM platform_plugins WHERE slug = ?",
     )
     .bind(slug)
     .fetch_optional(pool)
@@ -101,7 +101,7 @@ pub async fn uninstall_plugin(pool: &PgPool, slug: &str) -> anyhow::Result<Plugi
         anyhow::bail!("zeus-firewall is a core platform plugin and cannot be uninstalled");
     }
 
-    sqlx::query("UPDATE platform_plugins SET installed = FALSE WHERE slug = $1")
+    sqlx::query("UPDATE platform_plugins SET installed = FALSE WHERE slug = ?")
         .bind(slug)
         .execute(pool)
         .await?;
@@ -131,12 +131,15 @@ fn default_author() -> String {
     "Community".into()
 }
 
-pub async fn publish_plugin(pool: &PgPool, req: &PluginPublishRequest) -> anyhow::Result<PluginRow> {
+pub async fn publish_plugin(
+    pool: &SqlitePool,
+    req: &PluginPublishRequest,
+) -> anyhow::Result<PluginRow> {
     machina_spec::validate_name(&req.slug).map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, FALSE)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, FALSE)
          ON CONFLICT (slug) DO UPDATE SET
            name = EXCLUDED.name,
            category = EXCLUDED.category,
@@ -158,7 +161,7 @@ pub async fn publish_plugin(pool: &PgPool, req: &PluginPublishRequest) -> anyhow
 
     sqlx::query_as(
         "SELECT id, slug, name, category, description, version, author, featured, installed
-         FROM platform_plugins WHERE slug = $1",
+         FROM platform_plugins WHERE slug = ?",
     )
     .bind(req.slug.trim())
     .fetch_one(pool)

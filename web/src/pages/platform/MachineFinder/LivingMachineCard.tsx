@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useMemo } from 'react'
 import { Link } from 'react-router'
 import { Monitor, Terminal, Wifi } from 'lucide-react'
 import { getPlatformVmMetrics, listVmBackups, runVmHealthCheck, type PlatformVm } from '../../../api/platform'
-import { getAiSecurity } from '../../../api/ai'
+import type { SecurityReport } from '../../../api/ai'
 import { machineAuraClass, machineAuraTone } from '../../../components/consolehub/MachineCanvas'
 import VmStatusBadge from '../../../components/VmStatusBadge'
 import { guestToolsStatusLabel } from '../../../utils/guestAgentUx'
@@ -23,6 +23,7 @@ type Props = {
   onSsh: () => void
   onDoubleClickTheatre: () => void
   guestIp?: string
+  aiSecurity?: SecurityReport | null
 }
 
 export default function LivingMachineCard({
@@ -34,6 +35,7 @@ export default function LivingMachineCard({
   onSsh,
   onDoubleClickTheatre,
   guestIp,
+  aiSecurity,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null)
   const [hydrated, setHydrated] = useState(false)
@@ -92,23 +94,22 @@ export default function LivingMachineCard({
             setLastBackup(latest.created_at ?? latest.status ?? 'completed')
           }
         }
-        if (overlay === 'security') {
-          const sec = await getAiSecurity().catch(() => null)
-          if (!cancelled && sec) {
-            setSecurityRisk(sec.risk_level)
-            const needle = vm.name.toLowerCase()
-            const related = sec.findings.filter(
-              (f) => f.title.toLowerCase().includes(needle) || f.detail.toLowerCase().includes(needle),
-            )
-            setSecurityFindings(related.length > 0 ? related.length : sec.findings.length)
-          }
-        }
       } catch {
         /* lazy fetch best-effort */
       }
     })()
     return () => { cancelled = true }
   }, [hydrated, vm.id, overlay])
+
+  useEffect(() => {
+    if (overlay !== 'security' || !aiSecurity) return
+    setSecurityRisk(aiSecurity.risk_level)
+    const needle = vm.name.toLowerCase()
+    const related = aiSecurity.findings.filter(
+      (f) => f.title.toLowerCase().includes(needle) || f.detail.toLowerCase().includes(needle),
+    )
+    setSecurityFindings(related.length > 0 ? related.length : aiSecurity.findings.length)
+  }, [overlay, aiSecurity, vm.name])
 
   return (
     <div
@@ -228,9 +229,9 @@ export default function LivingMachineCard({
 
       {running && libvirt && (
         <div className="flex justify-center gap-1 mt-2" onClick={(e) => e.stopPropagation()}>
-          <Link to={cinemaHubPath(vm.id, { protocol: 'novnc' })} className="p-1.5 rounded-lg hover:bg-white/10" title="VNC Cinema"><Monitor className="w-3.5 h-3.5 text-slate-400" /></Link>
-          <Link to={cinemaHubPath(vm.id, { protocol: 'spice' })} className="p-1.5 rounded-lg hover:bg-white/10" title="SPICE Cinema"><Wifi className="w-3.5 h-3.5 text-slate-400" /></Link>
-          <button type="button" className="p-1.5 rounded-lg hover:bg-white/10" title="SSH" onClick={onSsh}><Terminal className="w-3.5 h-3.5 text-slate-400" /></button>
+          <Link to={cinemaHubPath(vm.id, { protocol: 'novnc' })} className="p-1.5 rounded-lg hover:bg-white/10" title="VNC Cinema" aria-label="VNC Cinema"><Monitor className="w-3.5 h-3.5 text-slate-400" /></Link>
+          <Link to={cinemaHubPath(vm.id, { protocol: 'spice' })} className="p-1.5 rounded-lg hover:bg-white/10" title="SPICE Cinema" aria-label="SPICE Cinema"><Wifi className="w-3.5 h-3.5 text-slate-400" /></Link>
+          <button type="button" className="p-1.5 rounded-lg hover:bg-white/10" title="SSH" aria-label="SSH" onClick={onSsh}><Terminal className="w-3.5 h-3.5 text-slate-400" /></button>
           <button
             type="button"
             className="p-1.5 rounded-lg hover:bg-white/10 text-[10px] text-slate-500"

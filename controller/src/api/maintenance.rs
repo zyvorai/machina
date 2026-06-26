@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Path, State};
+use axum::Extension;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -35,9 +37,27 @@ fn default_true() -> bool {
     true
 }
 
+pub async fn get_schedule(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<MaintenanceScheduleRow>, ApiError> {
+    require_operator(&actor)?;
+    let row = sqlx::query_as::<_, MaintenanceScheduleRow>(
+        "SELECT id, host_id, action, evacuate, run_at, status FROM maintenance_schedules WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| ApiError::not_found("schedule not found"))?;
+    Ok(Json(row))
+}
+
 pub async fn list_schedules(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<MaintenanceScheduleRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = sqlx::query_as::<_, MaintenanceScheduleRow>(
         "SELECT id, host_id, action, evacuate, run_at, status FROM maintenance_schedules
          ORDER BY run_at DESC LIMIT 100",
@@ -49,12 +69,14 @@ pub async fn list_schedules(
 
 pub async fn create_schedule(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<CreateScheduleBody>,
 ) -> Result<Json<MaintenanceScheduleRow>, ApiError> {
+    require_admin(&actor)?;
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO maintenance_schedules (id, host_id, action, evacuate, run_at)
-         VALUES ($1, $2, $3, $4, $5)",
+         VALUES (?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(body.host_id)
@@ -64,7 +86,7 @@ pub async fn create_schedule(
     .execute(&state.pool)
     .await?;
     let row = sqlx::query_as::<_, MaintenanceScheduleRow>(
-        "SELECT id, host_id, action, evacuate, run_at, status FROM maintenance_schedules WHERE id = $1",
+        "SELECT id, host_id, action, evacuate, run_at, status FROM maintenance_schedules WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -74,19 +96,26 @@ pub async fn create_schedule(
 
 pub async fn delete_schedule(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    sqlx::query("DELETE FROM maintenance_schedules WHERE id = $1 AND status = 'pending'")
+    require_admin(&actor)?;
+    let deleted = sqlx::query("DELETE FROM maintenance_schedules WHERE id = ? AND status = 'pending'")
         .bind(id)
         .execute(&state.pool)
         .await?;
+    if deleted.rows_affected() == 0 {
+        return Err(ApiError::not_found("schedule not found or already running/completed"));
+    }
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
 pub async fn fence_host_manual(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(host_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_admin(&actor)?;
     let ok = crate::engine::drs::fence_host(&state, host_id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;

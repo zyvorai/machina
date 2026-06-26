@@ -65,7 +65,11 @@ pub async fn list_subnets(cfg: &OpenStackConfig) -> Result<Vec<OpenStackSubnet>,
         #[serde(default = "default_true")]
         enable_dhcp: bool,
     }
-    let resp = session.get(NETWORK, &["subnets"]).send().await.map_err(map_osauth_err)?;
+    let resp = session
+        .get(NETWORK, &["subnets"])
+        .send()
+        .await
+        .map_err(map_osauth_err)?;
     let body: Resp = resp.json().await.map_err(map_json_err)?;
     let mut out: Vec<_> = body
         .subnets
@@ -84,7 +88,10 @@ pub async fn list_subnets(cfg: &OpenStackConfig) -> Result<Vec<OpenStackSubnet>,
     Ok(out)
 }
 
-pub async fn get_subnet(cfg: &OpenStackConfig, subnet_id: &str) -> Result<OpenStackSubnet, LibvirtError> {
+pub async fn get_subnet(
+    cfg: &OpenStackConfig,
+    subnet_id: &str,
+) -> Result<OpenStackSubnet, LibvirtError> {
     let id = subnet_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("subnet id is required".into()));
@@ -136,7 +143,11 @@ pub async fn list_routers(cfg: &OpenStackConfig) -> Result<Vec<OpenStackRouter>,
         #[serde(default)]
         external_gateway_info: Option<serde_json::Value>,
     }
-    let resp = session.get(NETWORK, &["routers"]).send().await.map_err(map_osauth_err)?;
+    let resp = session
+        .get(NETWORK, &["routers"])
+        .send()
+        .await
+        .map_err(map_osauth_err)?;
     let body: Resp = resp.json().await.map_err(map_json_err)?;
     let mut out: Vec<_> = body
         .routers
@@ -152,7 +163,10 @@ pub async fn list_routers(cfg: &OpenStackConfig) -> Result<Vec<OpenStackRouter>,
     Ok(out)
 }
 
-pub async fn get_router(cfg: &OpenStackConfig, router_id: &str) -> Result<OpenStackRouter, LibvirtError> {
+pub async fn get_router(
+    cfg: &OpenStackConfig,
+    router_id: &str,
+) -> Result<OpenStackRouter, LibvirtError> {
     let id = router_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("router id is required".into()));
@@ -272,7 +286,12 @@ pub async fn get_port(cfg: &OpenStackConfig, port_id: &str) -> Result<OpenStackP
         network_id: body.port.network_id,
         status: body.port.status,
         device_id: body.port.device_id,
-        fixed_ips: body.port.fixed_ips.into_iter().map(|f| f.ip_address).collect(),
+        fixed_ips: body
+            .port
+            .fixed_ips
+            .into_iter()
+            .map(|f| f.ip_address)
+            .collect(),
         admin_state_up: body.port.admin_state_up,
     })
 }
@@ -349,7 +368,9 @@ pub async fn create_subnet(
     let network_id = req.network_id.trim();
     let cidr = req.cidr.trim();
     if network_id.is_empty() || cidr.is_empty() {
-        return Err(LibvirtError::Invalid("network_id and cidr are required".into()));
+        return Err(LibvirtError::Invalid(
+            "network_id and cidr are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let mut subnet = serde_json::json!({
@@ -539,7 +560,11 @@ pub async fn update_network(
     if id.is_empty() {
         return Err(LibvirtError::Invalid("network_id is required".into()));
     }
-    let name = req.name.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty());
+    let name = req
+        .name
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
     if name.is_none() {
         return Err(LibvirtError::Invalid("name is required".into()));
     }
@@ -665,7 +690,11 @@ pub async fn update_router(
     if id.is_empty() {
         return Err(LibvirtError::Invalid("router_id is required".into()));
     }
-    let name = req.name.as_ref().map(|s| s.trim()).filter(|s| !s.is_empty());
+    let name = req
+        .name
+        .as_ref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty());
     let ext_net = req
         .external_network_id
         .as_ref()
@@ -742,7 +771,9 @@ pub async fn update_port(
         port.insert("admin_state_up".into(), serde_json::json!(up));
     }
     if port.is_empty() {
-        return Err(LibvirtError::Invalid("name or admin_state_up required".into()));
+        return Err(LibvirtError::Invalid(
+            "name or admin_state_up required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let resp = session
@@ -834,15 +865,14 @@ pub async fn remove_router_interface(
     let router_id = req.router_id.trim();
     let subnet_id = req.subnet_id.trim();
     if router_id.is_empty() || subnet_id.is_empty() {
-        return Err(LibvirtError::Invalid("router_id and subnet_id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "router_id and subnet_id are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let body = serde_json::json!({ "subnet_id": subnet_id });
     session
-        .put(
-            NETWORK,
-            &["routers", router_id, "remove_router_interface"],
-        )
+        .put(NETWORK, &["routers", router_id, "remove_router_interface"])
         .json(&body)
         .send()
         .await
@@ -857,15 +887,14 @@ pub async fn add_router_interface(
     let router_id = req.router_id.trim();
     let subnet_id = req.subnet_id.trim();
     if router_id.is_empty() || subnet_id.is_empty() {
-        return Err(LibvirtError::Invalid("router_id and subnet_id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "router_id and subnet_id are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let body = serde_json::json!({ "subnet_id": subnet_id });
     let resp = session
-        .put(
-            NETWORK,
-            &["routers", router_id, "add_router_interface"],
-        )
+        .put(NETWORK, &["routers", router_id, "add_router_interface"])
         .json(&body)
         .send()
         .await

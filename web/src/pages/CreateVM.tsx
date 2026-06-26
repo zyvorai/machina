@@ -821,6 +821,7 @@ export default function CreateVMPage() {
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Recently discovered ISOs</label>
                 <select
+                  aria-label="Recently discovered ISOs"
                   value=""
                   onChange={(e) => e.target.value && setIso(e.target.value)}
                   className="input-field"
@@ -942,6 +943,7 @@ export default function CreateVMPage() {
                 <label className="block text-sm text-slate-400">RHEL-family offline image token (POST /guest-images/rhel-url)</label>
                 <input
                   type="password"
+                  autoComplete="off"
                   value={rhelAccessToken}
                   onChange={(e) => setRhelAccessToken(e.target.value)}
                   className="input-field font-mono text-xs"
@@ -1332,6 +1334,7 @@ export default function CreateVMPage() {
         <div className="flex gap-2">
           <input
             type="text"
+            aria-label="Cloud-init ISO path on hypervisor"
             value={cloudInitIso}
             onChange={(e) => setCloudInitIso(e.target.value)}
             className="input-field flex-1 font-mono text-sm"

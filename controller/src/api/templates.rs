@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use crate::api::tasks::TaskResponse;
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::state::AppState;
 use crate::tasks::enqueue::enqueue_task;
 
@@ -75,13 +75,15 @@ const TEMPLATE_SELECT: &str =
 
 pub async fn list_templates(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<ListTemplatesQuery>,
 ) -> Result<Json<Vec<TemplateRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = match (q.marketplace, q.featured) {
         (Some(true), Some(true)) => {
             sqlx::query_as::<_, TemplateRow>(&format!(
-                "{TEMPLATE_SELECT} WHERE marketplace = TRUE AND featured = TRUE ORDER BY name, version"
-            ))
+            "{TEMPLATE_SELECT} WHERE marketplace = TRUE AND featured = TRUE ORDER BY name, version"
+        ))
             .fetch_all(&state.pool)
             .await?
         }
@@ -128,14 +130,17 @@ fn template_rows_with_auto_fetch(rows: Vec<TemplateRow>) -> Vec<serde_json::Valu
 
 pub async fn list_marketplace_templates(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<serde_json::Value>>, ApiError> {
+    require_operator(&actor)?;
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM templates WHERE marketplace = TRUE")
         .fetch_one(&state.pool)
         .await?;
     if count == 0 {
         let _ = crate::engine::template_catalog::seed_default_templates(&state.pool).await;
     } else {
-        let _ = crate::engine::template_catalog::prune_stale_marketplace_templates(&state.pool).await;
+        let _ =
+            crate::engine::template_catalog::prune_stale_marketplace_templates(&state.pool).await;
     }
     let rows = sqlx::query_as::<_, TemplateRow>(&format!(
         "{TEMPLATE_SELECT} WHERE marketplace = TRUE ORDER BY featured DESC, category, name, version"
@@ -147,7 +152,9 @@ pub async fn list_marketplace_templates(
 
 pub async fn seed_templates(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_admin(&actor)?;
     let inserted = crate::engine::template_catalog::seed_default_templates(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -168,13 +175,14 @@ pub async fn seed_templates(
 
 pub async fn create_template(
     State(state): State<AppState>,
-    Extension(_actor): Extension<AuthUser>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<CreateTemplateBody>,
 ) -> Result<Json<TemplateRow>, ApiError> {
+    require_operator(&actor)?;
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO templates (id, name, version, source_disk, cloud_init, os_family, category, description, featured, marketplace, icon)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(&body.name)
@@ -195,10 +203,12 @@ pub async fn create_template(
 
 pub async fn get_template(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     AxumPath((name, version)): AxumPath<(String, String)>,
 ) -> Result<Json<TemplateRow>, ApiError> {
+    require_operator(&actor)?;
     let row = sqlx::query_as::<_, TemplateRow>(&format!(
-        "{TEMPLATE_SELECT} WHERE name = $1 AND version = $2"
+        "{TEMPLATE_SELECT} WHERE name = ? AND version = ?"
     ))
     .bind(&name)
     .bind(&version)
@@ -209,11 +219,14 @@ pub async fn get_template(
 
 pub async fn get_template_readiness(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     AxumPath((name, version)): AxumPath<(String, String)>,
 ) -> Result<Json<crate::engine::template_readiness::TemplateReadiness>, ApiError> {
-    let readiness = crate::engine::template_readiness::check_template_readiness(&state.pool, &name, &version)
-        .await
-        .map_err(|e| ApiError::bad_request(e.to_string()))?;
+    require_operator(&actor)?;
+    let readiness =
+        crate::engine::template_readiness::check_template_readiness(&state.pool, &name, &version)
+            .await
+            .map_err(|e| ApiError::bad_request(e.to_string()))?;
     Ok(Json(readiness))
 }
 
@@ -225,9 +238,10 @@ pub struct PrefetchMissingImagesBody {
 
 pub async fn prefetch_missing_template_images(
     State(state): State<AppState>,
-    Extension(_actor): Extension<AuthUser>,
+    Extension(actor): Extension<AuthUser>,
     body: Option<Json<PrefetchMissingImagesBody>>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     let body = body.map(|j| j.0).unwrap_or_default();
     let host_id = if let Some(id) = body.host_id {
         id
@@ -255,14 +269,15 @@ pub async fn prefetch_missing_template_images(
 
 pub async fn list_missing_template_images(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let _ = crate::engine::template_catalog::ensure_default_templates(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    let missing =
-        crate::engine::template_readiness::list_missing_marketplace_images(&state.pool)
-            .await
-            .map_err(|e| ApiError::internal(e.to_string()))?;
+    let missing = crate::engine::template_readiness::list_missing_marketplace_images(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
     let auto_fetch_count = missing.iter().filter(|m| m.auto_fetch).count();
     Ok(Json(serde_json::json!({
         "missing": missing,
@@ -282,9 +297,11 @@ pub async fn list_missing_template_images(
 
 pub async fn delete_template(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     AxumPath((name, version)): AxumPath<(String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let deleted = sqlx::query("DELETE FROM templates WHERE name = $1 AND version = $2")
+    require_admin(&actor)?;
+    let deleted = sqlx::query("DELETE FROM templates WHERE name = ? AND version = ?")
         .bind(&name)
         .bind(&version)
         .execute(&state.pool)
@@ -296,7 +313,7 @@ pub async fn delete_template(
 }
 
 async fn fetch_template_by_id(state: &AppState, id: Uuid) -> Result<Json<TemplateRow>, ApiError> {
-    let row = sqlx::query_as::<_, TemplateRow>(&format!("{TEMPLATE_SELECT} WHERE id = $1"))
+    let row = sqlx::query_as::<_, TemplateRow>(&format!("{TEMPLATE_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -308,7 +325,7 @@ pub struct ApproveTemplateBody {
     pub approval_status: String,
 }
 
-async fn run_git_template_sync(pool: &sqlx::PgPool) -> Result<usize, ApiError> {
+async fn run_git_template_sync(pool: &sqlx::SqlitePool) -> Result<usize, ApiError> {
     let dir = std::env::var("MACHINA_TEMPLATES_GIT_DIR")
         .map_err(|_| ApiError::bad_request("MACHINA_TEMPLATES_GIT_DIR not set"))?;
     crate::engine::template_git::sync_templates_from_git(pool, std::path::Path::new(&dir))
@@ -318,7 +335,9 @@ async fn run_git_template_sync(pool: &sqlx::PgPool) -> Result<usize, ApiError> {
 
 pub async fn sync_git_templates(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let synced = run_git_template_sync(&state.pool).await?;
     Ok(Json(serde_json::json!({ "synced": synced })))
 }
@@ -343,26 +362,32 @@ pub async fn sync_git_templates_webhook(
         }
     }
     let synced = run_git_template_sync(&state.pool).await?;
-    Ok(Json(serde_json::json!({ "synced": synced, "source": "webhook" })))
+    Ok(Json(
+        serde_json::json!({ "synced": synced, "source": "webhook" }),
+    ))
 }
 
 pub async fn approve_template(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     AxumPath((name, version)): AxumPath<(String, String)>,
     Json(body): Json<ApproveTemplateBody>,
 ) -> Result<Json<TemplateRow>, ApiError> {
+    require_admin(&actor)?;
     let status = body.approval_status.trim();
     if !["approved", "pending", "draft", "rejected"].contains(&status) {
-        return Err(ApiError::bad_request("approval_status must be approved|pending|draft|rejected"));
+        return Err(ApiError::bad_request(
+            "approval_status must be approved|pending|draft|rejected",
+        ));
     }
-    sqlx::query("UPDATE templates SET approval_status = $1 WHERE name = $2 AND version = $3")
+    sqlx::query("UPDATE templates SET approval_status = ? WHERE name = ? AND version = ?")
         .bind(status)
         .bind(&name)
         .bind(&version)
         .execute(&state.pool)
         .await?;
     let row = sqlx::query_as::<_, TemplateRow>(&format!(
-        "{TEMPLATE_SELECT} WHERE name = $1 AND version = $2"
+        "{TEMPLATE_SELECT} WHERE name = ? AND version = ?"
     ))
     .bind(&name)
     .bind(&version)

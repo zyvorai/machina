@@ -248,6 +248,8 @@ message GetConsoleAccessPlanResponse {
   repeated string guacamole_protocols = 11;
   /// ssh_key | password | both | unknown — from cloud-init user-data when present.
   string guest_auth_mode = 12;
+  /// True when the VM has a SPICE graphics device (even if VNC is also present).
+  bool has_spice = 13;
 }
 
 message CloneVmRequest {

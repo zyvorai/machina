@@ -116,7 +116,9 @@ pub fn attach_vsock(conn: &Connect, vm_name: &str, cid: Option<u32>) -> Result<(
         .get_xml_desc(0)
         .map_err(LibvirtError::map_op("get_xml"))?;
     if vsock_present(&desc) {
-        return Err(LibvirtError::Invalid("VM already has a vsock device".into()));
+        return Err(LibvirtError::Invalid(
+            "VM already has a vsock device".into(),
+        ));
     }
     let cid_xml = match cid {
         Some(id) => format!(r#"  <cid address="{}"/>"#, id),
@@ -142,7 +144,9 @@ pub fn detach_vsock(conn: &Connect, vm_name: &str) -> Result<(), LibvirtError> {
         .map_err(LibvirtError::map_op("get_xml"))?;
     let blocks = split_blocks(&desc, "vsock");
     let Some(first) = blocks.first() else {
-        return Err(LibvirtError::NotFound(format!("No vsock on VM '{vm_name}'")));
+        return Err(LibvirtError::NotFound(format!(
+            "No vsock on VM '{vm_name}'"
+        )));
     };
     let flags = get_domain_flags(&domain);
     domain

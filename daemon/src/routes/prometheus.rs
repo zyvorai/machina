@@ -12,11 +12,11 @@ use std::fmt::Display;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+use machina_core::bpf_probe;
 use machina_core::host_linux_obs;
+use machina_core::libvirt::automation;
 use machina_core::libvirt::extras::get_host_stats;
 use machina_core::libvirt::node;
-use machina_core::bpf_probe;
-use machina_core::libvirt::automation;
 use machina_core::obs_counters;
 use machina_core::{
     is_openstack_configured, LibvirtManager, MachinaConfig, VmBlockDeviceMetrics, VmInfo,
@@ -127,8 +127,20 @@ fn add_vm_disk_metrics(output: &mut String, vm_metrics: &[VmMetrics]) {
     for m in vm_metrics {
         let vm = escape_label(&vm_prom_label(m));
         for d in &m.disks {
-            emit_disk_metric(output, "machina_vm_disk_read_bytes_total", &vm, d, d.rd_bytes);
-            emit_disk_metric(output, "machina_vm_disk_write_bytes_total", &vm, d, d.wr_bytes);
+            emit_disk_metric(
+                output,
+                "machina_vm_disk_read_bytes_total",
+                &vm,
+                d,
+                d.rd_bytes,
+            );
+            emit_disk_metric(
+                output,
+                "machina_vm_disk_write_bytes_total",
+                &vm,
+                d,
+                d.wr_bytes,
+            );
             emit_disk_metric(output, "machina_vm_disk_read_ops_total", &vm, d, d.rd_ops);
             emit_disk_metric(output, "machina_vm_disk_write_ops_total", &vm, d, d.wr_ops);
         }
@@ -191,13 +203,7 @@ fn add_vm_net_metrics(output: &mut String, vm_metrics: &[VmMetrics]) {
     }
 }
 
-fn emit_net_metric(
-    output: &mut String,
-    name: &str,
-    vm: &str,
-    n: &VmNetDeviceMetrics,
-    value: u64,
-) {
+fn emit_net_metric(output: &mut String, name: &str, vm: &str, n: &VmNetDeviceMetrics, value: u64) {
     let device = escape_label(&n.device);
     add_labeled(
         output,
@@ -344,7 +350,13 @@ pub(crate) async fn collect_prometheus_exposition(
         (node_info, vm_metrics, vms, host_stats, cgroup)
     })
     .await
-    .unwrap_or((None, None, None, None, host_linux_obs::CgroupV2Stats::default()));
+    .unwrap_or((
+        None,
+        None,
+        None,
+        None,
+        host_linux_obs::CgroupV2Stats::default(),
+    ));
 
     if let Some(info) = data.0 {
         add_gauge(
@@ -699,8 +711,7 @@ async fn prometheus_metrics(
     Extension(http_metrics): Extension<Arc<HttpMetrics>>,
 ) -> impl IntoResponse {
     stats.inc_prometheus_scrape();
-    let output =
-        collect_prometheus_exposition(manager, stats, http_metrics).await;
+    let output = collect_prometheus_exposition(manager, stats, http_metrics).await;
     (
         [(
             header::CONTENT_TYPE,

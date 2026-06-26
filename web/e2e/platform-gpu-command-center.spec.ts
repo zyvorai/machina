@@ -15,9 +15,10 @@ test('GPU Command Center shows host inventory and placement advisor', async ({ p
   await expect(page.getByRole('heading', { name: 'Create Virtual Machine' })).toBeVisible({ timeout: 15_000 })
 })
 
-test('Resources hub links to GPU Command Center', async ({ page }) => {
+test('Host detail linux tab links to GPU Command Center', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
-  await page.goto('/platform/infrastructure')
+  await page.goto('/platform/hosts/h1?tab=linux')
+  await expect(page.getByRole('heading', { name: 'host-1' })).toBeVisible({ timeout: 15_000 })
   await page.getByRole('link', { name: 'GPU Command Center' }).click()
   await expect(page).toHaveURL(/\/platform\/gpu/)
   await expect(page.getByRole('heading', { name: /GPU Command Center/i })).toBeVisible({ timeout: 15_000 })

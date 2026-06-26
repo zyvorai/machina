@@ -41,7 +41,7 @@ export default function GlassDataTable({
   return (
     <MacGlassPanel title={title} subtitle={subtitle} action={action}>
       <div className="overflow-x-auto -mx-1">
-        <table className="w-full text-sm min-w-[420px]">
+        <table className="w-full text-sm min-w-[420px]" aria-label={title}>
           <thead>
             <tr className="text-slate-400 border-b border-white/[0.06]">{columns}</tr>
           </thead>

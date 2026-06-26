@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::api::tasks::TaskResponse;
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::engine::host_validate;
 use crate::state::AppState;
 use crate::tasks::enqueue::{enqueue_task, write_audit};
@@ -61,13 +61,15 @@ pub struct HostDetailRow {
     pub rack_u: Option<i32>,
 }
 
-const HOST_LIST_SQL: &str = "SELECT id, hostname, address, state, maintenance_mode, agent_grpc_addr, vm_count,
+const HOST_LIST_SQL: &str =
+    "SELECT id, hostname, address, state, maintenance_mode, agent_grpc_addr, vm_count,
          cpu_percent, memory_used_mib, memory_total_mib, fenced,
          COALESCE(validation_status, 'pending') AS validation_status,
          last_heartbeat_at,
          COALESCE(site, '') AS site, COALESCE(rack, '') AS rack, rack_u FROM hosts";
 
-const HOST_DETAIL_SQL: &str = "SELECT id, hostname, address, state, maintenance_mode, agent_grpc_addr,
+const HOST_DETAIL_SQL: &str =
+    "SELECT id, hostname, address, state, maintenance_mode, agent_grpc_addr,
          COALESCE(agent_console_addr, '127.0.0.1:50052') AS agent_console_addr,
          COALESCE(libvirt_uri, 'qemu:///system') AS libvirt_uri,
          COALESCE(agent_version, '') AS agent_version,
@@ -77,7 +79,7 @@ const HOST_DETAIL_SQL: &str = "SELECT id, hostname, address, state, maintenance_
          COALESCE(qemu_version, '') AS qemu_version,
          fenced, COALESCE(notes, '') AS notes,
          COALESCE(validation_status, 'pending') AS validation_status,
-         COALESCE(validation_report, '[]'::jsonb) AS validation_report,
+         COALESCE(validation_report, '[]') AS validation_report,
          last_heartbeat_at,
          COALESCE(site, '') AS site, COALESCE(rack, '') AS rack, rack_u FROM hosts";
 
@@ -92,8 +94,12 @@ pub struct CreateHostRequest {
     pub libvirt_uri: Option<String>,
 }
 
-pub async fn list_hosts(State(state): State<AppState>) -> Result<Json<Vec<HostRow>>, ApiError> {
-    let rows = sqlx::query_as::<_, HostRow>(&format!("{HOST_LIST_SQL} ORDER BY hostname"))
+pub async fn list_hosts(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+) -> Result<Json<Vec<HostRow>>, ApiError> {
+    require_operator(&actor)?;
+    let rows = sqlx::query_as::<_, HostRow>(&format!("{HOST_LIST_SQL} ORDER BY hostname LIMIT 500"))
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(rows.into_iter().map(apply_stale_host_state).collect()))
@@ -112,22 +118,30 @@ fn apply_stale_host_state(mut row: HostRow) -> HostRow {
     row
 }
 
-pub async fn get_host(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<HostRow>, ApiError> {
-    let row = sqlx::query_as::<_, HostRow>(&format!("{HOST_LIST_SQL} WHERE id = $1"))
+async fn fetch_host_row(state: &AppState, id: Uuid) -> Result<HostRow, ApiError> {
+    let row = sqlx::query_as::<_, HostRow>(&format!("{HOST_LIST_SQL} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
-    Ok(Json(apply_stale_host_state(row)))
+    Ok(apply_stale_host_state(row))
+}
+
+pub async fn get_host(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<HostRow>, ApiError> {
+    require_operator(&actor)?;
+    Ok(Json(fetch_host_row(&state, id).await?))
 }
 
 pub async fn get_host_gpus(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let agent_addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = $1")
+    require_operator(&actor)?;
+    let agent_addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -156,11 +170,8 @@ pub async fn get_host_gpus(
     })))
 }
 
-pub async fn get_host_detail(
-    State(state): State<AppState>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<HostDetailRow>, ApiError> {
-    let row = sqlx::query_as::<_, HostDetailRow>(&format!("{HOST_DETAIL_SQL} WHERE id = $1"))
+async fn fetch_host_detail_row(state: &AppState, id: Uuid) -> Result<HostDetailRow, ApiError> {
+    let row = sqlx::query_as::<_, HostDetailRow>(&format!("{HOST_DETAIL_SQL} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -173,7 +184,16 @@ pub async fn get_host_detail(
             }
         }
     }
-    Ok(Json(detail))
+    Ok(detail)
+}
+
+pub async fn get_host_detail(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<HostDetailRow>, ApiError> {
+    require_operator(&actor)?;
+    Ok(Json(fetch_host_detail_row(&state, id).await?))
 }
 
 pub async fn create_host(
@@ -181,6 +201,7 @@ pub async fn create_host(
     Extension(actor): Extension<AuthUser>,
     Json(req): Json<CreateHostRequest>,
 ) -> Result<Json<HostRow>, ApiError> {
+    require_operator(&actor)?;
     let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_one(&state.pool)
         .await?;
@@ -194,7 +215,7 @@ pub async fn create_host(
 
     sqlx::query(
         "INSERT INTO hosts (id, cluster_id, hostname, address, agent_grpc_addr, libvirt_uri, state, validation_status)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pending_validation', 'pending')",
+         VALUES (?, ?, ?, ?, ?, ?, 'pending_validation', 'pending')",
     )
     .bind(id)
     .bind(cluster_id)
@@ -215,7 +236,7 @@ pub async fn create_host(
     )
     .await?;
 
-    let _ = enqueue_task(
+    if let Err(e) = enqueue_task(
         &state,
         "host.validate",
         serde_json::json!({ "host_id": id.to_string() }),
@@ -223,15 +244,20 @@ pub async fn create_host(
         Some(id),
         Some(id),
     )
-    .await;
+    .await
+    {
+        tracing::warn!(host_id = %id, "host.validate enqueue failed after create: {}", e.message);
+    }
 
-    get_host(State(state), Path(id)).await
+    fetch_host_row(&state, id).await.map(Json)
 }
 
 pub async fn validate_host(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<host_validate::HostValidationReport>, ApiError> {
+    require_operator(&actor)?;
     let report = host_validate::validate_host(&state.pool, id).await?;
     host_validate::persist_validation(&state.pool, id, &report).await?;
     Ok(Json(report))
@@ -239,8 +265,10 @@ pub async fn validate_host(
 
 pub async fn enqueue_validate_host(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     let task_id = enqueue_task(
         &state,
         "host.validate",
@@ -259,8 +287,10 @@ pub async fn enqueue_validate_host(
 
 pub async fn sync_host(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     let task_id = enqueue_task(
         &state,
         "host.inventory",
@@ -296,14 +326,15 @@ pub async fn join_host(
 ) -> Result<Json<HostRow>, ApiError> {
     let row: Option<(Uuid,)> = sqlx::query_as(
         "SELECT cluster_id FROM enrollment_tokens
-         WHERE token = $1 AND used_at IS NULL
-           AND (expires_at IS NULL OR expires_at > NOW())",
+         WHERE token = ? AND used_at IS NULL
+           AND (expires_at IS NULL OR expires_at > datetime('now'))",
     )
     .bind(&req.token)
     .fetch_optional(&state.pool)
     .await?;
 
-    let (cluster_id,) = row.ok_or_else(|| ApiError::bad_request("invalid or expired join token"))?;
+    let (cluster_id,) =
+        row.ok_or_else(|| ApiError::bad_request("invalid or expired join token"))?;
     let id = Uuid::new_v4();
     let console_addr = req
         .agent_console_addr
@@ -312,9 +343,10 @@ pub async fn join_host(
         .libvirt_uri
         .unwrap_or_else(|| state.config.default_libvirt_uri.clone());
 
+    let mut tx = state.pool.begin().await?;
     sqlx::query(
         "INSERT INTO hosts (id, cluster_id, hostname, address, agent_grpc_addr, agent_console_addr, libvirt_uri, state, validation_status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending_validation', 'pending')
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_validation', 'pending')
          ON CONFLICT (cluster_id, hostname) DO UPDATE SET
            address = EXCLUDED.address,
            agent_grpc_addr = EXCLUDED.agent_grpc_addr,
@@ -330,25 +362,25 @@ pub async fn join_host(
     .bind(&req.agent_grpc_addr)
     .bind(&console_addr)
     .bind(&libvirt_uri)
-    .execute(&state.pool)
+    .execute(&mut *tx)
     .await?;
 
-    sqlx::query("UPDATE enrollment_tokens SET used_at = NOW() WHERE token = $1")
+    sqlx::query("UPDATE enrollment_tokens SET used_at = datetime('now') WHERE token = ?")
         .bind(&req.token)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
 
-    let host_id: Uuid = sqlx::query_scalar(
-        "SELECT id FROM hosts WHERE cluster_id = $1 AND hostname = $2",
-    )
-    .bind(cluster_id)
-    .bind(&req.hostname)
-    .fetch_one(&state.pool)
-    .await?;
+    let host_id: Uuid =
+        sqlx::query_scalar("SELECT id FROM hosts WHERE cluster_id = ? AND hostname = ?")
+            .bind(cluster_id)
+            .bind(&req.hostname)
+            .fetch_one(&mut *tx)
+            .await?;
+    tx.commit().await?;
 
     link_baremetal_firewall_on_join(&state.pool, host_id, &req.hostname).await;
 
-    let _ = enqueue_task(
+    if let Err(e) = enqueue_task(
         &state,
         "host.validate",
         serde_json::json!({ "host_id": host_id.to_string() }),
@@ -356,14 +388,17 @@ pub async fn join_host(
         Some(host_id),
         Some(host_id),
     )
-    .await;
+    .await
+    {
+        tracing::warn!(host_id = %host_id, "host.validate enqueue failed after join: {}", e.message);
+    }
 
-    get_host(State(state), Path(host_id)).await
+    fetch_host_row(&state, host_id).await.map(Json)
 }
 
-async fn link_baremetal_firewall_on_join(pool: &sqlx::PgPool, host_id: Uuid, hostname: &str) {
+async fn link_baremetal_firewall_on_join(pool: &sqlx::SqlitePool, host_id: Uuid, hostname: &str) {
     if let Ok(Some(metal_id)) = sqlx::query_scalar::<_, Uuid>(
-        "SELECT id FROM baremetal_servers WHERE hostname = $1 LIMIT 1",
+        "SELECT id FROM baremetal_servers WHERE hostname = ? LIMIT 1",
     )
     .bind(hostname)
     .fetch_optional(pool)
@@ -390,9 +425,11 @@ fn default_true() -> bool {
 
 pub async fn host_maintenance(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(req): Json<MaintenanceRequest>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     let task_id = enqueue_task(
         &state,
         "host.maintenance",
@@ -413,8 +450,12 @@ pub async fn host_maintenance(
     }))
 }
 
-pub async fn sync_all_hosts(State(state): State<AppState>) -> Result<Json<Vec<TaskResponse>>, ApiError> {
-    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM hosts ORDER BY hostname")
+pub async fn sync_all_hosts(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+) -> Result<Json<Vec<TaskResponse>>, ApiError> {
+    require_operator(&actor)?;
+    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM hosts ORDER BY hostname LIMIT 500")
         .fetch_all(&state.pool)
         .await?;
     let mut out = Vec::new();
@@ -459,94 +500,105 @@ pub async fn patch_host(
     Path(id): Path<Uuid>,
     Json(body): Json<PatchHostBody>,
 ) -> Result<Json<HostDetailRow>, ApiError> {
+    require_operator(&actor)?;
+    let mut tx = state.pool.begin().await?;
     if let Some(v) = &body.address {
-        sqlx::query("UPDATE hosts SET address = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET address = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.agent_grpc_addr {
-        sqlx::query("UPDATE hosts SET agent_grpc_addr = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET agent_grpc_addr = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.libvirt_uri {
-        sqlx::query("UPDATE hosts SET libvirt_uri = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET libvirt_uri = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.notes {
-        sqlx::query("UPDATE hosts SET notes = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET notes = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(tags) = &body.tags {
-        sqlx::query("UPDATE hosts SET tags = $1 WHERE id = $2")
-            .bind(tags)
+        sqlx::query("UPDATE hosts SET tags = ? WHERE id = ?")
+            .bind(serde_json::to_string(tags).unwrap_or_else(|_| "[]".into()))
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.fence_method {
-        sqlx::query("UPDATE hosts SET fence_method = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET fence_method = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.ipmi_address {
-        sqlx::query("UPDATE hosts SET ipmi_address = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET ipmi_address = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.ipmi_username {
-        sqlx::query("UPDATE hosts SET ipmi_username = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET ipmi_username = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.ipmi_password {
         if !v.is_empty() && v != "***" {
-            sqlx::query("UPDATE hosts SET ipmi_password = $1 WHERE id = $2")
+            sqlx::query("UPDATE hosts SET ipmi_password = ? WHERE id = ?")
                 .bind(v)
                 .bind(id)
-                .execute(&state.pool)
+                .execute(&mut *tx)
                 .await?;
         }
     }
     if let Some(v) = &body.site {
-        sqlx::query("UPDATE hosts SET site = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET site = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.rack {
-        sqlx::query("UPDATE hosts SET rack = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET rack = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = body.rack_u {
-        sqlx::query("UPDATE hosts SET rack_u = $1 WHERE id = $2")
+        sqlx::query("UPDATE hosts SET rack_u = ? WHERE id = ?")
             .bind(v)
             .bind(id)
-            .execute(&state.pool)
+            .execute(&mut *tx)
             .await?;
     }
-    write_audit(&state, &actor.username, "host.patch", "host", Some(id), serde_json::json!({})).await?;
-    get_host_detail(State(state), Path(id)).await
+    tx.commit().await?;
+    write_audit(
+        &state,
+        &actor.username,
+        "host.patch",
+        "host",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await?;
+    fetch_host_detail_row(&state, id).await.map(Json)
 }
 
 pub async fn delete_host(
@@ -554,28 +606,39 @@ pub async fn delete_host(
     Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE host_id = $1")
+    require_admin(&actor)?;
+    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE host_id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
     if vm_count > 0 {
         return Err(ApiError::bad_request("host still has VMs assigned"));
     }
-    sqlx::query("DELETE FROM hosts WHERE id = $1")
+    sqlx::query("DELETE FROM hosts WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
-    write_audit(&state, &actor.username, "host.delete", "host", Some(id), serde_json::json!({})).await?;
+    write_audit(
+        &state,
+        &actor.username,
+        "host.delete",
+        "host",
+        Some(id),
+        serde_json::json!({}),
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
 pub async fn host_lldp(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::libvirt::host_network::LldpInventory>, ApiError> {
+    require_admin(&actor)?;
     let row: (String, String) = sqlx::query_as(
         "SELECT hostname, COALESCE(NULLIF(agent_console_addr, ''), agent_grpc_addr)
-         FROM hosts WHERE id = $1",
+         FROM hosts WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(&state.pool)
@@ -587,7 +650,7 @@ pub async fn host_lldp(
         Err(e) => {
             tracing::warn!("{} LLDP live fetch failed: {e}", row.0);
             if let Ok(Some(cached)) = sqlx::query_as::<_, (String, serde_json::Value, String)>(
-                "SELECT source, neighbors_json, summary FROM host_lldp_cache WHERE host_id = $1",
+                "SELECT source, neighbors_json, summary FROM host_lldp_cache WHERE host_id = ?",
             )
             .bind(id)
             .fetch_optional(&state.pool)
@@ -614,12 +677,12 @@ pub async fn host_lldp(
     if let Ok(neighbors_json) = serde_json::to_value(&lldp.neighbors) {
         let _ = sqlx::query(
             "INSERT INTO host_lldp_cache (host_id, source, neighbors_json, summary, fetched_at)
-             VALUES ($1, $2, $3, $4, NOW())
+             VALUES (?, ?, ?, ?, datetime('now'))
              ON CONFLICT (host_id) DO UPDATE SET
                source = EXCLUDED.source,
                neighbors_json = EXCLUDED.neighbors_json,
                summary = EXCLUDED.summary,
-               fetched_at = NOW()",
+               fetched_at = datetime('now')",
         )
         .bind(id)
         .bind(&lldp.source)

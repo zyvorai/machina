@@ -53,7 +53,7 @@ export default function PlatformTaskDrawer({ open, onClose }: PlatformTaskDrawer
   return (
     <div className="fixed inset-0 z-[90] flex justify-end">
       <button type="button" className="absolute inset-0 bg-black/50" aria-label="Close task drawer" onClick={onClose} />
-      <aside className="relative w-full max-w-md bg-slate-950/95 backdrop-blur-xl border-l border-white/[0.08] shadow-xl flex flex-col">
+      <aside className="relative w-full max-w-md bg-slate-950/95 backdrop-blur-xl border-l border-white/[0.08] shadow-xl flex flex-col" role="dialog" aria-modal="true" aria-label="Active tasks">
         <div className="flex items-center justify-between p-4 border-b border-white/[0.08]">
           <h2 className="font-semibold flex items-center gap-2">
             <ListTodo className="w-5 h-5" /> Active tasks
@@ -62,8 +62,8 @@ export default function PlatformTaskDrawer({ open, onClose }: PlatformTaskDrawer
             <button type="button" className="btn-secondary p-2" onClick={() => void load()} disabled={loading}>
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
-            <button type="button" className="btn-secondary p-2" onClick={onClose}>
-              <X className="w-4 h-4" />
+            <button type="button" className="btn-secondary p-2" onClick={onClose} aria-label="Close">
+              <X className="w-4 h-4" aria-hidden="true" />
             </button>
           </div>
         </div>

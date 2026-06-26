@@ -2,18 +2,18 @@
 
 use std::sync::Arc;
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use tokio::sync::broadcast;
 
 use crate::config::ControllerConfig;
+use crate::consolehub::ConsoleSessionStore;
 use crate::leader::LeaderHandle;
 use crate::tasks::TaskBus;
 use crate::ws_tokens::WsTokenStore;
-use crate::consolehub::ConsoleSessionStore;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: PgPool,
+    pub pool: SqlitePool,
     pub config: Arc<ControllerConfig>,
     pub task_bus: Arc<dyn TaskBus>,
     pub leader: LeaderHandle,
@@ -24,7 +24,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(
-        pool: PgPool,
+        pool: SqlitePool,
         config: Arc<ControllerConfig>,
         task_bus: Arc<dyn TaskBus>,
         leader: LeaderHandle,
@@ -54,14 +54,12 @@ impl AppState {
         let kind = kind.to_string();
         let msg_db = msg.clone();
         tokio::spawn(async move {
-            let _ = sqlx::query(
-                "INSERT INTO events (id, kind, message) VALUES ($1, $2, $3)",
-            )
-            .bind(uuid::Uuid::new_v4())
-            .bind(&kind)
-            .bind(&msg_db)
-            .execute(&pool)
-            .await;
+            let _ = sqlx::query("INSERT INTO events (id, kind, message) VALUES (?, ?, ?)")
+                .bind(uuid::Uuid::new_v4())
+                .bind(&kind)
+                .bind(&msg_db)
+                .execute(&pool)
+                .await;
             crate::engine::webhooks::dispatch_webhooks(
                 &pool,
                 &kind,

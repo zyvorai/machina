@@ -3,17 +3,19 @@
 // https://zyvor.dev · info@zyvor.dev
 
 use axum::extract::{Extension, Path, State};
-use std::sync::Arc;
 use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use machina_core::system_accounts;
 use machina_core::{
-    apply_ldap_patch, apply_observability_patch, audit, audit_ship, ldap_settings_view_from_config,
-    settings_view_from_config, LibvirtError, LdapSettingsPatch, LdapTestRequest, LdapTestResponse,
-    LibvirtManager, MachinaConfig, ObservabilitySettingsPatch,
+    apply_ldap_patch, apply_observability_patch, apply_oidc_patch, apply_saml_patch, audit,
+    audit_ship, ldap_settings_view_from_config, oidc_settings_view_from_config,
+    saml_settings_view_from_config, settings_view_from_config, LdapSettingsPatch, LdapTestRequest,
+    LdapTestResponse, LibvirtError, LibvirtManager, MachinaConfig, ObservabilitySettingsPatch,
+    OidcSettingsPatch, SamlSettingsPatch,
 };
 use serde::Deserialize;
 use serde_json::json;
+use std::sync::Arc;
 use tracing::info;
 
 use crate::auth::{effective_linux_user, RequestActor};
@@ -358,13 +360,12 @@ async fn get_ldap_settings(
     Extension(actor): Extension<RequestActor>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     if !actor.role.can_manage_users() {
-        return Err(LibvirtError::Forbidden(
-            "LDAP settings require the admin role.".into(),
-        )
-        .into());
+        return Err(LibvirtError::Forbidden("LDAP settings require the admin role.".into()).into());
     }
     let cfg = MachinaConfig::load();
-    Ok(Json(serde_json::json!(ldap_settings_view_from_config(&cfg))))
+    Ok(Json(serde_json::json!(ldap_settings_view_from_config(
+        &cfg
+    ))))
 }
 
 async fn put_ldap_settings(
@@ -372,10 +373,7 @@ async fn put_ldap_settings(
     Json(patch): Json<LdapSettingsPatch>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     if !actor.role.can_manage_users() {
-        return Err(LibvirtError::Forbidden(
-            "LDAP settings require the admin role.".into(),
-        )
-        .into());
+        return Err(LibvirtError::Forbidden("LDAP settings require the admin role.".into()).into());
     }
     let mut cfg = MachinaConfig::load();
     apply_ldap_patch(&mut cfg, &patch);
@@ -395,10 +393,7 @@ async fn post_ldap_test(
     Json(body): Json<LdapTestRequest>,
 ) -> Result<Json<LdapTestResponse>, AppError> {
     if !actor.role.can_manage_users() {
-        return Err(LibvirtError::Forbidden(
-            "LDAP test requires the admin role.".into(),
-        )
-        .into());
+        return Err(LibvirtError::Forbidden("LDAP test requires the admin role.".into()).into());
     }
     let cfg = MachinaConfig::load();
     if !cfg.auth.ldap.is_enabled() {
@@ -435,6 +430,71 @@ async fn post_ldap_test(
     }
 }
 
+async fn get_oidc_settings(
+    Extension(actor): Extension<RequestActor>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !actor.role.can_manage_users() {
+        return Err(LibvirtError::Forbidden("OIDC settings require the admin role.".into()).into());
+    }
+    let cfg = MachinaConfig::load();
+    Ok(Json(serde_json::json!(oidc_settings_view_from_config(
+        &cfg
+    ))))
+}
+
+async fn put_oidc_settings(
+    Extension(actor): Extension<RequestActor>,
+    Json(patch): Json<OidcSettingsPatch>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !actor.role.can_manage_users() {
+        return Err(LibvirtError::Forbidden("OIDC settings require the admin role.".into()).into());
+    }
+    let mut cfg = MachinaConfig::load();
+    apply_oidc_patch(&mut cfg, &patch);
+    cfg.save()
+        .map_err(|e| AppError::from(LibvirtError::Operation(format!("save config: {e}"))))?;
+    let view = oidc_settings_view_from_config(&cfg);
+    info!("OIDC settings saved to {}", view.config_path);
+    Ok(Json(serde_json::json!({
+        "status": "saved",
+        "restart_recommended": false,
+        "settings": view,
+    })))
+}
+
+async fn get_saml_settings(
+    Extension(actor): Extension<RequestActor>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !actor.role.can_manage_users() {
+        return Err(LibvirtError::Forbidden("SAML settings require the admin role.".into()).into());
+    }
+    let cfg = MachinaConfig::load();
+    Ok(Json(serde_json::json!(saml_settings_view_from_config(
+        &cfg
+    ))))
+}
+
+async fn put_saml_settings(
+    Extension(actor): Extension<RequestActor>,
+    Json(patch): Json<SamlSettingsPatch>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    if !actor.role.can_manage_users() {
+        return Err(LibvirtError::Forbidden("SAML settings require the admin role.".into()).into());
+    }
+    let mut cfg = MachinaConfig::load();
+    apply_saml_patch(&mut cfg, &patch);
+    cfg.save()
+        .map_err(|e| AppError::from(LibvirtError::Operation(format!("save config: {e}"))))?;
+    let view = saml_settings_view_from_config(&cfg);
+    info!("SAML settings saved to {}", view.config_path);
+    Ok(Json(serde_json::json!({
+        "status": "saved",
+        "restart_recommended": false,
+        "note": "SAML login flow is config-only — metadata is stored for IdP federation setup.",
+        "settings": view,
+    })))
+}
+
 pub fn system_routes() -> Router<LibvirtManager> {
     Router::new()
         .route("/system/platform-info", get(platform_info))
@@ -454,4 +514,12 @@ pub fn system_routes() -> Router<LibvirtManager> {
             get(get_ldap_settings).put(put_ldap_settings),
         )
         .route("/system/auth/ldap-test", post(post_ldap_test))
+        .route(
+            "/system/auth/oidc-settings",
+            get(get_oidc_settings).put(put_oidc_settings),
+        )
+        .route(
+            "/system/auth/saml-settings",
+            get(get_saml_settings).put(put_saml_settings),
+        )
 }

@@ -11,7 +11,7 @@ pub async fn vm_inventory_row(
     vm_id: Uuid,
 ) -> Result<(String, Option<Uuid>, String), ApiError> {
     sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(vm_id)
     .fetch_one(&state.pool)

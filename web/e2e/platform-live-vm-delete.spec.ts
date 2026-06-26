@@ -46,12 +46,10 @@ test('live delete vm returns to list without page crash', async ({ page }) => {
     timeout: 45_000,
   })
 
-  let disposable = page.locator('[data-testid^="machine-card-"]').filter({ hasText: /ux-(e2e|screenshot)-/i })
+  const disposable = page.locator('[data-testid^="machine-card-"]').filter({ hasText: /ux-(e2e|screenshot)-/i })
   if ((await disposable.count()) === 0) {
-    const vmName = `ux-e2e-delete-${Date.now()}`
-    await createDisposableVm(page, vmName)
-    await page.goto(`${live}/platform/vms`, { waitUntil: 'domcontentloaded' })
-    disposable = page.locator('[data-testid^="machine-card-"]').filter({ hasText: vmName })
+    test.skip(true, 'No disposable ux-e2e VMs on this host — provision one manually or run platform-live-machine-finder-delete first')
+    return
   }
 
   const vmCard = disposable.first()

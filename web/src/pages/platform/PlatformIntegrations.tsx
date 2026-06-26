@@ -11,7 +11,7 @@ import { LaunchpadAppIcon, MacGlassPanel } from '../../components/platform/mac/P
 import PlatformPageChrome, { PlatformBackLink, platformStatSubtitle } from '../../components/platform/PlatformPageChrome'
 import { usePlatformInfo } from '../../contexts/PlatformInfoContext'
 import { integrationCards } from '../../utils/platformIntegrationsNav'
-import { CLASSIC_TOOL_CARDS } from '../../utils/platformClassicTools'
+import { CLASSIC_TOOL_CARDS, LIBVIRT_ADMIN_TOOL_CARDS } from '../../utils/platformClassicTools'
 import { PlatformClassicToolLinks } from '../../components/platform/PlatformCrossLinks'
 import PlatformDesktopTierPicker from '../../components/platform/PlatformDesktopTierPicker'
 import PlatformIntegrationEmbeds from '../../components/platform/PlatformIntegrationEmbeds'
@@ -111,6 +111,13 @@ export default function PlatformIntegrations({ embedded }: { embedded?: boolean 
         </div>
 
         <PlatformIntegrationEmbeds />
+
+        <MacGlassPanel title="Libvirt admin (classic)" subtitle="NW filters, secrets vault, and capability matrix — daemon-only routes">
+          <p className="text-sm text-slate-400 mb-4 leading-relaxed">
+            These tools manage libvirt objects on the co-located hypervisor daemon. They open in the classic Machina shell with the same session.
+          </p>
+          <PlatformClassicToolLinks tools={LIBVIRT_ADMIN_TOOL_CARDS} />
+        </MacGlassPanel>
 
         <MacGlassPanel title="Classic Machina tools">
           <p className="text-sm text-slate-400 mb-4 leading-relaxed">

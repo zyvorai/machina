@@ -134,7 +134,7 @@ export function BrowseHostPathModal({
           {loading && !data?.entries?.length ? (
             <p className="text-xs text-slate-500 px-2 py-4">Loading…</p>
           ) : null}
-          {data?.entries.map((entry) => (
+          {data?.entries?.map((entry) => (
             <div
               key={entry.path}
               className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-slate-800/80 border border-transparent hover:border-slate-700/60"

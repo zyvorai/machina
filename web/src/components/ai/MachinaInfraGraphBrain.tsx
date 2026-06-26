@@ -108,9 +108,9 @@ export default function MachinaInfraGraphBrain() {
       <div className="space-y-2">
         <p className="text-xs font-medium text-slate-400">Connectivity path</p>
         <div className="flex flex-wrap gap-2">
-          <input className="input text-sm flex-1 min-w-[8rem]" placeholder="From VM" value={pathFrom} onChange={(e) => setPathFrom(e.target.value)} />
-          <input className="input text-sm flex-1 min-w-[8rem]" placeholder="To VM" value={pathTo} onChange={(e) => setPathTo(e.target.value)} />
-          <input className="input text-sm w-20" placeholder="Port" value={port} onChange={(e) => setPort(e.target.value)} />
+          <input aria-label="From VM" className="input text-sm flex-1 min-w-[8rem]" placeholder="From VM" value={pathFrom} onChange={(e) => setPathFrom(e.target.value)} />
+          <input aria-label="To VM" className="input text-sm flex-1 min-w-[8rem]" placeholder="To VM" value={pathTo} onChange={(e) => setPathTo(e.target.value)} />
+          <input aria-label="Port" className="input text-sm w-20" placeholder="Port" value={port} onChange={(e) => setPort(e.target.value)} />
           <button type="button" className="btn-secondary text-sm" disabled={busy} onClick={() => void runPath()}>Analyze</button>
         </div>
         {path && (
@@ -130,7 +130,7 @@ export default function MachinaInfraGraphBrain() {
       <div className="space-y-2">
         <p className="text-xs font-medium text-slate-400 flex items-center gap-1"><Search className="w-3.5 h-3.5" /> Infrastructure search</p>
         <div className="flex gap-2">
-          <input className="input text-sm flex-1" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <input aria-label="Infrastructure search query" className="input text-sm flex-1" value={search} onChange={(e) => setSearch(e.target.value)} />
           <button type="button" className="btn-secondary text-sm" disabled={busy} onClick={() => void runSearch()}>Search</button>
         </div>
         <ul className="text-xs text-slate-400 space-y-1 max-h-32 overflow-y-auto">

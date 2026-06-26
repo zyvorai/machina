@@ -5,7 +5,9 @@ use super::detect::detect_backend;
 use super::diff::compute_diff;
 use super::inventory::gather_firewall_inventory;
 use super::profiles::profile_by_name;
-use super::types::{FirewallBackend, FirewallPlanRequest, FirewallPlanResult, FirewallRule, StealthLevel};
+use super::types::{
+    FirewallBackend, FirewallPlanRequest, FirewallPlanResult, FirewallRule, StealthLevel,
+};
 use crate::LibvirtError;
 
 pub fn compile_profile_plan(
@@ -92,7 +94,10 @@ pub fn compile_profile_plan(
     Ok(FirewallPlanResult { diff, operations })
 }
 
-pub fn apply_plan(hostname: &str, req: &FirewallPlanRequest) -> Result<FirewallPlanResult, LibvirtError> {
+pub fn apply_plan(
+    hostname: &str,
+    req: &FirewallPlanRequest,
+) -> Result<FirewallPlanResult, LibvirtError> {
     let plan = compile_profile_plan(hostname, req)?;
     if req.dry_run {
         return Ok(plan);

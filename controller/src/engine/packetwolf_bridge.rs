@@ -20,11 +20,16 @@ pub struct PacketwolfStatus {
     pub discovery_source: Option<String>,
 }
 
-pub async fn resolved_config(cfg: &ControllerConfig) -> (ControllerConfig, Option<DiscoveredEndpoint>) {
+pub async fn resolved_config(
+    cfg: &ControllerConfig,
+) -> (ControllerConfig, Option<DiscoveredEndpoint>) {
     packetwolf_discover::effective_config_async(cfg).await
 }
 
-pub fn status_with_discovery(cfg: &ControllerConfig, discovery: Option<&DiscoveredEndpoint>) -> PacketwolfStatus {
+pub fn status_with_discovery(
+    cfg: &ControllerConfig,
+    discovery: Option<&DiscoveredEndpoint>,
+) -> PacketwolfStatus {
     let (reachable, storage) = if cfg.packetwolf_enabled {
         fetch_health(&cfg.packetwolf_base_url, cfg.packetwolf_insecure_tls)
     } else {
@@ -72,6 +77,39 @@ pub fn status(cfg: &ControllerConfig) -> PacketwolfStatus {
     status_with_discovery(cfg, None)
 }
 
+/// Async wrapper — safe to call from async context (uses spawn_blocking internally).
+pub async fn status_async(cfg: &ControllerConfig) -> PacketwolfStatus {
+    let cfg = cfg.clone();
+    tokio::task::spawn_blocking(move || status(&cfg))
+        .await
+        .unwrap_or_else(|_| PacketwolfStatus {
+            enabled: false,
+            base_url: String::new(),
+            reachable: false,
+            summary: "status check failed".into(),
+            storage: None,
+            discovery_source: None,
+        })
+}
+
+/// Async wrapper with discovery — safe to call from async context (uses spawn_blocking internally).
+pub async fn status_async_with_discovery(
+    cfg: &ControllerConfig,
+    discovery: Option<DiscoveredEndpoint>,
+) -> PacketwolfStatus {
+    let cfg = cfg.clone();
+    tokio::task::spawn_blocking(move || status_with_discovery(&cfg, discovery.as_ref()))
+        .await
+        .unwrap_or_else(|_| PacketwolfStatus {
+            enabled: false,
+            base_url: String::new(),
+            reachable: false,
+            summary: "status check failed".into(),
+            storage: None,
+            discovery_source: None,
+        })
+}
+
 fn fetch_health(base_url: &str, insecure_tls: bool) -> (bool, Option<Value>) {
     let Ok(client) = build_client(insecure_tls, 5) else {
         return (false, None);
@@ -88,18 +126,25 @@ fn fetch_health(base_url: &str, insecure_tls: bool) -> (bool, Option<Value>) {
     (true, storage)
 }
 
-fn build_client(insecure_tls: bool, timeout_secs: u64) -> anyhow::Result<reqwest::blocking::Client> {
-    let mut b = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(timeout_secs));
+fn build_client(
+    insecure_tls: bool,
+    timeout_secs: u64,
+) -> anyhow::Result<reqwest::blocking::Client> {
+    let mut b =
+        reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(timeout_secs));
     if insecure_tls {
         b = b.danger_accept_invalid_certs(true);
     }
     Ok(b.build()?)
 }
 
-fn auth_headers(cfg: &ControllerConfig, req: reqwest::blocking::RequestBuilder) -> reqwest::blocking::RequestBuilder {
+fn auth_headers(
+    cfg: &ControllerConfig,
+    req: reqwest::blocking::RequestBuilder,
+) -> reqwest::blocking::RequestBuilder {
     if let Some(key) = cfg.packetwolf_api_key.as_deref().filter(|k| !k.is_empty()) {
         req.header("Authorization", format!("Bearer {key}"))
+            .header("X-Api-Key", key)
     } else {
         req
     }
@@ -109,10 +154,7 @@ pub fn ingest_base_url(cfg: &ControllerConfig) -> String {
     if cfg.packetwolf_enabled && fabric_api_available(cfg) {
         packetwolf_ingest_base_url(cfg)
     } else if cfg.packetwolf_enabled {
-        format!(
-            "http://127.0.0.1:{}/api/v1/zeus-security/ingest",
-            cfg.port
-        )
+        format!("http://127.0.0.1:{}/api/v1/zeus-security/ingest", cfg.port)
     } else {
         "http://127.0.0.1:9091/api/v1/ingest".into()
     }
@@ -133,9 +175,39 @@ fn is_fabric_sensors_json(value: &Value) -> bool {
     value.get("sensors").map(|v| v.is_array()).unwrap_or(false)
 }
 
+fn is_production_anomalies_json(value: &Value) -> bool {
+    value.get("anomalies").map(|v| v.is_array()).unwrap_or(false)
+}
+
+/// Dev fabric (machina/packetwolf Python service): sensors, hunt, enforcement, ingest.
+pub fn dev_fabric_api_available(cfg: &ControllerConfig) -> bool {
+    get_json(cfg, "/api/v1/sensors").is_some_and(|v| is_fabric_sensors_json(&v))
+}
+
+/// Production PacketWolf (Rust web-api): network intelligence, anomalies, runtime enforcement.
+pub fn production_network_api_available(cfg: &ControllerConfig) -> bool {
+    get_json(cfg, "/api/v1/anomalies?limit=1")
+        .is_some_and(|v| is_production_anomalies_json(&v))
+}
+
 pub fn fabric_api_available(cfg: &ControllerConfig) -> bool {
-    get_json(cfg, "/api/v1/sensors")
-        .is_some_and(|v| is_fabric_sensors_json(&v))
+    dev_fabric_api_available(cfg)
+}
+
+/// Async wrapper — safe to call from async context (uses spawn_blocking internally).
+pub async fn dev_fabric_available(cfg: &ControllerConfig) -> bool {
+    let cfg = cfg.clone();
+    tokio::task::spawn_blocking(move || dev_fabric_api_available(&cfg))
+        .await
+        .unwrap_or(false)
+}
+
+/// Async wrapper — safe to call from async context (uses spawn_blocking internally).
+pub async fn production_network_available(cfg: &ControllerConfig) -> bool {
+    let cfg = cfg.clone();
+    tokio::task::spawn_blocking(move || production_network_api_available(&cfg))
+        .await
+        .unwrap_or(false)
 }
 
 fn get_json(cfg: &ControllerConfig, path: &str) -> Option<Value> {
@@ -194,39 +266,75 @@ fn delete_json(cfg: &ControllerConfig, path: &str) -> Option<Value> {
         .and_then(|r| r.json().ok())
 }
 
+fn put_json(cfg: &ControllerConfig, path: &str, body: Value) -> Option<Value> {
+    if !cfg.packetwolf_enabled {
+        return None;
+    }
+    let Ok(client) = build_client(cfg.packetwolf_insecure_tls, 15) else {
+        return None;
+    };
+    let url = format!("{}{}", cfg.packetwolf_base_url.trim_end_matches('/'), path);
+    auth_headers(cfg, client.put(&url).json(&body))
+        .send()
+        .ok()
+        .and_then(|r| r.json().ok())
+}
+
 pub async fn fabric_get(cfg: &ControllerConfig, path: &str) -> Value {
     let cfg = cfg.clone();
     let path = path.to_string();
-    tokio::task::spawn_blocking(move || get_json(&cfg, &path).unwrap_or_else(|| serde_json::json!({})))
-        .await
-        .unwrap_or_else(|_| serde_json::json!({}))
+    tokio::task::spawn_blocking(move || {
+        get_json(&cfg, &path).unwrap_or_else(|| serde_json::json!({}))
+    })
+    .await
+    .unwrap_or_else(|_| serde_json::json!({}))
 }
 
 pub async fn fabric_post(cfg: &ControllerConfig, path: &str, body: Value) -> Value {
     let cfg = cfg.clone();
     let path = path.to_string();
-    tokio::task::spawn_blocking(move || post_json(&cfg, &path, body).unwrap_or_else(|| serde_json::json!({"ok": false})))
-        .await
-        .unwrap_or_else(|_| serde_json::json!({"ok": false}))
+    tokio::task::spawn_blocking(move || {
+        post_json(&cfg, &path, body).unwrap_or_else(|| serde_json::json!({"ok": false}))
+    })
+    .await
+    .unwrap_or_else(|_| serde_json::json!({"ok": false}))
 }
 
 pub async fn fabric_patch(cfg: &ControllerConfig, path: &str, body: Value) -> Value {
     let cfg = cfg.clone();
     let path = path.to_string();
-    tokio::task::spawn_blocking(move || patch_json(&cfg, &path, body).unwrap_or_else(|| serde_json::json!({"ok": false})))
-        .await
-        .unwrap_or_else(|_| serde_json::json!({"ok": false}))
+    tokio::task::spawn_blocking(move || {
+        patch_json(&cfg, &path, body).unwrap_or_else(|| serde_json::json!({"ok": false}))
+    })
+    .await
+    .unwrap_or_else(|_| serde_json::json!({"ok": false}))
 }
 
 pub async fn fabric_delete(cfg: &ControllerConfig, path: &str) -> Value {
     let cfg = cfg.clone();
     let path = path.to_string();
-    tokio::task::spawn_blocking(move || delete_json(&cfg, &path).unwrap_or_else(|| serde_json::json!({"ok": false})))
-        .await
-        .unwrap_or_else(|_| serde_json::json!({"ok": false}))
+    tokio::task::spawn_blocking(move || {
+        delete_json(&cfg, &path).unwrap_or_else(|| serde_json::json!({"ok": false}))
+    })
+    .await
+    .unwrap_or_else(|_| serde_json::json!({"ok": false}))
 }
 
-pub async fn fetch_activity(cfg: &ControllerConfig, target_id: &str, hours: u32) -> serde_json::Value {
+pub async fn fabric_put(cfg: &ControllerConfig, path: &str, body: Value) -> Value {
+    let cfg = cfg.clone();
+    let path = path.to_string();
+    tokio::task::spawn_blocking(move || {
+        put_json(&cfg, &path, body).unwrap_or_else(|| serde_json::json!({"ok": false}))
+    })
+    .await
+    .unwrap_or_else(|_| serde_json::json!({"ok": false}))
+}
+
+pub async fn fetch_activity(
+    cfg: &ControllerConfig,
+    target_id: &str,
+    hours: u32,
+) -> serde_json::Value {
     if !cfg.packetwolf_enabled {
         return placeholder_activity(target_id, hours, "PacketWolf disabled");
     }
@@ -238,7 +346,10 @@ pub async fn fetch_activity(cfg: &ControllerConfig, target_id: &str, hours: u32)
             .ok()
             .flatten()
     } {
-        let events = timeline.get("events").cloned().unwrap_or_else(|| serde_json::json!([]));
+        let events = timeline
+            .get("events")
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!([]));
         let stats_path = format!("/api/v1/flows/stats?host_id={target_id}");
         let stats = {
             let cfg = cfg.clone();
@@ -263,7 +374,11 @@ pub async fn fetch_activity(cfg: &ControllerConfig, target_id: &str, hours: u32)
     fetch_activity_legacy(cfg, target_id, hours).await
 }
 
-async fn fetch_activity_legacy(cfg: &ControllerConfig, target_id: &str, hours: u32) -> serde_json::Value {
+async fn fetch_activity_legacy(
+    cfg: &ControllerConfig,
+    target_id: &str,
+    hours: u32,
+) -> serde_json::Value {
     let cfg = cfg.clone();
     let target_id = target_id.to_string();
     let fallback_id = target_id.clone();
@@ -272,7 +387,11 @@ async fn fetch_activity_legacy(cfg: &ControllerConfig, target_id: &str, hours: u
         .unwrap_or_else(|_| placeholder_activity(&fallback_id, hours, "PacketWolf fetch failed"))
 }
 
-fn fetch_activity_blocking(cfg: &ControllerConfig, target_id: &str, hours: u32) -> serde_json::Value {
+fn fetch_activity_blocking(
+    cfg: &ControllerConfig,
+    target_id: &str,
+    hours: u32,
+) -> serde_json::Value {
     let base = cfg.packetwolf_base_url.trim_end_matches('/');
     let stats_url = format!("{base}/api/v1/flows/stats?host_id={target_id}");
     let flows_url = format!("{base}/api/v1/flows?host_id={target_id}&limit=50");
@@ -299,7 +418,11 @@ fn fetch_activity_blocking(cfg: &ControllerConfig, target_id: &str, hours: u32) 
         .cloned()
         .unwrap_or_default();
 
-    let blocked_today = stats.get("dropped").or_else(|| stats.get("dropped_count")).and_then(|v| v.as_u64()).unwrap_or(events.len() as u64);
+    let blocked_today = stats
+        .get("dropped")
+        .or_else(|| stats.get("dropped_count"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let allowed_today = stats
         .get("forwarded")
         .or_else(|| stats.get("allowed"))
@@ -469,31 +592,107 @@ pub async fn fetch_network_pulse_bundle(cfg: &ControllerConfig) -> serde_json::V
 }
 
 pub async fn fleet_threat_summary(cfg: &ControllerConfig) -> serde_json::Value {
+    if dev_fabric_available(cfg).await {
+        return fabric_get(cfg, "/api/v1/fleet/threat-summary").await;
+    }
+    if production_network_available(cfg).await {
+        return synthesize_production_fleet_threat(cfg).await;
+    }
     fabric_get(cfg, "/api/v1/fleet/threat-summary").await
 }
 
-pub async fn host_fabric(cfg: &ControllerConfig, host_id: &str, resource: &str, query: &str) -> serde_json::Value {
+async fn synthesize_production_fleet_threat(cfg: &ControllerConfig) -> serde_json::Value {
+    let threats = fabric_get(cfg, "/api/v1/network/threats").await;
+    let anomalies = fabric_get(cfg, "/api/v1/anomalies?limit=25").await;
+    let critical_count = threats
+        .pointer("/meta/stats/critical")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let total_threats = threats
+        .pointer("/meta/stats/total")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let fleet_threat_score = if total_threats == 0 {
+        0.0
+    } else {
+        ((critical_count as f64 / total_threats as f64) * 100.0).min(100.0)
+    };
+    let critical_events: Vec<Value> = anomalies
+        .get("anomalies")
+        .and_then(|v| v.as_array())
+        .map(|items| {
+            items
+                .iter()
+                .filter(|a| {
+                    a.get("severity")
+                        .and_then(|v| v.as_str())
+                        .is_some_and(|s| s == "critical" || s == "high")
+                })
+                .take(10)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default();
+    serde_json::json!({
+        "fleet_threat_score": fleet_threat_score,
+        "critical_events": critical_events,
+        "threats": threats,
+        "anomalies_total": anomalies
+            .get("anomalies")
+            .and_then(|v| v.as_array())
+            .map(|a| a.len())
+            .unwrap_or(0),
+        "source": "packetwolf-production",
+        "api_mode": "production_network",
+    })
+}
+
+pub async fn host_fabric(
+    cfg: &ControllerConfig,
+    host_id: &str,
+    resource: &str,
+    query: &str,
+) -> serde_json::Value {
     let path = format!("/api/v1/hosts/{host_id}/{resource}{query}");
     fabric_get(cfg, &path).await
 }
 
-pub async fn search(cfg: &ControllerConfig, query: &str, host_id: Option<&str>) -> serde_json::Value {
-    let body = serde_json::json!({
-        "query": query,
-        "host_id": host_id,
-        "limit": 50
-    });
-    fabric_post(cfg, "/api/v1/search", body).await
+pub async fn search(
+    cfg: &ControllerConfig,
+    query: &str,
+    host_id: Option<&str>,
+) -> serde_json::Value {
+    let production_mode = production_network_available(cfg).await && !dev_fabric_available(cfg).await;
+    let body = if production_mode {
+        serde_json::json!({
+            "query": query,
+            "limit": 50
+        })
+    } else {
+        serde_json::json!({
+            "query": query,
+            "host_id": host_id,
+            "limit": 50
+        })
+    };
+    let path = if production_mode {
+        "/api/v1/network/search"
+    } else {
+        "/api/v1/search"
+    };
+    fabric_post(cfg, path, body).await
 }
 
 pub async fn fabric_health(cfg: &ControllerConfig) -> serde_json::Value {
     let cfg = cfg.clone();
     tokio::task::spawn_blocking(move || {
-        if fabric_api_available(&cfg) {
+        if dev_fabric_api_available(&cfg) {
             get_json(&cfg, "/api/v1/fabric/health").unwrap_or_else(|| serde_json::json!({}))
         } else {
-            let (reachable, _) = fetch_health(&cfg.packetwolf_base_url, cfg.packetwolf_insecure_tls);
-            packetwolf_local::fabric_health(&cfg, reachable)
+            let (reachable, _) =
+                fetch_health(&cfg.packetwolf_base_url, cfg.packetwolf_insecure_tls);
+            let production = production_network_api_available(&cfg);
+            packetwolf_local::fabric_health(&cfg, reachable, production)
         }
     })
     .await
@@ -567,23 +766,38 @@ pub async fn asset_inventory(cfg: &ControllerConfig) -> serde_json::Value {
 }
 
 pub async fn fleet_timeline(cfg: &ControllerConfig, hours: u32) -> serde_json::Value {
-    fabric_get(cfg, &format!("/api/v1/fleet/timeline?hours={hours}&limit=200")).await
+    if production_network_available(cfg).await && !dev_fabric_available(cfg).await {
+        fabric_get(cfg, "/api/v1/network/timeline?limit=200").await
+    } else {
+        fabric_get(
+            cfg,
+            &format!("/api/v1/fleet/timeline?hours={hours}&limit=200"),
+        )
+        .await
+    }
 }
 
 pub async fn correlations(cfg: &ControllerConfig) -> serde_json::Value {
-    fabric_get(cfg, "/api/v1/correlations").await
+    if production_network_available(cfg).await && !dev_fabric_available(cfg).await {
+        fabric_get(cfg, "/api/v1/network/threat-threads").await
+    } else {
+        fabric_get(cfg, "/api/v1/correlations").await
+    }
 }
 
 pub async fn enforcement_status(cfg: &ControllerConfig) -> serde_json::Value {
-    fabric_get(cfg, "/api/v1/enforcement/status").await
+    crate::engine::packetwolf_enforcement::enforcement_status(cfg).await
 }
 
 pub async fn enforcement_policies(cfg: &ControllerConfig) -> serde_json::Value {
-    fabric_get(cfg, "/api/v1/enforcement/policies").await
+    crate::engine::packetwolf_enforcement::enforcement_policies(cfg).await
 }
 
-pub async fn create_enforcement_policy(cfg: &ControllerConfig, body: serde_json::Value) -> serde_json::Value {
-    fabric_post(cfg, "/api/v1/enforcement/policies", body).await
+pub async fn create_enforcement_policy(
+    cfg: &ControllerConfig,
+    body: serde_json::Value,
+) -> serde_json::Value {
+    crate::engine::packetwolf_enforcement::create_enforcement_policy(cfg, body).await
 }
 
 pub async fn apply_enforcement_policy(
@@ -591,20 +805,23 @@ pub async fn apply_enforcement_policy(
     policy_id: &str,
     host_ids: &[String],
 ) -> serde_json::Value {
-    let body = serde_json::json!({ "host_ids": host_ids });
-    fabric_post(cfg, &format!("/api/v1/enforcement/policies/{policy_id}/apply"), body).await
+    crate::engine::packetwolf_enforcement::apply_enforcement_policy(cfg, policy_id, host_ids).await
 }
 
-pub async fn patch_enforcement_policy(cfg: &ControllerConfig, policy_id: &str, body: Value) -> Value {
-    fabric_patch(cfg, &format!("/api/v1/enforcement/policies/{policy_id}"), body).await
+pub async fn patch_enforcement_policy(
+    cfg: &ControllerConfig,
+    policy_id: &str,
+    body: Value,
+) -> Value {
+    crate::engine::packetwolf_enforcement::patch_enforcement_policy(cfg, policy_id, body).await
 }
 
 pub async fn delete_enforcement_policy(cfg: &ControllerConfig, policy_id: &str) -> Value {
-    fabric_delete(cfg, &format!("/api/v1/enforcement/policies/{policy_id}")).await
+    crate::engine::packetwolf_enforcement::delete_enforcement_policy(cfg, policy_id).await
 }
 
 pub async fn enforcement_policy_tetragon(cfg: &ControllerConfig, policy_id: &str) -> Value {
-    fabric_get(cfg, &format!("/api/v1/enforcement/policies/{policy_id}/tetragon")).await
+    crate::engine::packetwolf_enforcement::enforcement_policy_tetragon(cfg, policy_id).await
 }
 
 pub async fn host_enforcement(cfg: &ControllerConfig, host_id: &str) -> serde_json::Value {
@@ -637,8 +854,12 @@ pub async fn ack_agent_bundle(cfg: &ControllerConfig, host_id: &str) -> serde_js
             return serde_json::json!({"ok": false});
         }
         if fabric_api_available(&cfg) {
-            post_json(&cfg, &format!("/api/v1/agents/{host_id}/bundle/ack"), serde_json::json!({}))
-                .unwrap_or_else(|| serde_json::json!({"ok": false}))
+            post_json(
+                &cfg,
+                &format!("/api/v1/agents/{host_id}/bundle/ack"),
+                serde_json::json!({}),
+            )
+            .unwrap_or_else(|| serde_json::json!({"ok": false}))
         } else {
             packetwolf_local::ack_agent_bundle(&host_id)
         }
@@ -684,5 +905,11 @@ mod tests {
         assert!(is_fabric_sensors_json(&serde_json::json!({"sensors": []})));
         assert!(!is_fabric_sensors_json(&serde_json::json!({"html": true})));
         assert!(!is_fabric_sensors_json(&serde_json::json!({})));
+    }
+
+    #[test]
+    fn production_anomalies_json_detection() {
+        assert!(is_production_anomalies_json(&serde_json::json!({"anomalies": []})));
+        assert!(!is_production_anomalies_json(&serde_json::json!({"sensors": []})));
     }
 }

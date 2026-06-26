@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct SreRemediation {
@@ -21,7 +21,7 @@ pub struct SreRemediationReport {
     pub summary: String,
 }
 
-pub async fn propose(pool: &PgPool) -> anyhow::Result<SreRemediationReport> {
+pub async fn propose(pool: &SqlitePool) -> anyhow::Result<SreRemediationReport> {
     let forecast = super::sre_predict::forecast(pool).await?;
     let mut remediations = Vec::new();
 
@@ -31,7 +31,11 @@ pub async fn propose(pool: &PgPool) -> anyhow::Result<SreRemediationReport> {
                 "rightsize_vm",
                 format!("Right-size memory for {}", f.vm_name),
                 format!("{} — add RAM or reduce workload before OOM.", f.message),
-                if f.severity == "critical" { "Review required" } else { "Low" },
+                if f.severity == "critical" {
+                    "Review required"
+                } else {
+                    "Low"
+                },
             ),
             "cpu" => (
                 "scale_out",

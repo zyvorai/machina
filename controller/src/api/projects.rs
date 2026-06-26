@@ -1,10 +1,12 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::State;
+use axum::Extension;
 use axum::Json;
 use serde::Serialize;
 
 use crate::api::ApiError;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
@@ -15,7 +17,9 @@ pub struct ProjectRow {
 
 pub async fn list_projects(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ProjectRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows: Vec<(String, i64)> = sqlx::query_as(
         "SELECT COALESCE(NULLIF(project, ''), 'default') AS name, COUNT(*) AS vm_count
          FROM vms GROUP BY 1 ORDER BY 1",

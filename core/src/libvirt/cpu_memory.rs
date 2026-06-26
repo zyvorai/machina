@@ -77,14 +77,14 @@ fn memory_kib_from_xml(xml: &str, tag: &str) -> u64 {
     }
     crate::xml::extract_text(xml, tag)
         .and_then(|s| s.parse().ok())
-        .or_else(|| {
-            crate::xml::extract_attr(xml, tag, "value")
-                .and_then(|s| s.parse().ok())
-        })
+        .or_else(|| crate::xml::extract_attr(xml, tag, "value").and_then(|s| s.parse().ok()))
         .unwrap_or(0)
 }
 
-pub fn get_cpu_memory_topology(conn: &Connect, name: &str) -> Result<CpuMemoryTopology, LibvirtError> {
+pub fn get_cpu_memory_topology(
+    conn: &Connect,
+    name: &str,
+) -> Result<CpuMemoryTopology, LibvirtError> {
     let domain = lookup_domain(conn, name)?;
     let info = domain
         .get_info()
@@ -148,8 +148,9 @@ pub fn set_cpu_topology(
     xml = replace_or_insert_vcpu(&xml, vcpus);
     xml = replace_or_insert_topology(&xml, sockets, cores, threads);
 
-    virt::domain::Domain::define_xml(conn, &xml)
-        .map_err(|e| LibvirtError::Operation(format!("Failed to set CPU topology for '{name}': {e}")))?;
+    virt::domain::Domain::define_xml(conn, &xml).map_err(|e| {
+        LibvirtError::Operation(format!("Failed to set CPU topology for '{name}': {e}"))
+    })?;
     Ok(())
 }
 
@@ -190,9 +191,8 @@ fn replace_or_insert_vcpu(xml: &str, vcpus: u32) -> String {
 }
 
 fn replace_or_insert_topology(xml: &str, sockets: u32, cores: u32, threads: u32) -> String {
-    let topo = format!(
-        "<topology sockets='{sockets}' cores='{cores}' threads='{threads}'/>"
-    );
+    let topo = format!("<topology sockets='{sockets}' cores='{cores}' threads='{threads}'/>");
+    // Replace existing <topology .../> inside the <cpu> block.
     if let Some(start) = xml.find("<topology") {
         if let Some(end) = xml[start..].find("/>") {
             let end_idx = start + end + 2;
@@ -200,21 +200,25 @@ fn replace_or_insert_topology(xml: &str, sockets: u32, cores: u32, threads: u32)
         }
     }
     if let Some(cpu_start) = xml.find("<cpu") {
-        if let Some(cpu_gt) = xml[cpu_start..].find('>') {
+        let cpu_substr = &xml[cpu_start..];
+        // Self-closing <cpu ... /> — convert to open block with topology inside.
+        if let Some(sc_off) = cpu_substr.find("/>") {
+            if !cpu_substr[..sc_off].contains('>') {
+                let attrs = cpu_substr[..sc_off].trim_start_matches("<cpu");
+                let new_cpu = format!("<cpu{attrs}>\n  {topo}\n</cpu>");
+                let after = &xml[cpu_start + sc_off + 2..];
+                return format!("{}{}{}", &xml[..cpu_start], new_cpu, after);
+            }
+        }
+        // Open <cpu ...>...</cpu> — insert topology right after the opening >.
+        if let Some(cpu_gt) = cpu_substr.find('>') {
             let insert_at = cpu_start + cpu_gt + 1;
-            return format!(
-                "{}{}\n  {}{}",
-                &xml[..insert_at],
-                "",
-                topo,
-                &xml[insert_at..]
-            );
+            return format!("{}\n  {}{}", &xml[..insert_at], topo, &xml[insert_at..]);
         }
     }
     if let Some(idx) = xml.find("<vcpu") {
-        let cpu_block = format!(
-            "<cpu mode='host-passthrough' check='partial'>\n  {topo}\n</cpu>\n  "
-        );
+        let cpu_block =
+            format!("<cpu mode='host-passthrough' check='partial'>\n  {topo}\n</cpu>\n  ");
         return format!("{}{}{}", &xml[..idx], cpu_block, &xml[idx..]);
     }
     xml.to_string()

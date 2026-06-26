@@ -163,7 +163,13 @@ pub fn check_package_updates() -> Result<PackageUpdateCheck, LibvirtError> {
 }
 
 #[cfg(target_os = "linux")]
-fn push_package_item(out: &mut PackageUpdateCheck, name: &str, current: Option<&str>, available: Option<&str>, security: bool) {
+fn push_package_item(
+    out: &mut PackageUpdateCheck,
+    name: &str,
+    current: Option<&str>,
+    available: Option<&str>,
+    security: bool,
+) {
     if out.packages.len() >= 64 {
         return;
     }

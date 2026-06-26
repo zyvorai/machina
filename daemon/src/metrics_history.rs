@@ -169,7 +169,10 @@ pub fn spawn_metrics_history_worker(
                                 tracing::debug!("metrics history remote_write ok");
                             }
                             Ok(res) => {
-                                tracing::warn!("metrics history remote_write HTTP {}", res.status());
+                                tracing::warn!(
+                                    "metrics history remote_write HTTP {}",
+                                    res.status()
+                                );
                             }
                             Err(e) => tracing::warn!("metrics history remote_write failed: {e}"),
                         }

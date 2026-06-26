@@ -175,8 +175,14 @@ mod tests {
             },
         );
         let view = settings_view_from_config(&cfg);
-        assert_eq!(view.metrics_history.remote_write_url, "http://127.0.0.1:9/ingest");
+        assert_eq!(
+            view.metrics_history.remote_write_url,
+            "http://127.0.0.1:9/ingest"
+        );
         assert!(view.metrics_history.remote_write_authorization_set);
-        assert!(view.metrics_history.remote_write_authorization.contains('…'));
+        assert!(view
+            .metrics_history
+            .remote_write_authorization
+            .contains('…'));
     }
 }

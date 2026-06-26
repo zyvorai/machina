@@ -2,7 +2,7 @@
 // Fleet Disk Utility rollup — pools + SMART (Phase 41).
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -44,14 +44,19 @@ pub struct FleetStorageOverview {
     pub smart_disks: Vec<FleetSmartDiskItem>,
 }
 
-pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<FleetStorageOverview> {
-    let tiers = storage_tiers::tiers_overview(pool).await.unwrap_or_else(|e| {
-        tracing::warn!("fleet storage tiers rollup: {e}");
-        storage_tiers::TiersOverview {
-            tiers: vec![],
-            summary: "Storage tiers unavailable".into(),
-        }
-    });
+pub async fn overview(
+    pool: &SqlitePool,
+    cfg: &ControllerConfig,
+) -> anyhow::Result<FleetStorageOverview> {
+    let tiers = storage_tiers::tiers_overview(pool)
+        .await
+        .unwrap_or_else(|e| {
+            tracing::warn!("fleet storage tiers rollup: {e}");
+            storage_tiers::TiersOverview {
+                tiers: vec![],
+                summary: "Storage tiers unavailable".into(),
+            }
+        });
     let tier_name = |tid: Option<Uuid>| -> Option<String> {
         tid.and_then(|id| {
             tiers
@@ -70,7 +75,7 @@ pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<F
     {
         Ok(r) => r,
         Err(_) => sqlx::query_as(
-            "SELECT id, name, storage_class, used_gib, capacity_gib, NULL::uuid FROM storage_pools ORDER BY name",
+            "SELECT id, name, storage_class, used_gib, capacity_gib, NULL FROM storage_pools ORDER BY name",
         )
         .fetch_all(pool)
         .await?,

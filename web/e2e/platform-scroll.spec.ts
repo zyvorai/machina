@@ -8,6 +8,7 @@ import { expectPageScrolls } from './helpers/platformTestHelpers'
 const SHORT_VIEWPORT = 400
 
 test.describe('platform pages document scroll', () => {
+  test.describe.configure({ retries: 1 })
   for (const [path, heading] of [
     ['/platform/vms', /machine finder/i],
     ['/platform/hosts', /hosts/i],

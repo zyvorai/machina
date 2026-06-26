@@ -450,7 +450,7 @@ export default function PlatformTemplates() {
                 </label>
                 <label className="block text-sm">
                   <span className="text-slate-400">Password (optional)</span>
-                  <input type="password" className="input w-full mt-1" value={cloudPass} onChange={(e) => setCloudPass(e.target.value)} />
+                  <input type="password" autoComplete="new-password" className="input w-full mt-1" value={cloudPass} onChange={(e) => setCloudPass(e.target.value)} />
                 </label>
                 <label className="block text-sm">
                   <span className="text-slate-400">SSH public key (optional)</span>
@@ -489,10 +489,10 @@ export default function PlatformTemplates() {
 
       <MacSheet open={publishOpen} onClose={() => setPublishOpen(false)} title="Publish template" subtitle="Add a golden image to the marketplace." wide>
         <div className="grid gap-3 md:grid-cols-2">
-          <input className="input" placeholder="name" value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="input" placeholder="version" value={version} onChange={(e) => setVersion(e.target.value)} />
-          <input className="input md:col-span-2" placeholder="source disk path" value={disk} onChange={(e) => setDisk(e.target.value)} />
-          <input className="input md:col-span-2" placeholder="description" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <input aria-label="Template name" className="input" placeholder="name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input aria-label="Template version" className="input" placeholder="version" value={version} onChange={(e) => setVersion(e.target.value)} />
+          <input aria-label="Source disk path" className="input md:col-span-2" placeholder="source disk path" value={disk} onChange={(e) => setDisk(e.target.value)} />
+          <input aria-label="Description" className="input md:col-span-2" placeholder="description" value={description} onChange={(e) => setDescription(e.target.value)} />
           <select className="input" value={tplCategory} onChange={(e) => setTplCategory(e.target.value)}>
             {CATEGORIES.filter((c) => c !== 'All').map((c) => (
               <option key={c} value={c}>{c}</option>
@@ -563,11 +563,11 @@ export default function PlatformTemplates() {
       )}
       <MacSheet open={pluginPublishOpen} onClose={() => setPluginPublishOpen(false)} title="Publish plugin" subtitle="Register a marketplace integration module.">
         <div className="grid gap-3 md:grid-cols-2">
-          <input className="input text-sm" placeholder="slug" value={pluginSlug} onChange={(e) => setPluginSlug(e.target.value)} />
-          <input className="input text-sm" placeholder="Name" value={pluginName} onChange={(e) => setPluginName(e.target.value)} />
-          <input className="input text-sm md:col-span-2" placeholder="Description" value={pluginDesc} onChange={(e) => setPluginDesc(e.target.value)} />
-          <input className="input text-sm" placeholder="Version" value={pluginVersion} onChange={(e) => setPluginVersion(e.target.value)} />
-          <input className="input text-sm" placeholder="Author" value={pluginAuthor} onChange={(e) => setPluginAuthor(e.target.value)} />
+          <input aria-label="Plugin slug" className="input text-sm" placeholder="slug" value={pluginSlug} onChange={(e) => setPluginSlug(e.target.value)} />
+          <input aria-label="Plugin name" className="input text-sm" placeholder="Name" value={pluginName} onChange={(e) => setPluginName(e.target.value)} />
+          <input aria-label="Plugin description" className="input text-sm md:col-span-2" placeholder="Description" value={pluginDesc} onChange={(e) => setPluginDesc(e.target.value)} />
+          <input aria-label="Plugin version" className="input text-sm" placeholder="Version" value={pluginVersion} onChange={(e) => setPluginVersion(e.target.value)} />
+          <input aria-label="Plugin author" className="input text-sm" placeholder="Author" value={pluginAuthor} onChange={(e) => setPluginAuthor(e.target.value)} />
           <button type="button" className="btn-primary md:col-span-2" onClick={() => void publishPlugin()}>Publish</button>
         </div>
       </MacSheet>

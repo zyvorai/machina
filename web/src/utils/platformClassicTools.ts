@@ -7,7 +7,35 @@ export type ClassicToolCard = {
   href: string
   /** Shown on host detail quick links */
   hostContext?: boolean
+  /** Libvirt admin cluster on Integrations hub */
+  libvirtAdmin?: boolean
 }
+
+/** NW filters, secrets, and capabilities — classic-only daemon routes bridged from Platform. */
+export const LIBVIRT_ADMIN_TOOL_CARDS: ClassicToolCard[] = [
+  {
+    id: 'nwfilters',
+    title: 'Network filters',
+    description: 'Libvirt NWFilter definitions for anti-spoofing and QoS.',
+    href: '/nwfilters',
+    libvirtAdmin: true,
+  },
+  {
+    id: 'secrets',
+    title: 'Secrets vault',
+    description: 'Libvirt secret store for iSCSI, Ceph, and TLS credentials.',
+    href: '/secrets',
+    libvirtAdmin: true,
+  },
+  {
+    id: 'capabilities',
+    title: 'Capabilities',
+    description: 'CPU features, NUMA topology, and libvirt capability matrix.',
+    href: '/capabilities',
+    hostContext: true,
+    libvirtAdmin: true,
+  },
+]
 
 /** Classic Machina daemon UI routes bridged from Platform Integrations and host detail. */
 export const CLASSIC_TOOL_CARDS: ClassicToolCard[] = [
@@ -37,13 +65,7 @@ export const CLASSIC_TOOL_CARDS: ClassicToolCard[] = [
     href: '/devices',
     hostContext: true,
   },
-  {
-    id: 'capabilities',
-    title: 'Capabilities',
-    description: 'CPU features, NUMA, and libvirt capability matrix.',
-    href: '/capabilities',
-    hostContext: true,
-  },
+  ...LIBVIRT_ADMIN_TOOL_CARDS,
   {
     id: 'host-networking',
     title: 'Host networking',
@@ -57,18 +79,6 @@ export const CLASSIC_TOOL_CARDS: ClassicToolCard[] = [
     description: 'Browser terminal to the hypervisor shell.',
     href: '/host-ssh',
     hostContext: true,
-  },
-  {
-    id: 'nwfilters',
-    title: 'Network filters',
-    description: 'Libvirt NWFilter definitions for anti-spoofing and QoS.',
-    href: '/nwfilters',
-  },
-  {
-    id: 'secrets',
-    title: 'Secrets vault',
-    description: 'Libvirt secret store for iSCO/CEPH credentials.',
-    href: '/secrets',
   },
   {
     id: 'audit',

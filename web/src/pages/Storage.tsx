@@ -129,8 +129,8 @@ export default function StoragePage() {
         title={`Volumes in '${selectedPool}'`}
         actions={
           <>
-            <button onClick={() => { setSelectedPool(null); setVolumes([]); setVolumesLoading(false) }} className="p-2 hover:bg-slate-700 rounded transition" title="Back"><ArrowLeft className="w-5 h-5" /></button>
-            <button onClick={() => loadVolumes(selectedPool)} className="p-2 hover:bg-slate-700 rounded transition" title="Refresh"><RefreshCw className="w-4 h-4" /></button>
+            <button onClick={() => { setSelectedPool(null); setVolumes([]); setVolumesLoading(false) }} className="p-2 hover:bg-slate-700 rounded transition" title="Back" aria-label="Back"><ArrowLeft className="w-5 h-5" /></button>
+            <button onClick={() => loadVolumes(selectedPool)} className="p-2 hover:bg-slate-700 rounded transition" title="Refresh" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
             <button onClick={() => setShowCreateVol(true)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-sm transition flex items-center gap-1"><Plus className="w-4 h-4" /> Create Volume</button>
           </>
         }
@@ -153,7 +153,7 @@ export default function StoragePage() {
           />
         ) : (
           <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-            <table className="w-full">
+            <table className="w-full" aria-label="Storage volumes">
               <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400"><th className="px-6 py-3">Name</th><th className="px-6 py-3">Type</th><th className="px-6 py-3">Capacity</th><th className="px-6 py-3">Used</th><th className="px-6 py-3 hidden lg:table-cell">Path</th><th className="px-6 py-3 text-right">Actions</th></tr></thead>
               <tbody className="divide-y divide-slate-700/50">
                 {volumes.map((v) => (
@@ -165,9 +165,9 @@ export default function StoragePage() {
                     <td className="px-6 py-3 text-sm text-slate-400 truncate max-w-xs hidden lg:table-cell">{v.path}</td>
                     <td className="px-6 py-3 text-right">
                       <div className="flex items-center justify-end gap-1">
-                        <button onClick={() => { setResizeTarget({ pool: selectedPool, vol: v.name }); setResizeGb(v.capacity_gb.toFixed(2)) }} className={`p-1.5 rounded transition ${statusBadgeClasses('info')} hover:opacity-80`} title="Resize"><Maximize className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
-                        <button onClick={() => { setCloneTarget({ pool: selectedPool, vol: v.name }); setCloneName(`${v.name}-clone`) }} className="p-1.5 hover:bg-green-600/20 rounded transition" title="Clone"><Copy className={`w-4 h-4 ${statusToneClass('ok')}`} /></button>
-                        <button onClick={() => setDeleteTarget({ pool: selectedPool, vol: v.name })} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
+                        <button onClick={() => { setResizeTarget({ pool: selectedPool, vol: v.name }); setResizeGb(v.capacity_gb.toFixed(2)) }} className={`p-1.5 rounded transition ${statusBadgeClasses('info')} hover:opacity-80`} title="Resize" aria-label="Resize"><Maximize className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
+                        <button onClick={() => { setCloneTarget({ pool: selectedPool, vol: v.name }); setCloneName(`${v.name}-clone`) }} className="p-1.5 hover:bg-green-600/20 rounded transition" title="Clone" aria-label="Clone"><Copy className={`w-4 h-4 ${statusToneClass('ok')}`} /></button>
+                        <button onClick={() => setDeleteTarget({ pool: selectedPool, vol: v.name })} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete" aria-label="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
                       </div>
                     </td>
                   </tr>
@@ -231,7 +231,7 @@ export default function StoragePage() {
                 </div>
                 <div>
                   <label className="block text-sm text-slate-400 mb-1">Format</label>
-                  <select value={newVolFormat} onChange={(e) => setNewVolFormat(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm">
+                  <select aria-label="Volume format" value={newVolFormat} onChange={(e) => setNewVolFormat(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm">
                     <option value="qcow2">qcow2</option>
                     <option value="raw">raw</option>
                     <option value="qcow">qcow</option>
@@ -256,7 +256,7 @@ export default function StoragePage() {
       actions={
         <>
           <button onClick={() => setShowCreatePool(true)} className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded text-sm transition flex items-center gap-1"><Plus className="w-4 h-4" /> Create Pool</button>
-          <button onClick={loadPools} className="p-2 hover:bg-slate-700 rounded transition" title="Refresh"><RefreshCw className="w-4 h-4" /></button>
+          <button onClick={loadPools} className="p-2 hover:bg-slate-700 rounded transition" title="Refresh" aria-label="Refresh"><RefreshCw className="w-4 h-4" /></button>
         </>
       }
       contentLoading={loading}
@@ -302,11 +302,11 @@ export default function StoragePage() {
                   <button onClick={() => poolAction(pool.name, stopPool, 'Stop pool')} className="p-1.5 hover:bg-red-600/20 rounded transition"><Square className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
                 </>
               )}
-              <button onClick={() => togglePoolAutostart(pool)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title={pool.autostart ? 'Disable Autostart' : 'Enable Autostart'}>
+              <button onClick={() => togglePoolAutostart(pool)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title={pool.autostart ? 'Disable Autostart' : 'Enable Autostart'} aria-label={pool.autostart ? 'Disable Autostart' : 'Enable Autostart'}>
                 {pool.autostart ? <ToggleRight className={`w-4 h-4 ${statusToneClass('ok')}`} /> : <ToggleLeft className="w-4 h-4 text-slate-500" />}
               </button>
-              <button onClick={() => showPoolXml(pool.name)} className={`p-1.5 rounded transition ${statusBadgeClasses('info')} hover:opacity-80`} title="View XML"><Code className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
-              <button onClick={() => setDeletePoolTarget(pool.name)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete Pool"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
+              <button onClick={() => showPoolXml(pool.name)} className={`p-1.5 rounded transition ${statusBadgeClasses('info')} hover:opacity-80`} title="View XML" aria-label="View XML"><Code className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
+              <button onClick={() => setDeletePoolTarget(pool.name)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete Pool" aria-label="Delete Pool"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
             </div>
           </div>
         ))}
@@ -326,7 +326,7 @@ export default function StoragePage() {
               </div>
               <div>
                 <label className="block text-sm text-slate-400 mb-1">Type</label>
-                <select value={newPoolType} onChange={(e) => setNewPoolType(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm">
+                <select aria-label="Pool type" value={newPoolType} onChange={(e) => setNewPoolType(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-lg text-sm">
                   <option value="dir">dir</option>
                   <option value="fs">fs</option>
                   <option value="netfs">netfs</option>

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -68,7 +68,7 @@ pub struct SimulateResult {
     pub results: Vec<SimulatedImpact>,
 }
 
-pub async fn build_graph(pool: &PgPool) -> anyhow::Result<DigitalTwinGraph> {
+pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<DigitalTwinGraph> {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
@@ -102,11 +102,10 @@ pub async fn build_graph(pool: &PgPool) -> anyhow::Result<DigitalTwinGraph> {
         });
     }
 
-    let vms: Vec<(Uuid, String, Option<Uuid>, String)> = sqlx::query_as(
-        "SELECT id, name, host_id, observed_state FROM vms ORDER BY name LIMIT 200",
-    )
-    .fetch_all(pool)
-    .await?;
+    let vms: Vec<(Uuid, String, Option<Uuid>, String)> =
+        sqlx::query_as("SELECT id, name, host_id, observed_state FROM vms ORDER BY name LIMIT 200")
+            .fetch_all(pool)
+            .await?;
     for (vid, name, host_id, st) in vms {
         let id = vid.to_string();
         nodes.push(TwinNode {
@@ -212,7 +211,7 @@ pub async fn build_graph(pool: &PgPool) -> anyhow::Result<DigitalTwinGraph> {
     })
 }
 
-pub async fn analyze_impact(pool: &PgPool, req: &ImpactRequest) -> anyhow::Result<ImpactAnalysis> {
+pub async fn analyze_impact(pool: &SqlitePool, req: &ImpactRequest) -> anyhow::Result<ImpactAnalysis> {
     let action = req.action.to_lowercase();
     let kind = req.target_kind.to_lowercase();
 
@@ -254,14 +253,13 @@ pub async fn analyze_impact(pool: &PgPool, req: &ImpactRequest) -> anyhow::Resul
     }
 }
 
-async fn storage_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn storage_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let pool_id = resolve_storage(pool, target).await?;
-    let (name, capacity_gib, used_gib): (String, i64, i64) = sqlx::query_as(
-        "SELECT name, capacity_gib, used_gib FROM storage_pools WHERE id = $1",
-    )
-    .bind(pool_id)
-    .fetch_one(pool)
-    .await?;
+    let (name, capacity_gib, used_gib): (String, i64, i64) =
+        sqlx::query_as("SELECT name, capacity_gib, used_gib FROM storage_pools WHERE id = ?")
+            .bind(pool_id)
+            .fetch_one(pool)
+            .await?;
 
     let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
@@ -274,7 +272,13 @@ async fn storage_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<
         0.0
     };
 
-    let severity = if vm_count >= 10 { "critical" } else if vm_count > 0 { "high" } else { "low" };
+    let severity = if vm_count >= 10 {
+        "critical"
+    } else if vm_count > 0 {
+        "high"
+    } else {
+        "low"
+    };
 
     Ok(ImpactAnalysis {
         action: "shutdown".into(),
@@ -297,25 +301,24 @@ async fn storage_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<
     })
 }
 
-async fn resolve_storage(pool: &PgPool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_storage(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM storage_pools WHERE name = $1")
+    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM storage_pools WHERE name = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
     id.ok_or_else(|| anyhow::anyhow!("storage pool not found: {target}"))
 }
 
-async fn host_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn host_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let host_id = resolve_host(pool, target).await?;
-    let vms: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, name, observed_state FROM vms WHERE host_id = $1 ORDER BY name",
-    )
-    .bind(host_id)
-    .fetch_all(pool)
-    .await?;
+    let vms: Vec<(Uuid, String, String)> =
+        sqlx::query_as("SELECT id, name, observed_state FROM vms WHERE host_id = ? ORDER BY name LIMIT 500")
+            .bind(host_id)
+            .fetch_all(pool)
+            .await?;
 
     let vm_names: Vec<String> = vms.iter().map(|(_, n, _)| n.clone()).collect();
     let running: Vec<_> = vms.iter().filter(|(_, _, st)| st == "running").collect();
@@ -325,7 +328,7 @@ async fn host_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<Imp
         let apps: Vec<String> = sqlx::query_scalar(
             "SELECT ag.name FROM application_group_vms agv
              JOIN application_groups ag ON ag.id = agv.group_id
-             WHERE agv.vm_id = $1",
+             WHERE agv.vm_id = ?",
         )
         .bind(vid)
         .fetch_all(pool)
@@ -339,7 +342,7 @@ async fn host_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<Imp
         let _ = name;
     }
 
-    let host_name: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = $1")
+    let host_name: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;
@@ -383,19 +386,18 @@ async fn host_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<Imp
     })
 }
 
-async fn vm_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn vm_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let vm_id = resolve_vm(pool, target).await?;
-    let (name, host_id, state): (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, observed_state FROM vms WHERE id = $1",
-    )
-    .bind(vm_id)
-    .fetch_one(pool)
-    .await?;
+    let (name, host_id, state): (String, Option<Uuid>, String) =
+        sqlx::query_as("SELECT name, host_id, observed_state FROM vms WHERE id = ?")
+            .bind(vm_id)
+            .fetch_one(pool)
+            .await?;
 
     let apps: Vec<String> = sqlx::query_scalar(
         "SELECT ag.name FROM application_group_vms agv
          JOIN application_groups ag ON ag.id = agv.group_id
-         WHERE agv.vm_id = $1",
+         WHERE agv.vm_id = ?",
     )
     .bind(vm_id)
     .fetch_all(pool)
@@ -403,7 +405,7 @@ async fn vm_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<Impac
     .unwrap_or_default();
 
     let host_name = if let Some(h) = host_id {
-        sqlx::query_scalar::<_, String>("SELECT hostname FROM hosts WHERE id = $1")
+        sqlx::query_scalar::<_, String>("SELECT hostname FROM hosts WHERE id = ?")
             .bind(h)
             .fetch_optional(pool)
             .await?
@@ -436,24 +438,25 @@ async fn vm_shutdown_impact(pool: &PgPool, target: &str) -> anyhow::Result<Impac
     })
 }
 
-async fn host_migrate_impact(pool: &PgPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn host_migrate_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let host_id = resolve_host(pool, target).await?;
-    let host_name: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = $1")
+    let host_name: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;
 
-    let vms: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, name, observed_state FROM vms WHERE host_id = $1 ORDER BY name",
-    )
-    .bind(host_id)
-    .fetch_all(pool)
-    .await?;
+    let vms: Vec<(Uuid, String, String)> =
+        sqlx::query_as("SELECT id, name, observed_state FROM vms WHERE host_id = ? ORDER BY name LIMIT 500")
+            .bind(host_id)
+            .fetch_all(pool)
+            .await?;
 
     let running: Vec<_> = vms.iter().filter(|(_, _, st)| st == "running").collect();
     let vm_names: Vec<String> = vms.iter().map(|(_, n, _)| n.clone()).collect();
 
-    let recs = crate::engine::placement::compute_recommendations(pool).await.unwrap_or_default();
+    let recs = crate::engine::placement::compute_recommendations(pool)
+        .await
+        .unwrap_or_default();
     let dest_hosts: Vec<String> = recs
         .iter()
         .filter(|r| r.from_host_id == host_id.to_string())
@@ -505,9 +508,9 @@ async fn host_migrate_impact(pool: &PgPool, target: &str) -> anyhow::Result<Impa
     })
 }
 
-async fn network_isolate_impact(pool: &PgPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn network_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let network_id = resolve_network(pool, target).await?;
-    let net_name: String = sqlx::query_scalar("SELECT name FROM networks WHERE id = $1")
+    let net_name: String = sqlx::query_scalar("SELECT name FROM networks WHERE id = ?")
         .bind(network_id)
         .fetch_one(pool)
         .await?;
@@ -515,7 +518,7 @@ async fn network_isolate_impact(pool: &PgPool, target: &str) -> anyhow::Result<I
     let vms: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT v.name FROM network_reservations nr
          JOIN vms v ON v.id = nr.vm_id
-         WHERE nr.network_id = $1 ORDER BY v.name",
+         WHERE nr.network_id = ? ORDER BY v.name",
     )
     .bind(network_id)
     .fetch_all(pool)
@@ -559,32 +562,30 @@ async fn network_isolate_impact(pool: &PgPool, target: &str) -> anyhow::Result<I
     })
 }
 
-async fn segment_isolate_impact(pool: &PgPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn segment_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let segment_id = resolve_segment(pool, target).await?;
-    let (name, east_west): (String, String) = sqlx::query_as(
-        "SELECT name, east_west_default FROM network_segments WHERE id = $1",
-    )
-    .bind(segment_id)
-    .fetch_one(pool)
-    .await?;
+    let (name, east_west): (String, String) =
+        sqlx::query_as("SELECT name, east_west_default FROM network_segments WHERE id = ?")
+            .bind(segment_id)
+            .fetch_one(pool)
+            .await?;
 
     let vms: Vec<String> = sqlx::query_scalar(
         "SELECT DISTINCT v.name FROM network_reservations nr
          JOIN networks n ON n.id = nr.network_id
          JOIN vms v ON v.id = nr.vm_id
-         WHERE n.segment_id = $1 ORDER BY v.name",
+         WHERE n.segment_id = ? ORDER BY v.name",
     )
     .bind(segment_id)
     .fetch_all(pool)
     .await
     .unwrap_or_default();
 
-    let network_count: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM networks WHERE segment_id = $1",
-    )
-    .bind(segment_id)
-    .fetch_one(pool)
-    .await?;
+    let network_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM networks WHERE segment_id = ?")
+            .bind(segment_id)
+            .fetch_one(pool)
+            .await?;
 
     let severity = if vms.len() >= 10 {
         "critical"
@@ -624,13 +625,13 @@ async fn segment_isolate_impact(pool: &PgPool, target: &str) -> anyhow::Result<I
     })
 }
 
-async fn switch_isolate_impact(pool: &PgPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn switch_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let switch_id = target.strip_prefix("switch-").unwrap_or(target);
     let rows: Vec<(Uuid, String)> = sqlx::query_as(
         "SELECT c.host_id, h.hostname
          FROM host_lldp_cache c
          JOIN hosts h ON h.id = c.host_id
-         WHERE c.neighbors_json::text ILIKE $1
+         WHERE c.neighbors_json LIKE ?
          ORDER BY h.hostname",
     )
     .bind(format!("%{switch_id}%"))
@@ -642,10 +643,11 @@ async fn switch_isolate_impact(pool: &PgPool, target: &str) -> anyhow::Result<Im
     let vms: Vec<String> = if rows.is_empty() {
         vec![]
     } else {
+        let host_ids_json = serde_json::to_string(&rows.iter().map(|(id, _)| id.to_string()).collect::<Vec<_>>()).unwrap_or_default();
         sqlx::query_scalar(
-            "SELECT name FROM vms WHERE host_id = ANY($1::uuid[]) ORDER BY name LIMIT 50",
+            "SELECT name FROM vms WHERE host_id IN (SELECT value FROM json_each(?)) ORDER BY name LIMIT 50",
         )
-        .bind(rows.iter().map(|(id, _)| *id).collect::<Vec<_>>())
+        .bind(&host_ids_json)
         .fetch_all(pool)
         .await
         .unwrap_or_default()
@@ -686,51 +688,54 @@ async fn switch_isolate_impact(pool: &PgPool, target: &str) -> anyhow::Result<Im
     })
 }
 
-async fn resolve_segment(pool: &PgPool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_segment(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM network_segments WHERE name = $1")
+    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM network_segments WHERE name = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
     id.ok_or_else(|| anyhow::anyhow!("segment not found: {target}"))
 }
 
-async fn resolve_network(pool: &PgPool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_network(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM networks WHERE name = $1")
+    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM networks WHERE name = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
     id.ok_or_else(|| anyhow::anyhow!("network not found: {target}"))
 }
 
-async fn resolve_host(pool: &PgPool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_host(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM hosts WHERE hostname = $1")
+    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM hosts WHERE hostname = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
     id.ok_or_else(|| anyhow::anyhow!("host not found: {target}"))
 }
 
-async fn resolve_vm(pool: &PgPool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_vm(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM vms WHERE name = $1")
+    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM vms WHERE name = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
     id.ok_or_else(|| anyhow::anyhow!("vm not found: {target}"))
 }
 
-pub async fn simulate_batch(pool: &PgPool, req: &SimulateRequest) -> anyhow::Result<SimulateResult> {
+pub async fn simulate_batch(
+    pool: &SqlitePool,
+    req: &SimulateRequest,
+) -> anyhow::Result<SimulateResult> {
     let mut results = Vec::new();
     for scenario in &req.scenarios {
         let impact = analyze_impact(pool, scenario).await?;
@@ -740,13 +745,14 @@ pub async fn simulate_batch(pool: &PgPool, req: &SimulateRequest) -> anyhow::Res
             a if a.contains("shutdown") || a.contains("failure") => 300,
             _ => 60,
         };
-        let storage_unavailable_gib = if scenario.target_kind == "storage" || !impact.storage_risks.is_empty() {
-            let used: i64 = sqlx::query_scalar(
-                "SELECT COALESCE(SUM(used_gib), 0)::bigint FROM storage_pools",
-            )
-            .fetch_one(pool)
-            .await
-            .unwrap_or(0);
+        let storage_unavailable_gib = if scenario.target_kind == "storage"
+            || !impact.storage_risks.is_empty()
+        {
+            let used: i64 =
+                sqlx::query_scalar("SELECT COALESCE(SUM(used_gib), 0) FROM storage_pools")
+                    .fetch_one(pool)
+                    .await
+                    .unwrap_or(0);
             Some(used)
         } else {
             None

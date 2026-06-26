@@ -2,7 +2,7 @@
 // AI operator — guardrailed autonomous secure-machine (Phase 25, hardened apply path).
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::config::ControllerConfig;
 
@@ -96,7 +96,7 @@ pub fn thresholds() -> OperatorThresholds {
 }
 
 pub async fn fleet_secure_preview(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FleetSecurePlan> {
     let ov = overview(pool, cfg).await?;
@@ -155,7 +155,7 @@ pub async fn fleet_secure_preview(
 }
 
 pub async fn execute_secure(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     req: &OperatorExecuteRequest,
     actor: &str,
@@ -242,11 +242,14 @@ pub async fn execute_secure(
     let result = apply_profile(pool, cfg, &req.host_id, &profile, actor, false).await?;
     let host_id = uuid::Uuid::parse_str(&req.host_id).unwrap_or_else(|_| uuid::Uuid::nil());
     let _ = sqlx::query(
-        "INSERT INTO firewall_timeline (target_kind, target_id, kind, summary, detail_json, actor)
-         VALUES ('host', $1, 'operator_secure', $2, $3, $4)",
+        "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, 'host', ?, 'operator_secure', ?, ?, ?)",
     )
+    .bind(uuid::Uuid::new_v4())
     .bind(host_id)
-    .bind(format!("Operator applied {} → {}", preview.hostname, profile))
+    .bind(format!(
+        "Operator applied {} → {}",
+        preview.hostname, profile
+    ))
     .bind(serde_json::json!({
         "profile": profile,
         "hostname": preview.hostname,
@@ -275,7 +278,7 @@ pub async fn execute_secure(
 }
 
 pub async fn execute_secure_batch(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     req: &OperatorBatchExecuteRequest,
     actor: &str,

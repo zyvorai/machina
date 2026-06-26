@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 use crate::api::tasks::TaskResponse;
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_operator, AuthUser};
 use crate::engine::migrate_precheck::run_migrate_precheck;
 use crate::engine::placement::pick_host_for_vm;
 use crate::engine::policy;
@@ -42,7 +42,7 @@ pub struct VmRow {
     pub memory_mib: i64,
     pub ha_enabled: bool,
     pub project: Option<String>,
-    pub tags: Vec<String>,
+    pub tags: sqlx::types::Json<Vec<String>>,
     pub inventory_source: String,
     pub k8s_namespace: Option<String>,
     pub last_seen_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -61,9 +61,10 @@ pub struct VmListQuery {
     #[serde(default)]
     pub tag: Option<String>,
     #[serde(default)]
-    pub folder: Option<String>,
-    #[serde(default)]
     pub source: Option<String>,
+    /// VM status/type filter (running, stopped, discovered, untagged, etc.)
+    #[serde(default, alias = "folder")]
+    pub status: Option<String>,
 }
 
 pub async fn list_vms(
@@ -76,56 +77,56 @@ pub async fn list_vms(
                 COALESCE(v.last_error, '') AS last_error,
                 COALESCE(v.managed, TRUE) AS managed,
                 v.uuid, v.vcpus, v.memory_mib,
-                COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '{}') AS tags,
+                COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '[]') AS tags,
                 COALESCE(v.inventory_source, 'libvirt') AS inventory_source,
                 v.k8s_namespace, v.last_seen_at, v.guest_ip, v.guest_tools_status
          FROM vms v LEFT JOIN ha_policies hp ON hp.vm_id = v.id
          LEFT JOIN vm_metrics m ON m.vm_id = v.id
-         WHERE ($1::text IS NULL OR v.project = $1)
-           AND ($2::uuid IS NULL OR v.host_id = $2)
-           AND ($3::bool IS NULL OR v.managed = $3)
-           AND ($4::text IS NULL OR $4 = ANY(v.tags))
-           AND ($6::text IS NULL OR v.inventory_source = $6)
+         WHERE (?1 IS NULL OR v.project = ?1)
+           AND (?2 IS NULL OR v.host_id = ?2)
+           AND (?3 IS NULL OR v.managed = ?3)
+           AND (?4 IS NULL OR EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value = ?4))
+           AND (?5 IS NULL OR v.inventory_source = ?5)
            AND (
-             $5::text IS NULL
-             OR ($5 = 'running' AND v.observed_state = 'running')
-             OR ($5 = 'stopped' AND v.observed_state NOT IN ('running', 'missing'))
-             OR ($5 = 'discovered' AND v.managed = FALSE)
-             OR ($5 = 'missing' AND v.observed_state = 'missing')
-             OR ($5 = 'untagged' AND (v.tags IS NULL OR v.tags = '{}'))
-             OR ($5 = 'high_cpu' AND m.cpu_percent > 85)
-             OR ($5 = 'unprotected' AND NOT EXISTS (
+             ?6 IS NULL
+             OR (?6 = 'running' AND v.observed_state = 'running')
+             OR (?6 = 'stopped' AND v.observed_state NOT IN ('running', 'missing'))
+             OR (?6 = 'discovered' AND v.managed = FALSE)
+             OR (?6 = 'missing' AND v.observed_state = 'missing')
+             OR (?6 = 'untagged' AND (v.tags IS NULL OR v.tags = '[]'))
+             OR (?6 = 'high_cpu' AND m.cpu_percent > 85)
+             OR (?6 = 'unprotected' AND NOT EXISTS (
                SELECT 1 FROM backup_records b
                WHERE b.vm_id = v.id AND b.status = 'completed'
-                 AND b.created_at > NOW() - INTERVAL '7 days'
+                 AND b.created_at > datetime('now', '-7 days')
              ))
-             OR ($5 = 'no_ip' AND (v.guest_ip IS NULL OR v.guest_ip = ''))
-             OR ($5 = 'guest_agent_missing' AND COALESCE(v.inventory_source, 'libvirt') != 'kubevirt'
+             OR (?6 = 'no_ip' AND (v.guest_ip IS NULL OR v.guest_ip = ''))
+             OR (?6 = 'guest_agent_missing' AND COALESCE(v.inventory_source, 'libvirt') != 'kubevirt'
                AND (v.guest_tools_status IS NULL OR v.guest_tools_status NOT IN ('healthy', 'installed')))
-             OR ($5 = 'migration_ready' AND v.observed_state NOT IN ('running', 'missing')
+             OR (?6 = 'migration_ready' AND v.observed_state NOT IN ('running', 'missing')
                AND COALESCE(v.managed, TRUE) = TRUE)
-             OR ($5 = 'needs_attention' AND (
+             OR (?6 = 'needs_attention' AND (
                NOT EXISTS (
                  SELECT 1 FROM backup_records b
                  WHERE b.vm_id = v.id AND b.status = 'completed'
-                   AND b.created_at > NOW() - INTERVAL '7 days'
+                   AND b.created_at > datetime('now', '-7 days')
                )
                OR (v.guest_ip IS NULL OR v.guest_ip = '')
                OR (COALESCE(v.inventory_source, 'libvirt') != 'kubevirt'
                  AND (v.guest_tools_status IS NULL OR v.guest_tools_status NOT IN ('healthy', 'installed')))
                OR (m.cpu_percent > 85)
              ))
-             OR ($5 = 'ha_enabled' AND hp.enabled = TRUE)
-             OR $5 = 'all'
+             OR (?6 = 'ha_enabled' AND hp.enabled = TRUE)
+             OR ?6 = 'all'
            )
-         ORDER BY v.name",
+         ORDER BY v.name LIMIT 2000",
     )
     .bind(q.project.as_deref())
     .bind(q.host_id)
     .bind(q.managed)
     .bind(q.tag.as_deref())
-    .bind(q.folder.as_deref())
     .bind(q.source.as_deref())
+    .bind(q.status.as_deref())
     .fetch_all(&state.pool)
     .await?;
     Ok(Json(rows))
@@ -141,11 +142,11 @@ pub async fn get_vm(
                 COALESCE(v.last_error, '') AS last_error,
                 COALESCE(v.managed, TRUE) AS managed,
                 v.uuid, v.vcpus, v.memory_mib,
-                COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '{}') AS tags,
+                COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '[]') AS tags,
                 COALESCE(v.inventory_source, 'libvirt') AS inventory_source,
                 v.k8s_namespace, v.last_seen_at, v.guest_ip, v.guest_tools_status
          FROM vms v LEFT JOIN ha_policies hp ON hp.vm_id = v.id
-         WHERE v.id = $1",
+         WHERE v.id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -157,7 +158,7 @@ pub async fn get_vm_spec(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let spec: serde_json::Value = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = $1")
+    let spec: serde_json::Value = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -185,12 +186,14 @@ pub async fn create_vm(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<CreateVmBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     body.vm.validate()
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
     let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
-        .fetch_one(&state.pool)
-        .await?;
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::bad_request("no cluster configured — add a host first"))?;
 
     let vcpus = body.vm.total_vcpus() as i32;
     let memory_mib = body.vm.memory_mib().map_err(|e| ApiError::bad_request(e.to_string()))? as i64;
@@ -229,9 +232,11 @@ pub async fn create_vm(
     let vm_id = Uuid::new_v4();
     let spec_json = serde_json::to_value(&body.vm).map_err(|e| ApiError::internal(e.to_string()))?;
 
+    let mut tx = state.pool.begin().await?;
+
     sqlx::query(
         "INSERT INTO vms (id, cluster_id, host_id, name, project, spec_json, desired_state, lifecycle_phase, vcpus, memory_mib, tags)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'creating', $8, $9, $10)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?)",
     )
     .bind(vm_id)
     .bind(cluster_id)
@@ -242,24 +247,26 @@ pub async fn create_vm(
     .bind(&body.desired_state)
     .bind(vcpus)
     .bind(memory_mib)
-    .bind(&body.tags)
-    .execute(&state.pool)
+    .bind(serde_json::to_string(&body.tags).unwrap_or_else(|_| "[]".into()))
+    .execute(&mut *tx)
     .await?;
 
     for vol in &body.vm.spec.storage {
         let size_gib = machina_spec::parse_size_gib(&vol.size)
             .map_err(|e| ApiError::bad_request(e.to_string()))? as i64;
         sqlx::query(
-            "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class) VALUES ($1, $2, $3, $4, $5)",
+            "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4())
         .bind(vm_id)
         .bind(&vol.name)
         .bind(size_gib)
         .bind(&vol.class)
-        .execute(&state.pool)
+        .execute(&mut *tx)
         .await?;
     }
+
+    tx.commit().await?;
 
     if body.vm.spec.ha.enabled {
         upsert_ha_policy(
@@ -291,11 +298,26 @@ pub async fn create_vm(
         Some(vm_id),
         Some(host_id),
     )
-    .await?;
+    .await
+    .map_err(|e| {
+        // Compensate: delete the zombie VM row so the name is free to retry.
+        let pool = state.pool.clone();
+        tokio::spawn(async move {
+            let _ = sqlx::query("DELETE FROM vm_disks WHERE vm_id = ?")
+                .bind(vm_id)
+                .execute(&pool)
+                .await;
+            let _ = sqlx::query("DELETE FROM vms WHERE id = ?")
+                .bind(vm_id)
+                .execute(&pool)
+                .await;
+        });
+        e
+    })?;
 
     sqlx::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(Uuid::new_v4())
     .bind(&actor.username)
@@ -309,9 +331,9 @@ pub async fn create_vm(
     if let Some(net) = body.vm.spec.network.first() {
         if let Some(profile) = &net.firewall_profile {
             let _ = sqlx::query(
-                "INSERT INTO firewall_timeline (target_kind, target_id, kind, summary, detail_json, actor)
-                 VALUES ('vm', $1, 'profile_requested', $2, $3, $4)",
+                "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, 'vm', ?, 'profile_requested', ?, ?, ?)",
             )
+            .bind(uuid::Uuid::new_v4())
             .bind(vm_id)
             .bind(format!("VM network requests firewall profile {profile}"))
             .bind(serde_json::json!({ "profile": profile, "host_id": host_id.to_string(), "network": net.network }))
@@ -358,6 +380,7 @@ pub async fn create_from_template(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<CreateFromTemplateBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     let apply = |s: &str| crate::engine::template::apply_template_vars(s, &body.template_vars);
     let name = apply(&body.name);
     machina_spec::validate_name(&name).map_err(|e| ApiError::bad_request(e.to_string()))?;
@@ -420,6 +443,7 @@ pub async fn create_from_iso(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<CreateFromIsoBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let iso_path = body.iso_path.trim();
     if iso_path.is_empty() {
@@ -429,7 +453,7 @@ pub async fn create_from_iso(
         return Err(ApiError::bad_request("iso_path must be an absolute path on the hypervisor"));
     }
     let approved: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM content_images WHERE path = $1 AND status = 'available'",
+        "SELECT COUNT(*) FROM content_images WHERE path = ? AND status = 'available'",
     )
     .bind(iso_path)
     .fetch_one(&state.pool)
@@ -534,6 +558,7 @@ pub async fn create_from_virt_install(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<CreateFromVirtInstallBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let has_location = body
         .virt_install_location
@@ -690,9 +715,11 @@ pub async fn create_from_virt_install(
 
 pub async fn migrate_precheck(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<MigrateVmBody>,
 ) -> Result<Json<crate::engine::migrate_precheck::MigratePrecheckResult>, ApiError> {
+    require_operator(&actor)?;
     let result = run_migrate_precheck(&state.pool, id, body.dest_host_id, body.live)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -701,63 +728,79 @@ pub async fn migrate_precheck(
 
 pub async fn start_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     power_action(&state, id, "start", "vm.start", None).await
 }
 
 pub async fn stop_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     power_action(&state, id, "stop", "vm.stop", None).await
 }
 
 pub async fn reboot_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     body: Option<Json<VmPowerBody>>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     let mode = body.map(|b| b.0.mode).flatten();
     power_action(&state, id, "reboot", "vm.reboot", mode).await
 }
 
 pub async fn shutdown_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     body: Option<Json<VmPowerBody>>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     let mode = body.map(|b| b.0.mode).flatten();
     power_action(&state, id, "shutdown", "vm.shutdown", mode).await
 }
 
 pub async fn pause_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     power_action(&state, id, "pause", "vm.pause", None).await
 }
 
 pub async fn resume_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     power_action(&state, id, "resume", "vm.resume", None).await
 }
 
 pub async fn reset_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     power_action(&state, id, "reset", "vm.reset", None).await
 }
 
 pub async fn install_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     let meta: (Option<Uuid>, String, String) = sqlx::query_as(
-        "SELECT host_id, COALESCE(inventory_source, 'libvirt'), observed_state FROM vms WHERE id = $1",
+        "SELECT host_id, COALESCE(inventory_source, 'libvirt'), observed_state FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -792,7 +835,7 @@ pub async fn get_vm_domain_xml(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let row: (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -817,8 +860,8 @@ pub async fn get_vm_domain_xml(
     Ok(Json(serde_json::json!({ "xml": xml })))
 }
 
-pub(crate) async fn delete_vm_inventory_row(pool: &sqlx::PgPool, vm_id: Uuid) -> Result<String, ApiError> {
-    let name: Option<String> = sqlx::query_scalar("DELETE FROM vms WHERE id = $1 RETURNING name")
+pub(crate) async fn delete_vm_inventory_row(pool: &sqlx::SqlitePool, vm_id: Uuid) -> Result<String, ApiError> {
+    let name: Option<String> = sqlx::query_scalar("DELETE FROM vms WHERE id = ? RETURNING name")
         .bind(vm_id)
         .fetch_optional(pool)
         .await?;
@@ -827,14 +870,16 @@ pub(crate) async fn delete_vm_inventory_row(pool: &sqlx::PgPool, vm_id: Uuid) ->
 
 pub async fn delete_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     body: Option<Json<DeleteVmBody>>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     let require: bool = sqlx::query_scalar(
         "SELECT require_vm_delete_approval FROM clusters ORDER BY created_at LIMIT 1",
     )
-    .fetch_one(&state.pool)
-    .await
+    .fetch_optional(&state.pool)
+    .await?
     .unwrap_or(false);
     if require && !body.as_ref().is_some_and(|b| b.0.confirmed) {
         return Err(ApiError::bad_request(
@@ -843,7 +888,7 @@ pub async fn delete_vm(
     }
 
     let meta: (Option<Uuid>, String) = sqlx::query_as(
-        "SELECT host_id, observed_state FROM vms WHERE id = $1",
+        "SELECT host_id, observed_state FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -889,9 +934,11 @@ pub struct DeleteVmBody {
 
 pub async fn install_guest_tools(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    require_operator(&actor)?;
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -925,7 +972,7 @@ pub(crate) async fn power_action(
     mode: Option<String>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     let meta: (Option<Uuid>, String, String, String) = sqlx::query_as(
-        "SELECT host_id, COALESCE(inventory_source, 'libvirt'), observed_state, COALESCE(lifecycle_phase, 'idle') FROM vms WHERE id = $1",
+        "SELECT host_id, COALESCE(inventory_source, 'libvirt'), observed_state, COALESCE(lifecycle_phase, 'idle') FROM vms WHERE id = ?",
     )
     .bind(vm_id)
     .fetch_one(&state.pool)
@@ -1001,10 +1048,12 @@ fn default_live() -> bool {
 
 pub async fn migrate_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<MigrateVmBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let source_host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    require_operator(&actor)?;
+    let source_host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -1051,13 +1100,15 @@ fn default_clone_mode() -> String {
 
 pub async fn clone_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<CloneVmBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     machina_spec::validate_name(&body.new_name)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -1093,33 +1144,35 @@ pub struct PatchVmBody {
 
 pub async fn patch_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<PatchVmBody>,
 ) -> Result<Json<VmRow>, ApiError> {
+    require_operator(&actor)?;
     if let Some(ds) = &body.desired_state {
-        sqlx::query("UPDATE vms SET desired_state = $1, updated_at = NOW() WHERE id = $2")
+        sqlx::query("UPDATE vms SET desired_state = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(ds)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(project) = &body.project {
-        sqlx::query("UPDATE vms SET project = $1, updated_at = NOW() WHERE id = $2")
+        sqlx::query("UPDATE vms SET project = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(project)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(tags) = &body.tags {
-        sqlx::query("UPDATE vms SET tags = $1, updated_at = NOW() WHERE id = $2")
-            .bind(tags)
+        sqlx::query("UPDATE vms SET tags = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(serde_json::to_string(tags).unwrap_or_else(|_| "[]".into()))
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(desc) = &body.description {
         let mut spec: serde_json::Value =
-            sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = $1")
+            sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
                 .bind(id)
                 .fetch_one(&state.pool)
                 .await?;
@@ -1136,7 +1189,7 @@ pub async fn patch_vm(
         } else {
             spec["metadata"]["labels"] = serde_json::json!({ "description": desc.trim() });
         }
-        sqlx::query("UPDATE vms SET spec_json = $1, updated_at = NOW() WHERE id = $2")
+        sqlx::query("UPDATE vms SET spec_json = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(&spec)
             .bind(id)
             .execute(&state.pool)
@@ -1159,7 +1212,7 @@ pub async fn list_vm_disks(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<VmDiskRow>>, ApiError> {
     let rows = sqlx::query_as::<_, VmDiskRow>(
-        "SELECT id, name, size_gib, storage_class, path FROM vm_disks WHERE vm_id = $1",
+        "SELECT id, name, size_gib, storage_class, path FROM vm_disks WHERE vm_id = ? LIMIT 200",
     )
     .bind(id)
     .fetch_all(&state.pool)
@@ -1183,7 +1236,7 @@ pub async fn get_vm_metrics(
 ) -> Result<Json<VmMetricsRow>, ApiError> {
     let row = sqlx::query_as::<_, VmMetricsRow>(
         "SELECT vm_id, cpu_percent, memory_used_mib, disk_read_iops, disk_write_iops, updated_at
-         FROM vm_metrics WHERE vm_id = $1",
+         FROM vm_metrics WHERE vm_id = ?",
     )
     .bind(id)
     .fetch_optional(&state.pool)
@@ -1197,8 +1250,9 @@ pub async fn adopt_vm(
     Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<VmRow>, ApiError> {
+    require_operator(&actor)?;
     let row: Option<(bool, String)> =
-        sqlx::query_as("SELECT managed, observed_state FROM vms WHERE id = $1")
+        sqlx::query_as("SELECT managed, observed_state FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -1209,7 +1263,7 @@ pub async fn adopt_vm(
         return Err(ApiError::bad_request("VM is already managed"));
     }
     let source: String = sqlx::query_scalar(
-        "SELECT COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -1233,7 +1287,7 @@ pub async fn adopt_vm(
         _ => crate::engine::vm_lifecycle::PHASE_IDLE,
     };
     sqlx::query(
-        "UPDATE vms SET managed = TRUE, desired_state = $1, lifecycle_phase = $2, last_error = '', updated_at = NOW() WHERE id = $3",
+        "UPDATE vms SET managed = TRUE, desired_state = ?, lifecycle_phase = ?, last_error = '', updated_at = datetime('now') WHERE id = ?",
     )
     .bind(desired)
     .bind(lifecycle)
@@ -1288,9 +1342,11 @@ pub struct PruneVmInventoryResponse {
 
 pub async fn prune_vm_inventory_record(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<PruneVmInventoryResponse>, ApiError> {
-    let observed: String = sqlx::query_scalar("SELECT observed_state FROM vms WHERE id = $1")
+    require_operator(&actor)?;
+    let observed: String = sqlx::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -1325,26 +1381,32 @@ fn default_target() -> String {
 
 pub async fn attach_vm_disk(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<AttachDiskBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    require_operator(&actor)?;
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
-    if let Some(size) = body.size_gib {
+    let disk_id = if let Some(size) = body.size_gib {
+        let disk_id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class, path)
-             VALUES ($1, $2, $3, $4, 'silver', $5)",
+             VALUES (?, ?, ?, ?, 'silver', ?)",
         )
-        .bind(Uuid::new_v4())
+        .bind(disk_id)
         .bind(id)
         .bind(&body.target_dev)
         .bind(size)
         .bind(&body.disk_path)
         .execute(&state.pool)
         .await?;
-    }
+        Some(disk_id)
+    } else {
+        None
+    };
     let task_id = enqueue_task(
         &state,
         "vm.disk.attach",
@@ -1357,7 +1419,19 @@ pub async fn attach_vm_disk(
         Some(id),
         host_id,
     )
-    .await?;
+    .await
+    .map_err(|e| {
+        if let Some(did) = disk_id {
+            let pool = state.pool.clone();
+            tokio::spawn(async move {
+                let _ = sqlx::query("DELETE FROM vm_disks WHERE id = ?")
+                    .bind(did)
+                    .execute(&pool)
+                    .await;
+            });
+        }
+        e
+    })?;
     Ok(Json(TaskResponse {
         task_id: task_id.to_string(),
         status: "pending".into(),
@@ -1370,7 +1444,7 @@ pub async fn get_vm_libvirt_details(
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::state::VmDetails>, ApiError> {
     let row: (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -1400,7 +1474,7 @@ pub async fn get_vm_hardware_summary(
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::libvirt::hardware_summary::VmHardwareSummaryReport>, ApiError> {
     let row: (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -1437,7 +1511,7 @@ pub async fn get_vm_hardware_compat(
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::libvirt::hardware_summary::HardwareCompatReport>, ApiError> {
     let row: (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -1474,7 +1548,7 @@ pub async fn get_vm_domain_caps(
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::libvirt::hardware_summary::DomainCapabilitiesReport>, ApiError> {
     let row: (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -1511,7 +1585,7 @@ pub async fn get_vm_pending_config(
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::libvirt::pending_config::PendingConfig>, ApiError> {
     let row: (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -1563,7 +1637,7 @@ pub async fn batch_vm_parity_summary(
     let mut items = serde_json::Map::new();
     for vm_id in body.vm_ids.iter().take(64) {
         let row: Result<(String, Option<Uuid>, String), sqlx::Error> = sqlx::query_as(
-            "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+            "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
         )
         .bind(vm_id)
         .fetch_one(&state.pool)
@@ -1654,7 +1728,7 @@ pub async fn batch_vm_guest_ips(
     let mut items = serde_json::Map::new();
     for vm_id in body.vm_ids.iter().take(64) {
         let row: Result<(String, Option<Uuid>, String), sqlx::Error> = sqlx::query_as(
-            "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+            "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
         )
         .bind(vm_id)
         .fetch_one(&state.pool)
@@ -1710,11 +1784,13 @@ pub async fn batch_vm_guest_ips(
 
 pub async fn get_vm_viewer_vv(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
+    require_operator(&actor)?;
     let row: (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -1780,9 +1856,11 @@ pub async fn get_vm_viewer_vv(
 
 pub async fn get_vm_qemu_logs(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Query(q): Query<QemuLogsQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let (name, host_id) = crate::api::vm_row::vm_agent_row_libvirt(&state, id).await?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await
@@ -1809,15 +1887,19 @@ pub struct RenameVmBody {
 
 pub async fn rename_platform_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<RenameVmBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let new_name = body.new_name.trim();
+    require_operator(&actor)?;
+    let new_name = body.new_name.trim().to_string();
     if new_name.is_empty() {
         return Err(ApiError::bad_request("new_name is required"));
     }
+    machina_spec::validate_name(&new_name)
+        .map_err(|e| ApiError::bad_request(e.to_string()))?;
     let row: (String, Option<Uuid>, String, String) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), observed_state FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), observed_state FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -1831,33 +1913,45 @@ pub async fn rename_platform_vm(
     let host_id = row
         .1
         .ok_or_else(|| ApiError::bad_request("VM has no host assigned"))?;
+    let old_name = row.0.clone();
+    // Update DB first — if libvirt rename then fails we can roll back the DB row safely.
+    sqlx::query("UPDATE vms SET name = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(&new_name)
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut client = crate::agent_client::connect(&agent_addr)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    crate::agent_client::vm_libvirt_invoke(
+    if let Err(e) = crate::agent_client::vm_libvirt_invoke(
         &mut client,
-        &row.0,
+        &old_name,
         "domain.rename",
         &serde_json::json!({ "new_name": new_name }),
     )
     .await
-    .map_err(|e| ApiError::internal(e.to_string()))?;
-    sqlx::query("UPDATE vms SET name = $1, updated_at = NOW() WHERE id = $2")
-        .bind(new_name)
-        .bind(id)
-        .execute(&state.pool)
-        .await?;
+    {
+        // Libvirt rename failed — roll back the DB name to keep them in sync.
+        let _ = sqlx::query("UPDATE vms SET name = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(&old_name)
+            .bind(id)
+            .execute(&state.pool)
+            .await;
+        return Err(ApiError::internal(e.to_string()));
+    }
     state.emit_event("vm.rename", format!("VM renamed to {new_name}"));
     Ok(Json(serde_json::json!({ "status": "ok", "new_name": new_name })))
 }
 
 pub async fn inject_vm_nmi(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let (name, host_id) = crate::api::vm_row::vm_agent_row_libvirt(&state, id).await?;
     let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
         .await
@@ -1883,7 +1977,7 @@ async fn enqueue_vm_host_task(
     operation: &str,
     payload: serde_json::Value,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -1905,8 +1999,10 @@ async fn enqueue_vm_host_task(
 
 pub async fn detach_vm_disk(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path((id, target)): Path<(Uuid, String)>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     enqueue_vm_host_task(
         &state,
         id,
@@ -1926,9 +2022,11 @@ pub struct ResizeVmDiskBody {
 
 pub async fn resize_vm_disk(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path((id, target)): Path<(Uuid, String)>,
     Json(body): Json<ResizeVmDiskBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     enqueue_vm_host_task(
         &state,
         id,
@@ -1955,9 +2053,11 @@ fn default_nic_model() -> String {
 
 pub async fn attach_vm_nic(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<AttachNicBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     enqueue_vm_host_task(
         &state,
         id,
@@ -1973,8 +2073,10 @@ pub async fn attach_vm_nic(
 
 pub async fn detach_vm_nic(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path((id, mac)): Path<(Uuid, String)>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     enqueue_vm_host_task(
         &state,
         id,
@@ -1994,9 +2096,11 @@ pub struct SetAutostartBody {
 
 pub async fn set_vm_autostart(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<SetAutostartBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     enqueue_vm_host_task(
         &state,
         id,
@@ -2016,9 +2120,11 @@ pub struct SetVcpusBody {
 
 pub async fn set_vm_vcpus(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<SetVcpusBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     enqueue_vm_host_task(
         &state,
         id,
@@ -2039,9 +2145,11 @@ pub struct SetMemoryBody {
 
 pub async fn set_vm_memory(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<SetMemoryBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
     enqueue_vm_host_task(
         &state,
         id,
@@ -2079,14 +2187,16 @@ fn publish_tpl_category() -> String {
 /// Publish a libvirt VM as a golden template (unifies daemon JSON + platform DB).
 pub async fn publish_vm_template(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<PublishTemplateFromVmBody>,
 ) -> Result<Json<crate::api::templates::TemplateRow>, ApiError> {
+    require_operator(&actor)?;
     machina_spec::validate_name(&body.template_name)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
     let row: (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = $1",
+        "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -2129,7 +2239,7 @@ pub async fn publish_vm_template(
     let tpl_id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO templates (id, name, version, source_disk, cloud_init, os_family, category, workload, description, featured, marketplace, daemon_json_path, approval_status, project)
-         VALUES ($1, $2, $3, $4, TRUE, 'linux', $5, $6, $7, FALSE, $8, $9, $10, $11)
+         VALUES (?, ?, ?, ?, TRUE, 'linux', ?, ?, ?, FALSE, ?, ?, ?, ?)
          ON CONFLICT (name, version) DO UPDATE SET
            source_disk = EXCLUDED.source_disk,
            workload = EXCLUDED.workload,
@@ -2153,7 +2263,7 @@ pub async fn publish_vm_template(
     .await?;
 
     let template_row = sqlx::query_as::<_, crate::api::templates::TemplateRow>(
-        "SELECT id, name, version, source_disk, cloud_init, os_family, category, COALESCE(workload, '') AS workload, description, featured, marketplace, icon, firewall_profile, COALESCE(approval_status, 'approved') AS approval_status, COALESCE(git_ref, '') AS git_ref, COALESCE(daemon_json_path, '') AS daemon_json_path, COALESCE(project, '') AS project FROM templates WHERE name = $1 AND version = $2",
+        "SELECT id, name, version, source_disk, cloud_init, os_family, category, COALESCE(workload, '') AS workload, description, featured, marketplace, icon, firewall_profile, COALESCE(approval_status, 'approved') AS approval_status, COALESCE(git_ref, '') AS git_ref, COALESCE(daemon_json_path, '') AS daemon_json_path, COALESCE(project, '') AS project FROM templates WHERE name = ? AND version = ?",
     )
     .bind(&body.template_name)
     .bind(&body.version)
@@ -2177,14 +2287,15 @@ pub async fn retire_vm(
 ) -> Result<Json<TaskResponse>, ApiError> {
     crate::auth::require_operator(&actor)?;
     let row: (String, Option<Uuid>, String) = sqlx::query_as(
-        "SELECT name, host_id, observed_state FROM vms WHERE id = $1",
+        "SELECT name, host_id, observed_state FROM vms WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
     .await?;
     sqlx::query(
-        "UPDATE vms SET lifecycle_phase = $1, desired_state = 'stopped', tags = array_append(tags, 'retired')
-         WHERE id = $2 AND NOT ('retired' = ANY(tags))",
+        "UPDATE vms SET lifecycle_phase = ?, desired_state = 'stopped',
+         tags = CASE WHEN tags IS NULL THEN '[\"retired\"]' ELSE json_insert(tags, '$[#]', 'retired') END
+         WHERE id = ? AND NOT EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value = 'retired')",
     )
     .bind(crate::engine::vm_lifecycle::PHASE_RETIRED)
     .bind(id)
@@ -2209,13 +2320,13 @@ pub async fn retire_vm(
     if body.final_backup {
         let backup_id = Uuid::new_v4();
         sqlx::query(
-            "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES ($1, $2, 'full', 'pending')",
+            "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES (?, ?, 'full', 'pending')",
         )
         .bind(backup_id)
         .bind(id)
         .execute(&state.pool)
         .await?;
-        let _ = enqueue_task(
+        enqueue_task(
             &state,
             "vm.backup",
             serde_json::json!({
@@ -2226,7 +2337,17 @@ pub async fn retire_vm(
             Some(id),
             row.1,
         )
-        .await?;
+        .await
+        .map_err(|e| {
+            let pool = state.pool.clone();
+            tokio::spawn(async move {
+                let _ = sqlx::query("DELETE FROM backup_records WHERE id = ?")
+                    .bind(backup_id)
+                    .execute(&pool)
+                    .await;
+            });
+            e
+        })?;
     }
     state.emit_event("vm.retire", format!("VM {} marked retired", row.0));
     Ok(Json(TaskResponse {
@@ -2243,13 +2364,13 @@ pub async fn export_vm_disk(
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     crate::auth::require_operator(&actor)?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
+    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
     let backup_id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES ($1, $2, 'export', 'pending')",
+        "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES (?, ?, 'export', 'pending')",
     )
     .bind(backup_id)
     .bind(id)
@@ -2267,7 +2388,17 @@ pub async fn export_vm_disk(
         Some(id),
         host_id,
     )
-    .await?;
+    .await
+    .map_err(|e| {
+        let pool = state.pool.clone();
+        tokio::spawn(async move {
+            let _ = sqlx::query("DELETE FROM backup_records WHERE id = ?")
+                .bind(backup_id)
+                .execute(&pool)
+                .await;
+        });
+        e
+    })?;
     Ok(Json(TaskResponse {
         task_id: task_id.to_string(),
         status: "pending".into(),

@@ -37,7 +37,8 @@ test('platform help menu opens platform guide dialog', async ({ page }) => {
 test('platform VM detail links to ConsoleHub', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/vms/v1')
-  await expect(page.getByRole('link', { name: /console/i }).first()).toBeVisible({ timeout: 15_000 })
-  await page.getByRole('link', { name: /console/i }).first().click()
+  // "Open Cinema" is the action bar link that routes to /consolehub
+  await expect(page.getByRole('link', { name: 'Open Cinema' }).first()).toBeVisible({ timeout: 15_000 })
+  await page.getByRole('link', { name: 'Open Cinema' }).first().click()
   await expect(page).toHaveURL(/\/consolehub/)
 })

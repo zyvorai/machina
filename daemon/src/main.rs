@@ -3,27 +3,27 @@
 // https://zyvor.dev · info@zyvor.dev
 
 mod auth;
-mod ldap_auth;
 mod automation_worker;
+mod cluster_bootstrap;
+mod conn_query;
 mod daemon_stats;
+mod error;
 mod http_metrics;
+mod hyper2kvm_exec;
+mod inventory_history;
+mod job_registry;
+mod k8s_inventory_history;
+mod k8s_kubeconfig;
+mod k8s_metrics_cache;
+mod k8s_quantity;
+mod kubevirt_exec;
+mod kubevirt_k8s_ws_proxy;
+mod ldap_auth;
 mod metrics_history;
 mod obs_reload;
 mod obs_workers;
-mod otlp_worker;
-mod cluster_bootstrap;
-mod conn_query;
-mod error;
-mod inventory_history;
-mod k8s_inventory_history;
-mod k8s_quantity;
-mod job_registry;
-mod k8s_kubeconfig;
-mod k8s_metrics_cache;
-mod hyper2kvm_exec;
-mod kubevirt_exec;
-mod kubevirt_k8s_ws_proxy;
 mod openstack_runtime;
+mod otlp_worker;
 mod routes;
 mod server;
 mod systemd;
@@ -67,6 +67,17 @@ fn init_rustls_crypto_provider() -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Default log filter: suppress noisy rustls SNI WARN that fires for every
+    // TLS client that connects using an IP address literal instead of a hostname.
+    // RFC 6066 forbids IP literals in SNI; rustls logs WARN but still serves the
+    // connection fine. Suppress at WARN level; keep it visible at ERROR+ if RUST_LOG
+    // is set explicitly.
+    if std::env::var("RUST_LOG").is_err() {
+        // SAFETY: single-threaded at this point (before tokio runtime starts workers).
+        unsafe {
+            std::env::set_var("RUST_LOG", "info,rustls::msgs::handshake=error");
+        }
+    }
     tracing_subscriber::fmt::init();
     init_rustls_crypto_provider()?;
 
@@ -104,9 +115,9 @@ async fn main() -> anyhow::Result<()> {
     let manager = LibvirtManager::new(&config.libvirt).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     info!("Connected to libvirt ({})", manager.primary_uri_display());
-    match manager.with_conn(|conn| {
-        Ok(machina_core::libvirt::network::bootstrap_autostart_networks(conn))
-    }) {
+    match manager
+        .with_conn(|conn| Ok(machina_core::libvirt::network::bootstrap_autostart_networks(conn)))
+    {
         Ok(failures) => {
             for (name, err) in &failures {
                 tracing::warn!("libvirt network '{name}' autostart failed at daemon boot: {err}");
@@ -154,7 +165,10 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    inventory_history::spawn_inventory_history_worker(manager.clone(), config.inventory_history.clone());
+    inventory_history::spawn_inventory_history_worker(
+        manager.clone(),
+        config.inventory_history.clone(),
+    );
     automation_worker::spawn_automation_worker(manager.clone());
 
     let bind_addr = config.bind_addr();

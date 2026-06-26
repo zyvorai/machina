@@ -244,18 +244,33 @@ pub fn guac_connection_from_ssh(
     }
 }
 
-pub fn guac_connection_from_target(vm: &str, target: GuacBridgeTarget, public_vnc_host: Option<&str>) -> GuacConnection {
+pub fn guac_connection_from_target(
+    vm: &str,
+    target: GuacBridgeTarget,
+    public_vnc_host: Option<&str>,
+) -> GuacConnection {
     match target {
         GuacBridgeTarget::Vnc { host, port } => {
             guac_connection_from_vnc_tcp(vm, host, port, public_vnc_host)
         }
-        GuacBridgeTarget::Rdp { host, port, username, domain } => {
-            let domain_opt = if domain.is_empty() { None } else { Some(domain.as_str()) };
+        GuacBridgeTarget::Rdp {
+            host,
+            port,
+            username,
+            domain,
+        } => {
+            let domain_opt = if domain.is_empty() {
+                None
+            } else {
+                Some(domain.as_str())
+            };
             guac_connection_from_rdp(vm, host, port, &username, domain_opt)
         }
-        GuacBridgeTarget::Ssh { host, port, username } => {
-            guac_connection_from_ssh(vm, host, port, &username)
-        }
+        GuacBridgeTarget::Ssh {
+            host,
+            port,
+            username,
+        } => guac_connection_from_ssh(vm, host, port, &username),
     }
 }
 
@@ -416,7 +431,7 @@ async fn create_guacamole_token(http: &Client, guac_base_url: &str, data: &str) 
 
 fn hex_to_bytes(s: &str) -> Result<Vec<u8>> {
     let s = s.trim();
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         bail!("invalid hex length");
     }
 

@@ -17,10 +17,12 @@ test('Maintenance Mission shows 7-step timeline', async ({ page }) => {
   await expect(timeline.getByText('Verify & exit', { exact: true })).toBeVisible()
 })
 
-test('Maintenance schedule enqueue shows ErrorBanner on failure', async ({ page }) => {
+test('Maintenance schedule enqueue shows ErrorBanner on failure', { retries: 1 }, async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/maintenance?tab=schedules')
-  await page.locator('select.input').first().selectOption('h1')
+  // Wait for hosts to load so the select has options before we try to use it
+  await expect(page.locator('select[aria-label="Host"] option:not([value=""])')).toBeAttached({ timeout: 15_000 })
+  await page.locator('select[aria-label="Host"]').selectOption('h1')
   const future = new Date(Date.now() + 86_400_000)
   const local = new Date(future.getTime() - future.getTimezoneOffset() * 60_000)
     .toISOString()

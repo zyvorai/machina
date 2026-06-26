@@ -238,5 +238,4 @@ impl JobRegistry {
             logs: j.logs.clone(),
         })
     }
-
 }

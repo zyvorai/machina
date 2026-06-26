@@ -61,7 +61,7 @@ export default function DevicesPage() {
       icon={<Usb className="w-6 h-6" />}
       actions={
         <>
-          <select value={capFilter} onChange={(e) => setCapFilter(e.target.value)} className="px-3 py-1.5 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm">
+          <select value={capFilter} onChange={(e) => setCapFilter(e.target.value)} aria-label="Filter by capability type" className="px-3 py-1.5 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm">
             <option value="">All types</option>
             {capTypes.map((t) => <option key={t} value={t}>{t}</option>)}
           </select>
@@ -80,7 +80,7 @@ export default function DevicesPage() {
         />
       ) : (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-          <table className="w-full">
+          <table className="w-full" aria-label="Host devices">
             <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400"><th className="px-6 py-3">Name</th><th className="px-6 py-3">Capability</th><th className="px-6 py-3 hidden md:table-cell">Driver</th><th className="px-6 py-3 hidden md:table-cell">Parent</th><th className="px-6 py-3 text-right">Actions</th></tr></thead>
             <tbody className="divide-y divide-slate-700/50">
               {filtered.map((dev) => (
@@ -90,7 +90,7 @@ export default function DevicesPage() {
                   <td className="px-6 py-3 hidden md:table-cell text-sm text-slate-400">{dev.driver || '-'}</td>
                   <td className="px-6 py-3 hidden md:table-cell text-sm text-slate-400 font-mono">{dev.parent || '-'}</td>
                   <td className="px-6 py-3 text-right">
-                    <button onClick={() => showXml(dev.name)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="View XML"><Code className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
+                    <button onClick={() => showXml(dev.name)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="View XML" aria-label="View XML"><Code className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
                   </td>
                 </tr>
               ))}

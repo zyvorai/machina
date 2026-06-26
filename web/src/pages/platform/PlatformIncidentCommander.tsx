@@ -143,9 +143,9 @@ export default function PlatformIncidentCommander() {
             {(fleetRca.suggested_actions ?? []).slice(0, 3).map((a) => (
               <p key={a} className={`text-xs mt-1 ${hubLinkClasses()}`}>→ {a}</p>
             ))}
-            {fleetRca.contributing_factors.length > 0 && (
+            {(fleetRca.contributing_factors ?? []).length > 0 && (
               <ul className="mt-2 text-xs text-slate-500 list-disc pl-4">
-                {fleetRca.contributing_factors.slice(0, 4).map((f) => (
+                {(fleetRca.contributing_factors ?? []).slice(0, 4).map((f) => (
                   <li key={f}>{f}</li>
                 ))}
               </ul>

@@ -19,8 +19,10 @@
 #   --openstack-network NAME Default private
 #   --ssh-host HOST          Hypervisor for virsh/SSH (default: host from BASE_URL)
 #   --skip-dhcp-check        Skip libvirt 90s DHCP/guest-IP poll (blank-disk smoke VMs)
+#   --auth pam|ldap|oidc|auto  Login auth mode (default auto — detect from /auth/providers)
 #
 # Env: VSPASS, E2E_SSH_HOST, E2E_OPENSTACK_REQUIRE_SSH=1
+#      E2E_AUTH_MODE, E2E_LDAP_USER, E2E_LDAP_PASS (LDAP / UPN login)
 #
 set -euo pipefail
 
@@ -50,6 +52,7 @@ E2E_OS_NETWORK="private"
 E2E_SSH_HOST="${E2E_SSH_HOST:-}"
 E2E_OPENSTACK_CONFIGURED=0
 E2E_SKIP_DHCP_CHECK=0
+E2E_AUTH_MODE="${E2E_AUTH_MODE:-auto}"
 
 usage() {
   sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'
@@ -69,6 +72,7 @@ while [[ $# -gt 0 ]]; do
     --openstack-network) E2E_OS_NETWORK="${2:?}"; shift ;;
     --ssh-host) E2E_SSH_HOST="${2:?}"; shift ;;
     --skip-dhcp-check) E2E_SKIP_DHCP_CHECK=1 ;;
+    --auth) E2E_AUTH_MODE="${2:?}"; shift ;;
     --) shift; break ;;
     -*) echo "Unknown option: $1" >&2; usage >&2; exit 1 ;;
     *) POSITIONAL+=("$1") ;;
@@ -86,6 +90,7 @@ if [[ -z "${E2E_PASSWORD}" ]]; then
   echo
 fi
 export E2E_PASSWORD
+export E2E_AUTH_MODE
 
 [[ -z "${E2E_SSH_HOST}" ]] && E2E_SSH_HOST="$(e2e_host_from_base)"
 
@@ -93,6 +98,7 @@ e2e_init_cookie
 trap e2e_cleanup EXIT
 
 echo "Machina E2E → ${E2E_BASE} (user ${E2E_USER}, ssh ${E2E_SSH_HOST})"
+e2e_auth_banner_line
 
 if [[ "$SKIP_PREFLIGHT" -eq 0 ]]; then
   e2e_hdr "PREFLIGHT: HEALTH"

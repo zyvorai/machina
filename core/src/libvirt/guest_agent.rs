@@ -129,7 +129,9 @@ fn guest_interfaces_from_virsh(name: &str, source: &'static str) -> Vec<GuestIpA
 pub fn guest_ipv4_from_virsh(name: &str) -> Option<String> {
     use std::process::Command;
     for source in ["lease", "agent", "arp"] {
-        let Ok(out) = Command::new("virsh").args(["domifaddr", name, "--source", source]).output()
+        let Ok(out) = Command::new("virsh")
+            .args(["domifaddr", name, "--source", source])
+            .output()
         else {
             continue;
         };
@@ -245,7 +247,10 @@ pub fn get_guest_hostname(conn: &Connect, name: &str) -> Result<String, LibvirtE
 }
 
 /// Guest filesystem usage via qemu-guest-agent (`guest-get-fsinfo`).
-pub fn get_guest_filesystems(conn: &Connect, name: &str) -> Result<Vec<GuestFilesystem>, LibvirtError> {
+pub fn get_guest_filesystems(
+    conn: &Connect,
+    name: &str,
+) -> Result<Vec<GuestFilesystem>, LibvirtError> {
     let domain = lookup_domain(conn, name)?;
     if !domain.is_active().unwrap_or(false) {
         return Ok(Vec::new());
@@ -268,8 +273,8 @@ fn guest_fsinfo_via_agent(vm_name: &str) -> Result<Vec<GuestFilesystem>, Libvirt
         return Ok(Vec::new());
     }
     let text = String::from_utf8_lossy(&output.stdout);
-    let v: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| LibvirtError::Operation(format!("agent JSON: {e}")))?;
+    let v: serde_json::Value = serde_json::from_str(&text)
+        .map_err(|e| LibvirtError::Operation(format!("agent JSON: {e}")))?;
     let Some(arr) = v.get("return").and_then(|r| r.as_array()) else {
         return Ok(Vec::new());
     };
@@ -295,19 +300,15 @@ fn guest_fsinfo_via_agent(vm_name: &str) -> Result<Vec<GuestFilesystem>, Libvirt
             .get("total-bytes")
             .and_then(|x| x.as_u64())
             .map(|total| {
-                let used = item
-                    .get("used-bytes")
-                    .and_then(|x| x.as_u64())
-                    .unwrap_or(0);
+                let used = item.get("used-bytes").and_then(|x| x.as_u64()).unwrap_or(0);
                 (total, used)
             })
             .or_else(|| {
-                item.get("disk")
-                    .and_then(|d| {
-                        let total = d.get("total-bytes")?.as_u64()?;
-                        let used = d.get("used-bytes").and_then(|x| x.as_u64()).unwrap_or(0);
-                        Some((total, used))
-                    })
+                item.get("disk").and_then(|d| {
+                    let total = d.get("total-bytes")?.as_u64()?;
+                    let used = d.get("used-bytes").and_then(|x| x.as_u64()).unwrap_or(0);
+                    Some((total, used))
+                })
             })
             .unwrap_or((0, 0));
         if mountpoint.is_empty() {
@@ -372,7 +373,15 @@ pub fn get_guest_observability(conn: &Connect, name: &str) -> Result<GuestInfo, 
     })
 }
 
-pub fn probe_guest_osinfo(vm_name: &str) -> (String, String, Option<String>, Option<String>, Option<String>) {
+pub fn probe_guest_osinfo(
+    vm_name: &str,
+) -> (
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+) {
     #[cfg(not(target_os = "linux"))]
     {
         let _ = vm_name;
@@ -380,10 +389,8 @@ pub fn probe_guest_osinfo(vm_name: &str) -> (String, String, Option<String>, Opt
     }
     #[cfg(target_os = "linux")]
     {
-        let Some(v) = qemu_agent_json(
-            vm_name,
-            r#"{"execute":"guest-get-osinfo","arguments":{}}"#,
-        ) else {
+        let Some(v) = qemu_agent_json(vm_name, r#"{"execute":"guest-get-osinfo","arguments":{}}"#)
+        else {
             return (String::new(), String::new(), None, None, None);
         };
         let ret = v.get("return").unwrap_or(&v);
@@ -434,13 +441,17 @@ pub fn probe_cloud_init_status(vm_name: &str) -> Option<String> {
             vm_name,
             &format!(r#"{{"execute":"guest-exec-status","arguments":{{"pid":{pid}}}}}"#),
         )?;
-        let out_b64 = st
-            .get("return")?
-            .get("out-data")
-            .and_then(|x| x.as_str())?;
+        let out_b64 = st.get("return")?.get("out-data").and_then(|x| x.as_str())?;
         let decoded = base64_decode(out_b64)?;
         let text = String::from_utf8_lossy(&decoded);
-        Some(text.lines().next().unwrap_or("").chars().take(200).collect())
+        Some(
+            text.lines()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take(200)
+                .collect(),
+        )
     }
 }
 
@@ -478,8 +489,10 @@ fn qemu_agent_json(vm_name: &str, cmd_json: &str) -> Option<serde_json::Value> {
 
 #[cfg(target_os = "linux")]
 fn base64_decode(s: &str) -> Option<Vec<u8>> {
-  use base64::Engine;
-  base64::engine::general_purpose::STANDARD.decode(s.trim()).ok()
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD
+        .decode(s.trim())
+        .ok()
 }
 
 #[cfg(test)]

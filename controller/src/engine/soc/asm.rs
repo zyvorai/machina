@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::config::ControllerConfig;
 use crate::engine::ai::security_graph;
@@ -25,7 +25,7 @@ pub struct AsmFinding {
 }
 
 pub async fn build_asm_summary(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<AsmSummary> {
     let overview = zeus_firewall::overview(pool, cfg).await?;
@@ -44,7 +44,10 @@ pub async fn build_asm_summary(
             findings.push(AsmFinding {
                 kind: "firewall_target".into(),
                 resource: t.name.clone(),
-                detail: format!("Risk {} score {score:.0} · {} open ports", t.risk, t.open_ports),
+                detail: format!(
+                    "Risk {} score {score:.0} · {} open ports",
+                    t.risk, t.open_ports
+                ),
                 severity: if score >= 80.0 || t.risk == "critical" {
                     "high"
                 } else {
@@ -55,7 +58,12 @@ pub async fn build_asm_summary(
         }
     }
 
-    for n in graph.nodes.iter().filter(|n| n.risk.as_deref() == Some("high")).take(10) {
+    for n in graph
+        .nodes
+        .iter()
+        .filter(|n| n.risk.as_deref() == Some("high"))
+        .take(10)
+    {
         findings.push(AsmFinding {
             kind: n.kind.clone(),
             resource: n.label.clone(),

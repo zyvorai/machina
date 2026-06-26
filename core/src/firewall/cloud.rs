@@ -58,7 +58,9 @@ pub fn gather_cloud_inventory() -> CloudFirewallInventory {
     CloudFirewallInventory {
         provider: CloudProvider::Unknown,
         reachable: false,
-        summary: "No cloud CLI credentials detected — configure AWS/Azure/GCP CLI on controller host".into(),
+        summary:
+            "No cloud CLI credentials detected — configure AWS/Azure/GCP CLI on controller host"
+                .into(),
         security_groups: vec![],
         open_ports: vec![],
     }
@@ -85,7 +87,11 @@ fn read_aws_security_groups() -> Option<CloudFirewallInventory> {
         let gid = g.get("GroupId")?.as_str()?.to_string();
         let gname = g.get("GroupName")?.as_str()?.to_string();
         for perm in g.get("IpPermissions")?.as_array()? {
-            let proto = perm.get("IpProtocol")?.as_str().unwrap_or("tcp").to_string();
+            let proto = perm
+                .get("IpProtocol")?
+                .as_str()
+                .unwrap_or("tcp")
+                .to_string();
             let from = perm
                 .get("FromPort")
                 .and_then(|p| p.as_u64())
@@ -111,7 +117,10 @@ fn read_aws_security_groups() -> Option<CloudFirewallInventory> {
                     protocol: proto.clone(),
                     port_range: port_range.clone(),
                     source: cidr.into(),
-                    description: ip.get("Description").and_then(|d| d.as_str()).map(str::to_string),
+                    description: ip
+                        .get("Description")
+                        .and_then(|d| d.as_str())
+                        .map(str::to_string),
                 });
                 if cidr == "0.0.0.0/0" && from > 0 {
                     open_ports.push(OpenPort {
@@ -142,11 +151,7 @@ fn read_aws_security_groups() -> Option<CloudFirewallInventory> {
 }
 
 fn read_azure_nsg() -> Option<CloudFirewallInventory> {
-    let out = run_cmd(
-        "az",
-        &["network", "nsg", "list", "--output", "json"],
-    )
-    .ok()?;
+    let out = run_cmd("az", &["network", "nsg", "list", "--output", "json"]).ok()?;
     let groups: serde_json::Value = serde_json::from_str(&out).ok()?;
     let arr = groups.as_array()?;
     let mut rules = Vec::new();
@@ -197,7 +202,10 @@ fn read_gcp_firewall_rules() -> Option<CloudFirewallInventory> {
             protocol: "mixed".into(),
             port_range: "*".into(),
             source: "gcp-firewall".into(),
-            description: r.get("description").and_then(|d| d.as_str()).map(str::to_string),
+            description: r
+                .get("description")
+                .and_then(|d| d.as_str())
+                .map(str::to_string),
         });
     }
     Some(CloudFirewallInventory {

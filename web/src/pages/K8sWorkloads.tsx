@@ -3,6 +3,7 @@
 // https://zyvor.dev · info@zyvor.dev
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Link } from 'react-router'
 import { Boxes, Copy, ExternalLink, Monitor, Network, Play, RefreshCw, RotateCw, Square, Terminal, Trash2 } from 'lucide-react'
 import VNCViewer from '../components/VNCViewer'
@@ -68,6 +69,7 @@ export default function K8sWorkloadsPage() {
   const [kubevirtVmCrs, setKubevirtVmCrs] = useState<K8sKubeVirtVM[]>([])
   const [kubevirtCrBusy, setKubevirtCrBusy] = useState(false)
   const [kubevirtVmBusy, setKubevirtVmBusy] = useState<string | null>(null)
+  const [deleteKubevirtTarget, setDeleteKubevirtTarget] = useState<{ namespace: string; name: string } | null>(null)
   const [showKubevirtCreate, setShowKubevirtCreate] = useState(false)
   const [kubevirtCreateYaml, setKubevirtCreateYaml] = useState(`apiVersion: kubevirt.io/v1
 kind: VirtualMachine
@@ -223,20 +225,9 @@ spec:
     }
   }, [ctxTrim, load, toast])
 
-  const deleteKubevirtVm = useCallback(async (namespace: string, name: string) => {
-    if (!window.confirm(`Delete KubeVirt VirtualMachine ${namespace}/${name}?`)) return
-    const key = `delete:${namespace}/${name}`
-    setKubevirtVmBusy(key)
-    try {
-      await deleteK8sKubevirtVm(namespace, name, ctxTrim || undefined)
-      toast.success(`Deleted ${namespace}/${name}`)
-      await load(true)
-    } catch (e: unknown) {
-      toast.error(formatUserError(e))
-    } finally {
-      setKubevirtVmBusy(null)
-    }
-  }, [ctxTrim, load, toast])
+  const deleteKubevirtVm = useCallback((namespace: string, name: string) => {
+    setDeleteKubevirtTarget({ namespace, name })
+  }, [])
 
   const applyKubevirtYaml = useCallback(async () => {
     setKubevirtVmBusy('create')
@@ -320,6 +311,7 @@ spec:
         <div className="hidden md:block" />
         <div className="flex flex-wrap items-center gap-2">
           <select
+            aria-label="kubectl context"
             value={context}
             onChange={(e) => setContext(e.target.value)}
             className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 max-w-[18rem]"
@@ -343,6 +335,7 @@ spec:
             Refresh contexts
           </button>
           <select
+            aria-label="Namespace"
             value={namespace}
             onChange={(e) => setNamespace(e.target.value)}
             className="bg-slate-800 border border-slate-600 rounded-lg px-3 py-2 text-sm"
@@ -403,7 +396,7 @@ spec:
           <h2 className="text-lg font-semibold">Deployments</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Deployments">
             <thead>
               <tr className="border-b border-slate-700/50 text-slate-400 text-xs uppercase tracking-wider">
                 <th className="text-left px-4 py-3">Name</th>
@@ -437,6 +430,7 @@ spec:
                     <td className="px-4 py-3">
                       <input
                         type="number"
+                        aria-label="Replica count"
                         min={0}
                         value={scale}
                         onChange={(e) => setScaleValue((prev) => ({ ...prev, [key]: Number(e.target.value) }))}
@@ -482,7 +476,7 @@ spec:
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-700/50 text-lg font-semibold">StatefulSets</div>
           <div className="overflow-x-auto max-h-72 overflow-y-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="StatefulSets">
               <thead><tr className="text-slate-400 text-xs border-b border-slate-700/50"><th className="text-left px-3 py-2">Name</th><th className="text-left px-3 py-2">NS</th><th className="text-right px-3 py-2">Action</th></tr></thead>
               <tbody className="divide-y divide-slate-700/30">
                 {statefulsets.map((d) => {
@@ -504,7 +498,7 @@ spec:
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-700/50 text-lg font-semibold">DaemonSets</div>
           <div className="overflow-x-auto max-h-72 overflow-y-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="DaemonSets">
               <thead><tr className="text-slate-400 text-xs border-b border-slate-700/50"><th className="text-left px-3 py-2">Name</th><th className="text-left px-3 py-2">NS</th><th className="text-right px-3 py-2">Action</th></tr></thead>
               <tbody className="divide-y divide-slate-700/30">
                 {daemonsets.map((d) => {
@@ -528,7 +522,7 @@ spec:
       <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
         <div className="px-4 py-3 border-b border-slate-700/50 text-lg font-semibold">Jobs</div>
         <div className="overflow-x-auto max-h-56 overflow-y-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Jobs">
             <thead><tr className="text-slate-400 text-xs border-b border-slate-700/50"><th className="text-left px-3 py-2">Name</th><th className="text-left px-3 py-2">NS</th><th className="text-right px-3 py-2">Action</th></tr></thead>
             <tbody className="divide-y divide-slate-700/30">
               {jobs.map((j) => {
@@ -568,7 +562,7 @@ spec:
             }}>Load events</button>
             {eventsItems.length > 0 ? (
               <div className="overflow-x-auto rounded border border-slate-700">
-                <table className="w-full text-xs text-left">
+                <table className="w-full text-xs text-left" aria-label="Kubernetes events">
                   <thead className="text-slate-500 border-b border-slate-700">
                     <tr><th className="px-2 py-1">Type</th><th className="px-2 py-1">Reason</th><th className="px-2 py-1">Message</th></tr>
                   </thead>
@@ -577,7 +571,7 @@ spec:
                       const row = asRecord(item) ?? {}
                       const meta = asRecord(row.metadata) ?? {}
                       return (
-                        <tr key={i} className="border-b border-slate-800/60">
+                        <tr key={String(row.reason ?? row.type ?? i)} className="border-b border-slate-800/60">
                           <td className="px-2 py-1 text-slate-400">{String(row.type ?? '—')}</td>
                           <td className="px-2 py-1 text-slate-300">{String(row.reason ?? '—')}</td>
                           <td className="px-2 py-1 text-slate-500">{String(row.message ?? meta.name ?? '—')}</td>
@@ -610,7 +604,7 @@ spec:
           <div className="space-y-2">
             <div className="text-sm font-medium text-slate-300">kubectl apply (YAML)</div>
             <label className="flex items-center gap-2 text-xs text-slate-400"><input type="checkbox" checked={applyDry} onChange={(e) => setApplyDry(e.target.checked)} /> Server dry-run</label>
-            <textarea className="w-full min-h-[120px] bg-slate-900 border border-slate-600 rounded p-2 text-xs font-mono text-slate-200" value={applyYaml} onChange={(e) => setApplyYaml(e.target.value)} placeholder="apiVersion: v1&#10;kind: ConfigMap&#10;..." />
+            <textarea aria-label="kubectl apply YAML" className="w-full min-h-[120px] bg-slate-900 border border-slate-600 rounded p-2 text-xs font-mono text-slate-200" value={applyYaml} onChange={(e) => setApplyYaml(e.target.value)} placeholder="apiVersion: v1&#10;kind: ConfigMap&#10;..." />
             <button type="button" className={`text-xs px-3 py-1.5 rounded-lg border ${statusBadgeClasses('warn')} border-[color-mix(in_srgb,var(--machina-status-warn)_40%,transparent)]`} onClick={() => {
               void postK8sApply(applyYaml, applyDry, ctxTrim).then((r) => setApplyOut(r)).catch((e: unknown) => setApplyOut(formatUserError(e)))
             }}>Apply</button>
@@ -621,9 +615,9 @@ spec:
           <div className="space-y-2">
             <div className="text-sm font-medium text-slate-300">kubectl auth can-i</div>
             <div className="flex flex-wrap gap-2 items-end">
-              <input className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs w-24" value={caniVerb} onChange={(e) => setCaniVerb(e.target.value)} placeholder="verb" />
-              <input className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs flex-1 min-w-[8rem]" value={caniRes} onChange={(e) => setCaniRes(e.target.value)} placeholder="resource" />
-              <input className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs w-28" value={caniNs} onChange={(e) => setCaniNs(e.target.value)} placeholder="-n (opt)" />
+              <input aria-label="kubectl verb" className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs w-24" value={caniVerb} onChange={(e) => setCaniVerb(e.target.value)} placeholder="verb" />
+              <input aria-label="kubectl resource" className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs flex-1 min-w-[8rem]" value={caniRes} onChange={(e) => setCaniRes(e.target.value)} placeholder="resource" />
+              <input aria-label="kubectl namespace" className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs w-28" value={caniNs} onChange={(e) => setCaniNs(e.target.value)} placeholder="-n (opt)" />
               <button type="button" className="text-xs px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600" onClick={() => {
                 void postK8sAuthCanI({ verb: caniVerb.trim(), resource: caniRes.trim(), namespace: caniNs.trim() || undefined, context: ctxTrim }).then((r) => setCaniOut(r.stdout.trim() || JSON.stringify(r))).catch((e: unknown) => setCaniOut(formatUserError(e)))
               }}>Check</button>
@@ -657,7 +651,7 @@ spec:
           <div className="space-y-2">
             <div className="text-sm font-medium text-slate-300">API list explorer</div>
             <div className="flex flex-wrap gap-2">
-              <select className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs" value={explorerKind} onChange={(e) => setExplorerKind(e.target.value)}>
+              <select aria-label="Resource kind" className="bg-slate-900 border border-slate-600 rounded px-2 py-1 text-xs" value={explorerKind} onChange={(e) => setExplorerKind(e.target.value)}>
                 <option value="ingresses">Ingresses</option>
                 <option value="cronjobs">CronJobs</option>
                 <option value="pvcs">PVCs</option>
@@ -727,6 +721,7 @@ spec:
           {showKubevirtCreate && (
             <div className="mt-3 space-y-2">
               <textarea
+                aria-label="KubeVirt VirtualMachine YAML"
                 value={kubevirtCreateYaml}
                 onChange={(e) => setKubevirtCreateYaml(e.target.value)}
                 rows={12}
@@ -745,7 +740,7 @@ spec:
           )}
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[72rem]">
+          <table className="w-full text-sm min-w-[72rem]" aria-label="Services">
             <thead>
               <tr className="border-b border-slate-700/50 text-slate-400 text-xs uppercase tracking-wider">
                 <th className="text-left px-4 py-3">Name</th>
@@ -902,7 +897,7 @@ spec:
           <h2 className="text-lg font-semibold">Pods</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Pods">
             <thead>
               <tr className="border-b border-slate-700/50 text-slate-400 text-xs uppercase tracking-wider">
                 <th className="text-left px-4 py-3">Name</th>
@@ -964,7 +959,7 @@ spec:
       )}
 
       {liveKubeVirt && (
-        <div className="fixed inset-0 z-[80] flex flex-col bg-slate-950/95 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[80] flex flex-col bg-slate-950/95 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="KubeVirt console">
           <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700 bg-slate-900 shrink-0">
             <span className="text-sm text-slate-200">
               KubeVirt {liveKubeVirt.kind === 'vnc' ? 'VNC' : 'serial console'} — {liveKubeVirt.namespace}/{liveKubeVirt.name}
@@ -992,6 +987,30 @@ spec:
           </div>
         </div>
       )}
+      <ConfirmDialog
+        open={deleteKubevirtTarget !== null}
+        title="Delete KubeVirt VM"
+        message={deleteKubevirtTarget ? `Delete VirtualMachine ${deleteKubevirtTarget.namespace}/${deleteKubevirtTarget.name}? This cannot be undone.` : ''}
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setDeleteKubevirtTarget(null)}
+        onConfirm={async () => {
+          const t = deleteKubevirtTarget
+          setDeleteKubevirtTarget(null)
+          if (!t) return
+          const key = `delete:${t.namespace}/${t.name}`
+          setKubevirtVmBusy(key)
+          try {
+            await deleteK8sKubevirtVm(t.namespace, t.name, ctxTrim || undefined)
+            toast.success(`Deleted ${t.namespace}/${t.name}`)
+            await load(true)
+          } catch (e: unknown) {
+            toast.error(formatUserError(e))
+          } finally {
+            setKubevirtVmBusy(null)
+          }
+        }}
+      />
     </PageLayout>
   )
 }

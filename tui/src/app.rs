@@ -7,10 +7,10 @@ use ratatui::DefaultTerminal;
 use std::time::{Duration, Instant};
 
 use machina_core::{
-    format_user_error, AppState, AssociateFloatingIpRequest, ConfirmationDialog, CreateInstanceRequest,
-    CreateNetworkRequest, Focus, InputMode, NotifyLevel, ObjectTab, OpenStackCreateStep,
-    OpenStackCreateWizard, ResourceView, SidebarCategory, SidebarItem, SortColumn, SortDirection,
-    ViewMode,
+    format_user_error, AppState, AssociateFloatingIpRequest, ConfirmationDialog,
+    CreateInstanceRequest, CreateNetworkRequest, Focus, InputMode, NotifyLevel, ObjectTab,
+    OpenStackCreateStep, OpenStackCreateWizard, ResourceView, SidebarCategory, SidebarItem,
+    SortColumn, SortDirection, ViewMode,
 };
 
 use crate::api::DaemonClient;
@@ -331,7 +331,11 @@ impl App {
             KeyCode::Backspace => self.exit_volume_browser(),
 
             KeyCode::Char('l') => {
-                if let Some(id) = self.state.effective_openstack_instance_id().map(|s| s.to_string()) {
+                if let Some(id) = self
+                    .state
+                    .effective_openstack_instance_id()
+                    .map(|s| s.to_string())
+                {
                     match self.client.openstack_console_output(&id, Some(80)).await {
                         Ok(out) => {
                             self.state.log_content = format!("OpenStack console — {id}\n\n{out}");
@@ -342,7 +346,9 @@ impl App {
                         }
                         Err(e) => self.state.status_message = status_err("openstack console", &e),
                     }
-                } else if let Some(SidebarItem::Vm(name)) = self.state.selected_sidebar_item().cloned() {
+                } else if let Some(SidebarItem::Vm(name)) =
+                    self.state.selected_sidebar_item().cloned()
+                {
                     self.show_vm_logs_by_name(&name).await;
                 }
             }
@@ -453,7 +459,8 @@ impl App {
                 Some(SidebarItem::OpenStackInstance(id)) => {
                     self.load_openstack_instance_detail(&id).await;
                 }
-                Some(SidebarItem::OpenStackImages) | Some(SidebarItem::Category(SidebarCategory::OpenStack)) => {}
+                Some(SidebarItem::OpenStackImages)
+                | Some(SidebarItem::Category(SidebarCategory::OpenStack)) => {}
                 _ => {}
             },
 
@@ -524,7 +531,11 @@ impl App {
                 }
             }
             KeyCode::Char('l') => {
-                if let Some(id) = self.state.effective_openstack_instance_id().map(|s| s.to_string()) {
+                if let Some(id) = self
+                    .state
+                    .effective_openstack_instance_id()
+                    .map(|s| s.to_string())
+                {
                     match self.client.openstack_console_output(&id, Some(80)).await {
                         Ok(out) => {
                             self.state.log_content = format!("OpenStack console — {id}\n\n{out}");
@@ -668,7 +679,9 @@ impl App {
                 }
             }
         }
-        if let Some(SidebarItem::OpenStackInstance(id)) = self.state.selected_sidebar_item().cloned() {
+        if let Some(SidebarItem::OpenStackInstance(id)) =
+            self.state.selected_sidebar_item().cloned()
+        {
             self.load_openstack_instance_detail(&id).await;
         } else {
             self.state.openstack_instance_detail = None;
@@ -687,7 +700,8 @@ impl App {
     async fn start_openstack_create_wizard(&mut self) {
         if !self.state.openstack_configured() {
             self.state.status_message =
-                "OpenStack not configured — add [openstack] in /etc/machina/config.toml".to_string();
+                "OpenStack not configured — add [openstack] in /etc/machina/config.toml"
+                    .to_string();
             return;
         }
         self.state.status_message = "Loading OpenStack catalogs…".to_string();
@@ -777,13 +791,16 @@ impl App {
                 wizard.step = OpenStackCreateStep::Flavor;
                 wizard.list_cursor = wizard.flavor_idx;
                 self.state.input_mode = InputMode::Normal;
-                self.state.status_message =
-                    "Pick flavor (j/k Enter) — Esc cancel".to_string();
+                self.state.status_message = "Pick flavor (j/k Enter) — Esc cancel".to_string();
             }
             KeyCode::Backspace => {
                 wizard.name.pop();
             }
-            KeyCode::Char(c) if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) => {
+            KeyCode::Char(c)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
                 wizard.name.push(c);
             }
             _ => {}
@@ -898,7 +915,10 @@ impl App {
                 return;
             }
             KeyCode::Char('-') | KeyCode::Char('n')
-                if matches!(wizard.step, OpenStackCreateStep::Image | OpenStackCreateStep::Keypair) =>
+                if matches!(
+                    wizard.step,
+                    OpenStackCreateStep::Image | OpenStackCreateStep::Keypair
+                ) =>
             {
                 match wizard.step {
                     OpenStackCreateStep::Image => wizard.image_idx = None,
@@ -934,8 +954,7 @@ impl App {
                                 .to_string();
                         return;
                     }
-                    wizard.network_idx =
-                        Some(wizard.list_cursor.min(wizard.networks.len() - 1));
+                    wizard.network_idx = Some(wizard.list_cursor.min(wizard.networks.len() - 1));
                     let step = Self::wizard_advance_step(wizard);
                     self.state.status_message = wizard_step_hint(step);
                 }
@@ -1587,7 +1606,9 @@ impl App {
                 self.state.scroll_offset = 0;
                 self.state.view_mode = ViewMode::Xml;
             }
-            Err(e) => self.state.status_message = status_err(&format!("Error fetching {kind} XML"), &e),
+            Err(e) => {
+                self.state.status_message = status_err(&format!("Error fetching {kind} XML"), &e)
+            }
         }
     }
 
@@ -2013,20 +2034,24 @@ impl App {
                 }
                 Err(e) => self.state.status_message = status_err("openstack status", &e),
             },
-            ["openstack", "test"] | ["os", "test"] => match self.client.openstack_test_connection().await {
-                Ok(st) => {
-                    self.state.openstack_status = Some(st.clone());
-                    self.state.status_message = Self::format_openstack_status(&st);
-                    self.refresh_openstack().await;
+            ["openstack", "test"] | ["os", "test"] => {
+                match self.client.openstack_test_connection().await {
+                    Ok(st) => {
+                        self.state.openstack_status = Some(st.clone());
+                        self.state.status_message = Self::format_openstack_status(&st);
+                        self.refresh_openstack().await;
+                    }
+                    Err(e) => self.state.status_message = status_err("openstack test", &e),
                 }
-                Err(e) => self.state.status_message = status_err("openstack test", &e),
-            },
+            }
             ["openstack", "list"] | ["os", "list"] => {
                 self.refresh_openstack().await;
-                self.state.status_message =
-                    format!("OpenStack: {} instance(s)", self.state.openstack_instances.len());
+                self.state.status_message = format!(
+                    "OpenStack: {} instance(s)",
+                    self.state.openstack_instances.len()
+                );
                 self.navigate_to_category(SidebarCategory::OpenStack);
-            },
+            }
             ["openstack", "images"] | ["os", "images"] => {
                 self.refresh_openstack().await;
                 self.navigate_to_category(SidebarCategory::OpenStack);
@@ -2039,30 +2064,33 @@ impl App {
                     self.state.sidebar_selected = pos;
                     self.on_sidebar_selection_changed().await;
                 }
-            },
+            }
             ["openstack", "flavors"] | ["os", "flavors"] => {
                 match self.client.openstack_list_json("flavors").await {
                     Ok(v) => self.show_json_overlay("OpenStack flavors", &v),
                     Err(e) => self.state.status_message = status_err("openstack flavors", &e),
                 }
-            },
+            }
             ["openstack", "networks"] | ["os", "networks"] => {
                 match self.client.openstack_list_json("networks").await {
                     Ok(v) => self.show_json_overlay("OpenStack networks", &v),
                     Err(e) => self.state.status_message = status_err("openstack networks", &e),
                 }
-            },
+            }
             ["openstack", "keypairs"] | ["os", "keypairs"] => {
                 match self.client.openstack_list_json("keypairs").await {
                     Ok(v) => self.show_json_overlay("OpenStack keypairs", &v),
                     Err(e) => self.state.status_message = status_err("openstack keypairs", &e),
                 }
-            },
+            }
             ["openstack", "get", id] | ["os", "get", id] => {
                 self.load_openstack_instance_detail(id).await;
                 self.state.status_message = format!("Loaded OpenStack instance {id}");
-            },
-            ["openstack", "create"] | ["os", "create"] | ["openstack", "wizard"] | ["os", "wizard"] => {
+            }
+            ["openstack", "create"]
+            | ["os", "create"]
+            | ["openstack", "wizard"]
+            | ["os", "wizard"] => {
                 self.start_openstack_create_wizard().await;
             }
             ["openstack", "create", name, flavor] => {
@@ -2089,7 +2117,7 @@ impl App {
                     }
                     Err(e) => self.state.status_message = status_err("openstack create", &e),
                 }
-            },
+            }
             ["openstack", "create", name, flavor, image] => {
                 let req = CreateInstanceRequest {
                     name: name.to_string(),
@@ -2114,42 +2142,72 @@ impl App {
                     }
                     Err(e) => self.state.status_message = status_err("openstack create", &e),
                 }
-            },
+            }
             ["openstack", "start", id] | ["os", "start", id] => {
                 let r = self.client.openstack_instance_action(id, "start").await;
-                self.report_cmd_result(r, &format!("Started OpenStack instance {id}"), "openstack-start", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Started OpenStack instance {id}"),
+                    "openstack-start",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
             }
             ["openstack", "stop", id] | ["os", "stop", id] => {
                 let r = self.client.openstack_instance_action(id, "stop").await;
-                self.report_cmd_result(r, &format!("Stopped OpenStack instance {id}"), "openstack-stop", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Stopped OpenStack instance {id}"),
+                    "openstack-stop",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
             }
             ["openstack", "reboot", id] | ["os", "reboot", id] => {
                 let r = self.client.openstack_reboot_instance(id, false).await;
-                self.report_cmd_result(r, &format!("Rebooted OpenStack instance {id}"), "openstack-reboot", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Rebooted OpenStack instance {id}"),
+                    "openstack-reboot",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
             }
             ["openstack", "pause", id] => {
                 let r = self.client.openstack_instance_action(id, "pause").await;
-                self.report_cmd_result(r, &format!("Paused {id}"), "openstack-pause", id, false).await;
+                self.report_cmd_result(r, &format!("Paused {id}"), "openstack-pause", id, false)
+                    .await;
                 self.refresh_openstack().await;
             }
             ["openstack", "unpause", id] | ["openstack", "resume", id] => {
                 let r = self.client.openstack_instance_action(id, "unpause").await;
-                self.report_cmd_result(r, &format!("Resumed {id}"), "openstack-resume", id, false).await;
+                self.report_cmd_result(r, &format!("Resumed {id}"), "openstack-resume", id, false)
+                    .await;
                 self.refresh_openstack().await;
             }
             ["openstack", "suspend", id] => {
                 let r = self.client.openstack_instance_action(id, "suspend").await;
-                self.report_cmd_result(r, &format!("Suspended {id}"), "openstack-suspend", id, false).await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Suspended {id}"),
+                    "openstack-suspend",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
             }
             ["openstack", "snapshot", id, image_name] => {
-                let r = self.client.openstack_snapshot_instance(id, image_name).await;
+                let r = self
+                    .client
+                    .openstack_snapshot_instance(id, image_name)
+                    .await;
                 self.report_cmd_result(
                     r,
                     &format!("Snapshot {id} → {image_name}"),
@@ -2174,41 +2232,74 @@ impl App {
             }
             ["openstack", "confirm-resize", id] => {
                 let r = self.client.openstack_confirm_resize(id).await;
-                self.report_cmd_result(r, &format!("Confirmed resize {id}"), "openstack-confirm-resize", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Confirmed resize {id}"),
+                    "openstack-confirm-resize",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
             }
             ["openstack", "revert-resize", id] => {
                 let r = self.client.openstack_revert_resize(id).await;
-                self.report_cmd_result(r, &format!("Reverted resize {id}"), "openstack-revert-resize", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Reverted resize {id}"),
+                    "openstack-revert-resize",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
             }
             ["openstack", "resize", id, flavor] => {
-                let r = self.client.openstack_resize_instance(id, flavor, true).await;
-                self.report_cmd_result(r, &format!("Resize {id} → {flavor}"), "openstack-resize", id, false)
+                let r = self
+                    .client
+                    .openstack_resize_instance(id, flavor, true)
                     .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Resize {id} → {flavor}"),
+                    "openstack-resize",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
             }
-            ["openstack", "console", id] => match self.client.openstack_remote_console(id, "novnc").await {
-                Ok(c) => {
-                    self.state.log_content =
-                        format!("OpenStack noVNC console — {id}\n\nURL:\n{}\n", c.url);
-                    self.state.content_overlay_caption =
-                        " OpenStack console URL (j/k:scroll  Esc:close) ".to_string();
-                    self.state.scroll_offset = 0;
-                    self.state.view_mode = ViewMode::Logs;
+            ["openstack", "console", id] => {
+                match self.client.openstack_remote_console(id, "novnc").await {
+                    Ok(c) => {
+                        self.state.log_content =
+                            format!("OpenStack noVNC console — {id}\n\nURL:\n{}\n", c.url);
+                        self.state.content_overlay_caption =
+                            " OpenStack console URL (j/k:scroll  Esc:close) ".to_string();
+                        self.state.scroll_offset = 0;
+                        self.state.view_mode = ViewMode::Logs;
+                    }
+                    Err(e) => self.state.status_message = status_err("openstack console", &e),
                 }
-                Err(e) => self.state.status_message = status_err("openstack console", &e),
-            },
-            ["openstack", "export", id] => match self.client.openstack_export_instance(id, &serde_json::json!({})).await {
+            }
+            ["openstack", "export", id] => match self
+                .client
+                .openstack_export_instance(id, &serde_json::json!({}))
+                .await
+            {
                 Ok(v) => self.show_json_overlay("OpenStack export plan", &v),
                 Err(e) => self.state.status_message = status_err("openstack export", &e),
             },
             ["openstack", "image-delete", id] | ["openstack", "delete-image", id] => {
                 let r = self.client.openstack_delete_image(id).await;
-                self.report_cmd_result(r, &format!("Deleted Glance image {id}"), "openstack-image-delete", id, true)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Deleted Glance image {id}"),
+                    "openstack-image-delete",
+                    id,
+                    true,
+                )
+                .await;
                 self.refresh_openstack().await;
             }
             ["openstack", "delete", id] | ["os", "delete", id] => {
@@ -2226,21 +2317,30 @@ impl App {
             ["openstack", "nav"] | ["os", "nav"] => {
                 self.navigate_to_category(SidebarCategory::OpenStack);
             }
-            ["openstack", "volumes"] | ["os", "volumes"] => match self.client.openstack_list_cinder_volumes().await {
-                Ok(vols) => {
-                    self.state.openstack_cinder_volumes = vols.clone();
-                    self.state.status_message =
-                        format!("Cinder: {} volume(s) — :openstack volumes-json for list", vols.len());
+            ["openstack", "volumes"] | ["os", "volumes"] => {
+                match self.client.openstack_list_cinder_volumes().await {
+                    Ok(vols) => {
+                        self.state.openstack_cinder_volumes = vols.clone();
+                        self.state.status_message = format!(
+                            "Cinder: {} volume(s) — :openstack volumes-json for list",
+                            vols.len()
+                        );
+                    }
+                    Err(e) => self.state.status_message = status_err("openstack volumes", &e),
                 }
-                Err(e) => self.state.status_message = status_err("openstack volumes", &e),
-            },
-            ["openstack", "volumes-json"] => match self.client.openstack_list_cinder_volumes().await {
-                Ok(vols) => {
-                    self.state.openstack_cinder_volumes = vols.clone();
-                    self.show_json_overlay("Cinder volumes", &serde_json::json!({ "volumes": vols }));
+            }
+            ["openstack", "volumes-json"] => {
+                match self.client.openstack_list_cinder_volumes().await {
+                    Ok(vols) => {
+                        self.state.openstack_cinder_volumes = vols.clone();
+                        self.show_json_overlay(
+                            "Cinder volumes",
+                            &serde_json::json!({ "volumes": vols }),
+                        );
+                    }
+                    Err(e) => self.state.status_message = status_err("openstack volumes", &e),
                 }
-                Err(e) => self.state.status_message = status_err("openstack volumes", &e),
-            },
+            }
             ["openstack", "instance-volumes", id] | ["os", "instance-volumes", id] => {
                 match self.client.openstack_list_instance_volumes(id).await {
                     Ok(vols) => {
@@ -2250,25 +2350,44 @@ impl App {
                             &serde_json::json!({ "volumes": vols }),
                         );
                     }
-                    Err(e) => self.state.status_message = status_err("openstack instance-volumes", &e),
+                    Err(e) => {
+                        self.state.status_message = status_err("openstack instance-volumes", &e)
+                    }
                 }
-            },
+            }
             ["openstack", "attach", inst, vol] => {
                 let r = self.client.openstack_attach_volume(inst, vol).await;
-                self.report_cmd_result(r, &format!("Attached {vol} → {inst}"), "openstack-attach", inst, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Attached {vol} → {inst}"),
+                    "openstack-attach",
+                    inst,
+                    false,
+                )
+                .await;
                 self.load_openstack_instance_detail(inst).await;
-            },
+            }
             ["openstack", "detach", inst, vol] => {
                 let r = self.client.openstack_detach_volume(inst, vol).await;
-                self.report_cmd_result(r, &format!("Detached {vol} from {inst}"), "openstack-detach", inst, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Detached {vol} from {inst}"),
+                    "openstack-detach",
+                    inst,
+                    false,
+                )
+                .await;
                 self.load_openstack_instance_detail(inst).await;
-            },
-            ["openstack", "fips"] | ["os", "fips"] => match self.client.openstack_list_floating_ips().await {
-                Ok(fips) => self.show_json_overlay("Floating IPs", &serde_json::json!({ "floating_ips": fips })),
-                Err(e) => self.state.status_message = status_err("openstack fips", &e),
-            },
+            }
+            ["openstack", "fips"] | ["os", "fips"] => {
+                match self.client.openstack_list_floating_ips().await {
+                    Ok(fips) => self.show_json_overlay(
+                        "Floating IPs",
+                        &serde_json::json!({ "floating_ips": fips }),
+                    ),
+                    Err(e) => self.state.status_message = status_err("openstack fips", &e),
+                }
+            }
             ["openstack", "instance-fips", id] => {
                 match self.client.openstack_list_instance_floating_ips(id).await {
                     Ok(fips) => {
@@ -2280,23 +2399,35 @@ impl App {
                     }
                     Err(e) => self.state.status_message = status_err("openstack instance-fips", &e),
                 }
-            },
+            }
             ["openstack", "fip-associate", inst, fip_id] => {
                 let body = AssociateFloatingIpRequest {
                     floating_ip_id: Some(fip_id.to_string()),
                     floating_network: None,
                 };
-                let r = self.client.openstack_associate_floating_ip(inst, &body).await;
-                self.report_cmd_result(r, &format!("Associated FIP {fip_id} → {inst}"), "openstack-fip", inst, false)
+                let r = self
+                    .client
+                    .openstack_associate_floating_ip(inst, &body)
                     .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Associated FIP {fip_id} → {inst}"),
+                    "openstack-fip",
+                    inst,
+                    false,
+                )
+                .await;
                 self.load_openstack_instance_detail(inst).await;
-            },
+            }
             ["openstack", "fip-new", inst, network_id] => {
                 let body = AssociateFloatingIpRequest {
                     floating_ip_id: None,
                     floating_network: Some(network_id.to_string()),
                 };
-                let r = self.client.openstack_associate_floating_ip(inst, &body).await;
+                let r = self
+                    .client
+                    .openstack_associate_floating_ip(inst, &body)
+                    .await;
                 self.report_cmd_result(
                     r,
                     &format!("Allocated FIP on network {network_id} → {inst}"),
@@ -2306,12 +2437,18 @@ impl App {
                 )
                 .await;
                 self.load_openstack_instance_detail(inst).await;
-            },
+            }
             ["openstack", "fip-dissociate", fip_id] => {
                 let r = self.client.openstack_dissociate_floating_ip(fip_id).await;
-                self.report_cmd_result(r, &format!("Dissociated FIP {fip_id}"), "openstack-fip-dissoc", fip_id, false)
-                    .await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Dissociated FIP {fip_id}"),
+                    "openstack-fip-dissoc",
+                    fip_id,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "fip-allocate", net] | ["os", "fip-allocate", net] => {
                 match self.client.openstack_allocate_floating_ip(net).await {
                     Ok(fip) => {
@@ -2320,64 +2457,92 @@ impl App {
                     }
                     Err(e) => self.state.status_message = status_err("openstack fip-allocate", &e),
                 }
-            },
+            }
             ["openstack", "fip-release", fip_id] | ["os", "fip-release", fip_id] => {
                 let r = self.client.openstack_delete_floating_ip(fip_id).await;
-                self.report_cmd_result(r, &format!("Released FIP {fip_id}"), "openstack-fip-release", fip_id, true)
-                    .await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Released FIP {fip_id}"),
+                    "openstack-fip-release",
+                    fip_id,
+                    true,
+                )
+                .await;
+            }
             ["openstack", "port-delete", port_id] => {
                 let r = self.client.openstack_delete_port(port_id).await;
-                self.report_cmd_result(r, &format!("Deleted port {port_id}"), "openstack-port-delete", port_id, true)
-                    .await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Deleted port {port_id}"),
+                    "openstack-port-delete",
+                    port_id,
+                    true,
+                )
+                .await;
+            }
             ["openstack", "az"] | ["os", "az"] => {
                 match self.client.openstack_list_json("availability-zones").await {
                     Ok(v) => self.show_json_overlay("Availability zones", &v),
                     Err(e) => self.state.status_message = status_err("openstack az", &e),
                 }
-            },
+            }
             ["openstack", "hypervisors"] | ["os", "hypervisors"] => {
                 match self.client.openstack_list_json("hypervisors").await {
                     Ok(v) => self.show_json_overlay("Hypervisors", &v),
                     Err(e) => self.state.status_message = status_err("openstack hypervisors", &e),
                 }
-            },
+            }
             ["openstack", "aggregates"] | ["os", "aggregates"] => {
                 match self.client.openstack_list_json("aggregates").await {
                     Ok(v) => self.show_json_overlay("Host aggregates", &v),
                     Err(e) => self.state.status_message = status_err("openstack aggregates", &e),
                 }
-            },
+            }
             ["openstack", "compute-services"] | ["os", "compute-services"] => {
                 match self.client.openstack_list_json("compute-services").await {
                     Ok(v) => self.show_json_overlay("Compute services", &v),
-                    Err(e) => self.state.status_message = status_err("openstack compute-services", &e),
+                    Err(e) => {
+                        self.state.status_message = status_err("openstack compute-services", &e)
+                    }
                 }
-            },
+            }
             ["openstack", "neutron-agents"] | ["os", "neutron-agents"] => {
                 match self.client.openstack_list_json("neutron-agents").await {
                     Ok(v) => self.show_json_overlay("Neutron agents", &v),
-                    Err(e) => self.state.status_message = status_err("openstack neutron-agents", &e),
+                    Err(e) => {
+                        self.state.status_message = status_err("openstack neutron-agents", &e)
+                    }
                 }
-            },
+            }
             ["openstack", "server-groups"] | ["os", "server-groups"] => {
                 match self.client.openstack_list_json("server-groups").await {
                     Ok(v) => self.show_json_overlay("Server groups", &v),
                     Err(e) => self.state.status_message = status_err("openstack server-groups", &e),
                 }
-            },
+            }
             ["openstack", "force-delete", id] | ["os", "force-delete", id] => {
                 let r = self.client.openstack_force_delete_instance(id).await;
-                self.report_cmd_result(r, &format!("Force-deleted {id}"), "openstack-force-delete", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Force-deleted {id}"),
+                    "openstack-force-delete",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "sg-delete", id] | ["os", "sg-delete", id] => {
                 let r = self.client.openstack_delete_server_group(id).await;
-                self.report_cmd_result(r, &format!("Deleted server group {id}"), "openstack-sg-delete", id, true)
-                    .await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Deleted server group {id}"),
+                    "openstack-sg-delete",
+                    id,
+                    true,
+                )
+                .await;
+            }
             ["openstack", "vol-from-image", image_id, name] => {
                 let r = self
                     .client
@@ -2391,99 +2556,155 @@ impl App {
                     false,
                 )
                 .await;
-            },
+            }
             ["openstack", "clouds"] | ["os", "clouds"] => {
                 match self.client.openstack_list_json("clouds").await {
                     Ok(v) => self.show_json_overlay("Clouds", &v),
                     Err(e) => self.state.status_message = status_err("openstack clouds", &e),
                 }
-            },
+            }
             ["openstack", "cloud", name] | ["os", "cloud", name] => {
                 let r = self.client.openstack_select_cloud(name).await;
-                self.report_cmd_result(r, &format!("Switched to cloud {name}"), "openstack-cloud", name, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Switched to cloud {name}"),
+                    "openstack-cloud",
+                    name,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "volume", id] | ["os", "volume", id] => {
-                match self.client.openstack_get_json(&format!("volumes/{id}")).await {
+                match self
+                    .client
+                    .openstack_get_json(&format!("volumes/{id}"))
+                    .await
+                {
                     Ok(v) => self.show_json_overlay(&format!("Volume {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack volume", &e),
                 }
-            },
+            }
             ["openstack", "image", id] | ["os", "image", id] => {
-                match self.client.openstack_get_json(&format!("images/{id}")).await {
+                match self
+                    .client
+                    .openstack_get_json(&format!("images/{id}"))
+                    .await
+                {
                     Ok(v) => self.show_json_overlay(&format!("Image {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack image", &e),
                 }
-            },
+            }
             ["openstack", "fip", id] | ["os", "fip", id] => {
-                match self.client.openstack_get_json(&format!("floating-ips/{id}")).await {
+                match self
+                    .client
+                    .openstack_get_json(&format!("floating-ips/{id}"))
+                    .await
+                {
                     Ok(v) => self.show_json_overlay(&format!("FIP {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack fip", &e),
                 }
-            },
+            }
             ["openstack", "snapshot", id] | ["os", "snapshot", id] => {
-                match self.client.openstack_get_json(&format!("volume-snapshots/{id}")).await {
+                match self
+                    .client
+                    .openstack_get_json(&format!("volume-snapshots/{id}"))
+                    .await
+                {
                     Ok(v) => self.show_json_overlay(&format!("Snapshot {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack snapshot", &e),
                 }
-            },
+            }
             ["openstack", "hypervisor", id] | ["os", "hypervisor", id] => {
-                match self.client.openstack_get_json(&format!("hypervisors/{id}")).await {
+                match self
+                    .client
+                    .openstack_get_json(&format!("hypervisors/{id}"))
+                    .await
+                {
                     Ok(v) => self.show_json_overlay(&format!("Hypervisor {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack hypervisor", &e),
                 }
-            },
+            }
             ["openstack", "network", id] | ["os", "network", id] => {
-                match self.client.openstack_get_json(&format!("networks/{id}")).await {
+                match self
+                    .client
+                    .openstack_get_json(&format!("networks/{id}"))
+                    .await
+                {
                     Ok(v) => self.show_json_overlay(&format!("Network {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack network", &e),
                 }
-            },
+            }
             ["openstack", "subnet", id] | ["os", "subnet", id] => {
-                match self.client.openstack_get_json(&format!("subnets/{id}")).await {
+                match self
+                    .client
+                    .openstack_get_json(&format!("subnets/{id}"))
+                    .await
+                {
                     Ok(v) => self.show_json_overlay(&format!("Subnet {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack subnet", &e),
                 }
-            },
+            }
             ["openstack", "router", id] | ["os", "router", id] => {
-                match self.client.openstack_get_json(&format!("routers/{id}")).await {
+                match self
+                    .client
+                    .openstack_get_json(&format!("routers/{id}"))
+                    .await
+                {
                     Ok(v) => self.show_json_overlay(&format!("Router {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack router", &e),
                 }
-            },
+            }
             ["openstack", "port", id] | ["os", "port", id] => {
                 match self.client.openstack_get_json(&format!("ports/{id}")).await {
                     Ok(v) => self.show_json_overlay(&format!("Port {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack port", &e),
                 }
-            },
+            }
             ["openstack", "server-group", id] | ["os", "server-group", id] => {
-                match self.client.openstack_get_json(&format!("server-groups/{id}")).await {
+                match self
+                    .client
+                    .openstack_get_json(&format!("server-groups/{id}"))
+                    .await
+                {
                     Ok(v) => self.show_json_overlay(&format!("Server group {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack server-group", &e),
                 }
-            },
+            }
             ["openstack", "rename", id, name] => {
                 let r = self.client.openstack_rename_instance(id, name).await;
-                self.report_cmd_result(r, &format!("Renamed {id} → {name}"), "openstack-rename", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Renamed {id} → {name}"),
+                    "openstack-rename",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "lock", id] => {
                 let r = self.client.openstack_lock_instance(id).await;
-                self.report_cmd_result(r, &format!("Locked {id}"), "openstack-lock", id, false).await;
-            },
+                self.report_cmd_result(r, &format!("Locked {id}"), "openstack-lock", id, false)
+                    .await;
+            }
             ["openstack", "unlock", id] => {
                 let r = self.client.openstack_unlock_instance(id).await;
-                self.report_cmd_result(r, &format!("Unlocked {id}"), "openstack-unlock", id, false).await;
-            },
+                self.report_cmd_result(r, &format!("Unlocked {id}"), "openstack-unlock", id, false)
+                    .await;
+            }
             ["openstack", "sg-add", inst, sg] => {
                 let r = self.client.openstack_add_security_group(inst, sg).await;
-                self.report_cmd_result(r, &format!("Added SG {sg} → {inst}"), "openstack-sg-add", inst, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Added SG {sg} → {inst}"),
+                    "openstack-sg-add",
+                    inst,
+                    false,
+                )
+                .await;
                 self.load_openstack_instance_detail(inst).await;
-            },
+            }
             ["openstack", "sg-remove", inst, sg] => {
                 let r = self.client.openstack_remove_security_group(inst, sg).await;
                 self.report_cmd_result(
@@ -2495,76 +2716,133 @@ impl App {
                 )
                 .await;
                 self.load_openstack_instance_detail(inst).await;
-            },
+            }
             ["openstack", "reboot-soft", id] | ["os", "reboot-soft", id] => {
                 let r = self.client.openstack_reboot_instance(id, true).await;
-                self.report_cmd_result(r, &format!("Soft-rebooted {id}"), "openstack-reboot-soft", id, false)
-                    .await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Soft-rebooted {id}"),
+                    "openstack-reboot-soft",
+                    id,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "migrate", id] | ["os", "migrate", id] => {
-                let r = self.client.openstack_migrate_instance(id, false, None).await;
-                self.report_cmd_result(r, &format!("Migrated {id}"), "openstack-migrate", id, false)
+                let r = self
+                    .client
+                    .openstack_migrate_instance(id, false, None)
                     .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Migrated {id}"),
+                    "openstack-migrate",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "migrate-live", id] | ["os", "migrate-live", id] => {
                 let r = self.client.openstack_migrate_instance(id, true, None).await;
-                self.report_cmd_result(r, &format!("Live-migrated {id}"), "openstack-migrate-live", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Live-migrated {id}"),
+                    "openstack-migrate-live",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "backup", id, name] | ["os", "backup", id, name] => {
                 let r = self.client.openstack_backup_instance(id, name).await;
-                self.report_cmd_result(r, &format!("Backup {id} → {name}"), "openstack-backup", id, false)
-                    .await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Backup {id} → {name}"),
+                    "openstack-backup",
+                    id,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "rebuild", id, image] | ["os", "rebuild", id, image] => {
                 let r = self.client.openstack_rebuild_instance(id, image).await;
-                self.report_cmd_result(r, &format!("Rebuild {id} from {image}"), "openstack-rebuild", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Rebuild {id} from {image}"),
+                    "openstack-rebuild",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "shelve", id] | ["os", "shelve", id] => {
                 let r = self.client.openstack_shelve_instance(id).await;
                 self.report_cmd_result(r, &format!("Shelved {id}"), "openstack-shelve", id, false)
                     .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "unshelve", id] | ["os", "unshelve", id] => {
                 let r = self.client.openstack_unshelve_instance(id).await;
-                self.report_cmd_result(r, &format!("Unshelved {id}"), "openstack-unshelve", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Unshelved {id}"),
+                    "openstack-unshelve",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "rescue", id] => {
                 let r = self.client.openstack_rescue_instance(id, None).await;
                 self.report_cmd_result(r, &format!("Rescue {id}"), "openstack-rescue", id, false)
                     .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "rescue", id, image] => {
                 let r = self.client.openstack_rescue_instance(id, Some(image)).await;
-                self.report_cmd_result(r, &format!("Rescue {id} with {image}"), "openstack-rescue", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Rescue {id} with {image}"),
+                    "openstack-rescue",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "unrescue", id] | ["os", "unrescue", id] => {
                 let r = self.client.openstack_unrescue_instance(id).await;
-                self.report_cmd_result(r, &format!("Unrescued {id}"), "openstack-unrescue", id, false)
-                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Unrescued {id}"),
+                    "openstack-unrescue",
+                    id,
+                    false,
+                )
+                .await;
                 self.refresh_openstack().await;
-            },
+            }
             ["openstack", "interfaces", id] | ["os", "interfaces", id] => {
                 match self.client.openstack_list_instance_interfaces(id).await {
                     Ok(v) => self.show_json_overlay(&format!("Interfaces on {id}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack interfaces", &e),
                 }
-            },
+            }
             ["openstack", "interface-attach", id, net] | ["os", "interface-attach", id, net] => {
                 let r = self.client.openstack_attach_interface(id, net).await;
-                self.report_cmd_result(r, &format!("Attached {net} → {id}"), "openstack-if-attach", id, false)
-                    .await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Attached {net} → {id}"),
+                    "openstack-if-attach",
+                    id,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "interface-detach", id, port] | ["os", "interface-detach", id, port] => {
                 let r = self.client.openstack_detach_interface(id, port).await;
                 self.report_cmd_result(
@@ -2575,8 +2853,9 @@ impl App {
                     false,
                 )
                 .await;
-            },
-            ["openstack", "vol-upload-image", vol, name] | ["os", "vol-upload-image", vol, name] => {
+            }
+            ["openstack", "vol-upload-image", vol, name]
+            | ["os", "vol-upload-image", vol, name] => {
                 let r = self.client.openstack_upload_volume_image(vol, name).await;
                 self.report_cmd_result(
                     r,
@@ -2586,8 +2865,9 @@ impl App {
                     false,
                 )
                 .await;
-            },
-            ["openstack", "subnet-update", id, field, value] | ["os", "subnet-update", id, field, value] => {
+            }
+            ["openstack", "subnet-update", id, field, value]
+            | ["os", "subnet-update", id, field, value] => {
                 let r = self.client.openstack_update_subnet(id, field, value).await;
                 self.report_cmd_result(
                     r,
@@ -2597,8 +2877,9 @@ impl App {
                     false,
                 )
                 .await;
-            },
-            ["openstack", "port-update", id, field, value] | ["os", "port-update", id, field, value] => {
+            }
+            ["openstack", "port-update", id, field, value]
+            | ["os", "port-update", id, field, value] => {
                 let r = self.client.openstack_update_port(id, field, value).await;
                 self.report_cmd_result(
                     r,
@@ -2608,22 +2889,44 @@ impl App {
                     false,
                 )
                 .await;
-            },
-            ["openstack", "flavor-create", name, vcpus, ram, disk] | ["os", "flavor-create", name, vcpus, ram, disk] => {
-                let r = self.client.openstack_create_flavor(
+            }
+            ["openstack", "flavor-create", name, vcpus, ram, disk]
+            | ["os", "flavor-create", name, vcpus, ram, disk] => {
+                let r = self
+                    .client
+                    .openstack_create_flavor(
+                        name,
+                        vcpus.parse().unwrap_or(1),
+                        ram.parse().unwrap_or(2048),
+                        disk.parse().unwrap_or(20),
+                    )
+                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Created flavor {name}"),
+                    "openstack-flavor-create",
                     name,
-                    vcpus.parse().unwrap_or(1),
-                    ram.parse().unwrap_or(2048),
-                    disk.parse().unwrap_or(20),
-                ).await;
-                self.report_cmd_result(r, &format!("Created flavor {name}"), "openstack-flavor-create", name, false).await;
-            },
+                    false,
+                )
+                .await;
+            }
             ["openstack", "flavor-delete", id] | ["os", "flavor-delete", id] => {
                 let r = self.client.openstack_delete_flavor(id).await;
-                self.report_cmd_result(r, &format!("Deleted flavor {id}"), "openstack-flavor-delete", id, false).await;
-            },
-            ["openstack", "quota-set", service, key, limit] | ["os", "quota-set", service, key, limit] => {
-                let r = self.client.openstack_update_quotas(service, key, limit.parse().unwrap_or(-1)).await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Deleted flavor {id}"),
+                    "openstack-flavor-delete",
+                    id,
+                    false,
+                )
+                .await;
+            }
+            ["openstack", "quota-set", service, key, limit]
+            | ["os", "quota-set", service, key, limit] => {
+                let r = self
+                    .client
+                    .openstack_update_quotas(service, key, limit.parse().unwrap_or(-1))
+                    .await;
                 self.report_cmd_result(
                     r,
                     &format!("Quota {service}.{key}={limit}"),
@@ -2632,81 +2935,155 @@ impl App {
                     false,
                 )
                 .await;
-            },
+            }
             ["openstack", "svc-enable", binary, host] | ["os", "svc-enable", binary, host] => {
-                let r = self.client.openstack_set_compute_service(binary, host, true).await;
-                self.report_cmd_result(r, &format!("Enabled {binary}@{host}"), "openstack-svc-enable", host, false).await;
-            },
+                let r = self
+                    .client
+                    .openstack_set_compute_service(binary, host, true)
+                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Enabled {binary}@{host}"),
+                    "openstack-svc-enable",
+                    host,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "svc-disable", binary, host] | ["os", "svc-disable", binary, host] => {
-                let r = self.client.openstack_set_compute_service(binary, host, false).await;
-                self.report_cmd_result(r, &format!("Disabled {binary}@{host}"), "openstack-svc-disable", host, false).await;
-            },
+                let r = self
+                    .client
+                    .openstack_set_compute_service(binary, host, false)
+                    .await;
+                self.report_cmd_result(
+                    r,
+                    &format!("Disabled {binary}@{host}"),
+                    "openstack-svc-disable",
+                    host,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "agent-admin", id, state] | ["os", "agent-admin", id, state] => {
-                let up = matches!(state.to_lowercase().as_str(), "up" | "1" | "true" | "on" | "yes");
+                let up = matches!(
+                    state.to_lowercase().as_str(),
+                    "up" | "1" | "true" | "on" | "yes"
+                );
                 let r = self.client.openstack_set_agent_admin(id, up).await;
-                self.report_cmd_result(r, &format!("Agent {id} admin={state}"), "openstack-agent-admin", id, false).await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Agent {id} admin={state}"),
+                    "openstack-agent-admin",
+                    id,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "hv-maintenance", id, state] | ["os", "hv-maintenance", id, state] => {
                 let on = matches!(state.to_lowercase().as_str(), "on" | "1" | "true" | "yes");
                 let r = self.client.openstack_set_hv_maintenance(id, on).await;
-                self.report_cmd_result(r, &format!("Hypervisor {id} maintenance={state}"), "openstack-hv-maint", id, false).await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Hypervisor {id} maintenance={state}"),
+                    "openstack-hv-maint",
+                    id,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "aggregate-create", name] | ["os", "aggregate-create", name] => {
                 let r = self.client.openstack_create_aggregate(name, None).await;
-                self.report_cmd_result(r, &format!("Created aggregate {name}"), "openstack-agg-create", name, false).await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Created aggregate {name}"),
+                    "openstack-agg-create",
+                    name,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "aggregate-create", name, az] | ["os", "aggregate-create", name, az] => {
                 let r = self.client.openstack_create_aggregate(name, Some(az)).await;
-                self.report_cmd_result(r, &format!("Created aggregate {name}"), "openstack-agg-create", name, false).await;
-            },
-            ["openstack", "aggregate-add-host", id, host] | ["os", "aggregate-add-host", id, host] => {
+                self.report_cmd_result(
+                    r,
+                    &format!("Created aggregate {name}"),
+                    "openstack-agg-create",
+                    name,
+                    false,
+                )
+                .await;
+            }
+            ["openstack", "aggregate-add-host", id, host]
+            | ["os", "aggregate-add-host", id, host] => {
                 let r = self.client.openstack_aggregate_add_host(id, host).await;
-                self.report_cmd_result(r, &format!("Added {host} → aggregate {id}"), "openstack-agg-add", id, false).await;
-            },
-            ["openstack", "aggregate-remove-host", id, host] | ["os", "aggregate-remove-host", id, host] => {
+                self.report_cmd_result(
+                    r,
+                    &format!("Added {host} → aggregate {id}"),
+                    "openstack-agg-add",
+                    id,
+                    false,
+                )
+                .await;
+            }
+            ["openstack", "aggregate-remove-host", id, host]
+            | ["os", "aggregate-remove-host", id, host] => {
                 let r = self.client.openstack_aggregate_remove_host(id, host).await;
-                self.report_cmd_result(r, &format!("Removed {host} from aggregate {id}"), "openstack-agg-rm", id, false).await;
-            },
+                self.report_cmd_result(
+                    r,
+                    &format!("Removed {host} from aggregate {id}"),
+                    "openstack-agg-rm",
+                    id,
+                    false,
+                )
+                .await;
+            }
             ["openstack", "heat-stacks"] | ["os", "heat-stacks"] => {
                 match self.client.openstack_api_get("heat/stacks").await {
                     Ok(v) => self.show_json_overlay("Heat stacks", &v),
                     Err(e) => self.state.status_message = status_err("openstack heat-stacks", &e),
                 }
-            },
+            }
             ["openstack", "heat-events", name, id] | ["os", "heat-events", name, id] => {
                 let path = format!("heat/stacks/{name}/{id}/events");
                 match self.client.openstack_api_get(&path).await {
                     Ok(v) => self.show_json_overlay(&format!("Heat events {name}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack heat-events", &e),
                 }
-            },
+            }
             ["openstack", "heat-resources", name, id] | ["os", "heat-resources", name, id] => {
                 let path = format!("heat/stacks/{name}/{id}/resources");
                 match self.client.openstack_api_get(&path).await {
                     Ok(v) => self.show_json_overlay(&format!("Heat resources {name}"), &v),
-                    Err(e) => self.state.status_message = status_err("openstack heat-resources", &e),
+                    Err(e) => {
+                        self.state.status_message = status_err("openstack heat-resources", &e)
+                    }
                 }
-            },
+            }
             ["openstack", "lb-listeners", lb] | ["os", "lb-listeners", lb] => {
                 let path = format!("load-balancers/{lb}/listeners");
                 match self.client.openstack_api_get(&path).await {
                     Ok(v) => self.show_json_overlay(&format!("LB listeners {lb}"), &v),
                     Err(e) => self.state.status_message = status_err("openstack lb-listeners", &e),
                 }
-            },
+            }
             ["openstack", "identity-roles"] | ["os", "identity-roles"] => {
                 match self.client.openstack_api_get("identity/roles").await {
                     Ok(v) => self.show_json_overlay("Keystone roles", &v),
-                    Err(e) => self.state.status_message = status_err("openstack identity-roles", &e),
+                    Err(e) => {
+                        self.state.status_message = status_err("openstack identity-roles", &e)
+                    }
                 }
-            },
-            ["openstack", "identity-assignments", project] | ["os", "identity-assignments", project] => {
+            }
+            ["openstack", "identity-assignments", project]
+            | ["os", "identity-assignments", project] => {
                 let path = format!("identity/role-assignments?project_id={project}");
                 match self.client.openstack_api_get(&path).await {
                     Ok(v) => self.show_json_overlay(&format!("Role assignments {project}"), &v),
-                    Err(e) => self.state.status_message = status_err("openstack identity-assignments", &e),
+                    Err(e) => {
+                        self.state.status_message = status_err("openstack identity-assignments", &e)
+                    }
                 }
-            },
+            }
             ["openstack", "create", name, flavor, image, network] => {
                 let req = CreateInstanceRequest {
                     name: name.to_string(),
@@ -2731,7 +3108,7 @@ impl App {
                     }
                     Err(e) => self.state.status_message = status_err("openstack create", &e),
                 }
-            },
+            }
             ["kubevirt-bundle", vm] => match self.client.get_kubevirt_bundle_yaml(vm).await {
                 Ok(yaml) => {
                     self.state.xml_content = yaml;
@@ -2897,7 +3274,9 @@ fn wizard_step_hint(step: OpenStackCreateStep) -> String {
         OpenStackCreateStep::Image => {
             "Pick Glance image (j/k Enter, n skip, Backspace back)".to_string()
         }
-        OpenStackCreateStep::Network => "Pick Neutron network (j/k Enter, Backspace back)".to_string(),
+        OpenStackCreateStep::Network => {
+            "Pick Neutron network (j/k Enter, Backspace back)".to_string()
+        }
         OpenStackCreateStep::Keypair => {
             "Pick SSH keypair (j/k Enter, n skip, Backspace back)".to_string()
         }

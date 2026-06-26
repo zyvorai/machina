@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct KnowledgeHit {
@@ -20,7 +20,7 @@ pub struct KnowledgeSearchResult {
     pub hits: Vec<KnowledgeHit>,
 }
 
-pub async fn search(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeSearchResult> {
+pub async fn search(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeSearchResult> {
     let q = query.trim();
     let mut hits = Vec::new();
     if q.is_empty() {
@@ -33,7 +33,7 @@ pub async fn search(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeSearc
     let pattern = format!("%{q}%");
 
     let vms: Vec<(uuid::Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, name, observed_state FROM vms WHERE name ILIKE $1 OR $2 = ANY(tags) LIMIT 12",
+        "SELECT id, name, observed_state FROM vms WHERE name LIKE ? OR EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value = ?) LIMIT 12",
     )
     .bind(&pattern)
     .bind(q)
@@ -50,12 +50,11 @@ pub async fn search(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeSearc
         });
     }
 
-    let hosts: Vec<(uuid::Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, hostname, state FROM hosts WHERE hostname ILIKE $1 LIMIT 8",
-    )
-    .bind(&pattern)
-    .fetch_all(pool)
-    .await?;
+    let hosts: Vec<(uuid::Uuid, String, String)> =
+        sqlx::query_as("SELECT id, hostname, state FROM hosts WHERE hostname LIKE ? LIMIT 8")
+            .bind(&pattern)
+            .fetch_all(pool)
+            .await?;
     for (id, name, state) in hosts {
         hits.push(KnowledgeHit {
             kind: "host".into(),
@@ -68,8 +67,9 @@ pub async fn search(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeSearc
     }
 
     let apps: Vec<(uuid::Uuid, String)> = sqlx::query_as(
-        "SELECT id, name FROM application_groups WHERE name ILIKE $1 OR description ILIKE $1 LIMIT 8",
+        "SELECT id, name FROM application_groups WHERE name LIKE ? OR description LIKE ? LIMIT 8",
     )
+    .bind(&pattern)
     .bind(&pattern)
     .fetch_all(pool)
     .await?;
@@ -85,8 +85,9 @@ pub async fn search(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeSearc
     }
 
     let tasks: Vec<(uuid::Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, operation, status FROM tasks WHERE operation ILIKE $1 OR status ILIKE $1 ORDER BY created_at DESC LIMIT 8",
+        "SELECT id, operation, status FROM tasks WHERE operation LIKE ? OR status LIKE ? ORDER BY created_at DESC LIMIT 8",
     )
+    .bind(&pattern)
     .bind(&pattern)
     .fetch_all(pool)
     .await?;
@@ -102,8 +103,9 @@ pub async fn search(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeSearc
     }
 
     let events: Vec<(String, String)> = sqlx::query_as(
-        "SELECT kind, message FROM events WHERE kind ILIKE $1 OR message ILIKE $1 ORDER BY created_at DESC LIMIT 8",
+        "SELECT kind, message FROM events WHERE kind LIKE ? OR message LIKE ? ORDER BY created_at DESC LIMIT 8",
     )
+    .bind(&pattern)
     .bind(&pattern)
     .fetch_all(pool)
     .await?;
@@ -119,8 +121,9 @@ pub async fn search(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeSearc
     }
 
     let audits: Vec<(String, String)> = sqlx::query_as(
-        "SELECT action, actor FROM audit_logs WHERE action ILIKE $1 OR actor ILIKE $1 ORDER BY created_at DESC LIMIT 6",
+        "SELECT action, actor FROM audit_logs WHERE action LIKE ? OR actor LIKE ? ORDER BY created_at DESC LIMIT 6",
     )
+    .bind(&pattern)
     .bind(&pattern)
     .fetch_all(pool)
     .await?;
@@ -146,7 +149,11 @@ pub async fn search(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeSearc
         });
     }
 
-    hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    hits.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     hits.truncate(30);
 
     Ok(KnowledgeSearchResult {

@@ -2,7 +2,7 @@
 // Vault/MFA inventory and air-gap bundle stubs (Horizon phase 28).
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -68,7 +68,7 @@ pub struct CreateAirGapBundleRequest {
     pub name: String,
 }
 
-pub async fn overview(pool: &PgPool) -> anyhow::Result<EnterpriseSecurityOverview> {
+pub async fn overview(pool: &SqlitePool) -> anyhow::Result<EnterpriseSecurityOverview> {
     let vault_providers: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vault_providers")
         .fetch_one(pool)
         .await?;
@@ -117,9 +117,10 @@ pub async fn overview(pool: &PgPool) -> anyhow::Result<EnterpriseSecurityOvervie
     })
 }
 
-pub async fn list_vault_providers(pool: &PgPool) -> anyhow::Result<Vec<VaultProviderRow>> {
+pub async fn list_vault_providers(pool: &SqlitePool) -> anyhow::Result<Vec<VaultProviderRow>> {
     sqlx::query_as(
-        "SELECT id, name, provider_type, address, namespace, status, last_sync_at
+        "SELECT id, name, provider_type, address, namespace, status,
+                strftime('%Y-%m-%dT%H:%M:%SZ', last_sync_at) AS last_sync_at
          FROM vault_providers ORDER BY name",
     )
     .fetch_all(pool)
@@ -128,22 +129,29 @@ pub async fn list_vault_providers(pool: &PgPool) -> anyhow::Result<Vec<VaultProv
 }
 
 pub async fn register_vault_provider(
-    pool: &PgPool,
+    pool: &SqlitePool,
     req: &RegisterVaultProviderRequest,
 ) -> anyhow::Result<VaultProviderRow> {
     let name = req.name.trim();
     if name.is_empty() {
         anyhow::bail!("name required");
     }
-    let provider_type = req.provider_type.clone().unwrap_or_else(|| "hashicorp".into());
+    let provider_type = req
+        .provider_type
+        .clone()
+        .unwrap_or_else(|| "hashicorp".into());
     let address = req.address.clone().unwrap_or_default();
     let namespace = req.namespace.clone().unwrap_or_else(|| "machina".into());
-    let status = if provider_type == "file" { "active" } else { "disconnected" };
+    let status = if provider_type == "file" {
+        "active"
+    } else {
+        "disconnected"
+    };
 
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO vault_providers (id, name, provider_type, address, namespace, status)
-         VALUES ($1, $2, $3, $4, $5, $6)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (name) DO UPDATE SET
            provider_type = EXCLUDED.provider_type,
            address = EXCLUDED.address,
@@ -160,8 +168,9 @@ pub async fn register_vault_provider(
     .await?;
 
     sqlx::query_as(
-        "SELECT id, name, provider_type, address, namespace, status, last_sync_at
-         FROM vault_providers WHERE name = $1",
+        "SELECT id, name, provider_type, address, namespace, status,
+                strftime('%Y-%m-%dT%H:%M:%SZ', last_sync_at) AS last_sync_at
+         FROM vault_providers WHERE name = ?",
     )
     .bind(name)
     .fetch_one(pool)
@@ -169,7 +178,7 @@ pub async fn register_vault_provider(
     .map_err(|e| e.into())
 }
 
-pub async fn list_mfa_policies(pool: &PgPool) -> anyhow::Result<Vec<MfaPolicyRow>> {
+pub async fn list_mfa_policies(pool: &SqlitePool) -> anyhow::Result<Vec<MfaPolicyRow>> {
     sqlx::query_as(
         "SELECT id, role_name, method, required, grace_days FROM mfa_policies ORDER BY role_name",
     )
@@ -179,7 +188,7 @@ pub async fn list_mfa_policies(pool: &PgPool) -> anyhow::Result<Vec<MfaPolicyRow
 }
 
 pub async fn upsert_mfa_policy(
-    pool: &PgPool,
+    pool: &SqlitePool,
     role_name: &str,
     req: &UpsertMfaPolicyRequest,
 ) -> anyhow::Result<MfaPolicyRow> {
@@ -197,7 +206,7 @@ pub async fn upsert_mfa_policy(
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO mfa_policies (id, role_name, method, required, grace_days)
-         VALUES ($1, $2, $3, $4, $5)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (role_name) DO UPDATE SET
            method = EXCLUDED.method,
            required = EXCLUDED.required,
@@ -212,7 +221,7 @@ pub async fn upsert_mfa_policy(
     .await?;
 
     sqlx::query_as(
-        "SELECT id, role_name, method, required, grace_days FROM mfa_policies WHERE role_name = $1",
+        "SELECT id, role_name, method, required, grace_days FROM mfa_policies WHERE role_name = ?",
     )
     .bind(role)
     .fetch_one(pool)
@@ -220,9 +229,10 @@ pub async fn upsert_mfa_policy(
     .map_err(|e| e.into())
 }
 
-pub async fn list_air_gap_bundles(pool: &PgPool) -> anyhow::Result<Vec<AirGapBundleRow>> {
+pub async fn list_air_gap_bundles(pool: &SqlitePool) -> anyhow::Result<Vec<AirGapBundleRow>> {
     sqlx::query_as(
-        "SELECT id, name, checksum, manifest_json, size_bytes, exported_at
+        "SELECT id, name, checksum, manifest_json, size_bytes,
+                strftime('%Y-%m-%dT%H:%M:%SZ', exported_at) AS exported_at
          FROM air_gap_bundles ORDER BY exported_at DESC",
     )
     .fetch_all(pool)
@@ -231,7 +241,7 @@ pub async fn list_air_gap_bundles(pool: &PgPool) -> anyhow::Result<Vec<AirGapBun
 }
 
 pub async fn create_air_gap_bundle(
-    pool: &PgPool,
+    pool: &SqlitePool,
     req: &CreateAirGapBundleRequest,
 ) -> anyhow::Result<AirGapBundleRow> {
     let name = req.name.trim();
@@ -278,7 +288,7 @@ pub async fn create_air_gap_bundle(
 
     sqlx::query(
         "INSERT INTO air_gap_bundles (id, name, checksum, manifest_json, size_bytes)
-         VALUES ($1, $2, $3, $4, $5)",
+         VALUES (?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(name)
@@ -289,8 +299,9 @@ pub async fn create_air_gap_bundle(
     .await?;
 
     sqlx::query_as(
-        "SELECT id, name, checksum, manifest_json, size_bytes, exported_at
-         FROM air_gap_bundles WHERE id = $1",
+        "SELECT id, name, checksum, manifest_json, size_bytes,
+                strftime('%Y-%m-%dT%H:%M:%SZ', exported_at) AS exported_at
+         FROM air_gap_bundles WHERE id = ?",
     )
     .bind(id)
     .fetch_one(pool)
@@ -298,10 +309,11 @@ pub async fn create_air_gap_bundle(
     .map_err(|e| e.into())
 }
 
-pub async fn get_air_gap_bundle(pool: &PgPool, id: Uuid) -> anyhow::Result<AirGapBundleRow> {
+pub async fn get_air_gap_bundle(pool: &SqlitePool, id: Uuid) -> anyhow::Result<AirGapBundleRow> {
     sqlx::query_as(
-        "SELECT id, name, checksum, manifest_json, size_bytes, exported_at
-         FROM air_gap_bundles WHERE id = $1",
+        "SELECT id, name, checksum, manifest_json, size_bytes,
+                strftime('%Y-%m-%dT%H:%M:%SZ', exported_at) AS exported_at
+         FROM air_gap_bundles WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -394,10 +406,11 @@ pub struct UpsertTenantPolicyRequest {
     pub enforce_quotas: Option<bool>,
 }
 
-pub async fn sync_vault_provider(pool: &PgPool, id: Uuid) -> anyhow::Result<VaultSyncResult> {
+pub async fn sync_vault_provider(pool: &SqlitePool, id: Uuid) -> anyhow::Result<VaultSyncResult> {
     let row: VaultProviderRow = sqlx::query_as(
-        "SELECT id, name, provider_type, address, namespace, status, last_sync_at
-         FROM vault_providers WHERE id = $1",
+        "SELECT id, name, provider_type, address, namespace, status,
+                strftime('%Y-%m-%dT%H:%M:%SZ', last_sync_at) AS last_sync_at
+         FROM vault_providers WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -406,21 +419,22 @@ pub async fn sync_vault_provider(pool: &PgPool, id: Uuid) -> anyhow::Result<Vaul
 
     let (status, message) = probe_vault(&row);
 
-    sqlx::query("UPDATE vault_providers SET status = $1, last_sync_at = NOW() WHERE id = $2")
+    let mut tx = pool.begin().await?;
+    sqlx::query("UPDATE vault_providers SET status = ?, last_sync_at = datetime('now') WHERE id = ?")
         .bind(&status)
         .bind(id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
-
     sqlx::query(
-        "INSERT INTO vault_sync_runs (id, provider_id, status, message) VALUES ($1, $2, $3, $4)",
+        "INSERT INTO vault_sync_runs (id, provider_id, status, message) VALUES (?, ?, ?, ?)",
     )
     .bind(Uuid::new_v4())
     .bind(id)
     .bind(&status)
     .bind(&message)
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
 
     Ok(VaultSyncResult {
         provider_id: id,
@@ -431,14 +445,48 @@ pub async fn sync_vault_provider(pool: &PgPool, id: Uuid) -> anyhow::Result<Vaul
     })
 }
 
-pub async fn sync_all_vault_providers(pool: &PgPool) -> anyhow::Result<VaultSyncAllResult> {
-    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM vault_providers ORDER BY name")
-        .fetch_all(pool)
-        .await?;
+pub async fn sync_all_vault_providers(pool: &SqlitePool) -> anyhow::Result<VaultSyncAllResult> {
+    let rows: Vec<VaultProviderRow> = sqlx::query_as(
+        "SELECT id, name, provider_type, address, namespace, status,
+                strftime('%Y-%m-%dT%H:%M:%SZ', last_sync_at) AS last_sync_at
+         FROM vault_providers ORDER BY name",
+    )
+    .fetch_all(pool)
+    .await?;
     let mut results = Vec::new();
-    for id in ids {
-        if let Ok(r) = sync_vault_provider(pool, id).await {
-            results.push(r);
+    for row in rows {
+        let (status, message) = probe_vault(&row);
+        let mut tx = match pool.begin().await {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        let ok = sqlx::query(
+            "UPDATE vault_providers SET status = ?, last_sync_at = datetime('now') WHERE id = ?",
+        )
+        .bind(&status)
+        .bind(row.id)
+        .execute(&mut *tx)
+        .await
+        .is_ok()
+            && sqlx::query(
+                "INSERT INTO vault_sync_runs (id, provider_id, status, message) VALUES (?, ?, ?, ?)",
+            )
+            .bind(Uuid::new_v4())
+            .bind(row.id)
+            .bind(&status)
+            .bind(&message)
+            .execute(&mut *tx)
+            .await
+            .is_ok()
+            && tx.commit().await.is_ok();
+        if ok {
+            results.push(VaultSyncResult {
+                provider_id: row.id,
+                provider_name: row.name,
+                status,
+                message,
+                last_sync_at: chrono::Utc::now(),
+            });
         }
     }
     let synced = results.len();
@@ -472,7 +520,7 @@ fn probe_vault(row: &VaultProviderRow) -> (String, String) {
     )
 }
 
-pub async fn mfa_compliance(pool: &PgPool) -> anyhow::Result<MfaComplianceReport> {
+pub async fn mfa_compliance(pool: &SqlitePool) -> anyhow::Result<MfaComplianceReport> {
     let policies = list_mfa_policies(pool).await?;
     let required: Vec<_> = policies.into_iter().filter(|p| p.required).collect();
     let users: Vec<(String, String)> =
@@ -506,14 +554,12 @@ pub async fn mfa_compliance(pool: &PgPool) -> anyhow::Result<MfaComplianceReport
         required_roles: required.len(),
         compliant_users,
         non_compliant_users,
-        summary: format!(
-            "{compliant_users} compliant · {non_compliant_users} need enrollment"
-        ),
+        summary: format!("{compliant_users} compliant · {non_compliant_users} need enrollment"),
         users: rows,
     })
 }
 
-pub async fn fips_matrix(pool: &PgPool) -> anyhow::Result<FipsMatrix> {
+pub async fn fips_matrix(pool: &SqlitePool) -> anyhow::Result<FipsMatrix> {
     let profiles: Vec<FipsCryptoProfileRow> = sqlx::query_as(
         "SELECT id, name, tls_min_version, fips_mode, cipher_suites, notes FROM fips_crypto_profiles ORDER BY name",
     )
@@ -542,9 +588,9 @@ pub async fn fips_matrix(pool: &PgPool) -> anyhow::Result<FipsMatrix> {
     })
 }
 
-pub async fn tenant_isolation_overview(pool: &PgPool) -> anyhow::Result<TenantIsolationOverview> {
+pub async fn tenant_isolation_overview(pool: &SqlitePool) -> anyhow::Result<TenantIsolationOverview> {
     let vm_counts: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT COALESCE(NULLIF(project, ''), 'default') AS name, COUNT(*)::bigint
+        "SELECT COALESCE(NULLIF(project, ''), 'default') AS name, COUNT(*)
          FROM vms GROUP BY 1 ORDER BY 1",
     )
     .fetch_all(pool)
@@ -594,7 +640,7 @@ pub async fn tenant_isolation_overview(pool: &PgPool) -> anyhow::Result<TenantIs
 }
 
 pub async fn upsert_tenant_policy(
-    pool: &PgPool,
+    pool: &SqlitePool,
     project_name: &str,
     req: &UpsertTenantPolicyRequest,
 ) -> anyhow::Result<TenantIsolationItem> {
@@ -613,13 +659,13 @@ pub async fn upsert_tenant_policy(
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, NOW())
+         VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT (project_name) DO UPDATE SET
            network_isolation = EXCLUDED.network_isolation,
            max_vms = EXCLUDED.max_vms,
            max_storage_gib = EXCLUDED.max_storage_gib,
            enforce_quotas = EXCLUDED.enforce_quotas,
-           updated_at = NOW()",
+           updated_at = datetime('now')",
     )
     .bind(id)
     .bind(name)

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Link, useNavigate, useParams, useLocation, useSearchParams } from 'react-router'
 import { ArrowLeft, ExternalLink, Network, Shield, Server, Activity, FileWarning, Bot, Cpu } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
@@ -65,6 +66,7 @@ import { toastQueuedOperation } from '../../utils/platformTaskToast'
 import HostCockpitPanels from '../../components/platform/HostCockpitPanels'
 import PlatformHostTerminalPanel from '../../components/platform/PlatformHostTerminalPanel'
 import HostPackageKitPanel from '../../components/platform/HostPackageKitPanel'
+import HostLibvirtOpsPanel from '../../components/platform/HostLibvirtOpsPanel'
 import { getHostCockpitInventory, type HostCockpitSystem } from '../../api/platformHostCockpit'
 
 function psiBar(label: string, pct: number) {
@@ -135,6 +137,10 @@ export default function PlatformHostDetailPage() {
   const [upgradePreview, setUpgradePreview] = useState<string | null>(null)
   const [linuxOpsBusy, setLinuxOpsBusy] = useState(false)
   const [linuxSystemCockpit, setLinuxSystemCockpit] = useState<HostCockpitSystem | null>(null)
+  const [showFenceConfirm, setShowFenceConfirm] = useState(false)
+  const [confirmRemoveHost, setConfirmRemoveHost] = useState(false)
+  const [confirmApplyUpgrade, setConfirmApplyUpgrade] = useState(false)
+  const [confirmRebootHost, setConfirmRebootHost] = useState(false)
 
   const load = useCallback(async () => {
     if (!id) return
@@ -328,7 +334,7 @@ export default function PlatformHostDetailPage() {
                     </button>
                     <button type="button" className="btn-secondary text-sm" onClick={() => void enqueueValidateHost(id).then(() => { toast.success('Validation queued'); return load() })}>Queue validate</button>
                     <button type="button" className="btn-secondary text-sm" onClick={() => void hostMaintenance(id, 'enter').then(() => toast.success('Maintenance'))}>Maintenance</button>
-                    <button type="button" className="btn-danger text-sm" onClick={() => void fenceHost(id).then(() => { toast.success('Fence invoked'); return load() })}>Fence</button>
+                    <button type="button" className="btn-danger text-sm" onClick={() => setShowFenceConfirm(true)}>Fence</button>
                   </div>
                 </MacSettingsGroup>
                 {healthChecks && (
@@ -411,17 +417,7 @@ export default function PlatformHostDetailPage() {
                       type="button"
                       className="btn-danger text-sm"
                       disabled={opsBusy || (host.vm_count ?? 0) > 0}
-                      onClick={() => {
-                        if (!window.confirm(`Remove host ${host.hostname} from the fleet?`)) return
-                        setOpsBusy(true)
-                        void deleteHost(id)
-                          .then(() => {
-                            toast.success('Host removed')
-                            navigate('/platform/hosts')
-                          })
-                          .catch((e: unknown) => toast.error(formatUserError(e)))
-                          .finally(() => setOpsBusy(false))
-                      }}
+                      onClick={() => setConfirmRemoveHost(true)}
                     >
                       Remove host
                     </button>
@@ -430,6 +426,11 @@ export default function PlatformHostDetailPage() {
                     )}
                   </div>
                 </MacSettingsGroup>
+                {id ? (
+                  <div className="p-3">
+                    <HostLibvirtOpsPanel hostId={id} online={host.state === 'online'} />
+                  </div>
+                ) : null}
                 <MacSettingsGroup title="Classic hypervisor tools">
                   <div className="p-3">
                     <p className="text-xs text-slate-500 mb-3 leading-relaxed">
@@ -510,8 +511,8 @@ export default function PlatformHostDetailPage() {
                 )}
                 {lldp?.neighbors && lldp.neighbors.length > 0 && (
                   <MacGlassPanel title={`LLDP (${lldp.source})`}>
-                    {lldp.neighbors.slice(0, 10).map((n, i) => (
-                      <MacListRow key={i} title={n.system_name || n.chassis_id || 'neighbor'} subtitle={`${n.local_interface} → ${n.port_id || n.port_description}`} />
+                    {lldp.neighbors.slice(0, 10).map((n) => (
+                      <MacListRow key={n.local_interface ?? n.chassis_id ?? n.system_name} title={n.system_name || n.chassis_id || 'neighbor'} subtitle={`${n.local_interface} → ${n.port_id || n.port_description}`} />
                     ))}
                   </MacGlassPanel>
                 )}
@@ -534,7 +535,7 @@ export default function PlatformHostDetailPage() {
                         <MacListRow
                           key={gpu.pci_address}
                           title={gpu.device_name || gpu.pci_address}
-                          subtitle={`${gpu.vendor} · ${gpu.pci_address}${gpu.iommu_group >= 0 ? ` · IOMMU ${gpu.iommu_group}` : ''}${gpu.mig_profile ? ` · MIG ${gpu.mig_profile}` : ''}`}
+                          subtitle={`${gpu.vendor} · ${gpu.pci_address}${gpu.iommu_group != null && gpu.iommu_group >= 0 ? ` · IOMMU ${gpu.iommu_group}` : ''}${gpu.mig_profile ? ` · MIG ${gpu.mig_profile}` : ''}`}
                         />
                       ))}
                     </ul>
@@ -577,7 +578,7 @@ export default function PlatformHostDetailPage() {
                           <MacListRow
                             key={f.mount_point}
                             title={f.mount_point}
-                            subtitle={`${f.fstype} · ${f.use_percent.toFixed(0)}% used`}
+                            subtitle={`${f.fstype} · ${f.use_percent != null ? f.use_percent.toFixed(0) : '?'}% used`}
                           />
                         ))}
                       </MacGlassPanel>
@@ -682,14 +683,7 @@ export default function PlatformHostDetailPage() {
                             className="btn-secondary text-xs"
                             disabled={linuxOpsBusy || !host?.maintenance_mode}
                             title={host?.maintenance_mode ? undefined : 'Enter maintenance mode first'}
-                            onClick={() => {
-                              if (!id || !window.confirm('Apply all pending package upgrades on this host?')) return
-                              setLinuxOpsBusy(true)
-                              void applyHostPackageUpgrade(id)
-                                .then((r) => toastQueuedOperation(toast, r.summary, r.task_id, tier))
-                                .catch((e: unknown) => toast.error(formatUserError(e)))
-                                .finally(() => setLinuxOpsBusy(false))
-                            }}
+                            onClick={() => { if (id) setConfirmApplyUpgrade(true) }}
                           >
                             Apply upgrade
                           </button>
@@ -698,14 +692,7 @@ export default function PlatformHostDetailPage() {
                               type="button"
                               className="btn-secondary text-xs"
                               disabled={linuxOpsBusy || !host?.maintenance_mode}
-                              onClick={() => {
-                                if (!id || !window.confirm('Reboot this hypervisor now?')) return
-                                setLinuxOpsBusy(true)
-                                void rebootHostLinux(id)
-                                  .then((r) => toastQueuedOperation(toast, r.summary, r.task_id, tier))
-                                  .catch((e: unknown) => toast.error(formatUserError(e)))
-                                  .finally(() => setLinuxOpsBusy(false))
-                              }}
+                              onClick={() => { if (id) setConfirmRebootHost(true) }}
                             >
                               Reboot host
                             </button>
@@ -816,7 +803,7 @@ export default function PlatformHostDetailPage() {
                     {(audit.events ?? []).length > 0 && (
                       <ul className="mt-3 space-y-1 font-mono text-[10px] text-slate-500">
                         {audit.events!.slice(0, 20).map((ev, i) => (
-                          <li key={i} className="border-b border-white/[0.04] pb-1">{String(ev.summary ?? ev.message ?? JSON.stringify(ev))}</li>
+                          <li key={String(ev.summary ?? ev.message ?? i)} className="border-b border-white/[0.04] pb-1">{String(ev.summary ?? ev.message ?? JSON.stringify(ev))}</li>
                         ))}
                       </ul>
                     )}
@@ -829,6 +816,66 @@ export default function PlatformHostDetailPage() {
             )}
         </>
       )}
+    <ConfirmDialog
+      open={confirmRemoveHost}
+      title="Remove Host from Fleet"
+      message={`Remove host "${host?.hostname}" from fleet inventory? VMs must be evacuated first.`}
+      confirmLabel="Remove"
+      variant="danger"
+      onCancel={() => setConfirmRemoveHost(false)}
+      onConfirm={() => {
+        setConfirmRemoveHost(false)
+        setOpsBusy(true)
+        void deleteHost(id!)
+          .then(() => { toast.success('Host removed'); navigate('/platform/hosts') })
+          .catch((e: unknown) => toast.error(formatUserError(e)))
+          .finally(() => setOpsBusy(false))
+      }}
+    />
+    <ConfirmDialog
+      open={confirmApplyUpgrade}
+      title="Apply Package Upgrades"
+      message="Apply all pending package upgrades on this host? This may restart services."
+      confirmLabel="Apply"
+      variant="warning"
+      onCancel={() => setConfirmApplyUpgrade(false)}
+      onConfirm={() => {
+        setConfirmApplyUpgrade(false)
+        setLinuxOpsBusy(true)
+        void applyHostPackageUpgrade(id!)
+          .then((r) => toastQueuedOperation(toast, r.summary, r.task_id, tier))
+          .catch((e: unknown) => toast.error(formatUserError(e)))
+          .finally(() => setLinuxOpsBusy(false))
+      }}
+    />
+    <ConfirmDialog
+      open={confirmRebootHost}
+      title="Reboot Hypervisor"
+      message="Reboot this hypervisor now? Running VMs will be suspended or terminated depending on their configuration."
+      confirmLabel="Reboot"
+      variant="danger"
+      onCancel={() => setConfirmRebootHost(false)}
+      onConfirm={() => {
+        setConfirmRebootHost(false)
+        setLinuxOpsBusy(true)
+        void rebootHostLinux(id!)
+          .then((r) => toastQueuedOperation(toast, r.summary, r.task_id, tier))
+          .catch((e: unknown) => toast.error(formatUserError(e)))
+          .finally(() => setLinuxOpsBusy(false))
+      }}
+    />
+    <ConfirmDialog
+      open={showFenceConfirm}
+      title="Fence Host"
+      message={`Fence host "${host?.hostname}"? This will forcibly cut power or reset the machine, terminating all running VMs immediately. Only use in an emergency.`}
+      confirmLabel="Fence"
+      variant="danger"
+      onCancel={() => setShowFenceConfirm(false)}
+      onConfirm={() => {
+        setShowFenceConfirm(false)
+        void fenceHost(id!).then(() => { toast.success('Fence invoked'); return load() }).catch((e: unknown) => toast.error(formatUserError(e)))
+      }}
+    />
     </PageLayout>
   )
 }

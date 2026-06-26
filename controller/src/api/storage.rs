@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 use crate::tasks::enqueue::enqueue_task;
 
@@ -46,7 +46,9 @@ fn default_backend() -> String {
 
 pub async fn discover_storage_pools(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let imported = crate::engine::storage_sync::discover_all_online(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -62,9 +64,27 @@ pub async fn discover_storage_pools(
     })))
 }
 
+pub async fn get_storage_pool(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<StoragePoolRow>, ApiError> {
+    require_operator(&actor)?;
+    let row = sqlx::query_as::<_, StoragePoolRow>(
+        "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id FROM storage_pools WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| ApiError::not_found("storage pool not found"))?;
+    Ok(Json(row))
+}
+
 pub async fn list_storage_pools(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<StoragePoolRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = sqlx::query_as::<_, StoragePoolRow>(
         "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id
          FROM storage_pools ORDER BY name",
@@ -76,9 +96,10 @@ pub async fn list_storage_pools(
 
 pub async fn create_storage_pool(
     State(state): State<AppState>,
-    Extension(_actor): Extension<AuthUser>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<CreateStoragePoolBody>,
 ) -> Result<Json<StoragePoolRow>, ApiError> {
+    require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_one(&state.pool)
@@ -86,7 +107,7 @@ pub async fn create_storage_pool(
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO storage_pools (id, cluster_id, name, storage_class, backend, path, capacity_gib)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)",
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(cluster_id)
@@ -99,7 +120,7 @@ pub async fn create_storage_pool(
     .await?;
 
     let row = sqlx::query_as::<_, StoragePoolRow>(
-        "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id FROM storage_pools WHERE id = $1",
+        "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id FROM storage_pools WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -108,10 +129,12 @@ pub async fn create_storage_pool(
     if body.path.is_some() {
         let host_id = match body.host_id {
             Some(h) => h,
-            None => sqlx::query_scalar("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1")
-                .fetch_optional(&state.pool)
-                .await?
-                .ok_or_else(|| ApiError::bad_request("no online host for storage provisioning"))?,
+            None => sqlx::query_scalar(
+                "SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1",
+            )
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| ApiError::bad_request("no online host for storage provisioning"))?,
         };
         let _ = enqueue_task(
             &state,
@@ -140,25 +163,27 @@ pub struct PatchStoragePoolBody {
 
 pub async fn patch_storage_pool(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<PatchStoragePoolBody>,
 ) -> Result<Json<StoragePoolRow>, ApiError> {
+    require_operator(&actor)?;
     if let Some(v) = &body.path {
-        sqlx::query("UPDATE storage_pools SET path = $1 WHERE id = $2")
+        sqlx::query("UPDATE storage_pools SET path = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = body.capacity_gib {
-        sqlx::query("UPDATE storage_pools SET capacity_gib = $1 WHERE id = $2")
+        sqlx::query("UPDATE storage_pools SET capacity_gib = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = body.used_gib {
-        sqlx::query("UPDATE storage_pools SET used_gib = $1 WHERE id = $2")
+        sqlx::query("UPDATE storage_pools SET used_gib = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&state.pool)
@@ -170,7 +195,7 @@ pub async fn patch_storage_pool(
             .map_err(|e| ApiError::bad_request(e.to_string()))?;
     }
     let row = sqlx::query_as::<_, StoragePoolRow>(
-        "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id FROM storage_pools WHERE id = $1",
+        "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id FROM storage_pools WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -180,9 +205,11 @@ pub async fn patch_storage_pool(
 
 pub async fn delete_storage_pool(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Query(q): Query<StoragePoolHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let name = storage_pool_name(&state.pool, id).await?;
     if q.host_id.is_some() || resolve_online_host(&state.pool, None).await.is_ok() {
         let host_id = resolve_online_host(&state.pool, q.host_id).await?;
@@ -195,7 +222,7 @@ pub async fn delete_storage_pool(
         )
         .await;
     }
-    sqlx::query("DELETE FROM storage_pools WHERE id = $1")
+    sqlx::query("DELETE FROM storage_pools WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -207,21 +234,15 @@ pub struct StoragePoolHostQuery {
     pub host_id: Option<Uuid>,
 }
 
-async fn storage_pool_name(
-    pool: &sqlx::PgPool,
-    id: Uuid,
-) -> Result<String, ApiError> {
-    sqlx::query_scalar("SELECT name FROM storage_pools WHERE id = $1")
+async fn storage_pool_name(pool: &sqlx::SqlitePool, id: Uuid) -> Result<String, ApiError> {
+    sqlx::query_scalar("SELECT name FROM storage_pools WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| ApiError::bad_request("storage pool not found"))
 }
 
-async fn resolve_online_host(
-    pool: &sqlx::PgPool,
-    host_id: Option<Uuid>,
-) -> Result<Uuid, ApiError> {
+async fn resolve_online_host(pool: &sqlx::SqlitePool, host_id: Option<Uuid>) -> Result<Uuid, ApiError> {
     if let Some(h) = host_id {
         return Ok(h);
     }
@@ -237,9 +258,10 @@ async fn invoke_pool_on_host(
     action: &str,
     pool_name: &str,
 ) -> Result<serde_json::Value, ApiError> {
-    let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let (_, agent_addr) =
+        crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut client = crate::agent_client::connect(&agent_addr)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -254,14 +276,17 @@ async fn invoke_pool_on_host(
 
 pub async fn activate_storage_pool(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Query(q): Query<StoragePoolHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let name = storage_pool_name(&state.pool, id).await?;
     let host_id = resolve_online_host(&state.pool, q.host_id).await?;
-    let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let (_, agent_addr) =
+        crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut client = crate::agent_client::connect(&agent_addr)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -279,9 +304,11 @@ pub async fn activate_storage_pool(
 
 pub async fn deactivate_storage_pool(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Query(q): Query<StoragePoolHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let name = storage_pool_name(&state.pool, id).await?;
     let host_id = resolve_online_host(&state.pool, q.host_id).await?;
     let result = invoke_pool_on_host(&state, host_id, "storage.pool.stop", &name).await?;
@@ -291,27 +318,33 @@ pub async fn deactivate_storage_pool(
 
 pub async fn refresh_storage_pool(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Query(q): Query<StoragePoolHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let name = storage_pool_name(&state.pool, id).await?;
     let host_id = resolve_online_host(&state.pool, q.host_id).await?;
     let result = invoke_pool_on_host(&state, host_id, "storage.pool.refresh", &name).await?;
-    let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let (_, agent_addr) =
+        crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
     let _ = crate::engine::storage_sync::sync_host_storage(&state.pool, host_id, &agent_addr).await;
     Ok(Json(result))
 }
 
 pub async fn live_storage_pools(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<StoragePoolHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let host_id = resolve_online_host(&state.pool, q.host_id).await?;
-    let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let (_, agent_addr) =
+        crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut client = crate::agent_client::connect(&agent_addr)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -322,7 +355,9 @@ pub async fn live_storage_pools(
     )
     .await
     .map_err(|e| ApiError::internal(e.to_string()))?;
-    Ok(Json(serde_json::json!({ "host_id": host_id, "pools": pools })))
+    Ok(Json(
+        serde_json::json!({ "host_id": host_id, "pools": pools }),
+    ))
 }
 
 async fn invoke_pool_action(
@@ -332,15 +367,19 @@ async fn invoke_pool_action(
     pool_name: &str,
     payload: serde_json::Value,
 ) -> Result<serde_json::Value, ApiError> {
-    let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let (_, agent_addr) =
+        crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut client = crate::agent_client::connect(&agent_addr)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut body = payload;
     if let Some(obj) = body.as_object_mut() {
-        obj.insert("pool".into(), serde_json::Value::String(pool_name.to_string()));
+        obj.insert(
+            "pool".into(),
+            serde_json::Value::String(pool_name.to_string()),
+        );
     }
     crate::agent_client::host_libvirt_invoke(&mut client, action, &body)
         .await
@@ -349,14 +388,17 @@ async fn invoke_pool_action(
 
 pub async fn list_storage_pool_volumes(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Query(q): Query<StoragePoolHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let name = storage_pool_name(&state.pool, id).await?;
     let host_id = resolve_online_host(&state.pool, q.host_id).await?;
-    let (_, agent_addr) = crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let (_, agent_addr) =
+        crate::engine::host_os::resolve_agent_addr(&state.pool, &state.config, host_id)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
     let mut client = crate::agent_client::connect(&agent_addr)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -367,7 +409,9 @@ pub async fn list_storage_pool_volumes(
     )
     .await
     .map_err(|e| ApiError::internal(e.to_string()))?;
-    Ok(Json(serde_json::json!({ "pool": name, "volumes": volumes })))
+    Ok(Json(
+        serde_json::json!({ "pool": name, "volumes": volumes }),
+    ))
 }
 
 #[derive(Debug, Deserialize)]
@@ -384,10 +428,12 @@ fn default_vol_format() -> String {
 
 pub async fn create_storage_pool_volume(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Query(q): Query<StoragePoolHostQuery>,
     Json(body): Json<CreateStorageVolumeBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let name = storage_pool_name(&state.pool, id).await?;
     let host_id = resolve_online_host(&state.pool, q.host_id).await?;
@@ -403,15 +449,20 @@ pub async fn create_storage_pool_volume(
         }),
     )
     .await?;
-    state.emit_event("storage.volume", format!("Created volume {} in pool {name}", body.name));
+    state.emit_event(
+        "storage.volume",
+        format!("Created volume {} in pool {name}", body.name),
+    );
     Ok(Json(result))
 }
 
 pub async fn delete_storage_pool_volume(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path((id, vol_name)): Path<(Uuid, String)>,
     Query(q): Query<StoragePoolHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let name = storage_pool_name(&state.pool, id).await?;
     let host_id = resolve_online_host(&state.pool, q.host_id).await?;
     let result = invoke_pool_action(
@@ -422,6 +473,9 @@ pub async fn delete_storage_pool_volume(
         serde_json::json!({ "name": vol_name }),
     )
     .await?;
-    state.emit_event("storage.volume", format!("Deleted volume {vol_name} from pool {name}"));
+    state.emit_event(
+        "storage.volume",
+        format!("Deleted volume {vol_name} from pool {name}"),
+    );
     Ok(Json(result))
 }

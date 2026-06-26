@@ -2,7 +2,7 @@
 //! Natural-language single-VM sizing for the platform AI VM builder UI.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use super::environment_intent;
 
@@ -25,7 +25,7 @@ pub struct VmBuilderResult {
     pub os_hint: String,
 }
 
-pub async fn build(pool: &PgPool, body: &VmBuilderBody) -> anyhow::Result<VmBuilderResult> {
+pub async fn build(pool: &SqlitePool, body: &VmBuilderBody) -> anyhow::Result<VmBuilderResult> {
     let rates: (f64, f64) = sqlx::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
@@ -44,7 +44,10 @@ pub async fn build(pool: &PgPool, body: &VmBuilderBody) -> anyhow::Result<VmBuil
     Ok(VmBuilderResult {
         summary: format!(
             "{} — {} vCPU, {} GiB RAM, ~${:.0}/mo (FinOps estimate)",
-            plan.label, plan.vcpus_per_vm, plan.memory_gib_per_vm, hourly * 730.0
+            plan.label,
+            plan.vcpus_per_vm,
+            plan.memory_gib_per_vm,
+            hourly * 730.0
         ),
         vm_name,
         vm_spec,

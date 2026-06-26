@@ -18,6 +18,11 @@ function UsageBar({ label, pct, detail, testId }: { label: string; pct: number; 
       </div>
       <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
         <div
+          role="progressbar"
+          aria-label={label}
+          aria-valuenow={Math.round(Math.min(100, Math.max(0, pct)))}
+          aria-valuemin={0}
+          aria-valuemax={100}
           className={`h-full rounded-full transition-all ${utilizationBarClass(pct, { warn: 75, error: 90 })}`}
           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
         />

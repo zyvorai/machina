@@ -1,16 +1,32 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Path, Query, State};
+use axum::Extension;
 use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::engine::guestkit_bridge;
 use crate::state::AppState;
 
-pub async fn guestkit_status(State(state): State<AppState>) -> Json<guestkit_bridge::GuestkitStatus> {
-    Json(guestkit_bridge::status(&state.config))
+pub async fn guestkit_status(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+) -> Result<Json<guestkit_bridge::GuestkitStatus>, crate::api::ApiError> {
+    require_operator(&actor)?;
+    let cfg = state.config.clone();
+    let status = tokio::task::spawn_blocking(move || guestkit_bridge::status(&cfg))
+        .await
+        .unwrap_or_else(|_| guestkit_bridge::GuestkitStatus {
+            enabled: false,
+            library_version: String::new(),
+            worker_url: String::new(),
+            worker_reachable: false,
+            summary: "status check failed".into(),
+        });
+    Ok(Json(status))
 }
 
 #[derive(Debug, Deserialize)]
@@ -28,8 +44,10 @@ fn default_kvm_target() -> String {
 
 pub async fn guestkit_doctor(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<GuestkitDiskBody>,
 ) -> Result<Json<guestkit_bridge::GuestkitDoctorReport>, ApiError> {
+    require_admin(&actor)?;
     guestkit_bridge::doctor_disk(&state.config, &body.image_path, &body.target, body.explain)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -38,8 +56,10 @@ pub async fn guestkit_doctor(
 
 pub async fn guestkit_migrate_plan(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<GuestkitDiskBody>,
 ) -> Result<Json<guestkit_bridge::GuestkitMigratePlanReport>, ApiError> {
+    require_admin(&actor)?;
     guestkit_bridge::migrate_plan_disk(&state.config, &body.image_path, &body.target)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -56,9 +76,11 @@ pub struct GuestkitVmDoctorQuery {
 
 pub async fn guestkit_vm_doctor(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(vm_id): Path<Uuid>,
     Query(q): Query<GuestkitVmDoctorQuery>,
 ) -> Result<Json<guestkit_bridge::GuestkitDoctorReport>, ApiError> {
+    require_operator(&actor)?;
     guestkit_bridge::doctor_vm(
         &state.config,
         &state.pool,
@@ -74,9 +96,11 @@ pub async fn guestkit_vm_doctor(
 
 pub async fn guestkit_vm_migrate_plan(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(vm_id): Path<Uuid>,
     Query(q): Query<GuestkitVmDoctorQuery>,
 ) -> Result<Json<guestkit_bridge::GuestkitMigratePlanReport>, ApiError> {
+    require_operator(&actor)?;
     guestkit_bridge::migrate_plan_vm(
         &state.config,
         &state.pool,
@@ -102,8 +126,10 @@ fn default_job_name() -> String {
 
 pub async fn guestkit_submit_job(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<GuestkitJobBody>,
 ) -> Result<Json<guestkit_bridge::GuestkitJobSubmitResult>, ApiError> {
+    require_operator(&actor)?;
     guestkit_bridge::submit_inspect_job(&state.config, &body.image_path, &body.name)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -112,8 +138,10 @@ pub async fn guestkit_submit_job(
 
 pub async fn guestkit_job_status(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(job_id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     guestkit_bridge::get_worker_job_status(&state.config, &job_id)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))

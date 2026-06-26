@@ -185,18 +185,29 @@ impl VirtualMachine {
     pub fn validate(&self) -> Result<(), SpecError> {
         validate_name(&self.metadata.name)?;
         if self.spec.cpu.sockets == 0 || self.spec.cpu.cores == 0 {
-            return Err(SpecError::Validation("cpu sockets and cores must be >= 1".into()));
+            return Err(SpecError::Validation(
+                "cpu sockets and cores must be >= 1".into(),
+            ));
+        }
+        if self.spec.cpu.sockets > 64 || self.spec.cpu.cores > 128 {
+            return Err(SpecError::Validation(
+                "cpu sockets must be <= 64 and cores must be <= 128".into(),
+            ));
         }
         parse_memory_mib(&self.spec.memory)?;
         if self.spec.storage.is_empty() {
-            return Err(SpecError::Validation("at least one storage volume required".into()));
+            return Err(SpecError::Validation(
+                "at least one storage volume required".into(),
+            ));
         }
         for vol in &self.spec.storage {
             validate_name(&vol.name)?;
             parse_size_gib(&vol.size)?;
         }
         if self.spec.network.is_empty() {
-            return Err(SpecError::Validation("at least one network attachment required".into()));
+            return Err(SpecError::Validation(
+                "at least one network attachment required".into(),
+            ));
         }
         Ok(())
     }

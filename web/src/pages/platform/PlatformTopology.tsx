@@ -102,7 +102,7 @@ export default function PlatformTopology() {
       )}
       <MacGlassPanel title="Similar incidents" subtitle="GET /api/v1/ai/memory/similar">
         <div className="flex flex-wrap gap-2 mb-3">
-          <input className="input text-sm flex-1 min-w-[12rem]" value={incidentQuery} onChange={(e) => setIncidentQuery(e.target.value)} />
+          <input className="input text-sm flex-1 min-w-[12rem]" aria-label="Incident search query" value={incidentQuery} onChange={(e) => setIncidentQuery(e.target.value)} />
           <button
             type="button"
             className="btn-secondary text-xs"
@@ -180,8 +180,8 @@ export default function PlatformTopology() {
                   )}
                 </div>
                 <ul className="text-xs font-mono space-y-1 text-slate-300">
-                  {entry.neighbors.map((n, i) => (
-                    <li key={i} className="flex flex-wrap gap-x-3">
+                  {entry.neighbors.map((n) => (
+                    <li key={`${n.local_interface}-${n.system_name ?? n.chassis_id}`} className="flex flex-wrap gap-x-3">
                       <span className="text-cyan-400/90">{n.local_interface}</span>
                       <span>→</span>
                       <span>{n.system_name || n.chassis_id || 'switch'}</span>
@@ -194,8 +194,8 @@ export default function PlatformTopology() {
         </MacGlassPanel>
       )}
 
-      {graph?.warnings?.map((w, i) => (
-        <div key={i} className={`rounded-xl p-3 text-sm ${statusSurfaceClasses('warn')}`}>
+      {graph?.warnings?.map((w) => (
+        <div key={w.message} className={`rounded-xl p-3 text-sm ${statusSurfaceClasses('warn')}`}>
           {w.message}
         </div>
       ))}

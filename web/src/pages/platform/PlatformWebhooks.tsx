@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Webhook, Plus, Send } from 'lucide-react'
 import OperatingSurfaceLayout from '../../components/platform/OperatingSurfaceLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
@@ -29,6 +30,8 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [url, setUrl] = useState('https://example.com/hook')
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
+  const [showRemoveTest, setShowRemoveTest] = useState(false)
 
   const testWebhooks = rows.filter(
     (w) => w.url.includes('127.0.0.1:19876') || w.url.endsWith('/e2e'),
@@ -84,15 +87,7 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
             <button
               type="button"
               className="btn-secondary text-xs mt-2"
-              onClick={async () => {
-                try {
-                  for (const w of testWebhooks) await deleteWebhook(w.id)
-                  toast.success(`Removed ${testWebhooks.length} test webhook(s)`)
-                  await load()
-                } catch (e: unknown) {
-                  toast.error(formatUserError(e))
-                }
-              }}
+              onClick={() => setShowRemoveTest(true)}
             >
               Remove test webhooks
             </button>
@@ -101,7 +96,7 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
 
         <MacGlassPanel title="Add webhook endpoint" subtitle="Subscribe to vm.create, vm.delete, and ha.recover events.">
           <div className="flex flex-col sm:flex-row gap-3">
-            <input className="input flex-1" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/hook" />
+            <input aria-label="Webhook URL" className="input flex-1" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/hook" />
             <button type="button" className="btn-primary flex items-center gap-2 shrink-0" onClick={async () => {
               try { await createWebhook({ url, events: ['vm.create', 'vm.delete', 'ha.recover'] }); toast.success('Webhook added'); await load() } catch (e: unknown) { toast.error(formatUserError(e)) }
             }}><Plus className="w-4 h-4" /> Add endpoint</button>
@@ -122,7 +117,7 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
                   <span><span className={statusToneClass(w.enabled ? 'ok' : 'neutral')}>{w.enabled ? 'on' : 'off'}</span> {w.url}</span>
                   <span className="flex gap-2 shrink-0">
                     <button type="button" className="btn-secondary text-xs" onClick={async () => { try { await toggleWebhook(w.id); await load() } catch (e: unknown) { toast.error(formatUserError(e)) } }}>Toggle</button>
-                    <button type="button" className="btn-secondary text-xs" onClick={async () => { try { await deleteWebhook(w.id); await load() } catch (e: unknown) { toast.error(formatUserError(e)) } }}>Delete</button>
+                    <button type="button" className="btn-secondary text-xs" onClick={() => setDeleteTargetId(w.id)}>Delete</button>
                   </span>
                 </li>
               ))}
@@ -153,7 +148,7 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
           }
         >
           <div className="flex flex-wrap items-center gap-3 mb-3">
-            <select className="input text-sm w-auto" value={deliveryFilter} onChange={(e) => setDeliveryFilter(e.target.value)}>
+            <select className="input text-sm w-auto" aria-label="Filter by delivery status" value={deliveryFilter} onChange={(e) => setDeliveryFilter(e.target.value)}>
               <option value="">All statuses</option>
               <option value="pending">Pending</option>
               <option value="delivered">Delivered</option>
@@ -187,6 +182,35 @@ export default function PlatformWebhooks({ embedded }: { embedded?: boolean } = 
           )}
         </MacGlassPanel>
       </OperatingSurfaceLayout>
+      <ConfirmDialog
+        open={deleteTargetId !== null}
+        title="Remove Webhook"
+        message="Remove this webhook endpoint? Future events will not be delivered to it."
+        confirmLabel="Remove"
+        variant="danger"
+        onCancel={() => setDeleteTargetId(null)}
+        onConfirm={async () => {
+          try { await deleteWebhook(deleteTargetId!); await load() }
+          catch (e: unknown) { toast.error(formatUserError(e)) }
+          finally { setDeleteTargetId(null) }
+        }}
+      />
+      <ConfirmDialog
+        open={showRemoveTest}
+        title="Remove Test Webhooks"
+        message={`Remove ${testWebhooks.length} test webhook(s)? This will stop all deliveries to E2E endpoints.`}
+        confirmLabel="Remove All"
+        variant="danger"
+        onCancel={() => setShowRemoveTest(false)}
+        onConfirm={async () => {
+          try {
+            for (const w of testWebhooks) await deleteWebhook(w.id)
+            toast.success(`Removed ${testWebhooks.length} test webhook(s)`)
+            await load()
+          } catch (e: unknown) { toast.error(formatUserError(e)) }
+          finally { setShowRemoveTest(false) }
+        }}
+      />
     </PlatformPageChrome>
   )
 }

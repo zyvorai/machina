@@ -98,13 +98,13 @@ export default function CommandCenterPanel({
   return (
     <>
       <button type="button" className="fixed inset-0 z-[75] bg-black/40 backdrop-blur-sm" aria-label="Close Ops Shelf" onClick={onClose} />
-      <aside className="fixed top-0 right-0 z-[80] h-full w-full max-w-md bg-slate-950/95 border-l border-white/10 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200" data-testid="ops-shelf">
+      <aside className="fixed top-0 right-0 z-[80] h-full w-full max-w-md bg-slate-950/95 border-l border-white/10 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-right duration-200" role="dialog" aria-modal="true" aria-label="Ops Shelf" data-testid="ops-shelf">
         <header className="flex items-center justify-between px-4 py-3 border-b border-white/10 shrink-0">
           <div>
             <h2 className="font-semibold text-slate-100">Ops Shelf</h2>
             <p className="text-xs text-slate-500">VM Intelligence · {vmName}</p>
           </div>
-          <button type="button" onClick={onClose} className="p-1.5 rounded hover:bg-white/10 text-slate-400"><X className="w-5 h-5" /></button>
+          <button type="button" onClick={onClose} aria-label="Close" className="p-1.5 rounded hover:bg-white/10 text-slate-400"><X className="w-5 h-5" aria-hidden="true" /></button>
         </header>
         <div className="flex gap-1 px-3 py-2 border-b border-white/5 shrink-0 overflow-x-auto">
           {TABS.map((t) => (
@@ -187,6 +187,7 @@ export default function CommandCenterPanel({
                   <p className="text-[11px] text-amber-200/70">Starts a recorded, audited session when JIT approval is blocked.</p>
                   <input
                     type="text"
+                    aria-label="Break-glass reason"
                     className="input w-full text-xs"
                     placeholder="Reason (required for audit)"
                     value={breakGlassReason}

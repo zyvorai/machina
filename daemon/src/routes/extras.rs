@@ -648,9 +648,10 @@ async fn get_host_linux_observability(
 async fn get_host_linux_audit(
     State(_m): State<LibvirtManager>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let report = tokio::task::spawn_blocking(machina_core::linux_audit::gather_linux_audit_configured)
-        .await
-        .map_err(|e| AppError::from(LibvirtError::Internal(format!("Task failed: {e}"))))??;
+    let report =
+        tokio::task::spawn_blocking(machina_core::linux_audit::gather_linux_audit_configured)
+            .await
+            .map_err(|e| AppError::from(LibvirtError::Internal(format!("Task failed: {e}"))))??;
     Ok(Json(serde_json::json!(report)))
 }
 
@@ -1041,10 +1042,7 @@ async fn export_audit_log(
     require_api_scope(&actor, "audit:read").map_err(AppError::from)?;
     use axum::http::header;
     let body = audit::export_audit_ndjson(100_000);
-    Ok((
-        [(header::CONTENT_TYPE, "application/x-ndjson")],
-        body,
-    ))
+    Ok(([(header::CONTENT_TYPE, "application/x-ndjson")], body))
 }
 
 #[derive(Deserialize)]
@@ -1110,9 +1108,11 @@ async fn list_services_handler(
 
 async fn service_action_handler(
     State(_m): State<LibvirtManager>,
+    Extension(actor): Extension<RequestActor>,
     Path((name, action)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    log_audit("service_action", &format!("{action} {name}"), "");
+    require_destroy_vm(&actor)?;
+    log_audit_with_actor(&actor, "service_action", &format!("{action} {name}"), "");
     extras::service_action(&name, &action)?;
     Ok(Json(
         serde_json::json!({ "status": "ok", "service": name, "action": action }),
@@ -1123,8 +1123,10 @@ async fn service_action_handler(
 
 async fn get_logs_handler(
     State(_m): State<LibvirtManager>,
+    Extension(actor): Extension<RequestActor>,
     axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_browser_session_for_host_insight(&actor).map_err(AppError::from)?;
     let lines: u32 = params
         .get("lines")
         .and_then(|v| v.parse().ok())
@@ -1158,7 +1160,9 @@ async fn get_logs_handler(
 
 async fn list_log_boots_handler(
     State(_m): State<LibvirtManager>,
+    Extension(actor): Extension<RequestActor>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_browser_session_for_host_insight(&actor).map_err(AppError::from)?;
     let boots = extras::get_journal_boots()?;
     Ok(Json(serde_json::json!(boots)))
 }
@@ -1167,16 +1171,20 @@ async fn list_log_boots_handler(
 
 async fn host_shutdown_handler(
     State(_m): State<LibvirtManager>,
+    Extension(actor): Extension<RequestActor>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    log_audit("host_shutdown", "host", "");
+    require_destroy_vm(&actor)?;
+    log_audit_with_actor(&actor, "host_shutdown", "host", "");
     extras::host_shutdown()?;
     Ok(Json(serde_json::json!({ "status": "shutting_down" })))
 }
 
 async fn host_reboot_handler(
     State(_m): State<LibvirtManager>,
+    Extension(actor): Extension<RequestActor>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    log_audit("host_reboot", "host", "");
+    require_destroy_vm(&actor)?;
+    log_audit_with_actor(&actor, "host_reboot", "host", "");
     extras::host_reboot()?;
     Ok(Json(serde_json::json!({ "status": "rebooting" })))
 }
@@ -1229,9 +1237,11 @@ struct SetHostnameRequest {
 
 async fn set_hostname_handler(
     State(_m): State<LibvirtManager>,
+    Extension(actor): Extension<RequestActor>,
     Json(req): Json<SetHostnameRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    log_audit("set_hostname", &req.hostname, "");
+    require_browser_session_for_host_insight(&actor).map_err(AppError::from)?;
+    log_audit_with_actor(&actor, "set_hostname", &req.hostname, "");
     extras::set_hostname(&req.hostname)?;
     Ok(Json(
         serde_json::json!({ "status": "ok", "hostname": req.hostname }),
@@ -1245,9 +1255,11 @@ struct SetTimezoneRequest {
 
 async fn set_timezone_handler(
     State(_m): State<LibvirtManager>,
+    Extension(actor): Extension<RequestActor>,
     Json(req): Json<SetTimezoneRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    log_audit("set_timezone", &req.timezone, "");
+    require_browser_session_for_host_insight(&actor).map_err(AppError::from)?;
+    log_audit_with_actor(&actor, "set_timezone", &req.timezone, "");
     extras::set_timezone(&req.timezone)?;
     Ok(Json(
         serde_json::json!({ "status": "ok", "timezone": req.timezone }),
@@ -1260,8 +1272,10 @@ struct CockpitSectionQuery {
 }
 
 async fn get_host_cockpit_handler(
+    Extension(actor): Extension<RequestActor>,
     Query(q): Query<CockpitSectionQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_browser_session_for_host_insight(&actor).map_err(AppError::from)?;
     let section = q.section.as_deref().unwrap_or("all");
     let storage = if section == "all" || section == "storage" {
         Some(
@@ -1293,7 +1307,9 @@ async fn get_host_cockpit_handler(
     } else {
         None
     };
-    Ok(Json(serde_json::json!({ "storage": storage, "network": network, "system": system })))
+    Ok(Json(
+        serde_json::json!({ "storage": storage, "network": network, "system": system }),
+    ))
 }
 
 #[derive(Deserialize)]
@@ -1304,11 +1320,17 @@ struct CockpitActionBody {
 }
 
 async fn post_host_cockpit_action_handler(
+    Extension(actor): Extension<RequestActor>,
     Json(body): Json<CockpitActionBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_destroy_vm(&actor)?;
     let result = tokio::task::spawn_blocking(move || match body.action.as_str() {
         "cockpit.firewalld.add_service" => {
-            let zone = body.payload.get("zone").and_then(|v| v.as_str()).unwrap_or("public");
+            let zone = body
+                .payload
+                .get("zone")
+                .and_then(|v| v.as_str())
+                .unwrap_or("public");
             let service = body
                 .payload
                 .get("service")
@@ -1317,7 +1339,11 @@ async fn post_host_cockpit_action_handler(
             machina_core::host_cockpit::firewalld_add_service(zone, service)
         }
         "cockpit.selinux.set_enforce" => {
-            let enforcing = body.payload.get("enforcing").and_then(|v| v.as_bool()).unwrap_or(true);
+            let enforcing = body
+                .payload
+                .get("enforcing")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
             machina_core::host_cockpit::selinux_set_enforce(enforcing)
         }
         "cockpit.tuned.set_profile" => {
@@ -1347,34 +1373,112 @@ async fn post_host_cockpit_action_handler(
             machina_core::host_cockpit::nm_create_bond(name, &ifaces)
         }
         "cockpit.nm.create_team" => {
-            let name = body.payload.get("name").and_then(|v| v.as_str()).ok_or_else(|| LibvirtError::Invalid("name required".into()))?;
-            let runner = body.payload.get("runner").and_then(|v| v.as_str()).unwrap_or("loadbalance");
-            let ifaces: Vec<String> = body.payload.get("interfaces").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            let name = body
+                .payload
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| LibvirtError::Invalid("name required".into()))?;
+            let runner = body
+                .payload
+                .get("runner")
+                .and_then(|v| v.as_str())
+                .unwrap_or("loadbalance");
+            let ifaces: Vec<String> = body
+                .payload
+                .get("interfaces")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
             machina_core::host_cockpit::nm_create_team(name, &ifaces, runner)
         }
         "cockpit.nm.create_vlan" => {
-            let name = body.payload.get("name").and_then(|v| v.as_str()).unwrap_or("");
-            let parent = body.payload.get("parent").and_then(|v| v.as_str()).ok_or_else(|| LibvirtError::Invalid("parent required".into()))?;
-            let vlan_id = body.payload.get("vlan_id").and_then(|v| v.as_u64()).and_then(|n| u32::try_from(n).ok()).ok_or_else(|| LibvirtError::Invalid("vlan_id required".into()))?;
+            let name = body
+                .payload
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let parent = body
+                .payload
+                .get("parent")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| LibvirtError::Invalid("parent required".into()))?;
+            let vlan_id = body
+                .payload
+                .get("vlan_id")
+                .and_then(|v| v.as_u64())
+                .and_then(|n| u32::try_from(n).ok())
+                .ok_or_else(|| LibvirtError::Invalid("vlan_id required".into()))?;
             machina_core::host_cockpit::nm_create_vlan(name, parent, vlan_id)
         }
         "cockpit.nm.create_wifi" => {
-            let ssid = body.payload.get("ssid").and_then(|v| v.as_str()).ok_or_else(|| LibvirtError::Invalid("ssid required".into()))?;
-            let password = body.payload.get("password").and_then(|v| v.as_str()).unwrap_or("");
+            let ssid = body
+                .payload
+                .get("ssid")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| LibvirtError::Invalid("ssid required".into()))?;
+            let password = body
+                .payload
+                .get("password")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             machina_core::host_cockpit::nm_create_wifi(ssid, password)
         }
         "cockpit.nm.create_wireguard" => {
-            let name = body.payload.get("name").and_then(|v| v.as_str()).ok_or_else(|| LibvirtError::Invalid("name required".into()))?;
-            let address = body.payload.get("address").and_then(|v| v.as_str()).ok_or_else(|| LibvirtError::Invalid("address required".into()))?;
-            let private_key = body.payload.get("private_key").and_then(|v| v.as_str()).unwrap_or("");
-            let peer_public_key = body.payload.get("peer_public_key").and_then(|v| v.as_str()).ok_or_else(|| LibvirtError::Invalid("peer_public_key required".into()))?;
-            let endpoint = body.payload.get("endpoint").and_then(|v| v.as_str()).ok_or_else(|| LibvirtError::Invalid("endpoint required".into()))?;
-            let allowed_ips = body.payload.get("allowed_ips").and_then(|v| v.as_str()).unwrap_or("0.0.0.0/0");
-            machina_core::host_cockpit::nm_create_wireguard(name, address, private_key, peer_public_key, endpoint, allowed_ips)
+            let name = body
+                .payload
+                .get("name")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| LibvirtError::Invalid("name required".into()))?;
+            let address = body
+                .payload
+                .get("address")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| LibvirtError::Invalid("address required".into()))?;
+            let private_key = body
+                .payload
+                .get("private_key")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let peer_public_key = body
+                .payload
+                .get("peer_public_key")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| LibvirtError::Invalid("peer_public_key required".into()))?;
+            let endpoint = body
+                .payload
+                .get("endpoint")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| LibvirtError::Invalid("endpoint required".into()))?;
+            let allowed_ips = body
+                .payload
+                .get("allowed_ips")
+                .and_then(|v| v.as_str())
+                .unwrap_or("0.0.0.0/0");
+            machina_core::host_cockpit::nm_create_wireguard(
+                name,
+                address,
+                private_key,
+                peer_public_key,
+                endpoint,
+                allowed_ips,
+            )
         }
         "cockpit.packagekit.refresh" => machina_core::host_cockpit::packagekit_refresh(),
         "host.package.install" => {
-            let pkgs: Vec<String> = body.payload.get("packages").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            let pkgs: Vec<String> = body
+                .payload
+                .get("packages")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
             if pkgs.is_empty() {
                 return Err(LibvirtError::Invalid("packages required".into()));
             }
@@ -1395,11 +1499,24 @@ async fn post_host_cockpit_action_handler(
             })
         }
         "host.package.remove" => {
-            let pkgs: Vec<String> = body.payload.get("packages").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_default();
+            let pkgs: Vec<String> = body
+                .payload
+                .get("packages")
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
             if pkgs.is_empty() {
                 return Err(LibvirtError::Invalid("packages required".into()));
             }
-            let purge = body.payload.get("purge").and_then(|v| v.as_bool()).unwrap_or(false);
+            let purge = body
+                .payload
+                .get("purge")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let res = machina_core::host_platform::package_remove(pkgs, purge)?;
             if !res.ok {
                 let detail = res.stderr.trim();
@@ -1421,7 +1538,9 @@ async fn post_host_cockpit_action_handler(
     .await
     .map_err(|e| AppError::from(LibvirtError::Internal(format!("Task failed: {e}"))))?
     .map_err(AppError::from)?;
-    Ok(Json(serde_json::json!({ "status": "ok", "message": result })))
+    Ok(Json(
+        serde_json::json!({ "status": "ok", "message": result }),
+    ))
 }
 
 // ── Router ─────────────────────────────────────────────────────────
@@ -1474,7 +1593,10 @@ pub fn extras_routes() -> Router<LibvirtManager> {
         .route("/host/iommu-groups", get(list_iommu_groups_handler))
         // Host stats + DHCP
         .route("/host/stats", get(get_host_stats))
-        .route("/host/linux-observability", get(get_host_linux_observability))
+        .route(
+            "/host/linux-observability",
+            get(get_host_linux_observability),
+        )
         .route("/host/linux-audit", get(get_host_linux_audit))
         .route("/host/filesystems", get(get_host_filesystems))
         .route("/host/processes", get(get_host_processes))
@@ -1505,11 +1627,20 @@ pub fn extras_routes() -> Router<LibvirtManager> {
         .route("/host/shutdown", post(host_shutdown_handler))
         .route("/host/reboot", post(host_reboot_handler))
         // Host system info
-        .route("/host/hardware-inventory/history", get(get_hardware_inventory_history_handler))
-        .route("/host/hardware-inventory", get(get_hardware_inventory_handler))
+        .route(
+            "/host/hardware-inventory/history",
+            get(get_hardware_inventory_history_handler),
+        )
+        .route(
+            "/host/hardware-inventory",
+            get(get_hardware_inventory_handler),
+        )
         .route("/host/system-info", get(get_system_info_handler))
         .route("/host/hostname", post(set_hostname_handler))
         .route("/host/timezone", post(set_timezone_handler))
         .route("/host/cockpit", get(get_host_cockpit_handler))
-        .route("/host/cockpit/actions", post(post_host_cockpit_action_handler))
+        .route(
+            "/host/cockpit/actions",
+            post(post_host_cockpit_action_handler),
+        )
 }

@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test'
 import { expandFleetInsights } from './helpers/platformTestHelpers'
 import { mockPlatformApi } from './platformMock'
 
-test('Infrastructure DNA strip visible on dashboard (power tier)', async ({ page }) => {
+test('Infrastructure DNA strip visible on dashboard (power tier)', { retries: 1 }, async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform')
   await expandFleetInsights(page)

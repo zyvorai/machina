@@ -115,7 +115,7 @@ LINES="$(wc -l < "$TMP" | tr -d ' ')"
 [ "$LINES" -gt 0 ] || exit 0
 
 python3 - "$TMP" "$EXPORT_URL" "$HOST_ID" <<'PY'
-import json, ssl, sys, urllib.request
+import json, ssl, sys, urllib.request, os
 path, url, host_id = sys.argv[1:4]
 events = []
 for line in open(path, encoding="utf-8", errors="replace"):
@@ -129,10 +129,14 @@ for line in open(path, encoding="utf-8", errors="replace"):
 if not events:
     sys.exit(0)
 payload = json.dumps({{"events": events}}).encode()
+headers = {{"Content-Type": "application/json"}}
+ingest_key = os.environ.get("MACHINA_INGEST_KEY", "")
+if ingest_key:
+    headers["X-Machina-Ingest-Key"] = ingest_key
 req = urllib.request.Request(
     f"{{url.rstrip('/')}}/{{host_id}}",
     data=payload,
-    headers={{"Content-Type": "application/json"}},
+    headers=headers,
     method="POST",
 )
 ctx = None
@@ -156,6 +160,7 @@ Requires=tetragon.service
 
 [Service]
 Type=oneshot
+EnvironmentFile=-/etc/default/machina-platform
 Environment=MACHINA_HOST_ID=$HOST_ID
 ExecStart=$INSTALL_ROOT/export-to-packetwolf.sh
 EOF
@@ -215,7 +220,10 @@ fn write_executable(path: &Path, contents: &str, dry_run: bool) -> Result<(), Li
     Ok(())
 }
 
-pub fn run_tetragon_install(spec: &TetragonInstallSpec, dry_run: bool) -> Result<TetragonInstallResult, LibvirtError> {
+pub fn run_tetragon_install(
+    spec: &TetragonInstallSpec,
+    dry_run: bool,
+) -> Result<TetragonInstallResult, LibvirtError> {
     let script_path = policy_dir().join("install-tetragon.sh");
     let script = render_install_script(spec);
     write_executable(&script_path, &script, dry_run)?;
@@ -281,7 +289,11 @@ pub fn run_tetragon_install(spec: &TetragonInstallSpec, dry_run: bool) -> Result
             format!(
                 "{}{}",
                 stderr,
-                if stderr.is_empty() { stdout } else { String::new() }
+                if stderr.is_empty() {
+                    stdout
+                } else {
+                    String::new()
+                }
             )
             .trim()
             .to_string()
@@ -311,7 +323,10 @@ mod tests {
         assert!(script.contains("host-abc"));
         assert!(script.contains("tetragon.service"));
         assert!(script.contains("tetragon-export.timer"));
-        assert!(script.contains("tetragon-v${VERSION}-${TG_ARCH}.tar.gz") || script.contains("${TG_DIR}.tar.gz"));
+        assert!(
+            script.contains("tetragon-v${VERSION}-${TG_ARCH}.tar.gz")
+                || script.contains("${TG_DIR}.tar.gz")
+        );
         assert!(script.contains("/etc/tetragon/tetragon.conf.d/export-filename"));
         assert!(script.contains("needs_reinstall"));
         assert!(script.contains("VERSION=\"1.7.0\""));

@@ -95,7 +95,7 @@ export default function SysinfoDisplay({ xml }: { xml: string }) {
             ) : (
               <dl className="divide-y divide-slate-700/30">
                 {entries.map((row, i) => (
-                  <div key={i} className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3 px-4 py-2.5 text-sm">
+                  <div key={row.name ?? i} className="grid grid-cols-1 sm:grid-cols-3 gap-1 sm:gap-3 px-4 py-2.5 text-sm">
                     {row.name ? (
                       <>
                         <dt className="text-slate-500 sm:col-span-1 font-medium break-words">{row.name}</dt>

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde_json::Value;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -12,7 +12,7 @@ pub struct PolicyViolation {
 }
 
 pub async fn evaluate_vm_create(
-    pool: &PgPool,
+    pool: &SqlitePool,
     project: &str,
     tags: &[String],
     vcpus: i32,
@@ -37,7 +37,7 @@ pub async fn evaluate_vm_create(
 }
 
 async fn check_project_quota(
-    pool: &PgPool,
+    pool: &SqlitePool,
     project: &str,
     vcpus: i32,
     memory_mib: i64,
@@ -45,12 +45,16 @@ async fn check_project_quota(
 ) -> Result<(), PolicyViolation> {
     let row: Option<(i32, i32, i64, i64, i64, i64, i64, i64)> = sqlx::query_as(
         "SELECT q.max_vms, q.max_vcpu, q.max_memory_mib, q.max_storage_gib,
-                COALESCE((SELECT COUNT(*) FROM vms WHERE COALESCE(project, 'default') = $1), 0)::bigint,
-                COALESCE((SELECT SUM(vcpus) FROM vms WHERE COALESCE(project, 'default') = $1), 0)::bigint,
-                COALESCE((SELECT SUM(memory_mib) FROM vms WHERE COALESCE(project, 'default') = $1), 0)::bigint,
-                COALESCE((SELECT SUM(size_gib) FROM vm_disks d JOIN vms v ON v.id = d.vm_id WHERE COALESCE(v.project, 'default') = $1), 0)::bigint
-         FROM project_quotas q WHERE q.project = $1",
+                COALESCE((SELECT COUNT(*) FROM vms WHERE COALESCE(project, 'default') = ?), 0),
+                COALESCE((SELECT SUM(vcpus) FROM vms WHERE COALESCE(project, 'default') = ?), 0),
+                COALESCE((SELECT SUM(memory_mib) FROM vms WHERE COALESCE(project, 'default') = ?), 0),
+                COALESCE((SELECT SUM(size_gib) FROM vm_disks d JOIN vms v ON v.id = d.vm_id WHERE COALESCE(v.project, 'default') = ?), 0)
+         FROM project_quotas q WHERE q.project = ?",
     )
+    .bind(project)
+    .bind(project)
+    .bind(project)
+    .bind(project)
     .bind(project)
     .fetch_optional(pool)
     .await
@@ -129,7 +133,7 @@ fn check_rule(
 }
 
 pub async fn upsert_project_quota(
-    pool: &PgPool,
+    pool: &SqlitePool,
     project: &str,
     max_vms: i32,
     max_vcpu: i32,
@@ -138,13 +142,13 @@ pub async fn upsert_project_quota(
 ) -> anyhow::Result<()> {
     sqlx::query(
         "INSERT INTO project_quotas (project, max_vms, max_vcpu, max_memory_mib, max_storage_gib, updated_at)
-         VALUES ($1, $2, $3, $4, $5, NOW())
+         VALUES (?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT (project) DO UPDATE SET
            max_vms = EXCLUDED.max_vms,
            max_vcpu = EXCLUDED.max_vcpu,
            max_memory_mib = EXCLUDED.max_memory_mib,
            max_storage_gib = EXCLUDED.max_storage_gib,
-           updated_at = NOW()",
+           updated_at = datetime('now')",
     )
     .bind(project)
     .bind(max_vms)
@@ -156,10 +160,10 @@ pub async fn upsert_project_quota(
     Ok(())
 }
 
-pub async fn list_policy_rules(pool: &PgPool) -> anyhow::Result<Vec<(Uuid, String, bool, Value)>> {
-    Ok(sqlx::query_as(
-        "SELECT id, name, enabled, rule_json FROM policy_rules ORDER BY name",
+pub async fn list_policy_rules(pool: &SqlitePool) -> anyhow::Result<Vec<(Uuid, String, bool, Value)>> {
+    Ok(
+        sqlx::query_as("SELECT id, name, enabled, rule_json FROM policy_rules ORDER BY name")
+            .fetch_all(pool)
+            .await?,
     )
-    .fetch_all(pool)
-    .await?)
 }

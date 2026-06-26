@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Key, Plus, Trash2 } from 'lucide-react'
 import GlassDataTable from '../../components/platform/GlassDataTable'
 import OperatingSurfaceLayout from '../../components/platform/OperatingSurfaceLayout'
@@ -19,6 +20,7 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
   const [name, setName] = useState('automation')
   const [role, setRole] = useState('operator')
   const [newToken, setNewToken] = useState<string | null>(null)
+  const [deleteKeyId, setDeleteKeyId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setError(null)
@@ -104,15 +106,25 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
               <td className="p-3 capitalize">{k.role}</td>
               <td className="p-3 text-slate-500">{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : '—'}</td>
               <td className="p-3 text-right">
-                <button type="button" className="btn-secondary text-xs" onClick={async () => {
-                  if (!window.confirm(`Delete API key "${k.name}"?`)) return
-                  try { await deleteApiKey(k.id); toast.success('Deleted'); await load() } catch (e: unknown) { toast.error(formatUserError(e)) }
-                }}><Trash2 className="w-3 h-3 inline" /></button>
+                <button type="button" className="btn-secondary text-xs" aria-label="Delete API key" onClick={() => setDeleteKeyId(k.id)}><Trash2 className="w-3 h-3 inline" /></button>
               </td>
             </tr>
           ))}
         </GlassDataTable>
       </OperatingSurfaceLayout>
+      <ConfirmDialog
+        open={deleteKeyId !== null}
+        title="Delete API Key"
+        message={`Delete API key "${rows.find((k) => k.id === deleteKeyId)?.name}"? Any integrations using this key will stop working immediately.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setDeleteKeyId(null)}
+        onConfirm={async () => {
+          try { await deleteApiKey(deleteKeyId!); toast.success('Deleted'); await load() }
+          catch (e: unknown) { toast.error(formatUserError(e)) }
+          finally { setDeleteKeyId(null) }
+        }}
+      />
     </PlatformPageChrome>
   )
 }

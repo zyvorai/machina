@@ -67,7 +67,9 @@ impl FirewallAdapter for IptablesAdapter {
                 } else {
                     "all"
                 };
-                let port = extract_dpt(line).map(|p| p.to_string()).unwrap_or_else(|| "*".into());
+                let port = extract_dpt(line)
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "*".into());
                 let scope = if chain == "FORWARD" && line.contains("vs-fw:") {
                     "hypervisor_forward"
                 } else {

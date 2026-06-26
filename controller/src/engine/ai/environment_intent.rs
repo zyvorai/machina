@@ -33,13 +33,24 @@ pub struct EnvironmentResourcePlan {
 
 pub fn plan_environment(query: &str, vcpu_rate: f64, gib_rate: f64) -> EnvironmentResourcePlan {
     let ql = query.to_lowercase();
-    let gpu_required = ql.contains("gpu") || ql.contains("llama") || ql.contains("inference")
-        || ql.contains("cuda") || ql.contains("training");
+    let gpu_required = ql.contains("gpu")
+        || ql.contains("llama")
+        || ql.contains("inference")
+        || ql.contains("cuda")
+        || ql.contains("training");
 
-    let developers = extract_count(&ql, &["developer", "developers", "engineer", "engineers", "user", "users"])
-        .unwrap_or_else(|| {
-            if ql.contains("team") { 10 } else { 5 }
-        });
+    let developers = extract_count(
+        &ql,
+        &[
+            "developer",
+            "developers",
+            "engineer",
+            "engineers",
+            "user",
+            "users",
+        ],
+    )
+    .unwrap_or_else(|| if ql.contains("team") { 10 } else { 5 });
 
     let env_type = if ql.contains("prod") || ql.contains("production") {
         "production"
@@ -112,7 +123,9 @@ pub fn plan_environment(query: &str, vcpu_rate: f64, gib_rate: f64) -> Environme
     ];
 
     if gpu_required {
-        build_steps.push("GPU passthrough / KubeVirt GPU operator (preview — manual validation required)".into());
+        build_steps.push(
+            "GPU passthrough / KubeVirt GPU operator (preview — manual validation required)".into(),
+        );
         build_steps.push("Deploy inference stack via blueprint (coming soon)".into());
     } else {
         build_steps.push("Apply backup policy via blueprint".into());
@@ -263,7 +276,7 @@ pub async fn execute_environment(
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-        let hostname: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = $1")
+        let hostname: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_one(&state.pool)
             .await
@@ -287,15 +300,13 @@ pub async fn execute_environment(
 
         let vm_id = Uuid::new_v4();
         let mem_mib = plan.memory_gib_per_vm as i64 * 1024;
-        let tags: Vec<String> = vec![
-            "environment".into(),
-            plan.environment_type.clone(),
-        ];
+        let tags: Vec<String> = vec!["environment".into(), plan.environment_type.clone()];
+        let tags_json = serde_json::to_string(&tags).unwrap_or_else(|_| "[]".into());
         let spec_json = env_vm_spec(&name, plan.vcpus_per_vm, plan.memory_gib_per_vm);
 
         sqlx::query(
             "INSERT INTO vms (id, cluster_id, host_id, name, project, spec_json, desired_state, lifecycle_phase, vcpus, memory_mib, tags)
-             VALUES ($1, $2, $3, $4, 'environment', $5, 'running', 'creating', $6, $7, $8)",
+             VALUES (?, ?, ?, ?, 'environment', ?, 'running', 'creating', ?, ?, ?)",
         )
         .bind(vm_id)
         .bind(cluster_id)
@@ -304,13 +315,13 @@ pub async fn execute_environment(
         .bind(&spec_json)
         .bind(plan.vcpus_per_vm)
         .bind(mem_mib)
-        .bind(&tags)
+        .bind(&tags_json)
         .execute(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
         sqlx::query(
-            "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class) VALUES ($1, $2, 'root', 80, 'silver')",
+            "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class) VALUES (?, ?, 'root', 80, 'silver')",
         )
         .bind(Uuid::new_v4())
         .bind(vm_id)

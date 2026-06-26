@@ -12,6 +12,13 @@ client_id = "machina"
 redirect_url = "https://hypervisor.example.com/api/v1/auth/oidc/callback"
 require_local_user_for_session_libvirt = true
 
+[auth.saml]
+enabled = false
+sp_entity_id = "https://hypervisor.example.com/saml/metadata"
+sp_acs_url = "https://hypervisor.example.com/api/v1/auth/saml/acs"
+idp_entity_id = "https://idp.example.com/entity"
+idp_metadata_url = "https://idp.example.com/metadata"
+
 [libvirt]
 dual_connection = true
 uri = "qemu:///system"

@@ -215,7 +215,7 @@ function OpenStackSecurityGroupsContent() {
                   <p className="text-sm text-slate-500">No rules defined.</p>
                 ) : (
                   <div className="overflow-x-auto rounded-lg border border-slate-800">
-                    <table className="w-full text-sm">
+                    <table className="w-full text-sm" aria-label="Security group rules">
                       <thead className="bg-slate-900 text-slate-400 text-left">
                         <tr>
                           <th className="px-3 py-2">Direction</th>

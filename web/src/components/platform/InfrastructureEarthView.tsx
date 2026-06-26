@@ -35,6 +35,11 @@ function LivingHostCard({ host }: { host: MissionHost }) {
           </div>
           <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
             <div
+              role="progressbar"
+              aria-label="CPU usage"
+              aria-valuenow={Math.round(Math.min(100, Math.max(0, cpuPct)))}
+              aria-valuemin={0}
+              aria-valuemax={100}
               className={`h-full rounded-full transition-all duration-700 ${statusBgClass(utilizationTone(cpuPct))}`}
               style={{ width: `${cpuPct}%` }}
             />
@@ -45,7 +50,15 @@ function LivingHostCard({ host }: { host: MissionHost }) {
             <span>Memory</span><span>{memPct}%</span>
           </div>
           <div className="h-1 rounded-full bg-slate-800 overflow-hidden">
-            <div className="h-full rounded-full bg-violet-400 transition-all duration-700" style={{ width: `${memPct}%` }} />
+            <div
+              role="progressbar"
+              aria-label="Memory usage"
+              aria-valuenow={Math.round(Math.min(100, Math.max(0, memPct)))}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              className="h-full rounded-full bg-violet-400 transition-all duration-700"
+              style={{ width: `${memPct}%` }}
+            />
           </div>
         </div>
       </div>

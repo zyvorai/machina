@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Link } from 'react-router'
 import { LayoutGrid, Play, Plus, Trash2, Workflow, Wrench } from 'lucide-react'
 import {
@@ -43,6 +44,7 @@ export default function PlatformBlueprints() {
   const [rows, setRows] = useState<Blueprint[]>([])
   const [error, setError] = useState<string | null>(null)
   const [running, setRunning] = useState<string | null>(null)
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [name, setName] = useState('Nightly backup')
   const [actions, setActions] = useState('backup')
   const [nlPrompt, setNlPrompt] = useState('Nightly backup for all production VMs')
@@ -183,9 +185,7 @@ export default function PlatformBlueprints() {
                   <button type="button" className="btn-primary text-xs flex items-center gap-1" onClick={() => void runShortcut(bp.id)}>
                     <Play className="w-3 h-3" /> Run
                   </button>
-                  <button type="button" className="btn-danger text-xs flex items-center gap-1" onClick={async () => {
-                    try { await deleteBlueprint(bp.id); toast.success('Deleted'); await load() } catch (e: unknown) { toast.error(formatUserError(e)) }
-                  }}><Trash2 className="w-3 h-3" /> Delete</button>
+                  <button type="button" className="btn-danger text-xs flex items-center gap-1" onClick={() => setConfirmDeleteId(bp.id)}><Trash2 className="w-3 h-3" /> Delete</button>
                 </div>
               </MacGlassPanel>
             ))}
@@ -194,6 +194,19 @@ export default function PlatformBlueprints() {
         </>
       )}
       <FleetSettingsPane kind="shortcuts" />
+      <ConfirmDialog
+        open={confirmDeleteId !== null}
+        title="Delete Blueprint"
+        message={`Delete "${rows.find((b) => b.id === confirmDeleteId)?.name}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setConfirmDeleteId(null)}
+        onConfirm={async () => {
+          try { await deleteBlueprint(confirmDeleteId!); toast.success('Deleted'); await load() }
+          catch (e: unknown) { toast.error(formatUserError(e)) }
+          finally { setConfirmDeleteId(null) }
+        }}
+      />
     </PlatformPageChrome>
   )
 }

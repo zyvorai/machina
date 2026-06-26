@@ -297,6 +297,7 @@ export default function VNCViewer({
           if (!cancelled) {
             setStatus('connected')
             vp?.setConnected(true)
+            vp?.registerCtrlAltDel?.(() => rfbRef.current?.sendCtrlAltDel?.())
             syncGuestSize(rfb)
             if (cockpitMode) {
               scheduleCockpitViewportRefresh(rfb, scrollRef.current, () => cancelled)
@@ -332,6 +333,7 @@ export default function VNCViewer({
           if (!cancelled) {
             setStatus('disconnected')
             vp?.setConnected(false)
+            vp?.registerCtrlAltDel?.(null)
             vp?.setGuestSize(0, 0)
             onCanvasReady?.(null)
             if (clipRef.current) {
@@ -579,7 +581,7 @@ export default function VNCViewer({
               <RefreshCw className="w-3 h-3" /> Reconnect
             </button>
           )}
-          <button type="button" onClick={() => setFullscreen(!fullscreen)} className="p-1.5 hover:bg-slate-700 rounded transition" title="Fullscreen">
+          <button type="button" onClick={() => setFullscreen(!fullscreen)} className="p-1.5 hover:bg-slate-700 rounded transition" title="Fullscreen" aria-label="Fullscreen">
             {fullscreen ? <Minimize className="w-4 h-4 text-slate-400" /> : <Maximize className="w-4 h-4 text-slate-400" />}
           </button>
         </div>

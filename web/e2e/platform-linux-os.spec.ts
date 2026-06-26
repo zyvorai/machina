@@ -9,8 +9,8 @@ test('host Linux tab shows PSI and package preview', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'host-1' })).toBeVisible({ timeout: 15_000 })
   await page.getByRole('tab', { name: 'Linux' }).click()
   await expect(page.getByText('Pressure stall (PSI)')).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByRole('button', { name: 'Preview upgrade' })).toBeVisible()
-  await page.getByRole('button', { name: 'Preview upgrade' }).click()
+  await expect(page.getByRole('button', { name: 'Preview upgrade', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Preview upgrade', exact: true }).click()
   await expect(page.getByText('Upgrade preview ready')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText(/Inst libc6/i)).toBeVisible({ timeout: 10_000 })
 })
@@ -19,8 +19,9 @@ test('maintenance mission apply upgrades queues task', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power' })
   await page.goto('/platform/maintenance?tab=mission')
   await expect(page.getByText('Apply preview: ready')).toBeVisible({ timeout: 15_000 })
-  page.once('dialog', (d) => d.accept())
   await page.getByRole('button', { name: 'Apply upgrades' }).click()
+  // ConfirmDialog (React modal) — click the "Apply" confirm button
+  await page.getByRole('dialog').getByRole('button', { name: 'Apply' }).click()
   await expect(page.getByText('Package upgrade queued')).toBeVisible({ timeout: 10_000 })
 })
 

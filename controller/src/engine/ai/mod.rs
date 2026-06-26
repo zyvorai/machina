@@ -1,27 +1,28 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
-pub mod vm_builder;
-pub mod context;
-pub mod guest_insights;
-pub mod fleet_guest_query;
-pub mod guest_tools;
-pub mod migration_readiness;
-pub mod intent_router;
-pub mod llm;
-pub mod settings;
-pub mod providers;
-pub mod routing;
-pub mod agents;
-pub mod prompts;
-pub mod memory_store;
 pub mod actions;
 pub mod agent_marketplace;
-pub mod enterprise_zeus;
+pub mod agents;
+pub mod crypto;
 pub mod autonomous;
+pub mod context;
+pub mod enterprise_zeus;
+pub mod fleet_guest_query;
+pub mod guest_insights;
+pub mod guest_tools;
+pub mod intent_router;
+pub mod llm;
+pub mod memory_store;
+pub mod migration_readiness;
+pub mod prompts;
+pub mod providers;
+pub mod routing;
+pub mod settings;
+pub mod vm_builder;
 
 pub use intent_router::{SearchHit, SpotlightIntent, SpotlightResult};
 
@@ -36,7 +37,7 @@ pub struct CopilotResponse {
 use crate::config::ControllerConfig;
 
 pub async fn copilot_chat(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     message: &str,
     vm_id: Option<Uuid>,
@@ -80,7 +81,7 @@ pub struct CopilotBase {
 }
 
 pub async fn build_copilot_base(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     message: &str,
     vm_id: Option<Uuid>,
@@ -90,7 +91,8 @@ pub async fn build_copilot_base(
     let ctx = context::assemble(pool, cfg, vm_id, host_id).await?;
     let mut guest_snapshots: Vec<crate::engine::guest_context::GuestAiSnapshot> = Vec::new();
     if let Some(ids) = vm_ids.filter(|v| !v.is_empty()) {
-        let results = crate::engine::guest_context::gather_fleet_snapshots(pool, cfg, ids, false).await;
+        let results =
+            crate::engine::guest_context::gather_fleet_snapshots(pool, cfg, ids, false).await;
         for (_, r) in results {
             if let Ok(s) = r {
                 guest_snapshots.push(s);
@@ -105,7 +107,11 @@ pub async fn build_copilot_base(
 
     let ml = message.to_lowercase();
     if let Some(ref host) = ctx.host {
-        if ml.contains("pressure") || ml.contains("linux") || ml.contains("smart") || ml.contains("thermal") {
+        if ml.contains("pressure")
+            || ml.contains("linux")
+            || ml.contains("smart")
+            || ml.contains("thermal")
+        {
             if let Some(io) = host.io_pressure_pct {
                 reply.push_str(&format!(
                     "**{}** Linux IO pressure: **{:.0}%**.\n",
@@ -134,9 +140,15 @@ pub async fn build_copilot_base(
                 }
             }
         } else if let Ok(Some((id, name))) = sqlx::query_as::<_, (Uuid, String)>(
-            "SELECT id, name FROM vms WHERE name ILIKE $1 LIMIT 1",
+            "SELECT id, name FROM vms WHERE name LIKE ? LIMIT 1",
         )
-        .bind(format!("%{}%", message.split_whitespace().find(|w| w.len() > 2).unwrap_or("")))
+        .bind(format!(
+            "%{}%",
+            message
+                .split_whitespace()
+                .find(|w| w.len() > 2)
+                .unwrap_or("")
+        ))
         .fetch_optional(pool)
         .await
         {
@@ -179,7 +191,10 @@ pub async fn build_copilot_base(
     } else if ml.contains("migrat") {
         let vm_hint = message
             .split_whitespace()
-            .find(|w| w.len() > 2 && !["why", "the", "vm", "can", "how"].contains(&w.to_lowercase().as_str()))
+            .find(|w| {
+                w.len() > 2
+                    && !["why", "the", "vm", "can", "how"].contains(&w.to_lowercase().as_str())
+            })
             .unwrap_or("web-01");
         let adv = crate::engine::ai::migration::advise_vmware_vm(vm_hint, "linux", false);
         reply.push_str(&format!(
@@ -192,14 +207,21 @@ pub async fn build_copilot_base(
         for s in adv.safe.iter().take(3) {
             reply.push_str(&format!("- OK: {s}\n"));
         }
-    } else if ml.contains("reach") || ml.contains("connect") || (ml.contains("can't") && ml.contains("to")) {
+    } else if ml.contains("reach")
+        || ml.contains("connect")
+        || (ml.contains("can't") && ml.contains("to"))
+    {
         if let Some((a, b, port)) = parse_reach_query(message) {
             let net = crate::engine::ai::network::explain_reach(pool, cfg, &a, &b, port).await?;
             reply.push_str(&format!(
                 "Network path **{} → {}**: {}\n\nHops: {}\n\nRemediation: {}",
                 a,
                 b,
-                if net.can_reach { "likely reachable" } else { "blocked or unknown" },
+                if net.can_reach {
+                    "likely reachable"
+                } else {
+                    "blocked or unknown"
+                },
                 net.hops.join(" → "),
                 net.remediation
             ));
@@ -256,12 +278,20 @@ pub async fn build_copilot_base(
             "copilot",
         )
         .await?;
-        reply.push_str(&format!("**NL Ops plan** ({}) — risk {}/10\n\n", plan.intent, plan.risk_score));
+        reply.push_str(&format!(
+            "**NL Ops plan** ({}) — risk {}/10\n\n",
+            plan.intent, plan.risk_score
+        ));
         reply.push_str(&format!("{}\n\n", plan.summary));
         for step in &plan.steps {
-            reply.push_str(&format!("- {} ({}) — {}\n", step.label, step.action_type, step.review));
+            reply.push_str(&format!(
+                "- {} ({}) — {}\n",
+                step.label, step.action_type, step.review
+            ));
         }
-        reply.push_str("\nUse Ask Zeus or `/api/v1/ai/nl-ops` with `dry_run: false` to queue approvals.\n");
+        reply.push_str(
+            "\nUse Ask Zeus or `/api/v1/ai/nl-ops` with `dry_run: false` to queue approvals.\n",
+        );
     } else {
         reply.push_str(&format!(
             "Zeus (advisor mode). Cluster: **{} VMs**, **{} hosts online**, **{} open recommendations**.\n\nAsk about VM health, capacity, cost, security, migrations, or network reachability.",
@@ -324,7 +354,7 @@ pub fn chunk_text(text: &str, chunk_size: usize) -> Vec<String> {
 }
 
 pub async fn explain_screen(
-    pool: &PgPool,
+    pool: &SqlitePool,
     screen: &str,
     object_ref: &serde_json::Value,
 ) -> anyhow::Result<String> {
@@ -347,14 +377,20 @@ pub async fn explain_screen(
                 "VM detail view.".into()
             }
         }
-        "migration" => "Migration Assistant imports workloads from VMware, OVF, or HyperSDK.".into(),
+        "migration" => {
+            "Migration Assistant imports workloads from VMware, OVF, or HyperSDK.".into()
+        }
         "storage" => "Storage pools are imported from libvirt on online hosts.".into(),
         "templates" => "Templates deploy golden images when disk readiness passes.".into(),
         "tasks" => "Tasks queue orchestration operations with progress and retry.".into(),
         "vm_doctor" => "Zeus SRE scores VM health 0–100 with actionable fixes.".into(),
-        "console_hub" => "Zeus ConsoleHub Machine Cockpit — display, serial, SSH, and AI recovery lenses.".into(),
+        "console_hub" => {
+            "Zeus ConsoleHub Machine Cockpit — display, serial, SSH, and AI recovery lenses.".into()
+        }
         "failed_task" => "Failed tasks include remediation via runbooks and retry.".into(),
-        "notification" => "Alerts surface operational issues with Explain and Runbook actions.".into(),
+        "notification" => {
+            "Alerts surface operational issues with Explain and Runbook actions.".into()
+        }
         _ => format!("Screen: {screen}"),
     };
 
@@ -371,51 +407,51 @@ pub async fn explain_screen(
     Ok(base)
 }
 
-pub mod cost;
-pub mod capacity;
-pub mod runbook;
-pub mod blueprint;
-pub mod security;
-pub mod network;
-pub mod migration;
-pub mod policy_export;
 pub mod autopilot;
+pub mod blueprint;
+pub mod capacity;
 pub mod compliance;
-pub mod terminal;
-pub mod worker;
-pub mod fleet_summary;
-pub mod digital_twin;
-pub mod root_cause;
-pub mod environment_intent;
-pub mod sre_predict;
-pub mod fleet_heatmap;
-pub mod fleet_rebalance;
-pub mod security_graph;
-pub mod knowledge_search;
-pub mod service_graph;
-pub mod infrastructure_memory;
-pub mod mission_stack;
-pub mod cost_attribution;
 pub mod compliance_frameworks;
+pub mod compliance_remediate;
+pub mod cost;
+pub mod cost_attribution;
+pub mod cost_budget;
+pub mod digital_twin;
+pub mod environment_intent;
+pub mod exposure_finops;
 pub mod firewall;
 pub mod firewall_remediate;
+pub mod fleet_heatmap;
 pub mod fleet_placement;
-pub mod knowledge_diagnose;
-pub mod service_impact;
-pub mod sre_remediate;
-pub mod compliance_remediate;
 pub mod fleet_power;
-pub mod zeus_summary;
-pub mod exposure_finops;
-pub mod remediate_hub;
-pub mod knowledge_runbook;
-pub mod cost_budget;
-pub mod mission_stack_status;
-pub mod infra_graph;
-pub mod troubleshoot;
+pub mod fleet_rebalance;
+pub mod fleet_summary;
 pub mod incident_commander;
-pub mod predictions;
+pub mod infra_graph;
+pub mod infrastructure_memory;
+pub mod knowledge_diagnose;
+pub mod knowledge_runbook;
+pub mod knowledge_search;
+pub mod migration;
+pub mod mission_stack;
+pub mod mission_stack_status;
+pub mod network;
 pub mod nl_ops;
+pub mod policy_export;
+pub mod predictions;
+pub mod remediate_hub;
+pub mod root_cause;
+pub mod runbook;
+pub mod security;
+pub mod security_graph;
+pub mod service_graph;
+pub mod service_impact;
+pub mod sre_predict;
+pub mod sre_remediate;
+pub mod terminal;
+pub mod troubleshoot;
+pub mod worker;
+pub mod zeus_summary;
 
 fn parse_reach_query(message: &str) -> Option<(String, String, Option<i32>)> {
     let ml = message.to_lowercase();
@@ -433,10 +469,14 @@ fn parse_reach_query(message: &str) -> Option<(String, String, Option<i32>)> {
         });
 
     if let Some(idx) = ml.find(" reach ") {
-        let rest = &message[idx + 7..];
+        let rest = &ml[idx + 7..];
         let parts: Vec<&str> = rest.split_whitespace().collect();
         if parts.len() >= 3 && parts[1].eq_ignore_ascii_case("to") {
-            return Some((parts[0].to_string(), parts[2].trim_matches(|c| c == '?' || c == '.').to_string(), port));
+            return Some((
+                parts[0].to_string(),
+                parts[2].trim_matches(|c| c == '?' || c == '.').to_string(),
+                port,
+            ));
         }
     }
 
@@ -444,21 +484,33 @@ fn parse_reach_query(message: &str) -> Option<(String, String, Option<i32>)> {
     for (i, t) in tokens.iter().enumerate() {
         if t.eq_ignore_ascii_case("reach") && i + 2 < tokens.len() {
             return Some((
-                tokens[i + 1].trim_matches(|c| c == '?' || c == '.').to_string(),
-                tokens[i + 2].trim_matches(|c| c == '?' || c == '.').to_string(),
+                tokens[i + 1]
+                    .trim_matches(|c| c == '?' || c == '.')
+                    .to_string(),
+                tokens[i + 2]
+                    .trim_matches(|c| c == '?' || c == '.')
+                    .to_string(),
                 port,
             ));
         }
     }
 
     if let (Some(a_pos), Some(b_pos)) = (
-        tokens.iter().position(|t| t.contains('-') || t.chars().any(|c| c.is_ascii_digit())),
-        tokens.iter().rposition(|t| t.contains('-') || t.chars().any(|c| c.is_ascii_digit())),
+        tokens
+            .iter()
+            .position(|t| t.contains('-') || t.chars().any(|c| c.is_ascii_digit())),
+        tokens
+            .iter()
+            .rposition(|t| t.contains('-') || t.chars().any(|c| c.is_ascii_digit())),
     ) {
         if a_pos != b_pos {
             return Some((
-                tokens[a_pos].trim_matches(|c| c == '?' || c == '.').to_string(),
-                tokens[b_pos].trim_matches(|c| c == '?' || c == '.').to_string(),
+                tokens[a_pos]
+                    .trim_matches(|c| c == '?' || c == '.')
+                    .to_string(),
+                tokens[b_pos]
+                    .trim_matches(|c| c == '?' || c == '.')
+                    .to_string(),
                 port,
             ));
         }

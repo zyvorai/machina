@@ -2,7 +2,7 @@
 // vSAN-class storage tiers, snapshot retention, backup SLA stubs.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -69,7 +69,7 @@ pub struct UpsertBackupSlaRequest {
     pub retention_days: i32,
 }
 
-pub async fn tiers_overview(pool: &PgPool) -> anyhow::Result<TiersOverview> {
+pub async fn tiers_overview(pool: &SqlitePool) -> anyhow::Result<TiersOverview> {
     let rows: Vec<StorageTierRow> = match sqlx::query_as(
         "SELECT id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description
          FROM storage_tiers ORDER BY tier_class, name",
@@ -90,8 +90,8 @@ pub async fn tiers_overview(pool: &PgPool) -> anyhow::Result<TiersOverview> {
     let mut tiers = Vec::new();
     for row in rows {
         let stats: (i64, i64, i64) = match sqlx::query_as(
-            "SELECT COUNT(*)::bigint, COALESCE(SUM(capacity_gib), 0)::bigint, COALESCE(SUM(used_gib), 0)::bigint
-             FROM storage_pools WHERE tier_id = $1",
+            "SELECT COUNT(*), COALESCE(SUM(capacity_gib), 0), COALESCE(SUM(used_gib), 0)
+             FROM storage_pools WHERE tier_id = ?",
         )
         .bind(row.id)
         .fetch_one(pool)
@@ -128,15 +128,15 @@ pub async fn tiers_overview(pool: &PgPool) -> anyhow::Result<TiersOverview> {
     Ok(TiersOverview { tiers, summary })
 }
 
-pub async fn bind_pool_tier(pool: &PgPool, pool_id: Uuid, tier_id: Uuid) -> anyhow::Result<()> {
-    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM storage_tiers WHERE id = $1")
+pub async fn bind_pool_tier(pool: &SqlitePool, pool_id: Uuid, tier_id: Uuid) -> anyhow::Result<()> {
+    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM storage_tiers WHERE id = ?")
         .bind(tier_id)
         .fetch_optional(pool)
         .await?;
     if exists.is_none() {
         anyhow::bail!("tier not found");
     }
-    let r = sqlx::query("UPDATE storage_pools SET tier_id = $1 WHERE id = $2")
+    let r = sqlx::query("UPDATE storage_pools SET tier_id = ? WHERE id = ?")
         .bind(tier_id)
         .bind(pool_id)
         .execute(pool)
@@ -147,7 +147,7 @@ pub async fn bind_pool_tier(pool: &PgPool, pool_id: Uuid, tier_id: Uuid) -> anyh
     Ok(())
 }
 
-pub async fn backup_sla_overview(pool: &PgPool) -> anyhow::Result<BackupSlaOverview> {
+pub async fn backup_sla_overview(pool: &SqlitePool) -> anyhow::Result<BackupSlaOverview> {
     ensure_sla_stubs(pool).await?;
 
     let policies = sqlx::query_as(
@@ -170,11 +170,11 @@ pub async fn backup_sla_overview(pool: &PgPool) -> anyhow::Result<BackupSlaOverv
 }
 
 pub async fn upsert_backup_sla(
-    pool: &PgPool,
+    pool: &SqlitePool,
     pool_id: Uuid,
     req: &UpsertBackupSlaRequest,
 ) -> anyhow::Result<BackupSlaRow> {
-    let _pool: String = sqlx::query_scalar("SELECT name FROM storage_pools WHERE id = $1")
+    let _pool: String = sqlx::query_scalar("SELECT name FROM storage_pools WHERE id = ?")
         .bind(pool_id)
         .fetch_optional(pool)
         .await?
@@ -191,7 +191,7 @@ pub async fn upsert_backup_sla(
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO storage_backup_sla (id, pool_id, rpo_hours, rto_hours, retention_days, compliance_grade)
-         VALUES ($1, $2, $3, $4, $5, $6)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (pool_id) DO UPDATE SET
            rpo_hours = EXCLUDED.rpo_hours,
            rto_hours = EXCLUDED.rto_hours,
@@ -213,7 +213,7 @@ pub async fn upsert_backup_sla(
          FROM storage_backup_sla s
          JOIN storage_pools p ON p.id = s.pool_id
          LEFT JOIN storage_tiers t ON t.id = p.tier_id
-         WHERE s.pool_id = $1",
+         WHERE s.pool_id = ?",
     )
     .bind(pool_id)
     .fetch_one(pool)
@@ -221,7 +221,7 @@ pub async fn upsert_backup_sla(
     .map_err(|e| e.into())
 }
 
-async fn ensure_sla_stubs(pool: &PgPool) -> anyhow::Result<()> {
+async fn ensure_sla_stubs(pool: &SqlitePool) -> anyhow::Result<()> {
     let pools: Vec<(Uuid, Option<Uuid>)> =
         sqlx::query_as("SELECT id, tier_id FROM storage_pools ORDER BY name")
             .fetch_all(pool)
@@ -229,7 +229,7 @@ async fn ensure_sla_stubs(pool: &PgPool) -> anyhow::Result<()> {
 
     for (pool_id, tier_id) in pools {
         let exists: Option<Uuid> =
-            sqlx::query_scalar("SELECT id FROM storage_backup_sla WHERE pool_id = $1")
+            sqlx::query_scalar("SELECT id FROM storage_backup_sla WHERE pool_id = ?")
                 .bind(pool_id)
                 .fetch_optional(pool)
                 .await?;
@@ -239,7 +239,7 @@ async fn ensure_sla_stubs(pool: &PgPool) -> anyhow::Result<()> {
 
         let (rpo, retention): (i32, i32) = if let Some(tid) = tier_id {
             sqlx::query_as(
-                "SELECT backup_rpo_hours, snapshot_retention_days FROM storage_tiers WHERE id = $1",
+                "SELECT backup_rpo_hours, snapshot_retention_days FROM storage_tiers WHERE id = ?",
             )
             .bind(tid)
             .fetch_optional(pool)
@@ -249,28 +249,39 @@ async fn ensure_sla_stubs(pool: &PgPool) -> anyhow::Result<()> {
             (24, 14)
         };
 
-        let grade = if rpo <= 4 { "A" } else if rpo <= 24 { "B" } else { "C" };
+        let grade = if rpo <= 4 {
+            "A"
+        } else if rpo <= 24 {
+            "B"
+        } else {
+            "C"
+        };
+        let mut tx = pool.begin().await?;
         sqlx::query(
             "INSERT INTO storage_backup_sla (id, pool_id, rpo_hours, rto_hours, retention_days, compliance_grade)
-             VALUES ($1, $2, $3, 4, $4, $5)",
+             VALUES (?, ?, ?, 4, ?, ?)",
         )
         .bind(Uuid::new_v4())
         .bind(pool_id)
         .bind(rpo)
         .bind(retention)
         .bind(grade)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
     }
     Ok(())
 }
 
-pub async fn snapshot_policy_for_pool(pool: &PgPool, pool_id: Uuid) -> anyhow::Result<serde_json::Value> {
+pub async fn snapshot_policy_for_pool(
+    pool: &SqlitePool,
+    pool_id: Uuid,
+) -> anyhow::Result<serde_json::Value> {
     let row: Option<(String, Option<String>, i32)> = sqlx::query_as(
         "SELECT p.name, t.name, COALESCE(t.snapshot_retention_days, 7)
          FROM storage_pools p
          LEFT JOIN storage_tiers t ON t.id = p.tier_id
-         WHERE p.id = $1",
+         WHERE p.id = ?",
     )
     .bind(pool_id)
     .fetch_optional(pool)

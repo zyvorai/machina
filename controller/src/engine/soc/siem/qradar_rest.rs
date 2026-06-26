@@ -1,15 +1,28 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use super::{
-    fetch_unexported_events, integration_err, integration_ok, mark_exported, EventRow, IntegrationRow,
+    fetch_unexported_events, integration_err, integration_ok, mark_exported, IntegrationRow,
 };
 
-pub async fn forward(pool: &PgPool, integ: &IntegrationRow, controller_id: &str) -> anyhow::Result<usize> {
-    let base = integ.config_json.get("url").and_then(|v| v.as_str()).unwrap_or("").trim_end_matches('/');
-    let token = integ.config_json.get("api_token").and_then(|v| v.as_str()).unwrap_or("");
+pub async fn forward(
+    pool: &SqlitePool,
+    integ: &IntegrationRow,
+    controller_id: &str,
+) -> anyhow::Result<usize> {
+    let base = integ
+        .config_json
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim_end_matches('/');
+    let token = integ
+        .config_json
+        .get("api_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let log_source = integ
         .config_json
         .get("log_source_id")
@@ -76,7 +89,10 @@ fn qradar_severity(sev: &str) -> i32 {
 
 pub async fn test_connection(config: &serde_json::Value) -> anyhow::Result<String> {
     let base = config.get("url").and_then(|v| v.as_str()).unwrap_or("");
-    let token = config.get("api_token").and_then(|v| v.as_str()).unwrap_or("");
+    let token = config
+        .get("api_token")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if base.is_empty() || token.is_empty() {
         anyhow::bail!("url and api_token required");
     }

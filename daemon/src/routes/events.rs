@@ -38,7 +38,11 @@ pub struct MachinaEvent {
 }
 
 impl MachinaEvent {
-    pub fn now(kind: impl Into<String>, target: impl Into<String>, status: impl Into<String>) -> Self {
+    pub fn now(
+        kind: impl Into<String>,
+        target: impl Into<String>,
+        status: impl Into<String>,
+    ) -> Self {
         Self {
             kind: kind.into(),
             target: target.into(),

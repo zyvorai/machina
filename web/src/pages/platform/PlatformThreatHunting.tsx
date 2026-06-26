@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import EbpfActionMenu, { correlationKindToEnforce } from '../../components/platform/EbpfActionMenu'
-import { Bot, Search, Sparkles } from 'lucide-react'
+import { Bot, Search, Sparkles, X } from 'lucide-react'
 import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
 import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import SecurityTimelinePanel from '../../components/platform/SecurityTimelinePanel'
@@ -205,8 +205,8 @@ export default function PlatformThreatHunting() {
             </p>
             {huntSummary.actions.length > 0 && (
               <ul className="text-xs text-slate-500 list-disc pl-5 space-y-1">
-                {huntSummary.actions.map((a, i) => (
-                  <li key={i}>{a}</li>
+                {huntSummary.actions.map((a) => (
+                  <li key={a}>{a}</li>
                 ))}
               </ul>
             )}
@@ -219,6 +219,7 @@ export default function PlatformThreatHunting() {
       <MacGlassPanel title="Structured SIEM search" subtitle="POST /api/v1/zeus-security/search — direct OpenSearch query">
         <div className="flex flex-wrap gap-2">
           <input
+            aria-label="Structured SIEM query"
             className="input text-sm flex-1 min-w-[14rem] font-mono"
             value={structuredQuery}
             onChange={(e) => setStructuredQuery(e.target.value)}
@@ -240,13 +241,22 @@ export default function PlatformThreatHunting() {
 
       <MacGlassPanel title="Natural language search" subtitle="LLM query translation + PacketWolf index">
         <div className="flex flex-wrap gap-2">
-          <input
-            className="input text-sm flex-1 min-w-[14rem]"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Find every sudo event last week"
-            onKeyDown={(e) => e.key === 'Enter' && void nlSecuritySearch(query).then(applySearchResponse).catch((err: unknown) => setError(formatUserError(err)))}
-          />
+          <div className="relative flex-1 min-w-[14rem]">
+            <input
+              className={`input text-sm w-full ${query ? 'pr-8' : ''}`}
+              aria-label="Security search query"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Find every sudo event last week"
+              onKeyDown={(e) => e.key === 'Enter' && void nlSecuritySearch(query).then(applySearchResponse).catch((err: unknown) => setError(formatUserError(err)))}
+            />
+            {query && (
+              <button type="button" aria-label="Clear query" onClick={() => setQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
           <button
             type="button"
             className="btn-secondary text-sm"
@@ -281,8 +291,8 @@ export default function PlatformThreatHunting() {
         )}
         {searchHits.length > 0 && (
           <ul className="mt-2 space-y-1">
-            {searchHits.map((h, i) => (
-              <li key={i} className="text-sm text-slate-300 flex flex-wrap items-center gap-2 justify-between">
+            {searchHits.map((h) => (
+              <li key={`${h.host_id}-${h.summary}`} className="text-sm text-slate-300 flex flex-wrap items-center gap-2 justify-between">
                 <span>{h.summary}</span>
                 <EbpfActionMenu
                   hostId={h.host_id}
@@ -302,10 +312,10 @@ export default function PlatformThreatHunting() {
       {correlations.length > 0 && (
         <MacGlassPanel title="Threat correlations" subtitle="Rule engine findings">
           <ul className="text-sm text-slate-300 space-y-2">
-            {correlations.map((c, i) => {
+            {correlations.map((c) => {
               const enforce = correlationKindToEnforce(String(c.kind ?? ''))
               return (
-                <li key={i} className="flex flex-wrap items-center justify-between gap-2">
+                <li key={`${String(c.host_id ?? '')}-${String(c.kind ?? '')}-${String(c.summary ?? '')}`} className="flex flex-wrap items-center justify-between gap-2">
                   <span>
                     <span className={statusToneClass(riskTone(String(c.severity)))}>{String(c.severity)}</span>
                     {' · '}
@@ -333,8 +343,8 @@ export default function PlatformThreatHunting() {
           action={<LlmBadge powered={attackLlm} />}
         >
           <ol className="list-decimal pl-5 text-sm text-slate-300 space-y-1">
-            {attackChain.map((s, i) => (
-              <li key={i}>{s}</li>
+            {attackChain.map((s) => (
+              <li key={s}>{s}</li>
             ))}
           </ol>
         </MacGlassPanel>

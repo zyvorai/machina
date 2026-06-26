@@ -4,19 +4,22 @@
 
 //! `GET /api/v1/vms/{name}/guacamole-auth` — encrypted JSON auth blob for Apache Guacamole (optional).
 
-use axum::extract::{Path, State};
+use axum::extract::{Extension, Path, State};
 use axum::routing::get;
 use axum::{Json, Router};
 use libvirt_guac_bridge::{bridge_from_vnc_tcp, GuacamoleBridgeParams};
 use machina_core::libvirt::vnc;
 use machina_core::{LibvirtError, LibvirtManager, MachinaConfig};
 
+use crate::auth::{require_browser_session_for_host_insight, RequestActor};
 use crate::error::AppError;
 
 async fn guacamole_auth_handler(
     State(manager): State<LibvirtManager>,
+    Extension(actor): Extension<RequestActor>,
     Path(name): Path<String>,
 ) -> Result<Json<libvirt_guac_bridge::BridgeResponse>, AppError> {
+    require_browser_session_for_host_insight(&actor).map_err(AppError::from)?;
     let cfg = MachinaConfig::load();
     if !cfg.guacamole.enabled {
         return Err(AppError::from(LibvirtError::Invalid(

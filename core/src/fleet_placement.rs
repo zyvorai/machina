@@ -6,8 +6,7 @@
 
 /// Headroom score from host CPU, memory, and root disk utilization (0–100, higher is better).
 pub fn fleet_capacity_score(cpu: f64, mem: f64, disk: f64) -> (f64, &'static str) {
-    let score =
-        ((100.0 - cpu).max(0.0) + (100.0 - mem).max(0.0) + (100.0 - disk).max(0.0)) / 3.0;
+    let score = ((100.0 - cpu).max(0.0) + (100.0 - mem).max(0.0) + (100.0 - disk).max(0.0)) / 3.0;
     let label = if score >= 40.0 {
         "high"
     } else if score >= 20.0 {

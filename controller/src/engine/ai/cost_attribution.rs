@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct TeamCostRow {
@@ -22,7 +22,7 @@ pub struct CostAttributionReport {
     pub summary: String,
 }
 
-pub async fn attribute(pool: &PgPool) -> anyhow::Result<CostAttributionReport> {
+pub async fn attribute(pool: &SqlitePool) -> anyhow::Result<CostAttributionReport> {
     let rates: (f64, f64) = sqlx::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
@@ -31,9 +31,9 @@ pub async fn attribute(pool: &PgPool) -> anyhow::Result<CostAttributionReport> {
 
     let rows: Vec<(Option<String>, i64, i64, i64)> = sqlx::query_as(
         "SELECT COALESCE(NULLIF(TRIM(project), ''), NULL) AS project,
-                COUNT(*)::bigint,
-                COALESCE(SUM(vcpus), 0)::bigint,
-                COALESCE(SUM(memory_mib), 0)::bigint
+                COUNT(*),
+                COALESCE(SUM(vcpus), 0),
+                COALESCE(SUM(memory_mib), 0)
          FROM vms
          GROUP BY COALESCE(NULLIF(TRIM(project), ''), NULL)",
     )
@@ -42,12 +42,12 @@ pub async fn attribute(pool: &PgPool) -> anyhow::Result<CostAttributionReport> {
 
     let tag_rows: Vec<(String, i64, i64, i64)> = sqlx::query_as(
         "SELECT COALESCE(
-            (SELECT t FROM unnest(tags) t WHERE t LIKE 'team:%' LIMIT 1),
+            (SELECT value FROM json_each(COALESCE(tags,'[]')) WHERE value LIKE 'team:%' LIMIT 1),
             'team:unassigned'
          ) AS team,
-         COUNT(*)::bigint,
-         COALESCE(SUM(vcpus), 0)::bigint,
-         COALESCE(SUM(memory_mib), 0)::bigint
+         COUNT(*),
+         COALESCE(SUM(vcpus), 0),
+         COALESCE(SUM(memory_mib), 0)
          FROM vms
          GROUP BY 1",
     )
@@ -113,14 +113,19 @@ pub async fn attribute(pool: &PgPool) -> anyhow::Result<CostAttributionReport> {
     }
 
     let cfg = crate::config::ControllerConfig::default();
-    if let Ok(exp_teams) = crate::engine::zeus_firewall::finops::team_exposure_attribution(pool, &cfg).await {
+    if let Ok(exp_teams) =
+        crate::engine::zeus_firewall::finops::team_exposure_attribution(pool, &cfg).await
+    {
         for (team, exposure, _) in exp_teams {
             let key = if team.starts_with("metal:") {
                 format!("tag:{team}")
             } else {
                 format!("tag:{team}")
             };
-            if let Some(row) = teams.iter_mut().find(|t| t.team.contains(&team) || t.team == key) {
+            if let Some(row) = teams
+                .iter_mut()
+                .find(|t| t.team.contains(&team) || t.team == key)
+            {
                 row.exposure_monthly_usd = exposure;
             } else {
                 teams.push(TeamCostRow {
@@ -165,7 +170,7 @@ pub async fn attribute(pool: &PgPool) -> anyhow::Result<CostAttributionReport> {
     })
 }
 
-pub async fn export_csv(pool: &PgPool) -> anyhow::Result<String> {
+pub async fn export_csv(pool: &SqlitePool) -> anyhow::Result<String> {
     let report = attribute(pool).await?;
     let mut csv = String::from(
         "Machina FinOps Team Attribution\nTeam,VM Count,vCPUs,Memory GiB,Est Monthly USD,Share %\n",

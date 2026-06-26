@@ -1,21 +1,20 @@
 # API ↔ UX coverage
 
-Generated: 2026-06-05T08:10:59.357Z
+Generated: 2026-06-15T15:20:38.864Z
 
 | Metric | Count |
 |--------|-------|
-| Controller routes | 422 |
-| Daemon routes | 425 |
-| WebSocket routes | 10 |
-| **Total** | **857** |
+| Controller routes | 474 |
+| Daemon routes | 442 |
+| WebSocket routes | 11 |
+| **Total** | **927** |
 
 | Surface | Routes |
 |---------|--------|
-| console | 531 |
-| documented | 16 |
-| page | 246 |
-| unmapped | 64 |
+| console | 447 |
+| documented | 19 |
+| page | 461 |
 
-**Unmapped:** 64 — see `api-ux-coverage.json`
+**All routes mapped.**
 
 Console-first policy: routes in generated OpenAPI are satisfied by Platform Developer → API Console or Classic `/api-docs`.

@@ -31,14 +31,17 @@ machina_save_deploy_last() {
 machina_load_deploy_last() { deploy_ui_load_deploy_last "$1"; }
 
 machina_elapsed_fmt() {
-    local s="$1" m=$((s / 60)) r=$((s % 60))
+    local s="${1:-0}"
+    local m=$((s / 60)) r=$((s % 60))
     ((m > 0)) && printf '%dm ' "$m"
     printf '%ds' "$r"
 }
 
 machina_print_success() {
-    local host="$1" elapsed="$2" user="$3"
-    deploy_ui_success "$host" "$elapsed" "./scripts/deploy remote ${user}@${host} --quick"
+    local host="$1" elapsed="$2" user="$3" extra_flags="${4:-}"
+    local cmd="./scripts/deploy remote ${user}@${host} --quick"
+    [[ -n "$extra_flags" ]] && cmd+=" ${extra_flags}"
+    deploy_ui_success "$host" "$elapsed" "$cmd"
 }
 
 machina_info()  { deploy_ui_info "$@"; }

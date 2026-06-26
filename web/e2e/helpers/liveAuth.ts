@@ -3,6 +3,7 @@
 import { expect, type Page } from '@playwright/test'
 
 export type DesktopTier = 'normal' | 'power' | 'advanced'
+export type LiveAuthMode = 'pam' | 'ldap' | 'oidc' | 'auto'
 
 const TIER_KEY = 'machina-platform-desktop-tier'
 const WELCOME_KEY = 'zyvor-platform-welcome-done'
@@ -11,10 +12,64 @@ const WELCOME_KEY = 'zyvor-platform-welcome-done'
 export const MACHINA_LOGIN_SUBMIT =
   /sign in to machina|sign in with password|sign in|log in/i
 
+export interface AuthProviders {
+  pam?: { enabled?: boolean }
+  ldap?: { enabled?: boolean }
+  oidc?: { enabled?: boolean; button_label?: string }
+}
+
+export function liveAuthModeRequested(): LiveAuthMode {
+  const raw = (process.env.PLAYWRIGHT_LIVE_AUTH || process.env.E2E_AUTH_MODE || 'auto').toLowerCase()
+  if (raw === 'pam' || raw === 'ldap' || raw === 'oidc') return raw
+  return 'auto'
+}
+
 export function liveCredentials() {
-  const user = process.env.PLAYWRIGHT_LIVE_USER
-  const pass = process.env.PLAYWRIGHT_LIVE_PASS
+  const mode = liveAuthModeRequested()
+  if (mode === 'oidc') return null
+  if (mode === 'ldap') {
+    const user =
+      process.env.PLAYWRIGHT_LIVE_LDAP_USER ||
+      process.env.E2E_LDAP_USER ||
+      process.env.PLAYWRIGHT_LIVE_USER
+    const pass =
+      process.env.PLAYWRIGHT_LIVE_LDAP_PASS ||
+      process.env.E2E_LDAP_PASS ||
+      process.env.PLAYWRIGHT_LIVE_PASS
+    return user && pass ? { user, pass } : null
+  }
+  const user = process.env.PLAYWRIGHT_LIVE_USER || process.env.E2E_USER
+  const pass = process.env.PLAYWRIGHT_LIVE_PASS || process.env.E2E_PASSWORD
   return user && pass ? { user, pass } : null
+}
+
+export async function fetchAuthProviders(page: Page, baseUrl: string): Promise<AuthProviders> {
+  const res = await page.request.get(`${baseUrl}/api/v1/auth/providers`, {
+    ignoreHTTPSErrors: true,
+  })
+  if (!res.ok()) return {}
+  return (await res.json()) as AuthProviders
+}
+
+export async function resolveLiveAuthMode(page: Page, baseUrl: string): Promise<Exclude<LiveAuthMode, 'auto'>> {
+  const requested = liveAuthModeRequested()
+  if (requested !== 'auto') return requested
+  const providers = await fetchAuthProviders(page, baseUrl)
+  if (providers.ldap?.enabled) {
+    const creds = liveCredentials()
+    if (
+      process.env.PLAYWRIGHT_LIVE_LDAP_USER ||
+      process.env.E2E_LDAP_USER ||
+      creds?.user.includes('@')
+    ) {
+      return 'ldap'
+    }
+    if (providers.pam?.enabled) return 'pam'
+    return 'ldap'
+  }
+  if (providers.pam?.enabled) return 'pam'
+  if (providers.oidc?.enabled) return 'oidc'
+  return 'pam'
 }
 
 export async function fillMachinaLoginForm(page: Page, user: string, pass: string) {
@@ -80,14 +135,24 @@ export async function ensureLoggedIn(
   if (!navigate) return
 
   const target = entryPath === '/' ? '/platform' : entryPath
-  await page.goto(`${baseUrl}${target}`, { waitUntil: 'domcontentloaded', timeout: 45_000 })
+  await page.goto(`${baseUrl}${target}`, { waitUntil: 'domcontentloaded', timeout: 180_000 })
   await page.locator('#login-username').waitFor({ state: 'hidden', timeout: 20_000 }).catch(() => {})
 }
 
-/** PAM login starting at `/login`; expects redirect to dashboard (`/`). */
+/** Password login starting at `/login`; expects redirect to dashboard (`/`). */
 export async function loginAtMachinaLoginPage(page: Page, baseUrl: string) {
+  const mode = await resolveLiveAuthMode(page, baseUrl)
+  if (mode === 'oidc') {
+    throw new Error('OIDC-only host — set PLAYWRIGHT_LIVE_AUTH=pam|ldap or use SSO manually')
+  }
   const creds = liveCredentials()
-  if (!creds) throw new Error('Set PLAYWRIGHT_LIVE_USER and PLAYWRIGHT_LIVE_PASS')
+  if (!creds) {
+    throw new Error(
+      mode === 'ldap'
+        ? 'Set PLAYWRIGHT_LIVE_LDAP_USER/PASS or E2E_LDAP_USER/PASS for LDAP login'
+        : 'Set PLAYWRIGHT_LIVE_USER and PLAYWRIGHT_LIVE_PASS',
+    )
+  }
   await page.goto(`${baseUrl}/login`, { waitUntil: 'domcontentloaded' })
   await page.locator('#login-username').waitFor({ state: 'visible', timeout: 15_000 })
   await fillMachinaLoginForm(page, creds.user, creds.pass)

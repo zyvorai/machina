@@ -1,9 +1,12 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Path, Query, State};
+use axum::Extension;
 use axum::Json;
 use serde::Serialize;
 use uuid::Uuid;
+
+use crate::auth::{require_operator, AuthUser};
 
 use crate::api::ApiError;
 use crate::state::AppState;
@@ -41,14 +44,17 @@ fn default_limit() -> i64 {
 
 pub async fn list_tasks(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<TaskQuery>,
 ) -> Result<Json<Vec<TaskRow>>, ApiError> {
+    require_operator(&actor)?;
     let limit = q.limit.clamp(1, 500);
     let rows = match (&q.status, &q.operation) {
         (Some(status), Some(op)) if !status.is_empty() && !op.is_empty() => {
             sqlx::query_as::<_, TaskRow>(
-                "SELECT id, operation, status, progress, message, created_at
-                 FROM tasks WHERE status = $1 AND operation LIKE $2 ORDER BY created_at DESC LIMIT $3",
+                "SELECT id, operation, status, progress, message,
+                        strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+                 FROM tasks WHERE status = ? AND operation LIKE ? ORDER BY created_at DESC LIMIT ?",
             )
             .bind(status)
             .bind(format!("%{op}%"))
@@ -58,8 +64,9 @@ pub async fn list_tasks(
         }
         (Some(status), _) if !status.is_empty() => {
             sqlx::query_as::<_, TaskRow>(
-                "SELECT id, operation, status, progress, message, created_at
-                 FROM tasks WHERE status = $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT id, operation, status, progress, message,
+                        strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+                 FROM tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?",
             )
             .bind(status)
             .bind(limit)
@@ -68,8 +75,9 @@ pub async fn list_tasks(
         }
         (_, Some(op)) if !op.is_empty() => {
             sqlx::query_as::<_, TaskRow>(
-                "SELECT id, operation, status, progress, message, created_at
-                 FROM tasks WHERE operation LIKE $1 ORDER BY created_at DESC LIMIT $2",
+                "SELECT id, operation, status, progress, message,
+                        strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+                 FROM tasks WHERE operation LIKE ? ORDER BY created_at DESC LIMIT ?",
             )
             .bind(format!("%{op}%"))
             .bind(limit)
@@ -78,8 +86,9 @@ pub async fn list_tasks(
         }
         _ => {
             sqlx::query_as::<_, TaskRow>(
-                "SELECT id, operation, status, progress, message, created_at
-                 FROM tasks ORDER BY created_at DESC LIMIT $1",
+                "SELECT id, operation, status, progress, message,
+                        strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+                 FROM tasks ORDER BY created_at DESC LIMIT ?",
             )
             .bind(limit)
             .fetch_all(&state.pool)
@@ -91,11 +100,14 @@ pub async fn list_tasks(
 
 pub async fn get_task(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskRow>, ApiError> {
+    require_operator(&actor)?;
     let row = sqlx::query_as::<_, TaskRow>(
-        "SELECT id, operation, status, progress, message, created_at
-         FROM tasks WHERE id = $1",
+        "SELECT id, operation, status, progress, message,
+                strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
+         FROM tasks WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
@@ -105,11 +117,13 @@ pub async fn get_task(
 
 pub async fn cancel_task(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskRow>, ApiError> {
+    require_operator(&actor)?;
     let updated = sqlx::query(
-        "UPDATE tasks SET status = 'cancelled', message = 'cancelled by operator', updated_at = NOW()
-         WHERE id = $1 AND status = 'pending'",
+        "UPDATE tasks SET status = 'cancelled', message = 'cancelled by operator', updated_at = datetime('now')
+         WHERE id = ? AND status = 'pending'",
     )
     .bind(id)
     .execute(&state.pool)
@@ -117,29 +131,31 @@ pub async fn cancel_task(
     if updated.rows_affected() == 0 {
         return Err(ApiError::bad_request("task not pending or not found"));
     }
-    get_task(State(state), Path(id)).await
+    get_task(State(state), Extension(actor), Path(id)).await
 }
 
 pub async fn retry_task(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let row: (String, serde_json::Value, Option<String>, Option<Uuid>, Option<Uuid>) = sqlx::query_as(
-        "SELECT operation, payload, resource_type, resource_id, host_id FROM tasks WHERE id = $1",
+    require_operator(&actor)?;
+    let row: (
+        String,
+        serde_json::Value,
+        Option<String>,
+        Option<Uuid>,
+        Option<Uuid>,
+    ) = sqlx::query_as(
+        "SELECT operation, payload, resource_type, resource_id, host_id FROM tasks WHERE id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
     .await?;
 
-    let new_id = crate::tasks::enqueue::enqueue_task(
-        &state,
-        &row.0,
-        row.1,
-        row.2.as_deref(),
-        row.3,
-        row.4,
-    )
-    .await?;
+    let new_id =
+        crate::tasks::enqueue::enqueue_task(&state, &row.0, row.1, row.2.as_deref(), row.3, row.4)
+            .await?;
 
     Ok(Json(TaskResponse {
         task_id: new_id.to_string(),

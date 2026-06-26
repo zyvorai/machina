@@ -2,7 +2,7 @@
 // Maintenance Mission plan — 7-step guided patch timeline (Phase 55 v1).
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -179,7 +179,9 @@ fn build_steps(
             id: MissionStepId::ApplyPreview,
             label: "Apply preview".into(),
             status: preview_status,
-            detail: Some("Preview or apply via platform — host must be in maintenance mode.".into()),
+            detail: Some(
+                "Preview or apply via platform — host must be in maintenance mode.".into(),
+            ),
         },
         MissionStepState {
             id: MissionStepId::VerifyExit,
@@ -191,7 +193,12 @@ fn build_steps(
 
     let recommended = steps
         .iter()
-        .find(|s| matches!(s.status, StepStatus::Pending | StepStatus::Ready | StepStatus::Blocked))
+        .find(|s| {
+            matches!(
+                s.status,
+                StepStatus::Pending | StepStatus::Ready | StepStatus::Blocked
+            )
+        })
         .map(|s| s.id.clone())
         .unwrap_or(MissionStepId::VerifyExit);
 
@@ -199,7 +206,7 @@ fn build_steps(
 }
 
 pub async fn overview(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FleetMaintenanceMissionOverview> {
     let updates = fleet_updates::overview(pool, cfg).await?;
@@ -244,9 +251,9 @@ pub async fn overview(
         let reboot_required = upd.map(|u| u.reboot_required).unwrap_or(false);
         let agent_drift = upd.map(|u| u.agent_update_available).unwrap_or(false);
         let update_summary = upd.and_then(|u| u.summary.clone());
-        let needs_updates = upd.map(|u| {
-            u.status == "updates" || u.reboot_required || u.agent_update_available
-        }).unwrap_or(false);
+        let needs_updates = upd
+            .map(|u| u.status == "updates" || u.reboot_required || u.agent_update_available)
+            .unwrap_or(false);
         let assessed = scanned;
         let (has_schedule, evacuate_planned) = schedule_by_host
             .get(&id)
@@ -287,9 +294,7 @@ pub async fn overview(
     Ok(FleetMaintenanceMissionOverview {
         summary: format!(
             "{} host(s) with updates · {} in maintenance · {} pending schedule(s)",
-            updates.hosts_with_updates,
-            hosts_in_maintenance,
-            pending_schedules
+            updates.hosts_with_updates, hosts_in_maintenance, pending_schedules
         ),
         hosts_with_updates: updates.hosts_with_updates,
         hosts_in_maintenance,

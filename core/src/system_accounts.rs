@@ -311,8 +311,12 @@ pub fn create_local_user(
             ));
         }
     } else {
-        let st = status(exec_as, "useradd", &["-m", "-s", "/bin/bash", "--", new_username])
-            .map_err(|e| LibvirtError::Operation(format!("useradd: {e}")))?;
+        let st = status(
+            exec_as,
+            "useradd",
+            &["-m", "-s", "/bin/bash", "--", new_username],
+        )
+        .map_err(|e| LibvirtError::Operation(format!("useradd: {e}")))?;
         if !st.success() {
             return Err(LibvirtError::Operation(
                 "useradd failed (see journal for details)".into(),

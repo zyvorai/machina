@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use serde::Deserialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -32,30 +32,42 @@ fn default_category() -> String {
 }
 
 /// Scan `dir/*.json` and upsert into `templates` with `git_ref` set.
-pub async fn sync_templates_from_git(pool: &PgPool, dir: &Path) -> anyhow::Result<usize> {
+pub async fn sync_templates_from_git(pool: &SqlitePool, dir: &Path) -> anyhow::Result<usize> {
+    let dir = dir.to_path_buf();
+    // File scanning is blocking — run it off the async executor.
+    let manifests: Vec<(String, GitTemplateManifest)> =
+        tokio::task::spawn_blocking(move || {
+            if !dir.is_dir() {
+                anyhow::bail!("templates git dir not found: {}", dir.display());
+            }
+            let mut out = Vec::new();
+            for entry in std::fs::read_dir(&dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                    continue;
+                }
+                let raw = std::fs::read_to_string(&path)?;
+                let m: GitTemplateManifest = serde_json::from_str(&raw)?;
+                let git_ref = if m.git_ref.is_empty() {
+                    path.file_name()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_string()
+                } else {
+                    m.git_ref.clone()
+                };
+                out.push((git_ref, m));
+            }
+            Ok(out)
+        })
+        .await??;
+
     let mut synced = 0usize;
-    if !dir.is_dir() {
-        anyhow::bail!("templates git dir not found: {}", dir.display());
-    }
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-            continue;
-        }
-        let raw = std::fs::read_to_string(&path)?;
-        let m: GitTemplateManifest = serde_json::from_str(&raw)?;
-        let git_ref = if m.git_ref.is_empty() {
-            path.file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string()
-        } else {
-            m.git_ref
-        };
+    for (git_ref, m) in manifests {
         sqlx::query(
             "INSERT INTO templates (id, name, version, source_disk, cloud_init, os_family, category, workload, description, featured, marketplace, git_ref, approval_status)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, FALSE, TRUE, $10, 'approved')
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, TRUE, ?, 'approved')
              ON CONFLICT (name, version) DO UPDATE SET
                source_disk = EXCLUDED.source_disk,
                workload = EXCLUDED.workload,

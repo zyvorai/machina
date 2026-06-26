@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use machina_core::FirewallInventory;
@@ -15,7 +15,7 @@ pub struct CheckpointSummary {
 }
 
 pub async fn save_checkpoint(
-    pool: &PgPool,
+    pool: &SqlitePool,
     target_kind: &str,
     target_id: Uuid,
     label: &str,
@@ -26,7 +26,7 @@ pub async fn save_checkpoint(
     let id = Uuid::new_v4();
     sqlx::query(
         "INSERT INTO firewall_checkpoints (id, target_kind, target_id, label, adapter_state, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(target_kind)
@@ -40,13 +40,13 @@ pub async fn save_checkpoint(
 }
 
 pub async fn list_checkpoints(
-    pool: &PgPool,
+    pool: &SqlitePool,
     target_kind: &str,
     target_id: Uuid,
 ) -> anyhow::Result<Vec<CheckpointSummary>> {
     let rows: Vec<(Uuid, String, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
         "SELECT id, label, created_at, created_by FROM firewall_checkpoints
-         WHERE target_kind = $1 AND target_id = $2 ORDER BY created_at DESC LIMIT 20",
+         WHERE target_kind = ? AND target_id = ? ORDER BY created_at DESC LIMIT 20",
     )
     .bind(target_kind)
     .bind(target_id)
@@ -65,7 +65,7 @@ pub async fn list_checkpoints(
 }
 
 pub async fn rollback_checkpoint(
-    pool: &PgPool,
+    pool: &SqlitePool,
     target_kind: &str,
     target_id: Uuid,
     checkpoint_id: Uuid,
@@ -73,7 +73,7 @@ pub async fn rollback_checkpoint(
 ) -> anyhow::Result<serde_json::Value> {
     let row: Option<(serde_json::Value, String)> = sqlx::query_as(
         "SELECT adapter_state, label FROM firewall_checkpoints
-         WHERE id = $1 AND target_kind = $2 AND target_id = $3",
+         WHERE id = ? AND target_kind = ? AND target_id = ?",
     )
     .bind(checkpoint_id)
     .bind(target_kind)
@@ -86,9 +86,9 @@ pub async fn rollback_checkpoint(
     };
 
     let _ = sqlx::query(
-        "INSERT INTO firewall_timeline (target_kind, target_id, kind, summary, detail_json, actor)
-         VALUES ($1, $2, 'rollback', $3, $4, $5)",
+        "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, ?, ?, 'rollback', ?, ?, ?)",
     )
+    .bind(uuid::Uuid::new_v4())
     .bind(target_kind)
     .bind(target_id)
     .bind(format!("Rolled back to checkpoint {label}"))

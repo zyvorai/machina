@@ -242,19 +242,21 @@ export default function EventsPage() {
             onClick={() => downloadJSON(metrics, 'metrics.json')}
             className="p-2 hover:bg-slate-700 rounded transition"
             title="Export JSON"
+            aria-label="Export JSON"
           >
-            <Download className="w-4 h-4" />
+            <Download className="w-4 h-4" aria-hidden="true" />
           </button>
           <button
             type="button"
             onClick={() => downloadCSV(metrics as unknown as Record<string, unknown>[], 'metrics.csv')}
             className="p-2 hover:bg-slate-700 rounded transition"
             title="Export CSV"
+            aria-label="Export CSV"
           >
-            <Download className={`w-4 h-4 ${statusToneClass('ok')}`} />
+            <Download className={`w-4 h-4 ${statusToneClass('ok')}`} aria-hidden="true" />
           </button>
-          <button type="button" onClick={load} className="p-2 hover:bg-slate-700 rounded transition">
-            <RefreshCw className="w-4 h-4" />
+          <button type="button" onClick={load} className="p-2 hover:bg-slate-700 rounded transition" aria-label="Refresh">
+            <RefreshCw className="w-4 h-4" aria-hidden="true" />
           </button>
         </>
       }
@@ -580,7 +582,7 @@ export default function EventsPage() {
                 <h2 className="text-sm font-semibold text-white">Detail</h2>
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm" aria-label="VM events">
                   <thead>
                     <tr className="border-b border-slate-700/50 text-left text-slate-400">
                       <th className="px-4 py-2.5">VM</th>
@@ -612,6 +614,11 @@ export default function EventsPage() {
                             <div className="flex items-center gap-2">
                               <div className="w-20 bg-slate-700 rounded-full h-2 shrink-0">
                                 <div
+                                  role="progressbar"
+                                  aria-label="Memory usage"
+                                  aria-valuenow={Math.round(Math.min(100, m.memory_pct))}
+                                  aria-valuemin={0}
+                                  aria-valuemax={100}
                                   className={`h-2 rounded-full transition-all ${statusBgClass(utilizationTone(m.memory_pct))}`}
                                   style={{ width: `${Math.min(100, m.memory_pct)}%` }}
                                 />

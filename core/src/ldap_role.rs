@@ -8,10 +8,7 @@ use crate::config::LdapConfig;
 use crate::libvirt::automation::Role;
 
 pub fn role_from_ldap_groups(cfg: &LdapConfig, groups: &[String]) -> Role {
-    let hay: Vec<String> = groups
-        .iter()
-        .map(|g| g.to_ascii_lowercase())
-        .collect();
+    let hay: Vec<String> = groups.iter().map(|g| g.to_ascii_lowercase()).collect();
     let matches = |subs: &[String]| {
         subs.iter().any(|sub| {
             let s = sub.trim().to_ascii_lowercase();

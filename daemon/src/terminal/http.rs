@@ -138,7 +138,11 @@ async fn create_session_handler(
         .into());
     };
 
-    let ssh_port = if body.ssh_port == 0 { 22 } else { body.ssh_port };
+    let ssh_port = if body.ssh_port == 0 {
+        22
+    } else {
+        body.ssh_port
+    };
 
     let session_id = store.insert_session(
         resolved_host.clone(),

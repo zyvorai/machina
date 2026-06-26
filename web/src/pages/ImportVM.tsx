@@ -178,7 +178,7 @@ export default function ImportVMPage() {
           {existingDisks.length > 0 && (
             <div>
               <label className="block text-sm text-slate-400 mb-1">Or select existing image:</label>
-              <select value="" onChange={e => { if (e.target.value) setSource(e.target.value) }} className="input-field">
+              <select aria-label="Existing disk image" value="" onChange={e => { if (e.target.value) setSource(e.target.value) }} className="input-field">
                 <option value="">Browse disk images...</option>
                 {existingDisks.map(f => <option key={f.path} value={f.path}>{f.name} ({f.format}, {(f.size_bytes / 1073741824).toFixed(1)} GB)</option>)}
               </select>

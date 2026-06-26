@@ -43,6 +43,7 @@ export interface VmWizardInitial {
 
 export interface VmWizardWindowsOptions {
   virtio: boolean
+  virtioIsoPath: string
   uefi: boolean
   tpm: boolean
   secureBoot: boolean
@@ -111,6 +112,7 @@ export default function SimpleCreateVmWizard({ open, onClose, onCreate, initial 
   const [readinessLoading, setReadinessLoading] = useState(false)
   const [readiness, setReadiness] = useState<TemplateReadiness | null>(null)
   const [virtio, setVirtio] = useState(true)
+  const [virtioIsoPath, setVirtioIsoPath] = useState('/var/lib/libvirt/images/isos/virtio-win.iso')
   const [uefi, setUefi] = useState(true)
   const [tpm, setTpm] = useState(true)
   const [secureBoot, setSecureBoot] = useState(true)
@@ -246,7 +248,7 @@ export default function SimpleCreateVmWizard({ open, onClose, onCreate, initial 
         graphicsListen,
       }
       if (isWindows) {
-        payload.windows = { virtio, uefi, tpm, secureBoot, rdp }
+        payload.windows = { virtio, virtioIsoPath, uefi, tpm, secureBoot, rdp }
       }
       await onCreate(payload)
       onClose()
@@ -402,6 +404,17 @@ export default function SimpleCreateVmWizard({ open, onClose, onCreate, initial 
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={virtio} onChange={(e) => setVirtio(e.target.checked)} /> VirtIO drivers
               </label>
+              {virtio && (
+                <label className="block pl-6">
+                  <span className="text-slate-400 text-xs">VirtIO ISO path on hypervisor</span>
+                  <input
+                    className="input w-full mt-1 text-xs font-mono"
+                    value={virtioIsoPath}
+                    onChange={(e) => setVirtioIsoPath(e.target.value)}
+                    placeholder="/var/lib/libvirt/images/isos/virtio-win.iso"
+                  />
+                </label>
+              )}
               <label className="flex items-center gap-2">
                 <input type="checkbox" checked={uefi} onChange={(e) => setUefi(e.target.checked)} /> UEFI firmware
               </label>

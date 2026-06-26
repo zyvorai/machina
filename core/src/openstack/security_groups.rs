@@ -112,7 +112,9 @@ pub async fn get_security_group(
 ) -> Result<OpenStackSecurityGroup, LibvirtError> {
     let sg_id = id.trim();
     if sg_id.is_empty() {
-        return Err(LibvirtError::Invalid("security group id is required".into()));
+        return Err(LibvirtError::Invalid(
+            "security group id is required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let resp = session
@@ -136,7 +138,9 @@ pub async fn create_security_group(
 ) -> Result<OpenStackSecurityGroup, LibvirtError> {
     let name = req.name.trim();
     if name.is_empty() {
-        return Err(LibvirtError::Invalid("security group name is required".into()));
+        return Err(LibvirtError::Invalid(
+            "security group name is required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let body = serde_json::json!({
@@ -158,7 +162,9 @@ pub async fn create_security_group(
 pub async fn delete_security_group(cfg: &OpenStackConfig, id: &str) -> Result<(), LibvirtError> {
     let sg_id = id.trim();
     if sg_id.is_empty() {
-        return Err(LibvirtError::Invalid("security group id is required".into()));
+        return Err(LibvirtError::Invalid(
+            "security group id is required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     session
@@ -249,7 +255,10 @@ pub async fn create_security_group_rule(
     })
 }
 
-pub async fn delete_security_group_rule(cfg: &OpenStackConfig, rule_id: &str) -> Result<(), LibvirtError> {
+pub async fn delete_security_group_rule(
+    cfg: &OpenStackConfig,
+    rule_id: &str,
+) -> Result<(), LibvirtError> {
     let id = rule_id.trim();
     if id.is_empty() {
         return Err(LibvirtError::Invalid("rule id is required".into()));

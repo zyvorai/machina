@@ -14,7 +14,9 @@ pub fn normalize_agent_addr(addr: &str) -> String {
 
 pub async fn connect(addr: &str) -> anyhow::Result<HostAgentClient<Channel>> {
     let normalized = normalize_agent_addr(addr);
-    let use_tls = std::env::var("MACHINA_AGENT_CA").ok().filter(|p| Path::new(p).exists());
+    let use_tls = std::env::var("MACHINA_AGENT_CA")
+        .ok()
+        .filter(|p| Path::new(p).exists());
     let endpoint_url = if use_tls.is_some() {
         format!("https://{normalized}")
     } else {
@@ -44,14 +46,22 @@ pub async fn list_vms(client: &mut HostAgentClient<Channel>) -> anyhow::Result<L
     Ok(client.list_vms(ListVmsRequest {}).await?.into_inner())
 }
 
-pub async fn list_networks(client: &mut HostAgentClient<Channel>) -> anyhow::Result<ListNetworksResponse> {
-    Ok(client.list_networks(ListNetworksRequest {}).await?.into_inner())
+pub async fn list_networks(
+    client: &mut HostAgentClient<Channel>,
+) -> anyhow::Result<ListNetworksResponse> {
+    Ok(client
+        .list_networks(ListNetworksRequest {})
+        .await?
+        .into_inner())
 }
 
 pub async fn list_storage_pools(
     client: &mut HostAgentClient<Channel>,
 ) -> anyhow::Result<ListStoragePoolsResponse> {
-    Ok(client.list_storage_pools(ListStoragePoolsRequest {}).await?.into_inner())
+    Ok(client
+        .list_storage_pools(ListStoragePoolsRequest {})
+        .await?
+        .into_inner())
 }
 
 pub async fn apply_vm(
@@ -107,8 +117,7 @@ pub async fn guest_agent_action(
     if !resp.ok {
         anyhow::bail!("{}", resp.message);
     }
-    serde_json::from_str(&resp.result_json)
-        .map_err(|e| anyhow::anyhow!("guest action JSON: {e}"))
+    serde_json::from_str(&resp.result_json).map_err(|e| anyhow::anyhow!("guest action JSON: {e}"))
 }
 
 pub async fn get_domain_xml(
@@ -133,7 +142,10 @@ pub async fn delete_vm(client: &mut HostAgentClient<Channel>, vm_name: &str) -> 
     Ok(())
 }
 
-pub async fn heartbeat(client: &mut HostAgentClient<Channel>, host_id: &str) -> anyhow::Result<HeartbeatResponse> {
+pub async fn heartbeat(
+    client: &mut HostAgentClient<Channel>,
+    host_id: &str,
+) -> anyhow::Result<HeartbeatResponse> {
     Ok(client
         .heartbeat(HeartbeatRequest {
             host_id: host_id.to_string(),
@@ -618,7 +630,8 @@ pub async fn host_libvirt_query(
         .await?
         .into_inner();
     if resp.ok {
-        serde_json::from_str(&resp.result_json).map_err(|e| anyhow::anyhow!("decode host query: {e}"))
+        serde_json::from_str(&resp.result_json)
+            .map_err(|e| anyhow::anyhow!("decode host query: {e}"))
     } else {
         anyhow::bail!("{}", resp.message)
     }
@@ -637,7 +650,8 @@ pub async fn host_libvirt_invoke(
         .await?
         .into_inner();
     if resp.ok {
-        serde_json::from_str(&resp.result_json).map_err(|e| anyhow::anyhow!("decode host invoke: {e}"))
+        serde_json::from_str(&resp.result_json)
+            .map_err(|e| anyhow::anyhow!("decode host invoke: {e}"))
     } else {
         anyhow::bail!("{}", resp.message)
     }
@@ -654,7 +668,8 @@ pub async fn get_vm_details(
         .await?
         .into_inner();
     if resp.ok {
-        serde_json::from_str(&resp.details_json).map_err(|e| anyhow::anyhow!("decode vm details: {e}"))
+        serde_json::from_str(&resp.details_json)
+            .map_err(|e| anyhow::anyhow!("decode vm details: {e}"))
     } else {
         anyhow::bail!("{}", resp.message)
     }
@@ -732,7 +747,8 @@ pub async fn get_guest_observability(
     if !resp.ok {
         anyhow::bail!("{}", resp.message);
     }
-    let v: serde_json::Value = serde_json::from_str(&resp.guest_json).unwrap_or(serde_json::json!({}));
+    let v: serde_json::Value =
+        serde_json::from_str(&resp.guest_json).unwrap_or(serde_json::json!({}));
     Ok(v)
 }
 
@@ -755,9 +771,13 @@ pub async fn install_guest_tools(
 
 pub async fn get_firewall_inventory(addr: &str) -> anyhow::Result<machina_core::FirewallInventory> {
     let mut client = connect(addr).await?;
-    let resp = client.get_firewall_inventory(GetFirewallInventoryRequest {}).await?.into_inner();
+    let resp = client
+        .get_firewall_inventory(GetFirewallInventoryRequest {})
+        .await?
+        .into_inner();
     if resp.ok {
-        serde_json::from_str(&resp.inventory_json).map_err(|e| anyhow::anyhow!("inventory json: {e}"))
+        serde_json::from_str(&resp.inventory_json)
+            .map_err(|e| anyhow::anyhow!("inventory json: {e}"))
     } else {
         anyhow::bail!(resp.message)
     }
@@ -771,10 +791,7 @@ pub async fn apply_firewall_plan(
     let mut client = connect(addr).await?;
     let plan_json = serde_json::to_string(req)?;
     let resp = client
-        .apply_firewall_plan(ApplyFirewallPlanRequest {
-            plan_json,
-            dry_run,
-        })
+        .apply_firewall_plan(ApplyFirewallPlanRequest { plan_json, dry_run })
         .await?
         .into_inner();
     if resp.ok {
@@ -934,22 +951,25 @@ pub async fn get_linux_package_updates(addr: &str) -> anyhow::Result<serde_json:
         .await?
         .into_inner();
     if resp.ok {
-        serde_json::from_str(&resp.json).map_err(|e| anyhow::anyhow!("linux package updates json: {e}"))
+        serde_json::from_str(&resp.json)
+            .map_err(|e| anyhow::anyhow!("linux package updates json: {e}"))
     } else {
         anyhow::bail!(resp.message)
     }
 }
 
-pub async fn apply_linux_package_upgrade(addr: &str, dry_run: bool) -> anyhow::Result<serde_json::Value> {
+pub async fn apply_linux_package_upgrade(
+    addr: &str,
+    dry_run: bool,
+) -> anyhow::Result<serde_json::Value> {
     let mut client = connect(addr).await?;
     let resp = client
         .apply_linux_package_upgrade(ApplyLinuxPackageUpgradeRequest { dry_run })
         .await?
         .into_inner();
     if resp.ok {
-        let value = serde_json::from_str(&resp.json).unwrap_or_else(|_| {
-            serde_json::json!({ "stdout": resp.message, "ok": true })
-        });
+        let value = serde_json::from_str(&resp.json)
+            .unwrap_or_else(|_| serde_json::json!({ "stdout": resp.message, "ok": true }));
         Ok(value)
     } else {
         anyhow::bail!(resp.message)
@@ -982,7 +1002,11 @@ pub async fn get_linux_filesystems(addr: &str) -> anyhow::Result<serde_json::Val
     }
 }
 
-pub async fn get_linux_top_processes(addr: &str, limit: u32, order: &str) -> anyhow::Result<serde_json::Value> {
+pub async fn get_linux_top_processes(
+    addr: &str,
+    limit: u32,
+    order: &str,
+) -> anyhow::Result<serde_json::Value> {
     let mut client = connect(addr).await?;
     let resp = client
         .get_linux_top_processes(GetLinuxTopProcessesRequest {

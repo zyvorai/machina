@@ -102,7 +102,9 @@ pub fn provision_storage_pool(pool_name: &str, backend: &str, path: &str) -> any
         }
         "iscsi" => {
             if !path.starts_with("iqn.") {
-                anyhow::bail!("iSCSI path must be a target IQN (e.g. iqn.2020-01.com.example:storage)");
+                anyhow::bail!(
+                    "iSCSI path must be a target IQN (e.g. iqn.2020-01.com.example:storage)"
+                );
             }
             let target = format!("/var/lib/machina/iscsi/{pool_name}");
             std::fs::create_dir_all(&target)?;
@@ -136,7 +138,9 @@ pub fn provision_storage_pool(pool_name: &str, backend: &str, path: &str) -> any
         }
         "directory" | "dir" => {
             if path.contains(':') {
-                anyhow::bail!("directory backend cannot use host:path NFS syntax — use backend nfs");
+                anyhow::bail!(
+                    "directory backend cannot use host:path NFS syntax — use backend nfs"
+                );
             }
             std::fs::create_dir_all(path)?;
             Command::new("virsh")
@@ -189,13 +193,22 @@ pub fn provision_network(
     bridge: &str,
 ) -> anyhow::Result<()> {
     let bridge_name = if bridge.is_empty() { "virbr0" } else { bridge };
+    fn xml_escape(s: &str) -> String {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&apos;")
+    }
+    let safe_name = xml_escape(network_name);
+    let safe_bridge = xml_escape(bridge_name);
     let xml = if vlan_id > 0 {
         format!(
-            "<network><name>{network_name}</name><bridge name='{bridge_name}'/><vlan><tag id='{vlan_id}'/></vlan></network>"
+            "<network><name>{safe_name}</name><bridge name='{safe_bridge}'/><vlan><tag id='{vlan_id}'/></vlan></network>"
         )
     } else {
         format!(
-            "<network><name>{network_name}</name><forward mode='bridge'/><bridge name='{bridge_name}'/></network>"
+            "<network><name>{safe_name}</name><forward mode='bridge'/><bridge name='{safe_bridge}'/></network>"
         )
     };
     let tmp = std::env::temp_dir().join(format!("machina-net-{network_name}.xml"));

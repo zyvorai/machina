@@ -7,6 +7,7 @@ import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
 import { parseVmGraphicsFromXml, type GraphicsKind } from '../../utils/vmGraphics'
 import { MacGlassPanel } from './mac/PlatformMacUi'
+import ConfirmDialog from '../ConfirmDialog'
 
 const LISTEN_OPTIONS = ['127.0.0.1', '0.0.0.0', '::1'] as const
 
@@ -108,6 +109,9 @@ export default function VmGraphicsPanel({ vmId, domainXml, disabled, onChanged }
   const [vncListen, setVncListen] = useState('127.0.0.1')
   const [spiceListen, setSpiceListen] = useState('127.0.0.1')
   const [busy, setBusy] = useState(false)
+  const [updateListenConfirm, setUpdateListenConfirm] = useState<{ kind: GraphicsKind; listen: string } | null>(null)
+  const [removeConfirm, setRemoveConfirm] = useState<GraphicsKind | null>(null)
+  const [convertSpiceConfirm, setConvertSpiceConfirm] = useState(false)
 
   useEffect(() => {
     setVncListen(graphics.vnc?.listen ?? '127.0.0.1')
@@ -133,8 +137,7 @@ export default function VmGraphicsPanel({ vmId, domainXml, disabled, onChanged }
   const remove = (kind: GraphicsKind) =>
     run(`${kind.toUpperCase()} graphics removed`, () => removeVmGraphics(vmId, kind))
 
-  const updateListen = async (kind: GraphicsKind, listen: string) => {
-    if (!window.confirm(`Update ${kind.toUpperCase()} listen to ${listen}? Display may briefly disconnect.`)) return
+  const doUpdateListen = async (kind: GraphicsKind, listen: string) => {
     setBusy(true)
     try {
       await removeVmGraphics(vmId, kind)
@@ -149,60 +152,91 @@ export default function VmGraphicsPanel({ vmId, domainXml, disabled, onChanged }
   }
 
   return (
-    <MacGlassPanel title="Graphics" data-testid="vm-graphics-panel">
-      <p className="text-xs text-slate-500 mb-3">
-        VNC and SPICE console endpoints in domain XML. Add SPICE on VNC-only VMs (e.g. legacy e2e guests) for ConsoleHub performance mode.
-      </p>
-      <div className="space-y-3">
-        <GraphicsRow
-          kind="vnc"
-          label="VNC"
-          present={Boolean(graphics.vnc)}
-          listen={graphics.vnc?.listen ?? vncListen}
-          draftListen={vncListen}
-          onDraftListen={setVncListen}
-          disabled={disabled}
-          busy={busy}
-          onAdd={() => void add('vnc', vncListen)}
-          onRemove={() => {
-            if (!window.confirm('Remove VNC graphics from this VM?')) return
-            void remove('vnc')
-          }}
-          onUpdateListen={() => void updateListen('vnc', vncListen)}
-        />
-        <GraphicsRow
-          kind="spice"
-          label="SPICE"
-          present={Boolean(graphics.spice)}
-          listen={graphics.spice?.listen ?? spiceListen}
-          draftListen={spiceListen}
-          onDraftListen={setSpiceListen}
-          disabled={disabled}
-          busy={busy}
-          onAdd={() => void add('spice', spiceListen)}
-          onRemove={() => {
-            if (!window.confirm('Remove SPICE graphics from this VM?')) return
-            void remove('spice')
-          }}
-          onUpdateListen={() => void updateListen('spice', spiceListen)}
-        />
-      </div>
-      {graphics.spice && (
-        <div className="mt-4 pt-3 border-t border-slate-800">
-          <p className="text-xs text-slate-500 mb-2">Legacy Cockpit shortcut: convert SPICE-only domains to VNC.</p>
-          <button
-            type="button"
-            className="btn-secondary text-sm"
-            disabled={disabled || busy}
-            onClick={() => {
-              if (!window.confirm('Convert SPICE to VNC via virt-xml? Guest may briefly lose display.')) return
-              void run('SPICE converted to VNC', () => convertVmSpiceToVnc(vmId))
-            }}
-          >
-            SPICE → VNC
-          </button>
+    <>
+      <MacGlassPanel title="Graphics" data-testid="vm-graphics-panel">
+        <p className="text-xs text-slate-500 mb-3">
+          VNC and SPICE console endpoints in domain XML. Add SPICE on VNC-only VMs (e.g. legacy e2e guests) for ConsoleHub performance mode.
+        </p>
+        <div className="space-y-3">
+          <GraphicsRow
+            kind="vnc"
+            label="VNC"
+            present={Boolean(graphics.vnc)}
+            listen={graphics.vnc?.listen ?? vncListen}
+            draftListen={vncListen}
+            onDraftListen={setVncListen}
+            disabled={disabled}
+            busy={busy}
+            onAdd={() => void add('vnc', vncListen)}
+            onRemove={() => setRemoveConfirm('vnc')}
+            onUpdateListen={() => setUpdateListenConfirm({ kind: 'vnc', listen: vncListen })}
+          />
+          <GraphicsRow
+            kind="spice"
+            label="SPICE"
+            present={Boolean(graphics.spice)}
+            listen={graphics.spice?.listen ?? spiceListen}
+            draftListen={spiceListen}
+            onDraftListen={setSpiceListen}
+            disabled={disabled}
+            busy={busy}
+            onAdd={() => void add('spice', spiceListen)}
+            onRemove={() => setRemoveConfirm('spice')}
+            onUpdateListen={() => setUpdateListenConfirm({ kind: 'spice', listen: spiceListen })}
+          />
         </div>
-      )}
-    </MacGlassPanel>
+        {graphics.spice && (
+          <div className="mt-4 pt-3 border-t border-slate-800">
+            <p className="text-xs text-slate-500 mb-2">Legacy Cockpit shortcut: convert SPICE-only domains to VNC.</p>
+            <button
+              type="button"
+              className="btn-secondary text-sm"
+              disabled={disabled || busy}
+              onClick={() => setConvertSpiceConfirm(true)}
+            >
+              SPICE → VNC
+            </button>
+          </div>
+        )}
+      </MacGlassPanel>
+      <ConfirmDialog
+        open={updateListenConfirm !== null}
+        title={`Update ${updateListenConfirm?.kind.toUpperCase()} listen`}
+        message={`Update ${updateListenConfirm?.kind.toUpperCase()} listen to ${updateListenConfirm?.listen}? Display may briefly disconnect.`}
+        confirmLabel="Update"
+        variant="warning"
+        onCancel={() => setUpdateListenConfirm(null)}
+        onConfirm={() => {
+          const c = updateListenConfirm
+          setUpdateListenConfirm(null)
+          if (c) void doUpdateListen(c.kind, c.listen)
+        }}
+      />
+      <ConfirmDialog
+        open={removeConfirm !== null}
+        title={`Remove ${removeConfirm?.toUpperCase()} graphics`}
+        message={`Remove ${removeConfirm?.toUpperCase()} graphics from this VM?`}
+        confirmLabel="Remove"
+        variant="danger"
+        onCancel={() => setRemoveConfirm(null)}
+        onConfirm={() => {
+          const kind = removeConfirm
+          setRemoveConfirm(null)
+          if (kind) void remove(kind)
+        }}
+      />
+      <ConfirmDialog
+        open={convertSpiceConfirm}
+        title="Convert SPICE to VNC"
+        message="Convert SPICE to VNC via virt-xml? Guest may briefly lose display."
+        confirmLabel="Convert"
+        variant="warning"
+        onCancel={() => setConvertSpiceConfirm(false)}
+        onConfirm={() => {
+          setConvertSpiceConfirm(false)
+          void run('SPICE converted to VNC', () => convertVmSpiceToVnc(vmId))
+        }}
+      />
+    </>
   )
 }

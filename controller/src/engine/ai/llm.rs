@@ -1,6 +1,6 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use super::providers::ResolvedProvider;
 use super::routing::{RoutingRequest, TaskClass};
@@ -15,7 +15,7 @@ pub struct CompletionRequest {
 }
 
 /// Optional LLM completion — returns None when disabled or on failure.
-pub async fn complete(pool: &PgPool, req: CompletionRequest) -> anyhow::Result<Option<String>> {
+pub async fn complete(pool: &SqlitePool, req: CompletionRequest) -> anyhow::Result<Option<String>> {
     if !super::settings::llm_enabled(pool).await? {
         return Ok(None);
     }
@@ -32,7 +32,7 @@ pub async fn complete(pool: &PgPool, req: CompletionRequest) -> anyhow::Result<O
 
 /// Backward-compatible helper for existing call sites.
 pub async fn complete_simple(
-    pool: &PgPool,
+    pool: &SqlitePool,
     system: &str,
     user: &str,
 ) -> anyhow::Result<Option<String>> {
@@ -79,6 +79,15 @@ fn uses_local_endpoint(kind: &str) -> bool {
 }
 
 fn openai_base(resolved: &ResolvedProvider) -> String {
+    // Azure requires its own path format regardless of whether base_url is set.
+    if resolved.kind == "azure_openai" {
+        let base = resolved.base_url.trim().trim_end_matches('/');
+        return format!(
+            "{}/openai/deployments/{}/chat/completions?api-version=2024-02-01",
+            base,
+            resolved.deployment_name
+        );
+    }
     if !resolved.base_url.trim().is_empty() {
         let base = resolved.base_url.trim().trim_end_matches('/');
         if base.ends_with("/v1") {
@@ -87,19 +96,15 @@ fn openai_base(resolved: &ResolvedProvider) -> String {
         return format!("{base}/v1/chat/completions");
     }
     match resolved.kind.as_str() {
-        "azure_openai" => format!(
-            "{}/openai/deployments/{}/chat/completions?api-version=2024-02-01",
-            resolved.base_url.trim().trim_end_matches('/'),
-            resolved.deployment_name
-        ),
         "xai" => "https://api.x.ai/v1/chat/completions".into(),
         "deepseek" => "https://api.deepseek.com/v1/chat/completions".into(),
         "mistral" => "https://api.mistral.ai/v1/chat/completions".into(),
         "ollama" => "http://127.0.0.1:11434/v1/chat/completions".into(),
-        "vllm" => format!(
-            "{}/v1/chat/completions",
-            resolved.base_url.trim().trim_end_matches('/')
-        ),
+        "vllm" => {
+            let base = resolved.base_url.trim().trim_end_matches('/');
+            let base = if base.is_empty() { "http://127.0.0.1:8000" } else { base };
+            format!("{base}/v1/chat/completions")
+        }
         _ => "https://api.openai.com/v1/chat/completions".into(),
     }
 }
@@ -135,13 +140,20 @@ async fn openai_compatible_complete(
     }
     let resp = req.send().await?;
     if !resp.status().is_success() {
-        tracing::warn!("llm error ({}): {}", resolved.kind, resp.text().await.unwrap_or_default());
+        tracing::warn!(
+            "llm error ({}): {}",
+            resolved.kind,
+            resp.text().await.unwrap_or_default()
+        );
         return Ok(None);
     }
     let v: serde_json::Value = resp.json().await?;
     let text = v["choices"][0]["message"]["content"]
         .as_str()
         .map(String::from);
+    if text.is_none() {
+        tracing::warn!(provider = %resolved.kind, "unexpected LLM response shape (no choices[0].message.content): {}", v);
+    }
     Ok(text)
 }
 
@@ -153,7 +165,10 @@ async fn anthropic_complete(
     let url = if resolved.base_url.trim().is_empty() {
         "https://api.anthropic.com/v1/messages".to_string()
     } else {
-        format!("{}/v1/messages", resolved.base_url.trim().trim_end_matches('/'))
+        format!(
+            "{}/v1/messages",
+            resolved.base_url.trim().trim_end_matches('/')
+        )
     };
     let body = serde_json::json!({
         "model": resolved.model_id,
@@ -177,6 +192,9 @@ async fn anthropic_complete(
     }
     let v: serde_json::Value = resp.json().await?;
     let text = v["content"][0]["text"].as_str().map(String::from);
+    if text.is_none() {
+        tracing::warn!(provider = "anthropic", "unexpected Anthropic response shape: {}", v);
+    }
     Ok(text)
 }
 
@@ -188,15 +206,14 @@ async fn google_complete(
     let model = resolved.model_id.clone();
     let url = if resolved.base_url.trim().is_empty() {
         format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            model, resolved.api_key
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent",
+            model
         )
     } else {
         format!(
-            "{}/v1beta/models/{}:generateContent?key={}",
+            "{}/v1beta/models/{}:generateContent",
             resolved.base_url.trim().trim_end_matches('/'),
             model,
-            resolved.api_key
         )
     };
     let body = serde_json::json!({
@@ -205,7 +222,12 @@ async fn google_complete(
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(45))
         .build()?;
-    let resp = client.post(url).json(&body).send().await?;
+    let resp = client
+        .post(url)
+        .header("x-goog-api-key", &resolved.api_key)
+        .json(&body)
+        .send()
+        .await?;
     if !resp.status().is_success() {
         tracing::warn!("google error: {}", resp.text().await.unwrap_or_default());
         return Ok(None);
@@ -214,5 +236,8 @@ async fn google_complete(
     let text = v["candidates"][0]["content"]["parts"][0]["text"]
         .as_str()
         .map(String::from);
+    if text.is_none() {
+        tracing::warn!(provider = "google", "unexpected Google response shape (safety block or empty parts?): {}", v);
+    }
     Ok(text)
 }

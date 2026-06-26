@@ -9,7 +9,8 @@ use uuid::Uuid;
 use crate::engine::vm_inventory::{cluster_inventory_policy, ClusterInventoryPolicy};
 use crate::state::AppState;
 
-const KUBEVIRT_MISSING: &str = "kubevirt_not_found: VirtualMachine no longer present in cluster inventory scan";
+const KUBEVIRT_MISSING: &str =
+    "kubevirt_not_found: VirtualMachine no longer present in cluster inventory scan";
 
 #[derive(Debug, Deserialize)]
 struct KubeVirtInventoryResponse {
@@ -117,8 +118,8 @@ pub async fn sync_cluster(state: &AppState, cluster_id: Uuid) -> anyhow::Result<
 
         let existing: Option<(Uuid, bool)> = sqlx::query_as(
             "SELECT id, managed FROM vms
-             WHERE cluster_id = $1 AND inventory_source = 'kubevirt'
-               AND k8s_namespace = $2 AND name = $3",
+             WHERE cluster_id = ? AND inventory_source = 'kubevirt'
+               AND k8s_namespace = ? AND name = ?",
         )
         .bind(cluster_id)
         .bind(&ns)
@@ -128,8 +129,8 @@ pub async fn sync_cluster(state: &AppState, cluster_id: Uuid) -> anyhow::Result<
 
         if let Some((id, _managed)) = existing {
             sqlx::query(
-                "UPDATE vms SET observed_state = $1, spec_json = $2, last_seen_at = NOW(), updated_at = NOW()
-                 WHERE id = $3",
+                "UPDATE vms SET observed_state = ?, spec_json = ?, last_seen_at = datetime('now'), updated_at = datetime('now')
+                 WHERE id = ?",
             )
             .bind(&observed)
             .bind(&spec)
@@ -141,7 +142,7 @@ pub async fn sync_cluster(state: &AppState, cluster_id: Uuid) -> anyhow::Result<
             sqlx::query(
                 "INSERT INTO vms (id, cluster_id, host_id, name, k8s_namespace, spec_json,
                  desired_state, observed_state, managed, lifecycle_phase, inventory_source, last_seen_at)
-                 VALUES ($1, $2, NULL, $3, $4, $5, 'unknown', $6, FALSE, 'idle', 'kubevirt', NOW())",
+                 VALUES (?, ?, NULL, ?, ?, ?, 'unknown', ?, FALSE, 'idle', 'kubevirt', datetime('now'))",
             )
             .bind(new_id)
             .bind(cluster_id)
@@ -177,7 +178,7 @@ async fn reconcile_kubevirt_tombstones(
 
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT id, name, k8s_namespace, managed FROM vms
-         WHERE cluster_id = $1 AND inventory_source = 'kubevirt'",
+         WHERE cluster_id = ? AND inventory_source = 'kubevirt'",
     )
     .bind(cluster_id)
     .fetch_all(&state.pool)
@@ -189,17 +190,20 @@ async fn reconcile_kubevirt_tombstones(
             continue;
         }
         if !row.managed && policy.inventory_prune_unmanaged {
-            sqlx::query("DELETE FROM vms WHERE id = $1")
+            sqlx::query("DELETE FROM vms WHERE id = ?")
                 .bind(row.id)
                 .execute(&state.pool)
                 .await?;
             state.emit_event(
                 "vm.removed",
-                format!("Discovered KubeVirt VM '{}/{}' removed from inventory", ns, row.name),
+                format!(
+                    "Discovered KubeVirt VM '{}/{}' removed from inventory",
+                    ns, row.name
+                ),
             );
         } else if row.managed && policy.inventory_mark_managed_missing {
             sqlx::query(
-                "UPDATE vms SET observed_state = 'missing', last_error = $1, updated_at = NOW() WHERE id = $2",
+                "UPDATE vms SET observed_state = 'missing', last_error = ?, updated_at = datetime('now') WHERE id = ?",
             )
             .bind(KUBEVIRT_MISSING)
             .bind(row.id)

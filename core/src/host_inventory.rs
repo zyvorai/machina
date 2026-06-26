@@ -112,7 +112,8 @@ pub fn read_dmi_inventory() -> DmiInventory {
 }
 
 fn read_i32_file(path: &Path) -> Result<i32, LibvirtError> {
-    let s = fs::read_to_string(path).map_err(|e| io_err(format!("read {}: {e}", path.display())))?;
+    let s =
+        fs::read_to_string(path).map_err(|e| io_err(format!("read {}: {e}", path.display())))?;
     s.trim()
         .parse()
         .map_err(|_| io_err(format!("parse integer {}", path.display())))
@@ -266,7 +267,9 @@ fn parse_proc_cpuinfo_vendor_model() -> (Option<String>, Option<String>) {
 }
 
 /// Build a VMware-style inventory report: sysfs + DMI + `/proc/cpuinfo`, optionally reconciled with libvirt node caps.
-pub fn gather_hardware_inventory_report(libvirt: Option<NodeInfo>) -> Result<HardwareInventoryReport, LibvirtError> {
+pub fn gather_hardware_inventory_report(
+    libvirt: Option<NodeInfo>,
+) -> Result<HardwareInventoryReport, LibvirtError> {
     let dmi = read_dmi_inventory();
     let cpu_topology = parse_cpu_topology_sysfs()?;
     let numa_nodes = parse_numa_nodes_sysfs();
@@ -303,7 +306,8 @@ pub fn gather_hardware_inventory_report(libvirt: Option<NodeInfo>) -> Result<Har
 
     if cpu_topology.logical_cpus == 0 && Path::new("/sys/devices/system/cpu").exists() {
         consistency_notes.push(
-            "Could not parse CPU topology under /sys/devices/system/cpu (unexpected layout?).".into(),
+            "Could not parse CPU topology under /sys/devices/system/cpu (unexpected layout?)."
+                .into(),
         );
     }
 
@@ -351,7 +355,8 @@ pub fn inventory_history_jsonl_path() -> PathBuf {
 }
 
 fn trim_jsonl_file_to_budget(path: &Path, target_max_bytes: usize) -> Result<(), LibvirtError> {
-    let data = fs::read_to_string(path).map_err(|e| io_err(format!("read {}: {e}", path.display())))?;
+    let data =
+        fs::read_to_string(path).map_err(|e| io_err(format!("read {}: {e}", path.display())))?;
     if data.len() <= target_max_bytes {
         return Ok(());
     }
@@ -415,7 +420,9 @@ pub fn append_inventory_history_line(
 }
 
 /// Recent snapshots, **newest first** (each line is a full [`HardwareInventoryReport`] JSON).
-pub fn load_inventory_history_entries(limit: usize) -> Result<Vec<HardwareInventoryReport>, LibvirtError> {
+pub fn load_inventory_history_entries(
+    limit: usize,
+) -> Result<Vec<HardwareInventoryReport>, LibvirtError> {
     let path = inventory_history_jsonl_path();
     let data = match fs::read_to_string(&path) {
         Ok(c) => c,

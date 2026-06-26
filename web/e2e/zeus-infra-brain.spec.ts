@@ -61,7 +61,7 @@ test('Policy page downloads policy YAML', async ({ page }) => {
 test('Stopped VM overview shows AI troubleshoot panel', async ({ page }) => {
   await mockPlatformApi(page, { tier: 'power', stoppedVm: true })
   await page.goto('/platform/vms/v1')
-  await expect(page.getByRole('heading', { name: 'vm-1' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: 'vm-1' }).first()).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: 'AI troubleshoot' })).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Run troubleshoot' }).click()
   await expect(page.getByText('Memory pressure')).toBeVisible({ timeout: 10_000 })

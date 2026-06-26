@@ -68,7 +68,11 @@ pub fn clone_vm(conn: &Connect, source_name: &str, new_name: &str) -> Result<(),
     clone_vm_xml_only(conn, source_name, new_name)
 }
 
-fn clone_vm_xml_only(conn: &Connect, source_name: &str, new_name: &str) -> Result<(), LibvirtError> {
+fn clone_vm_xml_only(
+    conn: &Connect,
+    source_name: &str,
+    new_name: &str,
+) -> Result<(), LibvirtError> {
     crate::validate::validate_name(new_name)?;
     let source = lookup_domain(conn, source_name)?;
     let xml = source
@@ -92,9 +96,8 @@ fn define_cloned_domain(
     new_name: &str,
     new_disk_path: &str,
 ) -> Result<(), LibvirtError> {
-    let new_xml = replace_domain_name(source_xml, new_name).ok_or_else(|| {
-        LibvirtError::Operation("failed to replace domain name in XML".into())
-    })?;
+    let new_xml = replace_domain_name(source_xml, new_name)
+        .ok_or_else(|| LibvirtError::Operation("failed to replace domain name in XML".into()))?;
     let new_xml = remove_xml_element(&new_xml, "uuid");
     let new_xml = randomize_mac_addresses(&new_xml);
     let new_xml = replace_disk_path(&new_xml, new_disk_path);

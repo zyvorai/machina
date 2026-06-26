@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { CheckCircle2, ShieldCheck } from 'lucide-react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
@@ -18,6 +19,7 @@ export default function PlatformZeusApprovals() {
   const [busy, setBusy] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -52,8 +54,8 @@ export default function PlatformZeusApprovals() {
     }
   }
 
-  const reject = async (id: string) => {
-    if (!window.confirm('Reject this AI action? It will not be executed.')) return
+  const doReject = async (id: string) => {
+    setRejectTargetId(null)
     setBusy(id)
     try {
       await rejectZeusAction(id)
@@ -94,7 +96,7 @@ export default function PlatformZeusApprovals() {
               title={a.label}
               detail={`${a.review} · Risk: ${a.risk} · ${a.source}`}
               onApprove={busy === a.id ? undefined : () => void execute(a.id)}
-              onDismiss={busy === a.id ? undefined : () => void reject(a.id)}
+              onDismiss={busy === a.id ? undefined : () => setRejectTargetId(a.id)}
             />
           ))}
         </div>
@@ -106,6 +108,15 @@ export default function PlatformZeusApprovals() {
           Executed actions are audited on the controller — reject to discard without side effects.
         </p>
       )}
+      <ConfirmDialog
+        open={rejectTargetId !== null}
+        title="Reject AI Action"
+        message="Reject this AI action? It will not be executed."
+        confirmLabel="Reject"
+        variant="danger"
+        onCancel={() => setRejectTargetId(null)}
+        onConfirm={() => { if (rejectTargetId) void doReject(rejectTargetId) }}
+      />
     </PlatformPageChrome>
   )
 }

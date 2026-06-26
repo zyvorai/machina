@@ -13,7 +13,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::engine::ai;
 use crate::state::AppState;
 
@@ -22,7 +22,11 @@ pub struct SpotlightBody {
     pub query: String,
 }
 
-pub async fn get_settings(State(state): State<AppState>) -> Result<Json<ai::settings::AiSettings>, ApiError> {
+pub async fn get_settings(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+) -> Result<Json<ai::settings::AiSettings>, ApiError> {
+    require_operator(&actor)?;
     ai::settings::get_ai_settings(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -43,19 +47,20 @@ pub async fn patch_settings(
 
 pub async fn spotlight(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<SpotlightBody>,
 ) -> Result<Json<ai::SpotlightResult>, ApiError> {
-    let online: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
-            .fetch_one(&state.pool)
-            .await
-            .map_err(|e| ApiError::internal(e.to_string()))?;
+    require_operator(&actor)?;
+    let online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
 
     let q = body.query.trim();
     let mut hits = Vec::new();
     if !q.is_empty() {
         let vms: Vec<(Uuid, String, String)> = sqlx::query_as(
-            "SELECT id, name, observed_state FROM vms WHERE name ILIKE $1 ORDER BY name LIMIT 12",
+            "SELECT id, name, observed_state FROM vms WHERE name LIKE ? ORDER BY name LIMIT 12",
         )
         .bind(format!("%{q}%"))
         .fetch_all(&state.pool)
@@ -71,21 +76,28 @@ pub async fn spotlight(
         }
     }
 
-    Ok(Json(ai::intent_router::route_spotlight(&body.query, online, hits)))
+    Ok(Json(ai::intent_router::route_spotlight(
+        &body.query,
+        online,
+        hits,
+    )))
 }
 
 pub async fn jarvis_landing(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::SpotlightResult>, ApiError> {
-    let online: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
-            .fetch_one(&state.pool)
-            .await
-            .map_err(|e| ApiError::internal(e.to_string()))?;
+    require_operator(&actor)?;
+    let online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))?;
     let missing = crate::engine::template_readiness::list_missing_marketplace_images(&state.pool)
         .await
         .unwrap_or_default();
-    Ok(Json(ai::intent_router::jarvis_landing_intents(online, missing)))
+    Ok(Json(ai::intent_router::jarvis_landing_intents(
+        online, missing,
+    )))
 }
 
 #[derive(Debug, Deserialize)]
@@ -99,8 +111,13 @@ pub struct CopilotBody {
 
 pub async fn copilot_chat(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<CopilotBody>,
 ) -> Result<Json<ai::CopilotResponse>, ApiError> {
+    require_operator(&actor)?;
+    if body.message.len() > 32_768 {
+        return Err(ApiError::bad_request("message too long (max 32 768 chars)"));
+    }
     ai::copilot_chat(
         &state.pool,
         &state.config,
@@ -109,16 +126,30 @@ pub async fn copilot_chat(
         body.host_id,
         body.vm_ids,
     )
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))
-        .map(Json)
+    .await
+    .map_err(|e| ApiError::internal(e.to_string()))
+    .map(Json)
 }
 
 pub async fn copilot_stream(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<CopilotBody>,
 ) -> Sse<impl Stream<Item = Result<Event, Infallible>>> {
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(64);
+    if require_operator(&actor).is_err() {
+        let (tx1, rx1) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(1);
+        let _ = tx1.try_send(Ok(Event::default().data(
+            serde_json::json!({"type":"error","message":"Forbidden"}).to_string()
+        )));
+        return Sse::new(ReceiverStream::new(rx1)).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)));
+    }
+    if body.message.len() > 32_768 {
+        let _ = tx.try_send(Ok(Event::default().data(
+            serde_json::json!({"type":"error","message":"message too long"}).to_string()
+        )));
+        return Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)));
+    }
     let pool = state.pool.clone();
     let config = state.config.clone();
     let message = body.message;
@@ -128,9 +159,7 @@ pub async fn copilot_stream(
 
     tokio::spawn(async move {
         let send = |data: String| async {
-            let _ = tx
-                .send(Ok(Event::default().data(data)))
-                .await;
+            let _ = tx.send(Ok(Event::default().data(data))).await;
         };
 
         match ai::build_copilot_base(&pool, &config, &message, vm_id, host_id, vm_ids).await {
@@ -172,7 +201,8 @@ pub async fn copilot_stream(
                 send(done).await;
             }
             Err(e) => {
-                let err = serde_json::json!({ "type": "error", "message": e.to_string() }).to_string();
+                let err =
+                    serde_json::json!({ "type": "error", "message": e.to_string() }).to_string();
                 send(err).await;
             }
         }
@@ -190,8 +220,10 @@ pub struct ExplainBody {
 
 pub async fn explain(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ExplainBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let text = ai::explain_screen(&state.pool, &body.screen, &body.object_ref)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -207,8 +239,10 @@ pub struct RunbookBody {
 
 pub async fn runbook(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<RunbookBody>,
 ) -> Result<Json<ai::runbook::Runbook>, ApiError> {
+    require_operator(&actor)?;
     ai::runbook::generate(&state.pool, &body.incident, &body.context)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -221,14 +255,18 @@ pub struct BlueprintGenBody {
 }
 
 pub async fn generate_blueprint(
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<BlueprintGenBody>,
 ) -> Result<Json<ai::blueprint::GeneratedBlueprint>, ApiError> {
+    require_operator(&actor)?;
     Ok(Json(ai::blueprint::generate_from_nl(&body.prompt)))
 }
 
 pub async fn cost_guardian(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::cost::CostAnalysis>, ApiError> {
+    require_operator(&actor)?;
     ai::cost::analyze(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -237,7 +275,9 @@ pub async fn cost_guardian(
 
 pub async fn capacity_planner(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::capacity::CapacityPlan>, ApiError> {
+    require_operator(&actor)?;
     ai::capacity::plan(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -246,7 +286,9 @@ pub async fn capacity_planner(
 
 pub async fn security_sentinel(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::security::SecurityReport>, ApiError> {
+    require_operator(&actor)?;
     ai::security::scan(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -262,7 +304,9 @@ pub struct NetworkExplainBody {
 
 pub async fn policy_export(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::policy_export::PolicyExport>, ApiError> {
+    require_operator(&actor)?;
     ai::policy_export::export_policy_yaml(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -271,12 +315,20 @@ pub async fn policy_export(
 
 pub async fn network_explain(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<NetworkExplainBody>,
 ) -> Result<Json<ai::network::NetworkExplainResult>, ApiError> {
-    ai::network::explain_reach(&state.pool, &state.config, &body.vm_a, &body.vm_b, body.port)
-        .await
-        .map_err(|e| ApiError::internal(e.to_string()))
-        .map(Json)
+    require_operator(&actor)?;
+    ai::network::explain_reach(
+        &state.pool,
+        &state.config,
+        &body.vm_a,
+        &body.vm_b,
+        body.port,
+    )
+    .await
+    .map_err(|e| ApiError::internal(e.to_string()))
+    .map(Json)
 }
 
 #[derive(Debug, Deserialize)]
@@ -292,27 +344,22 @@ pub struct MigrationAdvisorQuery {
 
 pub async fn migration_advisor(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<MigrationAdvisorQuery>,
 ) -> Result<Json<ai::migration::MigrationAdvisorReport>, ApiError> {
+    require_operator(&actor)?;
     let provider = q.provider.as_deref().unwrap_or("vmware");
     let mut report = if provider == "vmware" {
-        ai::migration::advise_vmware_vm(
-            &q.vm,
-            q.os.as_deref().unwrap_or("linux"),
-            q.has_rdm,
-        )
+        ai::migration::advise_vmware_vm(&q.vm, q.os.as_deref().unwrap_or("linux"), q.has_rdm)
     } else {
         ai::migration::advise_vmware_vm(&q.vm, "linux", false)
     };
 
     if let Some(disk_path) = q.disk_path.filter(|p| !p.is_empty()) {
         if state.config.guestkit_enabled {
-            if let Ok(plan) = crate::engine::guestkit_bridge::migrate_plan_disk(
-                &state.config,
-                &disk_path,
-                "kvm",
-            )
-            .await
+            if let Ok(plan) =
+                crate::engine::guestkit_bridge::migrate_plan_disk(&state.config, &disk_path, "kvm")
+                    .await
             {
                 if let Ok(doc) = crate::engine::guestkit_bridge::doctor_disk(
                     &state.config,
@@ -383,8 +430,10 @@ fn infer_migration_firewall_deps(vm: &str, os: &str) -> Vec<String> {
 
 pub async fn vm_doctor(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     axum::extract::Path(id): axum::extract::Path<Uuid>,
 ) -> Result<Json<crate::engine::vm_health::VmHealthReport>, ApiError> {
+    require_operator(&actor)?;
     crate::engine::vm_health::run_vm_health_check(&state.pool, id)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -398,8 +447,10 @@ pub struct AutopilotProposeQuery {
 
 pub async fn autopilot_propose(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<AutopilotProposeQuery>,
 ) -> Result<Json<ai::autopilot::AutopilotProposal>, ApiError> {
+    require_operator(&actor)?;
     ai::autopilot::propose(&state.pool, q.vm_id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -411,6 +462,7 @@ pub async fn autopilot_execute(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::autopilot::ExecuteBody>,
 ) -> Result<Json<ai::autopilot::ExecuteResult>, ApiError> {
+    require_operator(&actor)?;
     ai::autopilot::execute(&state, &actor, &body)
         .await
         .map(Json)
@@ -418,7 +470,9 @@ pub async fn autopilot_execute(
 
 pub async fn compliance_report(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::compliance::ComplianceReport>, ApiError> {
+    require_operator(&actor)?;
     ai::compliance::generate(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -427,16 +481,22 @@ pub async fn compliance_report(
 
 pub async fn compliance_export_html(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<axum::response::Html<String>, ApiError> {
+    require_operator(&actor)?;
     let report = ai::compliance::generate(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    Ok(axum::response::Html(ai::compliance::report_to_html(&report)))
+    Ok(axum::response::Html(ai::compliance::report_to_html(
+        &report,
+    )))
 }
 
 pub async fn compliance_export_pdf(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<axum::response::Response, ApiError> {
+    require_operator(&actor)?;
     let report = ai::compliance::generate(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -459,16 +519,14 @@ pub struct TerminalSuggestBody {
 
 pub async fn terminal_suggest(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<TerminalSuggestBody>,
 ) -> Result<Json<ai::terminal::TerminalSuggestResult>, ApiError> {
-    ai::terminal::suggest(
-        &state.pool,
-        body.vm_id,
-        body.vm_name.as_deref(),
-    )
-    .await
-    .map_err(|e| ApiError::internal(e.to_string()))
-    .map(Json)
+    require_operator(&actor)?;
+    ai::terminal::suggest(&state.pool, body.vm_id, body.vm_name.as_deref())
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
 }
 
 #[derive(Debug, Deserialize)]
@@ -488,6 +546,7 @@ pub async fn autopilot_run(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<AutopilotRunBody>,
 ) -> Result<Json<ai::autopilot::AutopilotRunResult>, ApiError> {
+    require_operator(&actor)?;
     let settings = ai::settings::get_ai_settings(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -514,8 +573,10 @@ fn default_history_limit() -> i64 {
 
 pub async fn autopilot_history(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<AutopilotHistoryQuery>,
 ) -> Result<Json<Vec<ai::autopilot::AutopilotHistoryEntry>>, ApiError> {
+    require_operator(&actor)?;
     ai::autopilot::list_history(&state.pool, q.limit)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -524,7 +585,9 @@ pub async fn autopilot_history(
 
 pub async fn capacity_export_csv(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<axum::response::Response, ApiError> {
+    require_operator(&actor)?;
     let csv = ai::capacity::export_csv(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -540,7 +603,9 @@ pub async fn capacity_export_csv(
 
 pub async fn cost_export_csv(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<axum::response::Response, ApiError> {
+    require_operator(&actor)?;
     let csv = ai::cost::export_csv(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -556,7 +621,9 @@ pub async fn cost_export_csv(
 
 pub async fn fleet_summary(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::fleet_summary::FleetZeusSummary>, ApiError> {
+    require_operator(&actor)?;
     ai::fleet_summary::summarize(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -565,7 +632,9 @@ pub async fn fleet_summary(
 
 pub async fn fleet_local(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::fleet_summary::FleetClusterSlice>, ApiError> {
+    require_operator(&actor)?;
     ai::fleet_summary::local_export(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -574,7 +643,9 @@ pub async fn fleet_local(
 
 pub async fn twin_graph(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::digital_twin::DigitalTwinGraph>, ApiError> {
+    require_operator(&actor)?;
     ai::digital_twin::build_graph(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -583,8 +654,10 @@ pub async fn twin_graph(
 
 pub async fn twin_impact(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::digital_twin::ImpactRequest>,
 ) -> Result<Json<ai::digital_twin::ImpactAnalysis>, ApiError> {
+    require_operator(&actor)?;
     ai::digital_twin::analyze_impact(&state.pool, &body)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -593,8 +666,10 @@ pub async fn twin_impact(
 
 pub async fn analyze_incident(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<ai::root_cause::AnalyzeIncidentQuery>,
 ) -> Result<Json<ai::root_cause::IncidentAnalysis>, ApiError> {
+    require_operator(&actor)?;
     let mut result = ai::root_cause::analyze(&state.pool, &q)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -616,8 +691,10 @@ pub struct EnvironmentIntentBody {
 
 pub async fn vm_builder(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::vm_builder::VmBuilderBody>,
 ) -> Result<Json<ai::vm_builder::VmBuilderResult>, ApiError> {
+    require_operator(&actor)?;
     ai::vm_builder::build(&state.pool, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -626,14 +703,17 @@ pub async fn vm_builder(
 
 pub async fn intent_environment(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<EnvironmentIntentBody>,
 ) -> Result<Json<ai::environment_intent::EnvironmentResourcePlan>, ApiError> {
+    require_operator(&actor)?;
     let rates: (f64, f64) = sqlx::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
-    .map_err(|e| ApiError::internal(e.to_string()))?;
+    .map_err(|e| ApiError::internal(e.to_string()))?
+    .ok_or_else(|| ApiError::bad_request("no cluster configured — run machina-controller bootstrap"))?;
     Ok(Json(ai::environment_intent::plan_environment(
         &body.query,
         rates.0,
@@ -646,12 +726,17 @@ pub async fn intent_environment_execute(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::environment_intent::EnvironmentExecuteBody>,
 ) -> Result<Json<ai::environment_intent::EnvironmentExecuteResult>, ApiError> {
-    ai::environment_intent::execute_environment(&state, &actor, &body).await.map(Json)
+    require_operator(&actor)?;
+    ai::environment_intent::execute_environment(&state, &actor, &body)
+        .await
+        .map(Json)
 }
 
 pub async fn sre_forecast(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::sre_predict::SreForecastReport>, ApiError> {
+    require_operator(&actor)?;
     ai::sre_predict::forecast(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -660,7 +745,9 @@ pub async fn sre_forecast(
 
 pub async fn sre_remediate(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::sre_remediate::SreRemediationReport>, ApiError> {
+    require_operator(&actor)?;
     ai::sre_remediate::propose(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -669,7 +756,9 @@ pub async fn sre_remediate(
 
 pub async fn compliance_remediate(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::compliance_remediate::ComplianceRemediationReport>, ApiError> {
+    require_operator(&actor)?;
     ai::compliance_remediate::propose(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -678,7 +767,9 @@ pub async fn compliance_remediate(
 
 pub async fn zeus_summary(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::zeus_summary::ZeusOsSummary>, ApiError> {
+    require_operator(&actor)?;
     ai::zeus_summary::summarize(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -687,7 +778,9 @@ pub async fn zeus_summary(
 
 pub async fn fleet_power_optimize(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::fleet_power::FleetPowerReport>, ApiError> {
+    require_operator(&actor)?;
     ai::fleet_power::optimize(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -696,7 +789,9 @@ pub async fn fleet_power_optimize(
 
 pub async fn fleet_heatmap(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::fleet_heatmap::FleetHeatmap>, ApiError> {
+    require_operator(&actor)?;
     ai::fleet_heatmap::heatmap(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -715,8 +810,10 @@ fn default_rebalance_max() -> usize {
 
 pub async fn fleet_rebalance_propose(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<RebalanceQuery>,
 ) -> Result<Json<ai::fleet_rebalance::RebalanceProposal>, ApiError> {
+    require_operator(&actor)?;
     ai::fleet_rebalance::propose(&state.pool, q.max_moves)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -728,12 +825,17 @@ pub async fn fleet_rebalance_execute(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::fleet_rebalance::RebalanceExecuteBody>,
 ) -> Result<Json<ai::fleet_rebalance::RebalanceExecuteResult>, ApiError> {
-    ai::fleet_rebalance::execute(&state, &actor, &body).await.map(Json)
+    require_operator(&actor)?;
+    ai::fleet_rebalance::execute(&state, &actor, &body)
+        .await
+        .map(Json)
 }
 
 pub async fn cost_attribution(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::cost_attribution::CostAttributionReport>, ApiError> {
+    require_operator(&actor)?;
     ai::cost_attribution::attribute(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -742,7 +844,9 @@ pub async fn cost_attribution(
 
 pub async fn compliance_frameworks(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::compliance_frameworks::ComplianceFrameworksReport>, ApiError> {
+    require_operator(&actor)?;
     ai::compliance_frameworks::scan(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -751,7 +855,9 @@ pub async fn compliance_frameworks(
 
 pub async fn security_graph(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::security_graph::SecurityGraph>, ApiError> {
+    require_operator(&actor)?;
     ai::security_graph::build_graph(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -760,8 +866,10 @@ pub async fn security_graph(
 
 pub async fn security_attack_path(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::security_graph::AttackPathQuery>,
 ) -> Result<Json<ai::security_graph::AttackPathResult>, ApiError> {
+    require_operator(&actor)?;
     ai::security_graph::attack_path(&state.pool, &body)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -775,8 +883,10 @@ pub struct KnowledgeSearchBody {
 
 pub async fn knowledge_search(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<KnowledgeSearchBody>,
 ) -> Result<Json<ai::knowledge_search::KnowledgeSearchResult>, ApiError> {
+    require_operator(&actor)?;
     ai::knowledge_search::search(&state.pool, &body.query)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -785,7 +895,9 @@ pub async fn knowledge_search(
 
 pub async fn service_graph(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::service_graph::ServiceGraph>, ApiError> {
+    require_operator(&actor)?;
     ai::service_graph::build(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -804,8 +916,10 @@ fn default_memory_limit() -> i64 {
 
 pub async fn infrastructure_memory(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<MemoryQuery>,
 ) -> Result<Json<ai::infrastructure_memory::InfrastructureMemory>, ApiError> {
+    require_operator(&actor)?;
     ai::infrastructure_memory::recall(&state.pool, q.limit)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -819,14 +933,17 @@ pub struct MissionStackBody {
 
 pub async fn mission_stack(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<MissionStackBody>,
 ) -> Result<Json<ai::mission_stack::MissionStackPlan>, ApiError> {
+    require_operator(&actor)?;
     let rates: (f64, f64) = sqlx::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
-    .fetch_one(&state.pool)
+    .fetch_optional(&state.pool)
     .await
-    .map_err(|e| ApiError::internal(e.to_string()))?;
+    .map_err(|e| ApiError::internal(e.to_string()))?
+    .ok_or_else(|| ApiError::bad_request("no cluster configured — run machina-controller bootstrap"))?;
     Ok(Json(ai::mission_stack::plan_mission_stack(
         &body.query,
         rates.0,
@@ -839,12 +956,17 @@ pub async fn mission_stack_execute(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::mission_stack::MissionStackExecuteBody>,
 ) -> Result<Json<ai::mission_stack::MissionStackExecuteResult>, ApiError> {
-    ai::mission_stack::execute_stack(&state, &actor, &body).await.map(Json)
+    require_operator(&actor)?;
+    ai::mission_stack::execute_stack(&state, &actor, &body)
+        .await
+        .map(Json)
 }
 
 pub async fn cost_attribution_export_csv(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<axum::response::Response, ApiError> {
+    require_operator(&actor)?;
     let csv = ai::cost_attribution::export_csv(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -870,8 +992,10 @@ fn default_gpu_workload() -> String {
 
 pub async fn fleet_gpu_placement(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<GpuPlacementQuery>,
 ) -> Result<Json<ai::fleet_placement::GpuPlacementReport>, ApiError> {
+    require_operator(&actor)?;
     ai::fleet_placement::advise_gpu(&state.pool, &q.workload)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -880,8 +1004,10 @@ pub async fn fleet_gpu_placement(
 
 pub async fn knowledge_diagnose(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<KnowledgeSearchBody>,
 ) -> Result<Json<ai::knowledge_diagnose::KnowledgeDiagnosis>, ApiError> {
+    require_operator(&actor)?;
     ai::knowledge_diagnose::diagnose(&state.pool, &body.query)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -890,8 +1016,10 @@ pub async fn knowledge_diagnose(
 
 pub async fn service_impact(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::service_impact::ServiceImpactQuery>,
 ) -> Result<Json<ai::service_impact::ServiceImpactResult>, ApiError> {
+    require_operator(&actor)?;
     ai::service_impact::simulate(&state.pool, &body)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -907,8 +1035,10 @@ pub struct SimilarMemoryQuery {
 
 pub async fn memory_similar(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<SimilarMemoryQuery>,
 ) -> Result<Json<ai::infrastructure_memory::SimilarIncidentsResult>, ApiError> {
+    require_operator(&actor)?;
     ai::infrastructure_memory::similar(&state.pool, &q.q, q.limit)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -917,7 +1047,9 @@ pub async fn memory_similar(
 
 pub async fn remediate_hub(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::remediate_hub::RemediateHub>, ApiError> {
+    require_operator(&actor)?;
     ai::remediate_hub::hub(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -926,8 +1058,10 @@ pub async fn remediate_hub(
 
 pub async fn knowledge_runbook(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<KnowledgeSearchBody>,
 ) -> Result<Json<ai::knowledge_runbook::KnowledgeRunbook>, ApiError> {
+    require_operator(&actor)?;
     ai::knowledge_runbook::from_query(&state.pool, &body.query)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -936,7 +1070,9 @@ pub async fn knowledge_runbook(
 
 pub async fn cost_budget(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::cost_budget::CostBudgetReport>, ApiError> {
+    require_operator(&actor)?;
     ai::cost_budget::analyze(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -945,7 +1081,9 @@ pub async fn cost_budget(
 
 pub async fn mission_stack_status(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::mission_stack_status::MissionStackStatus>, ApiError> {
+    require_operator(&actor)?;
     ai::mission_stack_status::status(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -956,7 +1094,9 @@ pub async fn mission_stack_status(
 
 pub async fn list_ai_providers(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ai::providers::AiProviderRow>>, ApiError> {
+    require_operator(&actor)?;
     ai::providers::list_providers(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1002,8 +1142,10 @@ pub async fn delete_ai_provider(
 
 pub async fn list_ai_provider_models(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     axum::extract::Path(id): axum::extract::Path<Uuid>,
 ) -> Result<Json<Vec<ai::providers::AiModelRow>>, ApiError> {
+    require_operator(&actor)?;
     ai::providers::list_models(&state.pool, id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1024,7 +1166,9 @@ pub async fn test_ai_provider(
 
 pub async fn list_routing_rules(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ai::routing::RoutingRuleRow>>, ApiError> {
+    require_operator(&actor)?;
     ai::routing::list_rules(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1046,7 +1190,9 @@ pub async fn patch_routing_rule(
 
 pub async fn list_zeus_agents(
     State(_state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ai::agents::ZeusAgentInfo>>, ApiError> {
+    require_operator(&actor)?;
     Ok(Json(ai::agents::catalog()))
 }
 
@@ -1055,6 +1201,7 @@ pub async fn zeus_chat(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::agents::ZeusChatBody>,
 ) -> Result<Json<ai::agents::ZeusChatResponse>, ApiError> {
+    require_operator(&actor)?;
     ai::agents::chat(&state.pool, &state.config, &body, Some(&actor.username))
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1065,6 +1212,7 @@ pub async fn list_ai_prompts(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ai::prompts::PromptRow>>, ApiError> {
+    require_operator(&actor)?;
     ai::prompts::list_prompts(&state.pool, &actor.username)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1076,6 +1224,7 @@ pub async fn create_ai_prompt(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::prompts::CreatePromptBody>,
 ) -> Result<Json<ai::prompts::PromptRow>, ApiError> {
+    require_operator(&actor)?;
     ai::prompts::create_prompt(&state.pool, &actor.username, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1088,6 +1237,7 @@ pub async fn patch_ai_prompt(
     axum::extract::Path(id): axum::extract::Path<Uuid>,
     Json(body): Json<ai::prompts::PatchPromptBody>,
 ) -> Result<Json<ai::prompts::PromptRow>, ApiError> {
+    require_operator(&actor)?;
     let _ = actor;
     ai::prompts::patch_prompt(&state.pool, id, &body)
         .await
@@ -1100,6 +1250,7 @@ pub async fn delete_ai_prompt(
     Extension(actor): Extension<AuthUser>,
     axum::extract::Path(id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_admin(&actor)?;
     let _ = actor;
     let ok = ai::prompts::delete_prompt(&state.pool, id)
         .await
@@ -1109,7 +1260,9 @@ pub async fn delete_ai_prompt(
 
 pub async fn get_memory_settings(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::memory_store::MemorySettings>, ApiError> {
+    require_operator(&actor)?;
     ai::memory_store::get_settings(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1147,8 +1300,10 @@ pub async fn purge_memory(
 
 pub async fn fleet_guest_query(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::fleet_guest_query::FleetGuestQueryRequest>,
 ) -> Result<Json<ai::fleet_guest_query::FleetGuestQueryReport>, ApiError> {
+    require_operator(&actor)?;
     ai::fleet_guest_query::execute(&state.pool, &state.config, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1157,8 +1312,10 @@ pub async fn fleet_guest_query(
 
 pub async fn migration_readiness_report(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::migration_readiness::MigrationReadinessRequest>,
 ) -> Result<Json<ai::migration_readiness::MigrationReadinessReport>, ApiError> {
+    require_operator(&actor)?;
     ai::migration_readiness::generate(&state.pool, &state.config, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1167,7 +1324,9 @@ pub async fn migration_readiness_report(
 
 pub async fn zeus_approval_hub(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     ai::actions::approval_hub(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1179,6 +1338,7 @@ pub async fn create_zeus_action(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::actions::CreateActionBody>,
 ) -> Result<Json<ai::actions::ZeusActionRow>, ApiError> {
+    require_operator(&actor)?;
     ai::actions::create_action(&state.pool, &body, &actor.username)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1190,6 +1350,7 @@ pub async fn execute_zeus_action(
     Extension(actor): Extension<AuthUser>,
     axum::extract::Path(id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     ai::actions::approve_and_execute(&state, id, &actor)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1201,6 +1362,7 @@ pub async fn reject_zeus_action(
     Extension(actor): Extension<AuthUser>,
     axum::extract::Path(id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let ok = ai::actions::reject(&state.pool, id, &actor.username)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -1209,7 +1371,9 @@ pub async fn reject_zeus_action(
 
 pub async fn list_agent_marketplace(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ai::agent_marketplace::AgentPluginRow>>, ApiError> {
+    require_operator(&actor)?;
     ai::agent_marketplace::list_agents(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1244,6 +1408,7 @@ pub async fn zeus_enterprise_overview(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::enterprise_zeus::ZeusEnterpriseOverview>, ApiError> {
+    require_operator(&actor)?;
     ai::enterprise_zeus::overview(&state.pool, &actor.username)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1255,6 +1420,7 @@ pub async fn patch_zeus_enterprise_overview(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::enterprise_zeus::ZeusEnterprisePatch>,
 ) -> Result<Json<ai::enterprise_zeus::ZeusEnterpriseOverview>, ApiError> {
+    require_admin(&actor)?;
     ai::enterprise_zeus::require_zeus_admin(&actor)?;
     ai::enterprise_zeus::patch(&state.pool, &body)
         .await
@@ -1267,8 +1433,10 @@ pub async fn patch_zeus_enterprise_overview(
 
 pub async fn zeus_autonomous_plan(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::autonomous::AutonomousPlanBody>,
 ) -> Result<Json<ai::autonomous::AutonomousPlanResult>, ApiError> {
+    require_operator(&actor)?;
     ai::autonomous::plan(&state.pool, &state.config, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1280,6 +1448,7 @@ pub async fn zeus_autonomous_execute(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::autonomous::AutonomousExecuteBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     ai::autonomous::execute_approved_plan(&state.pool, &state.config, &state, &actor, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1296,8 +1465,10 @@ pub struct GraphScopeQuery {
 
 pub async fn infra_graph(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<GraphScopeQuery>,
 ) -> Result<Json<ai::infra_graph::InfraGraph>, ApiError> {
+    require_operator(&actor)?;
     ai::infra_graph::build_enriched(
         &state.pool,
         &state.config,
@@ -1313,8 +1484,10 @@ pub async fn infra_graph(
 
 pub async fn infra_graph_path(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::infra_graph::PathRequest>,
 ) -> Result<Json<ai::infra_graph::PathResult>, ApiError> {
+    require_operator(&actor)?;
     ai::infra_graph::explain_path(&state.pool, &state.config, &body)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -1323,8 +1496,10 @@ pub async fn infra_graph_path(
 
 pub async fn infra_graph_query(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::infra_graph::GraphQueryRequest>,
 ) -> Result<Json<ai::infra_graph::GraphQueryResult>, ApiError> {
+    require_operator(&actor)?;
     ai::infra_graph::query(&state.pool, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1333,8 +1508,10 @@ pub async fn infra_graph_query(
 
 pub async fn infra_graph_object(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     axum::extract::Path((kind, id)): axum::extract::Path<(String, String)>,
 ) -> Result<Json<ai::infra_graph::ObjectExplain>, ApiError> {
+    require_operator(&actor)?;
     ai::infra_graph::explain_object(&state.pool, &kind, &id)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -1343,8 +1520,10 @@ pub async fn infra_graph_object(
 
 pub async fn infra_graph_at(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     axum::extract::Path(ts): axum::extract::Path<String>,
 ) -> Result<Json<ai::infra_graph::GraphAtTime>, ApiError> {
+    require_operator(&actor)?;
     let parsed = chrono::DateTime::parse_from_rfc3339(&ts)
         .map(|d| d.with_timezone(&chrono::Utc))
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
@@ -1363,8 +1542,10 @@ pub struct TimelineReplayQuery {
 
 pub async fn timeline_replay(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<TimelineReplayQuery>,
 ) -> Result<Json<ai::infra_graph::TimelineReplay>, ApiError> {
+    require_operator(&actor)?;
     let from = chrono::DateTime::parse_from_rfc3339(&q.from)
         .map(|d| d.with_timezone(&chrono::Utc))
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
@@ -1382,6 +1563,7 @@ pub async fn analyze_incident_post(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::root_cause::AnalyzeIncidentBody>,
 ) -> Result<Json<ai::root_cause::IncidentAnalysis>, ApiError> {
+    require_operator(&actor)?;
     let mut result = ai::root_cause::analyze_post(&state.pool, &body)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -1424,8 +1606,10 @@ pub async fn analyze_incident_post(
 
 pub async fn troubleshoot_vm(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::troubleshoot::TroubleshootRequest>,
 ) -> Result<Json<ai::troubleshoot::DiagnosisReport>, ApiError> {
+    require_operator(&actor)?;
     ai::troubleshoot::diagnose(&state.pool, &body)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -1434,7 +1618,9 @@ pub async fn troubleshoot_vm(
 
 pub async fn predictions_unified(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::predictions::PredictionsReport>, ApiError> {
+    require_operator(&actor)?;
     let report = ai::predictions::unified(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -1443,7 +1629,9 @@ pub async fn predictions_unified(
 
 pub async fn incidents_active(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ai::incident_commander::ActiveIncident>>, ApiError> {
+    require_operator(&actor)?;
     let _ = ai::incident_commander::correlate_and_open(&state.pool).await;
     ai::incident_commander::list_active(&state.pool)
         .await
@@ -1453,7 +1641,9 @@ pub async fn incidents_active(
 
 pub async fn rightsizing_report(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::predictions::RightsizingReport>, ApiError> {
+    require_operator(&actor)?;
     ai::predictions::rightsizing_report(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))
@@ -1462,8 +1652,10 @@ pub async fn rightsizing_report(
 
 pub async fn incident_room(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     axum::extract::Path(id): axum::extract::Path<Uuid>,
 ) -> Result<Json<ai::incident_commander::IncidentRoom>, ApiError> {
+    require_operator(&actor)?;
     ai::incident_commander::open_room(&state.pool, id)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -1472,8 +1664,10 @@ pub async fn incident_room(
 
 pub async fn incident_ack(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     axum::extract::Path(id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     ai::incident_commander::ack(&state.pool, id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -1482,8 +1676,10 @@ pub async fn incident_ack(
 
 pub async fn twin_simulate(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::digital_twin::SimulateRequest>,
 ) -> Result<Json<ai::digital_twin::SimulateResult>, ApiError> {
+    require_operator(&actor)?;
     ai::digital_twin::simulate_batch(&state.pool, &body)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -1495,6 +1691,7 @@ pub async fn nl_ops(
     Extension(actor): Extension<AuthUser>,
     Json(body): Json<ai::nl_ops::NlOpsRequest>,
 ) -> Result<Json<ai::nl_ops::NlOpsPlan>, ApiError> {
+    require_operator(&actor)?;
     ai::nl_ops::execute(&state.pool, &body, &actor.username)
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))
@@ -1514,8 +1711,10 @@ fn default_hours_before() -> i32 {
 
 pub async fn memory_changes_before(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Query(q): Query<MemoryBeforeQuery>,
 ) -> Result<Json<ai::infrastructure_memory::ChangeBeforeOutage>, ApiError> {
+    require_operator(&actor)?;
     ai::infrastructure_memory::changes_before_outage(&state.pool, q.incident_id, q.hours_before)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))

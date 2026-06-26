@@ -48,20 +48,27 @@ export default function GlancePullModal({ open, image, defaultDestDir, onClose }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onClose}>
-      <div className="bg-slate-900 border border-slate-600 rounded-xl w-full max-w-lg p-5 space-y-4" onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Pull to hypervisor"
+        className="bg-slate-900 border border-slate-600 rounded-xl w-full max-w-lg p-5 space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex justify-between items-center">
           <h2 className="text-lg font-semibold text-white flex items-center gap-2">
             <Download className="w-5 h-5 text-sky-400" />
             Pull to hypervisor
           </h2>
-          <button type="button" onClick={onClose} className="text-slate-400 hover:text-white">
-            <X className="w-4 h-4" />
+          <button type="button" onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-white">
+            <X className="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
         <p className="text-sm text-slate-400">
           Download Glance image <strong className="text-slate-200">{image.name || image.id}</strong> to a path under allowed disk-images directories.
         </p>
         <input
+          aria-label="Destination path"
           className="input-field w-full text-sm font-mono"
           value={destPath}
           onChange={(e) => setDestPath(e.target.value)}

@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Path, State};
+use axum::Extension;
 use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::engine::template::{get_ha_policy, upsert_ha_policy, HaPolicyRow};
 use crate::state::AppState;
 
@@ -15,7 +17,11 @@ pub struct HaStatusResponse {
     pub events: Vec<crate::engine::ha::HaEventRow>,
 }
 
-pub async fn get_ha_status(State(state): State<AppState>) -> Result<Json<HaStatusResponse>, ApiError> {
+pub async fn get_ha_status(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+) -> Result<Json<HaStatusResponse>, ApiError> {
+    require_operator(&actor)?;
     let (status, events) = crate::engine::ha::ha_status(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -44,8 +50,10 @@ fn default_priority() -> String {
 
 pub async fn get_vm_ha_policy(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<HaPolicyRow>, ApiError> {
+    require_operator(&actor)?;
     let policy = get_ha_policy(&state.pool, id)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?
@@ -61,10 +69,12 @@ pub async fn get_vm_ha_policy(
 
 pub async fn set_vm_ha_policy(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
     Json(body): Json<SetHaPolicyBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let _exists: Uuid = sqlx::query_scalar("SELECT id FROM vms WHERE id = $1")
+    require_operator(&actor)?;
+    let _exists: Uuid = sqlx::query_scalar("SELECT id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;

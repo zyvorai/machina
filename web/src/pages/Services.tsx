@@ -8,9 +8,11 @@ import { libvirtErrorHints } from '../utils/libvirtHints'
 import { useEffect, useState, useCallback } from 'react'
 import { listServices, serviceAction, SystemdService } from '../api/extras'
 import PageLayout from '../components/PageLayout'
-import { Search, RefreshCw, Play, Square, RotateCcw, ToggleLeft, ToggleRight } from 'lucide-react'
+import { useToastContext } from '../contexts/ToastContext'
+import { Search, RefreshCw, Play, Square, RotateCcw, ToggleLeft, ToggleRight, X } from 'lucide-react'
 
 export default function ServicesPage() {
+  const toast = useToastContext()
   const [services, setServices] = useState<SystemdService[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -36,9 +38,11 @@ export default function ServicesPage() {
     setActing(`${name}:${action}`)
     try {
       await serviceAction(name, action)
+      const verb = action === 'start' ? 'Started' : action === 'stop' ? 'Stopped' : action === 'restart' ? 'Restarted' : action === 'enable' ? 'Enabled' : action === 'disable' ? 'Disabled' : action === 'enable_now' ? 'Enabled and started' : 'Action applied'
+      toast.success(`${verb}: ${name}`)
       setTimeout(load, 1000)
     } catch (e) {
-      console.error(`Failed to ${action} ${name}:`, e)
+      toast.error(formatUserError(e))
     } finally {
       setActing(null)
     }
@@ -67,11 +71,22 @@ export default function ServicesPage() {
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
         <input
           type="text"
+          aria-label="Filter services"
           placeholder="Filter services..."
           value={filter}
           onChange={e => setFilter(e.target.value)}
-          className="w-full pl-10 pr-4 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+          className={`w-full pl-10 py-2.5 bg-slate-800/50 border border-slate-700/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${filter ? 'pr-8' : 'pr-4'}`}
         />
+        {filter && (
+          <button
+            type="button"
+            aria-label="Clear filter"
+            onClick={() => setFilter('')}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {loading ? (
@@ -81,7 +96,7 @@ export default function ServicesPage() {
       ) : (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="System services">
               <thead>
                 <tr className="border-b border-slate-700/50 text-slate-400 text-xs uppercase tracking-wider">
                   <th className="text-left px-4 py-3">Service</th>

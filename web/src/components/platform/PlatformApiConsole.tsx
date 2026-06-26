@@ -229,6 +229,7 @@ export default function PlatformApiConsole() {
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white/40" />
             <input
+              aria-label="Filter operations"
               className="w-full pl-8 pr-3 py-2 rounded-lg bg-black/25 border border-white/10 text-sm text-white"
               placeholder="Filter operations…"
               value={query}
@@ -295,6 +296,7 @@ export default function PlatformApiConsole() {
               )}
               {selected.method !== 'GET' && selected.method !== 'DELETE' && selected.transport !== 'websocket' && (
                 <textarea
+                  aria-label="Request body"
                   className="input text-xs font-mono min-h-[8rem] w-full"
                   value={body}
                   onChange={(e) => setBody(e.target.value)}

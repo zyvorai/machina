@@ -179,7 +179,7 @@ export default function CinemaShell({
                     : 'px-2 py-0.5 rounded-full text-[10px] text-slate-400 bg-black/50 border border-white/10'
                 }
               >
-                {p.replace('guacamole_', '').replace('_', ' ')}
+                {p.replace('guacamole_', '').replace(/_/g, ' ')}
               </button>
             ))}
           </div>

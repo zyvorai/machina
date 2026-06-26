@@ -43,15 +43,16 @@ fn base_url(cfg: &HypersdkConfig) -> Result<String, AppError> {
     Ok(u.to_string())
 }
 
-async fn proxy_get(cfg: &HypersdkConfig, path: &str, query: &[(&str, &str)]) -> Result<Value, AppError> {
+async fn proxy_get(
+    cfg: &HypersdkConfig,
+    path: &str,
+    query: &[(&str, &str)],
+) -> Result<Value, AppError> {
     let client = client(cfg)?;
     let url = format!("{}{}", base_url(cfg)?, path);
-    let resp = client
-        .get(&url)
-        .query(query)
-        .send()
-        .await
-        .map_err(|e| AppError::from(LibvirtError::Operation(format!("hypersdk GET {path}: {e}"))))?;
+    let resp = client.get(&url).query(query).send().await.map_err(|e| {
+        AppError::from(LibvirtError::Operation(format!("hypersdk GET {path}: {e}")))
+    })?;
     let status = resp.status();
     let body: Value = resp
         .json()
@@ -68,12 +69,11 @@ async fn proxy_get(cfg: &HypersdkConfig, path: &str, query: &[(&str, &str)]) -> 
 async fn proxy_post(cfg: &HypersdkConfig, path: &str, body: Value) -> Result<Value, AppError> {
     let client = client(cfg)?;
     let url = format!("{}{}", base_url(cfg)?, path);
-    let resp = client
-        .post(&url)
-        .json(&body)
-        .send()
-        .await
-        .map_err(|e| AppError::from(LibvirtError::Operation(format!("hypersdk POST {path}: {e}"))))?;
+    let resp = client.post(&url).json(&body).send().await.map_err(|e| {
+        AppError::from(LibvirtError::Operation(format!(
+            "hypersdk POST {path}: {e}"
+        )))
+    })?;
     let status = resp.status();
     let out: Value = resp
         .json()
@@ -119,18 +119,11 @@ struct ProviderVmsQuery {
     pub provider: String,
 }
 
-async fn hypersdk_provider_vms(
-    Query(q): Query<ProviderVmsQuery>,
-) -> Result<Json<Value>, AppError> {
+async fn hypersdk_provider_vms(Query(q): Query<ProviderVmsQuery>) -> Result<Json<Value>, AppError> {
     let cfg = hypersdk_cfg();
     let provider = q.provider.trim();
     Ok(Json(
-        proxy_get(
-            &cfg,
-            "/api/providers/vms",
-            &[("provider", provider)],
-        )
-        .await?,
+        proxy_get(&cfg, "/api/providers/vms", &[("provider", provider)]).await?,
     ))
 }
 
@@ -194,8 +187,20 @@ pub fn hypersdk_routes() -> Router<LibvirtManager> {
         .route("/hypersdk/status", get(hypersdk_status))
         .route("/hypersdk/providers/list", get(hypersdk_providers_list))
         .route("/hypersdk/providers/vms", get(hypersdk_provider_vms))
-        .route("/hypersdk/migrations/jobs", get(hypersdk_list_migration_jobs))
-        .route("/hypersdk/migrations/jobs/{id}", get(hypersdk_get_migration_job))
-        .route("/hypersdk/migrations/submit", post(hypersdk_submit_migration))
-        .route("/hypersdk/proxy", get(hypersdk_proxy_get).post(hypersdk_proxy_post))
+        .route(
+            "/hypersdk/migrations/jobs",
+            get(hypersdk_list_migration_jobs),
+        )
+        .route(
+            "/hypersdk/migrations/jobs/{id}",
+            get(hypersdk_get_migration_job),
+        )
+        .route(
+            "/hypersdk/migrations/submit",
+            post(hypersdk_submit_migration),
+        )
+        .route(
+            "/hypersdk/proxy",
+            get(hypersdk_proxy_get).post(hypersdk_proxy_post),
+        )
 }

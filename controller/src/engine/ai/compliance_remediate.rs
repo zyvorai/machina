@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct ComplianceRemediation {
@@ -20,7 +20,7 @@ pub struct ComplianceRemediationReport {
     pub summary: String,
 }
 
-pub async fn propose(pool: &PgPool) -> anyhow::Result<ComplianceRemediationReport> {
+pub async fn propose(pool: &SqlitePool) -> anyhow::Result<ComplianceRemediationReport> {
     let report = super::compliance_frameworks::scan(pool).await?;
     let mut remediations = Vec::new();
 

@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::{Path, State};
+use axum::Extension;
 use axum::Json;
 use serde::Serialize;
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
@@ -41,19 +43,23 @@ pub struct TopologyGraph {
 
 pub async fn cluster_topology(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<TopologyGraph>, ApiError> {
+    require_operator(&actor)?;
     Ok(Json(build_topology(&state.pool, None).await?))
 }
 
 pub async fn vm_topology(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<TopologyGraph>, ApiError> {
+    require_operator(&actor)?;
     Ok(Json(build_topology(&state.pool, Some(id)).await?))
 }
 
 pub(crate) async fn build_topology(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::SqlitePool,
     vm_filter: Option<Uuid>,
 ) -> Result<TopologyGraph, ApiError> {
     let mut nodes = Vec::new();
@@ -71,11 +77,10 @@ pub(crate) async fn build_topology(
         state: None,
     });
 
-    let hosts: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, hostname, state FROM hosts ORDER BY hostname",
-    )
-    .fetch_all(pool)
-    .await?;
+    let hosts: Vec<(Uuid, String, String)> =
+        sqlx::query_as("SELECT id, hostname, state FROM hosts ORDER BY hostname")
+            .fetch_all(pool)
+            .await?;
 
     for (hid, name, st) in &hosts {
         nodes.push(TopologyNode {
@@ -91,16 +96,16 @@ pub(crate) async fn build_topology(
         });
     }
 
-    let vms: Vec<(Uuid, String, Option<Uuid>, String, Vec<String>)> = if let Some(vid) = vm_filter {
+    let vms: Vec<(Uuid, String, Option<Uuid>, String, sqlx::types::Json<Vec<String>>)> = if let Some(vid) = vm_filter {
         sqlx::query_as(
-            "SELECT id, name, host_id, observed_state, COALESCE(tags, '{}') FROM vms WHERE id = $1",
+            "SELECT id, name, host_id, observed_state, COALESCE(tags, '[]') FROM vms WHERE id = ?",
         )
         .bind(vid)
         .fetch_all(pool)
         .await?
     } else {
         sqlx::query_as(
-            "SELECT id, name, host_id, observed_state, COALESCE(tags, '{}') FROM vms ORDER BY name LIMIT 100",
+            "SELECT id, name, host_id, observed_state, COALESCE(tags, '[]') FROM vms ORDER BY name LIMIT 100",
         )
         .fetch_all(pool)
         .await?
@@ -120,14 +125,21 @@ pub(crate) async fn build_topology(
         if vm_names.len() >= 2 {
             let prod: Vec<_> = vms
                 .iter()
-                .filter(|(_, n, h, _, tags)| h == &Some(*count_host) && vm_names.contains(n) && tags.iter().any(|t| t == "prod" || t == "production"))
+                .filter(|(_, n, h, _, tags)| {
+                    h == &Some(*count_host)
+                        && vm_names.contains(n)
+                        && tags.iter().any(|t| t == "prod" || t == "production")
+                })
                 .collect();
             if prod.len() >= 2 {
                 warnings.push(TopologyWarning {
                     severity: "warning".into(),
                     message: format!(
                         "Anti-affinity recommended: {} VMs on same host",
-                        prod.iter().map(|(_, n, _, _, _)| n.as_str()).collect::<Vec<_>>().join(", ")
+                        prod.iter()
+                            .map(|(_, n, _, _, _)| n.as_str())
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     ),
                     fix_action: Some("enable_anti_affinity".into()),
                 });
@@ -151,12 +163,11 @@ pub(crate) async fn build_topology(
         }
     }
 
-    let segments: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, name, tier FROM network_segments ORDER BY name",
-    )
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default();
+    let segments: Vec<(Uuid, String, String)> =
+        sqlx::query_as("SELECT id, name, tier FROM network_segments ORDER BY name")
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
 
     for (sid, name, tier) in &segments {
         let node_id = format!("segment-{sid}");
@@ -172,13 +183,12 @@ pub(crate) async fn build_topology(
             label: "overlay".into(),
         });
 
-        let bound: Vec<(Uuid, String)> = sqlx::query_as(
-            "SELECT id, name FROM networks WHERE segment_id = $1",
-        )
-        .bind(sid)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
+        let bound: Vec<(Uuid, String)> =
+            sqlx::query_as("SELECT id, name FROM networks WHERE segment_id = ?")
+                .bind(sid)
+                .fetch_all(pool)
+                .await
+                .unwrap_or_default();
         for (nid, net_name) in bound {
             let net_node = format!("network-{nid}");
             if !nodes.iter().any(|n| n.id == net_node) {
@@ -212,11 +222,13 @@ pub(crate) async fn build_topology(
 
     let lldp = crate::engine::network_overlay::lldp_topology_from_cache(pool)
         .await
-        .unwrap_or_else(|_| crate::engine::network_overlay::LldpTopologyContribution {
-            nodes: vec![],
-            edges: vec![],
-            warnings: vec![],
-        });
+        .unwrap_or_else(
+            |_| crate::engine::network_overlay::LldpTopologyContribution {
+                nodes: vec![],
+                edges: vec![],
+                warnings: vec![],
+            },
+        );
     let cache_empty = lldp.nodes.is_empty();
 
     for node in lldp.nodes {
@@ -247,7 +259,9 @@ pub(crate) async fn build_topology(
     // Fallback: probe agents directly when cache is empty but hosts are online.
     if cache_empty {
         for (hid, hostname, console_addr) in online_hosts {
-            if let Ok(lldp_live) = crate::engine::network_overlay::fetch_host_lldp(&console_addr).await {
+            if let Ok(lldp_live) =
+                crate::engine::network_overlay::fetch_host_lldp(&console_addr).await
+            {
                 for (i, neighbor) in lldp_live.neighbors.iter().enumerate() {
                     let switch_id = format!("switch-{hid}-{i}");
                     let switch_name = if neighbor.system_name.is_empty() {

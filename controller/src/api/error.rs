@@ -14,6 +14,7 @@ pub struct ObjectRef {
     pub name: Option<String>,
 }
 
+#[derive(Debug)]
 pub struct ApiError {
     pub status: StatusCode,
     pub message: String,
@@ -72,7 +73,9 @@ impl ApiError {
         self
     }
 
-    pub fn migration_precheck_failed(checks: &[crate::engine::migrate_precheck::MigrateCheck]) -> Self {
+    pub fn migration_precheck_failed(
+        checks: &[crate::engine::migrate_precheck::MigrateCheck],
+    ) -> Self {
         let failed: Vec<_> = checks.iter().filter(|c| !c.passed).collect();
         let message = failed
             .iter()
@@ -90,6 +93,16 @@ impl ApiError {
             message,
             error_code: Some("migration_precheck_failed".into()),
             remediation: Some(remediation),
+            object_ref: None,
+        }
+    }
+
+    pub fn forbidden(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::FORBIDDEN,
+            message: msg.into(),
+            error_code: Some("forbidden".into()),
+            remediation: None,
             object_ref: None,
         }
     }

@@ -35,7 +35,9 @@ pub async fn probe_octavia_reachable(cfg: &OpenStackConfig) -> bool {
         .unwrap_or(false)
 }
 
-pub async fn list_load_balancers(cfg: &OpenStackConfig) -> Result<Vec<OpenStackLoadBalancer>, LibvirtError> {
+pub async fn list_load_balancers(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackLoadBalancer>, LibvirtError> {
     if !probe_octavia_reachable(cfg).await {
         return Ok(Vec::new());
     }
@@ -80,7 +82,10 @@ pub async fn list_load_balancers(cfg: &OpenStackConfig) -> Result<Vec<OpenStackL
     Ok(out)
 }
 
-pub async fn get_load_balancer(cfg: &OpenStackConfig, id: &str) -> Result<OpenStackLoadBalancer, LibvirtError> {
+pub async fn get_load_balancer(
+    cfg: &OpenStackConfig,
+    id: &str,
+) -> Result<OpenStackLoadBalancer, LibvirtError> {
     let lb_id = id.trim();
     if lb_id.is_empty() {
         return Err(LibvirtError::Invalid("load balancer id is required".into()));
@@ -135,7 +140,9 @@ pub async fn create_load_balancer(
     let name = req.name.trim();
     let subnet = req.vip_subnet_id.trim();
     if name.is_empty() || subnet.is_empty() {
-        return Err(LibvirtError::Invalid("name and vip_subnet_id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "name and vip_subnet_id are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     let mut lb = serde_json::json!({

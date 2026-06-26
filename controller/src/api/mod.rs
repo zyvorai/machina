@@ -401,6 +401,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/zeus-security/k8s/{cluster_id}/tetragon/install", post(zeus_security::install_k8s_tetragon))
         .route("/api/v1/zeus-security/k8s/{cluster_id}/export-status", get(zeus_security::k8s_export_status))
         .route("/api/v1/zeus-security/enforcement/status", get(zeus_security::enforcement_status))
+        .route("/api/v1/zeus-security/enforcement/attach", post(zeus_security::attach_enforcement))
+        .route("/api/v1/zeus-security/enforcement/sync", post(zeus_security::sync_enforcement))
+        .route("/api/v1/zeus-security/enforcement/detach", post(zeus_security::detach_enforcement))
         .route("/api/v1/zeus-security/enforcement/policies", get(zeus_security::enforcement_policies).post(zeus_security::create_enforcement_policy))
         .route("/api/v1/zeus-security/enforcement/policies/{id}/tetragon", get(zeus_security::enforcement_policy_tetragon))
         .route("/api/v1/zeus-security/enforcement/policies/{id}/apply", post(zeus_security::apply_enforcement_policy))
@@ -423,12 +426,12 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/soc/alerts", get(soc::list_alerts))
         .route(
             "/api/v1/soc/alerts/{id}",
-            get(soc::get_alert).patch(soc::patch_alert),
+            get(soc::get_alert).patch(soc::patch_alert).delete(soc::delete_alert),
         )
         .route("/api/v1/soc/rules", get(soc::list_rules).post(soc::create_rule))
         .route(
             "/api/v1/soc/rules/{id}",
-            patch(soc::patch_rule),
+            patch(soc::patch_rule).delete(soc::delete_rule),
         )
         .route("/api/v1/soc/rules/{id}/test", post(soc::test_rule))
         .route("/api/v1/soc/asm/summary", get(soc::asm_summary))
@@ -562,6 +565,10 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/backup-targets",
             get(backup_targets::list_backup_targets).post(backup_targets::create_backup_target),
         )
+        .route(
+            "/api/v1/backup-targets/{id}",
+            delete(backup_targets::delete_backup_target),
+        )
         .route("/api/v1/backups/timeline", get(backups::list_backup_timeline))
         .route(
             "/api/v1/vms/{id}/backups/{backup_id}/restore",
@@ -622,7 +629,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/storage/pools/discover", post(storage::discover_storage_pools))
         .route(
             "/api/v1/storage/pools/{id}",
-            patch(storage::patch_storage_pool).delete(storage::delete_storage_pool),
+            get(storage::get_storage_pool).patch(storage::patch_storage_pool).delete(storage::delete_storage_pool),
         )
         .route("/api/v1/storage/pools/{id}/activate", post(storage::activate_storage_pool))
         .route("/api/v1/storage/pools/{id}/deactivate", post(storage::deactivate_storage_pool))
@@ -651,7 +658,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/networks/discover", post(networks::discover_networks))
         .route(
             "/api/v1/networks/{id}",
-            patch(networks::patch_network).delete(networks::delete_network),
+            get(networks::get_network).patch(networks::patch_network).delete(networks::delete_network),
         )
         .route("/api/v1/networks/{id}/activate", post(networks::activate_network))
         .route("/api/v1/networks/{id}/deactivate", post(networks::deactivate_network))
@@ -847,7 +854,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/blueprints/{id}/run",
             post(blueprints::run_blueprint),
         )
-        .route("/api/v1/blueprints/{id}", delete(blueprints::delete_blueprint))
+        .route("/api/v1/blueprints/{id}", get(blueprints::get_blueprint).delete(blueprints::delete_blueprint))
         .route("/api/v1/metrics/prometheus", get(metrics::prometheus_metrics))
         .route(
             "/api/v1/maintenance/schedules",
@@ -855,7 +862,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/maintenance/schedules/{id}",
-            delete(maintenance::delete_schedule),
+            get(maintenance::get_schedule).delete(maintenance::delete_schedule),
         )
         .route("/api/v1/notifications", get(notifications::list_notifications))
         .route(
@@ -868,20 +875,24 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/cpu-compat",
             get(cpu_compat::get_cpu_compat_matrix).patch(cpu_compat::patch_cpu_compat_matrix),
         )
+        .route("/api/v1/cloud-init/validate", post(cloud_init::validate_cloud_init))
         .route_layer(middleware::from_fn_with_state(state.clone(), observability_middleware::trace_middleware))
         .route_layer(middleware::from_fn_with_state(rate_limiter.clone(), rate_limit_middleware))
         .route_layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
+    let rate_limited_public = Router::new()
+        .route("/api/v1/hosts/join", post(hosts::join_host))
+        .route_layer(middleware::from_fn_with_state(rate_limiter, rate_limit_middleware));
+
     Router::new()
-        .route("/api/v1/cloud-init/validate", post(cloud_init::validate_cloud_init))
         .route("/api/v1/health", get(health::health))
         .route("/api/v1/health/ready", get(health::ready))
         .route("/api/v1/openapi.json", get(health::openapi))
         .route("/api/v1/auth/oidc/login", get(oidc::oidc_login))
         .route("/api/v1/auth/oidc/redirect", get(oidc::oidc_login_redirect))
         .route("/api/v1/auth/oidc/callback", get(oidc::oidc_callback))
-        .route("/api/v1/hosts/join", post(hosts::join_host))
         .route("/install.sh", get(enrollment::install_script))
+        .merge(rate_limited_public)
         .merge(consolehub::proxy_routes())
         .merge(console::ws_routes())
         .merge(protected)

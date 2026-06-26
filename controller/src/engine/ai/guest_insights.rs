@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -37,7 +37,7 @@ pub struct GuestAiInsightsReport {
 }
 
 pub async fn generate_insights(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     vm_id: Uuid,
     refresh: bool,
@@ -132,11 +132,7 @@ fn deterministic_insights(s: &GuestAiSnapshot, focus: Option<&str>) -> Determini
         insights.push(GuestInsightRow {
             title: "Guest agent active".into(),
             severity: "info".into(),
-            detail: format!(
-                "{} · {}",
-                s.os_pretty_name,
-                s.agent_version
-            ),
+            detail: format!("{} · {}", s.os_pretty_name, s.agent_version),
         });
     }
 

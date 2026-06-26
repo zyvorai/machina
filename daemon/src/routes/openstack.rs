@@ -12,29 +12,25 @@ use axum::{
     Extension, Json, Router,
 };
 use machina_core::{
-    add_security_group, associate_floating_ip, attach_volume, audit, connection_status_skeleton,
-    create_cinder_volume, create_flavor, create_instance, create_network, delete_cinder_volume, delete_flavor,
-    delete_glance_image,
-    create_floating_ip, delete_floating_ip, delete_instance, delete_network, detach_volume, dissociate_floating_ip,
-    pull_glance_image_to_disk,
-    enrich_instance_flavor, export_instance_plan, export_instance_to_disk, get_console_output,
-    get_flavor, get_image, get_instance, get_cinder_volume, get_floating_ip, get_network, get_remote_console,
-    get_security_group,
-    force_delete_instance, is_openstack_configured, list_flavors,
-    list_floating_ips, list_cinder_volumes, list_images, list_instance_floating_ips,
+    add_security_group, associate_floating_ip, attach_volume, audit, confirm_resize_instance,
+    connection_status_skeleton, create_cinder_volume, create_flavor, create_floating_ip,
+    create_instance, create_network, delete_cinder_volume, delete_flavor, delete_floating_ip,
+    delete_glance_image, delete_instance, delete_network, detach_volume, dissociate_floating_ip,
+    enrich_instance_flavor, export_instance_plan, export_instance_to_disk, force_delete_instance,
+    get_cinder_volume, get_console_output, get_flavor, get_floating_ip, get_image, get_instance,
+    get_network, get_remote_console, get_security_group, is_openstack_configured,
+    list_cinder_volumes, list_flavors, list_floating_ips, list_images, list_instance_floating_ips,
     list_instance_volumes, list_instances, list_keypairs, list_networks, list_security_groups,
-    ListInstancesParams,
-    pause_instance, preview_qcow2_upload, reboot_instance, rebuild_instance, remove_security_group,
-    confirm_resize_instance, resize_instance, revert_resize_instance, resume_instance,
-    snapshot_instance, start_instance, stop_instance, ResizeInstanceRequest,
-    suspend_instance, test_connection, unpause_instance, update_instance_metadata,
-    upload_qcow2_to_glance, AssociateFloatingIpRequest, AttachVolumeRequest, AuditEvent,
-    CreateFloatingIpRequest,
-    CreateFlavorRequest, CreateInstanceRequest, CreateInstanceResponse, OpenStackCreateNetworkRequest, GlancePullRequest,
-    OpenStackCreateVolumeRequest,
+    pause_instance, preview_qcow2_upload, pull_glance_image_to_disk, reboot_instance,
+    rebuild_instance, remove_security_group, resize_instance, resume_instance,
+    revert_resize_instance, snapshot_instance, start_instance, stop_instance, suspend_instance,
+    test_connection, unpause_instance, update_instance_metadata, upload_qcow2_to_glance,
+    AssociateFloatingIpRequest, AttachVolumeRequest, AuditEvent, CreateFlavorRequest,
+    CreateFloatingIpRequest, CreateInstanceRequest, CreateInstanceResponse, GlancePullRequest,
     GlancePullResult, GlanceUploadPreview, GlanceUploadRequest, GlanceUploadResult, LibvirtError,
-    LibvirtManager, MachinaConfig, OpenStackConnectionStatus, OpenStackInstance, RebuildInstanceRequest,
-    UpdateMetadataRequest,
+    LibvirtManager, ListInstancesParams, MachinaConfig, OpenStackConnectionStatus,
+    OpenStackCreateNetworkRequest, OpenStackCreateVolumeRequest, OpenStackInstance,
+    RebuildInstanceRequest, ResizeInstanceRequest, UpdateMetadataRequest,
 };
 use serde::Deserialize;
 
@@ -62,7 +58,9 @@ pub(crate) fn openstack_cfg() -> machina_core::config::OpenStackConfig {
     crate::openstack_runtime::openstack_cfg()
 }
 
-pub(crate) fn ensure_openstack_enabled(cfg: &machina_core::config::OpenStackConfig) -> Result<(), AppError> {
+pub(crate) fn ensure_openstack_enabled(
+    cfg: &machina_core::config::OpenStackConfig,
+) -> Result<(), AppError> {
     if !is_openstack_configured(cfg) {
         return Err(LibvirtError::Invalid(
             "OpenStack is not configured; set [openstack] enabled = true and cloud_name or auth_url in machina config"
@@ -165,11 +163,19 @@ async fn openstack_snapshot_instance(
                 "ok",
                 &body.image_name,
             );
-            Ok(Json(serde_json::json!({ "status": "ok", "id": id, "image_name": body.image_name })))
+            Ok(Json(
+                serde_json::json!({ "status": "ok", "id": id, "image_name": body.image_name }),
+            ))
         }
         Err(e) => {
             log_audit("openstack.instance.snapshot", &id, "error");
-            emit(&bus, "openstack.instance.snapshot", &id, "error", &e.to_string());
+            emit(
+                &bus,
+                "openstack.instance.snapshot",
+                &id,
+                "error",
+                &e.to_string(),
+            );
             Err(e.into())
         }
     }
@@ -190,7 +196,13 @@ async fn openstack_delete_instance(
         }
         Err(e) => {
             log_audit("openstack.instance.delete", &id, "error");
-            emit(&bus, "openstack.instance.delete", &id, "error", &e.to_string());
+            emit(
+                &bus,
+                "openstack.instance.delete",
+                &id,
+                "error",
+                &e.to_string(),
+            );
             Err(e.into())
         }
     }
@@ -205,7 +217,13 @@ async fn openstack_create_instance(
     match create_instance(&cfg, &req).await {
         Ok(resp) => {
             log_audit("openstack.instance.create", &resp.id, "ok");
-            emit(&bus, "openstack.instance.create", &resp.id, "ok", &resp.name);
+            emit(
+                &bus,
+                "openstack.instance.create",
+                &resp.id,
+                "ok",
+                &resp.name,
+            );
             Ok(Json(resp))
         }
         Err(e) => {
@@ -239,7 +257,9 @@ async fn openstack_create_flavor(
     Ok(Json(serde_json::json!({ "flavor": flavor })))
 }
 
-async fn openstack_delete_flavor(Path(id): Path<String>) -> Result<Json<serde_json::Value>, AppError> {
+async fn openstack_delete_flavor(
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
     let cfg = openstack_cfg();
     ensure_openstack_enabled(&cfg)?;
     delete_flavor(&cfg, &id).await?;
@@ -264,7 +284,9 @@ async fn openstack_create_network(
     Ok(Json(serde_json::json!({ "network": net })))
 }
 
-async fn openstack_delete_network(Path(id): Path<String>) -> Result<Json<serde_json::Value>, AppError> {
+async fn openstack_delete_network(
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
     let cfg = openstack_cfg();
     ensure_openstack_enabled(&cfg)?;
     delete_network(&cfg, &id).await?;
@@ -336,7 +358,13 @@ async fn openstack_start_instance(
         }
         Err(e) => {
             log_audit("openstack.instance.start", &id, "error");
-            emit(&bus, "openstack.instance.start", &id, "error", &e.to_string());
+            emit(
+                &bus,
+                "openstack.instance.start",
+                &id,
+                "error",
+                &e.to_string(),
+            );
             Err(e.into())
         }
     }
@@ -357,7 +385,13 @@ async fn openstack_stop_instance(
         }
         Err(e) => {
             log_audit("openstack.instance.stop", &id, "error");
-            emit(&bus, "openstack.instance.stop", &id, "error", &e.to_string());
+            emit(
+                &bus,
+                "openstack.instance.stop",
+                &id,
+                "error",
+                &e.to_string(),
+            );
             Err(e.into())
         }
     }
@@ -386,11 +420,19 @@ async fn openstack_reboot_instance(
         Ok(()) => {
             log_audit("openstack.instance.reboot", &id, "ok");
             emit(&bus, "openstack.instance.reboot", &id, "ok", "");
-            Ok(Json(serde_json::json!({ "status": "ok", "id": id, "soft": soft })))
+            Ok(Json(
+                serde_json::json!({ "status": "ok", "id": id, "soft": soft }),
+            ))
         }
         Err(e) => {
             log_audit("openstack.instance.reboot", &id, "error");
-            emit(&bus, "openstack.instance.reboot", &id, "error", &e.to_string());
+            emit(
+                &bus,
+                "openstack.instance.reboot",
+                &id,
+                "error",
+                &e.to_string(),
+            );
             Err(e.into())
         }
     }
@@ -468,7 +510,13 @@ async fn openstack_image_upload(
         }
         Err(e) => {
             log_audit("openstack-image-upload", path, "error");
-            emit(&bus, "openstack.image.upload", path, "error", &e.to_string());
+            emit(
+                &bus,
+                "openstack.image.upload",
+                path,
+                "error",
+                &e.to_string(),
+            );
             Err(e.into())
         }
     }
@@ -499,10 +547,30 @@ macro_rules! instance_action {
     };
 }
 
-instance_action!(openstack_pause_instance, pause_instance, "openstack.instance.pause", "openstack.instance.pause");
-instance_action!(openstack_unpause_instance, unpause_instance, "openstack.instance.unpause", "openstack.instance.unpause");
-instance_action!(openstack_suspend_instance, suspend_instance, "openstack.instance.suspend", "openstack.instance.suspend");
-instance_action!(openstack_resume_instance, resume_instance, "openstack.instance.resume", "openstack.instance.resume");
+instance_action!(
+    openstack_pause_instance,
+    pause_instance,
+    "openstack.instance.pause",
+    "openstack.instance.pause"
+);
+instance_action!(
+    openstack_unpause_instance,
+    unpause_instance,
+    "openstack.instance.unpause",
+    "openstack.instance.unpause"
+);
+instance_action!(
+    openstack_suspend_instance,
+    suspend_instance,
+    "openstack.instance.suspend",
+    "openstack.instance.suspend"
+);
+instance_action!(
+    openstack_resume_instance,
+    resume_instance,
+    "openstack.instance.resume",
+    "openstack.instance.resume"
+);
 
 async fn openstack_confirm_resize(
     Extension(bus): Extension<Arc<EventBus>>,
@@ -519,7 +587,13 @@ async fn openstack_confirm_resize(
         }
         Err(e) => {
             log_audit("openstack.instance.confirm_resize", &id, "error");
-            emit(&bus, "openstack.instance.confirm_resize", &id, "error", &e.to_string());
+            emit(
+                &bus,
+                "openstack.instance.confirm_resize",
+                &id,
+                "error",
+                &e.to_string(),
+            );
             Err(e.into())
         }
     }
@@ -540,7 +614,13 @@ async fn openstack_revert_resize(
         }
         Err(e) => {
             log_audit("openstack.instance.revert_resize", &id, "error");
-            emit(&bus, "openstack.instance.revert_resize", &id, "error", &e.to_string());
+            emit(
+                &bus,
+                "openstack.instance.revert_resize",
+                &id,
+                "error",
+                &e.to_string(),
+            );
             Err(e.into())
         }
     }
@@ -563,7 +643,13 @@ async fn openstack_resize_instance(
         }
         Err(e) => {
             log_audit("openstack.instance.resize", &id, "error");
-            emit(&bus, "openstack.instance.resize", &id, "error", &e.to_string());
+            emit(
+                &bus,
+                "openstack.instance.resize",
+                &id,
+                "error",
+                &e.to_string(),
+            );
             Err(e.into())
         }
     }
@@ -665,15 +751,9 @@ async fn openstack_export_instance(
             })?;
         let prefixes = allowed_prefixes(&manager).await?;
         let wait = body.wait_for_active.unwrap_or(true);
-        let plan = export_instance_to_disk(
-            &cfg,
-            &id,
-            body.image_name.as_deref(),
-            dest,
-            &prefixes,
-            wait,
-        )
-        .await?;
+        let plan =
+            export_instance_to_disk(&cfg, &id, body.image_name.as_deref(), dest, &prefixes, wait)
+                .await?;
         if let Some(ref pull) = plan.pull {
             log_audit("openstack-export-pull", &pull.dest_path, "ok");
             emit(
@@ -747,7 +827,9 @@ async fn openstack_get_volume(Path(id): Path<String>) -> Result<Json<serde_json:
     Ok(Json(serde_json::json!({ "volume": volume })))
 }
 
-async fn openstack_get_network(Path(id): Path<String>) -> Result<Json<serde_json::Value>, AppError> {
+async fn openstack_get_network(
+    Path(id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
     let cfg = openstack_cfg();
     ensure_openstack_enabled(&cfg)?;
     let network = get_network(&cfg, &id).await?;
@@ -834,7 +916,9 @@ async fn openstack_delete_floating_ip(
     Ok(Json(serde_json::json!({ "status": "ok", "id": fip_id })))
 }
 
-async fn openstack_get_floating_ip(Path(fip_id): Path<String>) -> Result<Json<serde_json::Value>, AppError> {
+async fn openstack_get_floating_ip(
+    Path(fip_id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
     let cfg = openstack_cfg();
     ensure_openstack_enabled(&cfg)?;
     let fip = get_floating_ip(&cfg, &fip_id).await?;
@@ -853,45 +937,108 @@ async fn openstack_create_floating_ip(
 pub fn openstack_routes() -> Router<LibvirtManager> {
     Router::new()
         .route("/openstack/status", get(openstack_status))
-        .route("/openstack/test-connection", post(openstack_test_connection))
-        .route("/openstack/flavors", get(openstack_list_flavors).post(openstack_create_flavor))
-        .route("/openstack/flavors/{id}", get(openstack_get_flavor).delete(openstack_delete_flavor))
+        .route(
+            "/openstack/test-connection",
+            post(openstack_test_connection),
+        )
+        .route(
+            "/openstack/flavors",
+            get(openstack_list_flavors).post(openstack_create_flavor),
+        )
+        .route(
+            "/openstack/flavors/{id}",
+            get(openstack_get_flavor).delete(openstack_delete_flavor),
+        )
         .route(
             "/openstack/networks",
             get(openstack_list_networks).post(openstack_create_network),
         )
-        .route("/openstack/networks/{id}", get(openstack_get_network).delete(openstack_delete_network))
         .route(
-            "/openstack/images",
-            get(openstack_list_images),
+            "/openstack/networks/{id}",
+            get(openstack_get_network).delete(openstack_delete_network),
         )
-        .route("/openstack/images/{id}", get(openstack_get_image).delete(openstack_delete_image))
+        .route("/openstack/images", get(openstack_list_images))
+        .route(
+            "/openstack/images/{id}",
+            get(openstack_get_image).delete(openstack_delete_image),
+        )
         .route("/openstack/keypairs", get(openstack_list_keypairs))
-        .route("/openstack/instances", get(openstack_list_instances).post(openstack_create_instance))
+        .route(
+            "/openstack/instances",
+            get(openstack_list_instances).post(openstack_create_instance),
+        )
         .route(
             "/openstack/instances/{id}",
             get(openstack_get_instance).delete(openstack_delete_instance),
         )
-        .route("/openstack/instances/{id}/volumes", get(openstack_instance_volumes))
-        .route("/openstack/instances/{id}/start", post(openstack_start_instance))
-        .route("/openstack/instances/{id}/stop", post(openstack_stop_instance))
-        .route("/openstack/instances/{id}/reboot", post(openstack_reboot_instance))
-        .route("/openstack/instances/{id}/snapshot", post(openstack_snapshot_instance))
-        .route("/openstack/instances/{id}/pause", post(openstack_pause_instance))
-        .route("/openstack/instances/{id}/unpause", post(openstack_unpause_instance))
-        .route("/openstack/instances/{id}/suspend", post(openstack_suspend_instance))
-        .route("/openstack/instances/{id}/resume", post(openstack_resume_instance))
-        .route("/openstack/instances/{id}/resize", post(openstack_resize_instance))
-        .route("/openstack/instances/{id}/confirm-resize", post(openstack_confirm_resize))
-        .route("/openstack/instances/{id}/revert-resize", post(openstack_revert_resize))
-        .route("/openstack/instances/{id}/console-output", get(openstack_console_output))
-        .route("/openstack/instances/{id}/console", get(openstack_remote_console))
-        .route("/openstack/instances/{id}/volumes/attach", post(openstack_attach_volume))
+        .route(
+            "/openstack/instances/{id}/volumes",
+            get(openstack_instance_volumes),
+        )
+        .route(
+            "/openstack/instances/{id}/start",
+            post(openstack_start_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/stop",
+            post(openstack_stop_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/reboot",
+            post(openstack_reboot_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/snapshot",
+            post(openstack_snapshot_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/pause",
+            post(openstack_pause_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/unpause",
+            post(openstack_unpause_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/suspend",
+            post(openstack_suspend_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/resume",
+            post(openstack_resume_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/resize",
+            post(openstack_resize_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/confirm-resize",
+            post(openstack_confirm_resize),
+        )
+        .route(
+            "/openstack/instances/{id}/revert-resize",
+            post(openstack_revert_resize),
+        )
+        .route(
+            "/openstack/instances/{id}/console-output",
+            get(openstack_console_output),
+        )
+        .route(
+            "/openstack/instances/{id}/console",
+            get(openstack_remote_console),
+        )
+        .route(
+            "/openstack/instances/{id}/volumes/attach",
+            post(openstack_attach_volume),
+        )
         .route(
             "/openstack/instances/{id}/volumes/{vol_id}",
             delete(openstack_detach_volume),
         )
-        .route("/openstack/instances/{id}/export", post(openstack_export_instance))
+        .route(
+            "/openstack/instances/{id}/export",
+            post(openstack_export_instance),
+        )
         .route(
             "/openstack/instances/{id}/security-groups",
             post(openstack_add_security_group),
@@ -904,11 +1051,26 @@ pub fn openstack_routes() -> Router<LibvirtManager> {
             "/openstack/volumes",
             get(openstack_list_cinder_volumes).post(openstack_create_volume),
         )
-        .route("/openstack/volumes/{id}", get(openstack_get_volume).delete(openstack_delete_volume))
-        .route("/openstack/security-groups", get(openstack_list_security_groups))
-        .route("/openstack/security-groups/{id}", get(openstack_get_security_group))
-        .route("/openstack/instances/{id}/rebuild", post(openstack_rebuild_instance))
-        .route("/openstack/instances/{id}/metadata", post(openstack_update_metadata))
+        .route(
+            "/openstack/volumes/{id}",
+            get(openstack_get_volume).delete(openstack_delete_volume),
+        )
+        .route(
+            "/openstack/security-groups",
+            get(openstack_list_security_groups),
+        )
+        .route(
+            "/openstack/security-groups/{id}",
+            get(openstack_get_security_group),
+        )
+        .route(
+            "/openstack/instances/{id}/rebuild",
+            post(openstack_rebuild_instance),
+        )
+        .route(
+            "/openstack/instances/{id}/metadata",
+            post(openstack_update_metadata),
+        )
         .route(
             "/openstack/floating-ips",
             get(openstack_list_floating_ips_route).post(openstack_create_floating_ip),
@@ -925,7 +1087,10 @@ pub fn openstack_routes() -> Router<LibvirtManager> {
             "/openstack/floating-ips/{id}",
             get(openstack_get_floating_ip).delete(openstack_delete_floating_ip),
         )
-        .route("/openstack/images/upload/preview", get(openstack_image_upload_preview))
+        .route(
+            "/openstack/images/upload/preview",
+            get(openstack_image_upload_preview),
+        )
         .route("/openstack/images/upload", post(openstack_image_upload))
         .route("/openstack/images/{id}/pull", post(openstack_image_pull))
         .merge(crate::routes::openstack_extended::openstack_extended_routes())
@@ -943,12 +1108,6 @@ async fn openstack_image_pull(
     let prefixes = allowed_prefixes(&manager).await?;
     let result = pull_glance_image_to_disk(&cfg, &id, &req, &prefixes).await?;
     log_audit("openstack-image-pull", &result.dest_path, "ok");
-    emit(
-        &bus,
-        "openstack.image.pull",
-        &id,
-        "ok",
-        &result.dest_path,
-    );
+    emit(&bus, "openstack.image.pull", &id, "ok", &result.dest_path);
     Ok(Json(result))
 }

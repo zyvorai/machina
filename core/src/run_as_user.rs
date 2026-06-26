@@ -13,13 +13,7 @@ use crate::LibvirtError;
 
 /// Basenames permitted when impersonation is active.
 const ALLOWED_PROGRAMS: &[&str] = &[
-    "useradd",
-    "userdel",
-    "usermod",
-    "homectl",
-    "chpasswd",
-    "id",
-    "getent",
+    "useradd", "userdel", "usermod", "homectl", "chpasswd", "id", "getent",
 ];
 
 fn program_allowed(program: &str) -> bool {
@@ -60,11 +54,7 @@ fn wrap_command(
     }
     if cfg.sudo_impersonation_active() {
         let mut c = Command::new("sudo");
-        c.arg("-n")
-            .arg("-u")
-            .arg(unix_user)
-            .arg("--")
-            .arg(program);
+        c.arg("-n").arg("-u").arg(unix_user).arg("--").arg(program);
         c.args(args);
         return Ok(c);
     }

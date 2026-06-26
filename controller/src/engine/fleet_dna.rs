@@ -2,7 +2,7 @@
 // Infrastructure DNA — fleet health score 0–100 (Phase 56 v1).
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::config::ControllerConfig;
 use crate::engine::fleet_linux;
@@ -47,12 +47,13 @@ fn compliance_score_from_grade(grade: &str) -> i32 {
     }
 }
 
-pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<FleetDnaOverview> {
+pub async fn overview(pool: &SqlitePool, cfg: &ControllerConfig) -> anyhow::Result<FleetDnaOverview> {
     let mission = fleet_mission::overview(pool).await?;
     let updates = fleet_updates::overview(pool, cfg).await?;
     let linux = fleet_linux::overview(pool, cfg).await?;
-    let storage = fleet_storage::overview(pool, cfg).await.unwrap_or_else(|_| {
-        fleet_storage::FleetStorageOverview {
+    let storage = fleet_storage::overview(pool, cfg)
+        .await
+        .unwrap_or_else(|_| fleet_storage::FleetStorageOverview {
             summary: "Storage unavailable".into(),
             pool_count: 0,
             tier_count: 0,
@@ -63,8 +64,7 @@ pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<F
             smart_hosts_affected: 0,
             pools: vec![],
             smart_disks: vec![],
-        }
-    });
+        });
     let ops = operations::overview(pool).await.ok();
 
     let availability = mission.summary.health_pct.clamp(0, 100) as i32;
@@ -72,14 +72,24 @@ pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<F
     let patch_hygiene = if updates.hosts_scanned == 0 {
         100
     } else {
-        let clean = updates.hosts_scanned.saturating_sub(updates.hosts_with_updates);
+        let clean = updates
+            .hosts_scanned
+            .saturating_sub(updates.hosts_with_updates);
         ((clean as f64 / updates.hosts_scanned as f64) * 100.0).round() as i32
     };
 
-    let linux_penalty = (linux.pressure_hosts + linux.thermal_alerts + linux.smart_alerts) as i32 * 8;
+    let linux_penalty = (linux
+        .pressure_hosts
+        .saturating_add(linux.thermal_alerts)
+        .saturating_add(linux.smart_alerts) as i32)
+        .saturating_mul(8);
     let linux_health = (100 - linux_penalty).clamp(0, 100);
 
-    let storage_penalty = (storage.pools_over_85_pct * 10 + storage.smart_failure_count * 5) as i32;
+    let storage_penalty = (storage
+        .pools_over_85_pct
+        .saturating_mul(10)
+        .saturating_add(storage.smart_failure_count.saturating_mul(5))
+        .min(100)) as i32;
     let backup_posture = (100 - storage_penalty).clamp(0, 100);
 
     let mut pillars = vec![
@@ -89,8 +99,7 @@ pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<F
             score: availability,
             detail: format!(
                 "{}% fleet health · {} hosts online",
-                mission.summary.health_pct,
-                mission.summary.hosts_online
+                mission.summary.health_pct, mission.summary.hosts_online
             ),
         },
         DnaPillar {
@@ -99,8 +108,7 @@ pub async fn overview(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<F
             score: patch_hygiene,
             detail: format!(
                 "{} of {} hosts need OS updates",
-                updates.hosts_with_updates,
-                updates.hosts_scanned
+                updates.hosts_with_updates, updates.hosts_scanned
             ),
         },
         DnaPillar {

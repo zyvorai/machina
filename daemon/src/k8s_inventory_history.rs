@@ -15,9 +15,8 @@ pub fn k8s_cluster_inventory_jsonl_path() -> PathBuf {
 }
 
 fn trim_jsonl_file_to_budget(path: &Path, target_max_bytes: usize) -> Result<(), LibvirtError> {
-    let data = fs::read_to_string(path).map_err(|e| {
-        LibvirtError::Operation(format!("read {}: {e}", path.display()))
-    })?;
+    let data = fs::read_to_string(path)
+        .map_err(|e| LibvirtError::Operation(format!("read {}: {e}", path.display())))?;
     if data.len() <= target_max_bytes {
         return Ok(());
     }
@@ -37,14 +36,16 @@ fn trim_jsonl_file_to_budget(path: &Path, target_max_bytes: usize) -> Result<(),
     if !out.is_empty() {
         out.push('\n');
     }
-    fs::write(path, out).map_err(|e| {
-        LibvirtError::Operation(format!("rewrite {}: {e}", path.display()))
-    })?;
+    fs::write(path, out)
+        .map_err(|e| LibvirtError::Operation(format!("rewrite {}: {e}", path.display())))?;
     Ok(())
 }
 
 /// Append one snapshot line (full JSON object per line). Trims oldest lines when over budget.
-pub fn append_k8s_cluster_inventory_line(json_line: &str, max_file_bytes: u64) -> Result<(), LibvirtError> {
+pub fn append_k8s_cluster_inventory_line(
+    json_line: &str,
+    max_file_bytes: u64,
+) -> Result<(), LibvirtError> {
     let path = k8s_cluster_inventory_jsonl_path();
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);

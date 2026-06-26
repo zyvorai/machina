@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::api::ApiError;
@@ -26,7 +26,7 @@ pub struct RebalanceProposal {
     pub summary: String,
 }
 
-pub async fn propose(pool: &PgPool, max_moves: usize) -> anyhow::Result<RebalanceProposal> {
+pub async fn propose(pool: &SqlitePool, max_moves: usize) -> anyhow::Result<RebalanceProposal> {
     let recs = crate::engine::placement::compute_recommendations(pool).await?;
     let cap = max_moves.clamp(1, 20);
     let moves: Vec<RebalanceMove> = recs
@@ -118,19 +118,18 @@ pub async fn execute(
     for mv in &proposal.moves {
         let vm_id = Uuid::parse_str(&mv.vm_id)
             .map_err(|_| ApiError::bad_request("invalid vm_id in proposal"))?;
-        let dest_id = sqlx::query_scalar::<_, Uuid>("SELECT id FROM hosts WHERE hostname = $1")
+        let dest_id = sqlx::query_scalar::<_, Uuid>("SELECT id FROM hosts WHERE hostname = ?")
             .bind(&mv.to_host)
             .fetch_optional(&state.pool)
             .await
             .map_err(|e| ApiError::internal(e.to_string()))?
             .ok_or_else(|| ApiError::bad_request(format!("host not found: {}", mv.to_host)))?;
 
-        let source_host: Option<Uuid> =
-            sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
-                .bind(vm_id)
-                .fetch_one(&state.pool)
-                .await
-                .map_err(|e| ApiError::internal(e.to_string()))?;
+        let source_host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            .bind(vm_id)
+            .fetch_one(&state.pool)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?;
 
         let task_id = enqueue_task(
             state,

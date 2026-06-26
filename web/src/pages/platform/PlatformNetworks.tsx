@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Link } from 'react-router'
 import { Cable, Layers, Loader2, Network, Plus, RefreshCw, Router, Shield, Wifi } from 'lucide-react'
 import DetailTabs from '../../components/platform/DetailTabs'
@@ -73,6 +74,8 @@ export default function PlatformNetworks() {
   const [networkWizardOpen, setNetworkWizardOpen] = useState(false)
   const [segmentSheetOpen, setSegmentSheetOpen] = useState(false)
   const [creating, setCreating] = useState(false)
+  const [confirmDeleteNetwork, setConfirmDeleteNetwork] = useState<{ id: string; name: string } | null>(null)
+  const [confirmUnlockSegment, setConfirmUnlockSegment] = useState<{ id: string; name: string } | null>(null)
   const [segName, setSegName] = useState('app-tier1')
   const [segTier, setSegTier] = useState('tier1')
   const [segCidr, setSegCidr] = useState('10.20.0.0/16')
@@ -447,6 +450,7 @@ export default function PlatformNetworks() {
                   {segments.length > 0 && (
                     <div className="flex flex-wrap gap-2 items-center">
                       <select
+                        aria-label="Segment"
                         className="input text-xs flex-1 min-w-[8rem]"
                         value={bindDraft[n.id] ?? n.segment_id ?? ''}
                         onChange={(e) => setBindDraft((d) => ({ ...d, [n.id]: e.target.value }))}
@@ -472,16 +476,7 @@ export default function PlatformNetworks() {
                   <button
                     type="button"
                     className="btn-danger text-xs w-fit mt-auto"
-                    onClick={async () => {
-                      try {
-                        if (!window.confirm(`Undefine network ${n.name} on the hypervisor and remove from inventory?`)) return
-                        await deletePlatformNetwork(n.id)
-                        toast.success('Network removed')
-                        await load(false)
-                      } catch (e: unknown) {
-                        toast.error(formatUserError(e))
-                      }
-                    }}
+                    onClick={() => setConfirmDeleteNetwork({ id: n.id, name: n.name })}
                   >
                     Remove from host & inventory
                   </button>
@@ -537,7 +532,7 @@ export default function PlatformNetworks() {
               />
             ) : (
               <div className="overflow-x-auto -mx-2">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm" aria-label="Network segments">
                   <thead>
                     <tr className="text-left text-slate-500 border-b border-white/[0.06]">
                       <th className="py-2 px-2">Name</th>
@@ -586,12 +581,7 @@ export default function PlatformNetworks() {
                             <button
                               type="button"
                               className="btn-danger text-xs"
-                              onClick={() => {
-                                if (!window.confirm(`Emergency unlock segment "${s.name}"? This bypasses micro-segmentation.`)) return
-                                void emergencyUnlockNetworkSegment(s.id).then((r) => {
-                                  toast.success(r.summary)
-                                }).catch((e: unknown) => toast.error(formatUserError(e)))
-                              }}
+                              onClick={() => setConfirmUnlockSegment({ id: s.id, name: s.name })}
                             >
                               Unlock
                             </button>
@@ -626,7 +616,7 @@ export default function PlatformNetworks() {
             />
           ) : (
             <div className="overflow-x-auto -mx-2">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" aria-label="IPAM pools">
                 <thead>
                   <tr className="text-left text-slate-500 border-b border-white/[0.06]">
                     <th className="py-2 px-2">Segment</th>
@@ -774,6 +764,35 @@ export default function PlatformNetworks() {
         )}
       </MacSheet>
       {tab === 'networks' && <FleetSettingsPane kind="network" />}
+      <ConfirmDialog
+        open={confirmDeleteNetwork !== null}
+        title="Remove Network"
+        message={`Undefine network "${confirmDeleteNetwork?.name}" on the hypervisor and remove from inventory? VMs on this network will lose connectivity.`}
+        confirmLabel="Remove"
+        variant="danger"
+        onCancel={() => setConfirmDeleteNetwork(null)}
+        onConfirm={async () => {
+          try {
+            await deletePlatformNetwork(confirmDeleteNetwork!.id)
+            toast.success('Network removed')
+            await load(false)
+          } catch (e: unknown) { toast.error(formatUserError(e)) }
+          finally { setConfirmDeleteNetwork(null) }
+        }}
+      />
+      <ConfirmDialog
+        open={confirmUnlockSegment !== null}
+        title="Emergency Unlock Segment"
+        message={`Emergency unlock segment "${confirmUnlockSegment?.name}"? This bypasses micro-segmentation and allows unrestricted traffic.`}
+        confirmLabel="Unlock"
+        variant="danger"
+        onCancel={() => setConfirmUnlockSegment(null)}
+        onConfirm={() => {
+          const seg = confirmUnlockSegment
+          setConfirmUnlockSegment(null)
+          if (seg) void emergencyUnlockNetworkSegment(seg.id).then((r) => toast.success(r.summary)).catch((e: unknown) => toast.error(formatUserError(e)))
+        }}
+      />
     </PlatformPageChrome>
   )
 }

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -22,9 +22,9 @@ pub struct FirewallRemediateProposal {
     pub summary: String,
 }
 
-pub async fn propose(pool: &PgPool) -> anyhow::Result<FirewallRemediateProposal> {
+pub async fn propose(pool: &SqlitePool) -> anyhow::Result<FirewallRemediateProposal> {
     let hosts: Vec<(Uuid, String)> =
-        sqlx::query_as("SELECT id, hostname FROM hosts WHERE state = 'online' ORDER BY hostname")
+        sqlx::query_as("SELECT id, hostname FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 200")
             .fetch_all(pool)
             .await?;
 
@@ -92,7 +92,10 @@ pub async fn propose(pool: &PgPool) -> anyhow::Result<FirewallRemediateProposal>
     let summary = if remediations.is_empty() {
         "Zeus Firewall — no critical host exposures.".into()
     } else {
-        format!("{} Zeus Firewall remediation(s) across fleet", remediations.len())
+        format!(
+            "{} Zeus Firewall remediation(s) across fleet",
+            remediations.len()
+        )
     };
 
     Ok(FirewallRemediateProposal {

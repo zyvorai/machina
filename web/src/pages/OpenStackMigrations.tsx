@@ -252,6 +252,7 @@ function OpenStackMigrationsContent() {
             <div>
               <label className="block text-xs text-slate-500 mb-1">JSON body (sent as-is)</label>
               <textarea
+                aria-label="JSON body"
                 value={submitJson}
                 onChange={(e) => setSubmitJson(e.target.value)}
                 rows={6}
@@ -304,7 +305,7 @@ function OpenStackMigrationsContent() {
           <h2 className="font-medium text-slate-200">OpenStack VMs (HyperSDK)</h2>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="VM migrations">
             <thead className="bg-slate-900/80 text-slate-400 text-left">
               <tr>
                 <th className="px-4 py-2">Name</th>

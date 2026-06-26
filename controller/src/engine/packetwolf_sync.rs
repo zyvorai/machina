@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 // Push PacketWolf security bundles to machina-agent during inventory and tasks.
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -32,18 +32,12 @@ fn pending_install_json(host_id: &str, export_url: &str) -> serde_json::Value {
 }
 
 async fn persist_local_enrollment(
-    pool: &PgPool,
+    pool: &SqlitePool,
     host_id: &str,
     export_url: &str,
 ) -> anyhow::Result<()> {
-    packetwolf_local_db::upsert_sensor(
-        pool,
-        host_id,
-        "registered",
-        DEFAULT_TETRAGON_VERSION,
-        None,
-    )
-    .await?;
+    packetwolf_local_db::upsert_sensor(pool, host_id, "registered", DEFAULT_TETRAGON_VERSION, None)
+        .await?;
     let pending = pending_install_json(host_id, export_url);
     packetwolf_local_db::set_pending_tetragon(pool, host_id, &pending).await?;
     Ok(())
@@ -51,14 +45,17 @@ async fn persist_local_enrollment(
 
 async fn apply_bundle(
     cfg: &ControllerConfig,
-    pool: &PgPool,
+    pool: &SqlitePool,
     host_id: &str,
     agent_addr: &str,
     bundle: &serde_json::Value,
 ) -> anyhow::Result<bool> {
     let bundle_json = serde_json::to_string(bundle)?;
     match agent_client::apply_security_bundle(agent_addr, &bundle_json, false).await {
-        Ok(result) if result.ok && (!result.tetragon_install_attempted || result.tetragon_service_active) => {
+        Ok(result)
+            if result.ok
+                && (!result.tetragon_install_attempted || result.tetragon_service_active) =>
+        {
             let _ = packetwolf_bridge::ack_agent_bundle(cfg, host_id).await;
             let _ = packetwolf_local_db::clear_pending_tetragon(pool, host_id).await;
             if result.tetragon_service_active {
@@ -98,7 +95,7 @@ async fn apply_bundle(
 
 /// Enroll host Tetragon sensor: register, queue install, push bundle, verify service.
 pub async fn sync_host_tetragon_install(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     host_id: Uuid,
     agent_addr: &str,
@@ -132,7 +129,7 @@ pub async fn sync_host_tetragon_install(
 /// Pull the agent bundle from PacketWolf and apply TracingPolicy files on the host.
 pub async fn sync_host_security_bundle(
     cfg: &ControllerConfig,
-    pool: &PgPool,
+    pool: &SqlitePool,
     host_id: Uuid,
     agent_addr: &str,
 ) -> anyhow::Result<()> {
@@ -149,9 +146,9 @@ pub async fn sync_host_security_bundle(
 }
 
 /// Apply bundles for all online hosts (maintenance / operator trigger).
-pub async fn sync_all_online(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<usize> {
+pub async fn sync_all_online(pool: &SqlitePool, cfg: &ControllerConfig) -> anyhow::Result<usize> {
     let hosts: Vec<(Uuid, String)> = sqlx::query_as(
-        "SELECT id, agent_grpc_addr FROM hosts WHERE state = 'online' ORDER BY hostname",
+        "SELECT id, agent_grpc_addr FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 200",
     )
     .fetch_all(pool)
     .await?;

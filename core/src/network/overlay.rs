@@ -96,7 +96,9 @@ pub fn ip_from_cidr_offset(cidr: &str, offset: u32) -> Result<String, String> {
     }
     let max_hosts = (1u32 << host_bits).saturating_sub(2);
     if offset == 0 || offset > max_hosts {
-        return Err(format!("offset {offset} out of range for {cidr} (max {max_hosts})"));
+        return Err(format!(
+            "offset {offset} out of range for {cidr} (max {max_hosts})"
+        ));
     }
     let ip = base.wrapping_add(offset);
     Ok(format_ipv4(ip))
@@ -227,9 +229,7 @@ fn parse_ipv4(s: &str) -> Result<u32, String> {
     }
     let mut n: u32 = 0;
     for p in parts {
-        let oct: u32 = p
-            .parse()
-            .map_err(|_| format!("invalid octet in {s}"))?;
+        let oct: u32 = p.parse().map_err(|_| format!("invalid octet in {s}"))?;
         if oct > 255 {
             return Err(format!("octet out of range in {s}"));
         }

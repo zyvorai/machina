@@ -51,7 +51,7 @@ export default function GuestFsFreezeBanner({ vmId, poll = false, className = ''
       } ${className}`}
     >
       {loading ? (
-        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 mt-0.5" />
+        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0 mt-0.5" aria-hidden="true" />
       ) : (
         <Snowflake className={`w-3.5 h-3.5 shrink-0 mt-0.5 ${frozen ? statusToneClass('warn') : 'text-slate-500'}`} />
       )}

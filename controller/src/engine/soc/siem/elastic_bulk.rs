@@ -1,15 +1,29 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use super::{
-    fetch_unexported_events, integration_err, integration_ok, mark_exported, EventRow, IntegrationRow,
+    fetch_unexported_events, integration_err, integration_ok, mark_exported, EventRow,
+    IntegrationRow,
 };
 
-pub async fn forward(pool: &PgPool, integ: &IntegrationRow, _controller_id: &str) -> anyhow::Result<usize> {
-    let url = integ.config_json.get("url").and_then(|v| v.as_str()).unwrap_or("").trim_end_matches('/');
-    let api_key = integ.config_json.get("api_key").and_then(|v| v.as_str()).unwrap_or("");
+pub async fn forward(
+    pool: &SqlitePool,
+    integ: &IntegrationRow,
+    _controller_id: &str,
+) -> anyhow::Result<usize> {
+    let url = integ
+        .config_json
+        .get("url")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim_end_matches('/');
+    let api_key = integ
+        .config_json
+        .get("api_key")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let index = integ
         .config_json
         .get("index")
@@ -40,7 +54,10 @@ pub async fn forward(pool: &PgPool, integ: &IntegrationRow, _controller_id: &str
         ids.push(ev.id);
     }
 
-    let mut req = client.post(&bulk_url).header("Content-Type", "application/x-ndjson").body(body);
+    let mut req = client
+        .post(&bulk_url)
+        .header("Content-Type", "application/x-ndjson")
+        .body(body);
     if !api_key.is_empty() {
         req = req.header("Authorization", format!("ApiKey {api_key}"));
     }
@@ -73,7 +90,10 @@ pub async fn test_connection(config: &serde_json::Value) -> anyhow::Result<Strin
         .danger_accept_invalid_certs(true)
         .timeout(std::time::Duration::from_secs(10))
         .build()?;
-    let res = client.get(format!("{}/_cluster/health", url.trim_end_matches('/'))).send().await?;
+    let res = client
+        .get(format!("{}/_cluster/health", url.trim_end_matches('/')))
+        .send()
+        .await?;
     if res.status().is_success() {
         Ok("Elasticsearch cluster reachable".into())
     } else {

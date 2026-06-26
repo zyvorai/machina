@@ -2,7 +2,7 @@
 
 use machina_core::{guest_ports_to_open_ports, simulate_connectivity};
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -20,19 +20,18 @@ pub struct GuestPortReport {
 }
 
 pub async fn vm_guest_ports(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     vm_id: &str,
 ) -> anyhow::Result<GuestPortReport> {
     let vm_uuid = Uuid::parse_str(vm_id).map_err(|e| anyhow::anyhow!("invalid vm id: {e}"))?;
-    let row: Option<(String, Uuid)> =
-        sqlx::query_as("SELECT name, host_id FROM vms WHERE id = $1")
-            .bind(vm_uuid)
-            .fetch_optional(pool)
-            .await?;
+    let row: Option<(String, Uuid)> = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+        .bind(vm_uuid)
+        .fetch_optional(pool)
+        .await?;
     let (vm_name, host_id) = row.ok_or_else(|| anyhow::anyhow!("vm not found"))?;
     let agent_addr: String =
-        sqlx::query_scalar("SELECT COALESCE(agent_grpc_addr, '') FROM hosts WHERE id = $1")
+        sqlx::query_scalar("SELECT COALESCE(agent_grpc_addr, '') FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_one(pool)
             .await?;
@@ -41,16 +40,17 @@ pub async fn vm_guest_ports(
     } else {
         agent_addr
     };
-    let (agent_reachable, ports) = match agent_client::get_guest_firewall_ports(&addr, &vm_name).await {
-        Ok(resp) => (
-            resp.agent_reachable,
-            guest_ports_to_open_ports(&vm_name, &resp.ports),
-        ),
-        Err(e) => {
-            tracing::warn!("guest firewall ports for {vm_name} via {addr}: {e}");
-            (false, Vec::new())
-        }
-    };
+    let (agent_reachable, ports) =
+        match agent_client::get_guest_firewall_ports(&addr, &vm_name).await {
+            Ok(resp) => (
+                resp.agent_reachable,
+                guest_ports_to_open_ports(&vm_name, &resp.ports),
+            ),
+            Err(e) => {
+                tracing::warn!("guest firewall ports for {vm_name} via {addr}: {e}");
+                (false, Vec::new())
+            }
+        };
     Ok(GuestPortReport {
         vm_id: vm_id.into(),
         vm_name,
@@ -65,7 +65,7 @@ pub async fn vm_guest_ports(
 }
 
 pub async fn connectivity_matrix(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     target_id: &str,
     profile: &str,
@@ -95,9 +95,10 @@ pub async fn connectivity_matrix(
     let matrix = simulate_connectivity(&detail.inventory, &after_rules);
     if let Ok(host_id) = Uuid::parse_str(target_id) {
         let _ = sqlx::query(
-            "INSERT INTO firewall_connectivity_runs (target_id, profile, matrix_json)
-             VALUES ($1, $2, $3)",
+            "INSERT INTO firewall_connectivity_runs (id, target_id, profile, matrix_json)
+             VALUES (?, ?, ?, ?)",
         )
+        .bind(Uuid::new_v4())
         .bind(host_id)
         .bind(profile)
         .bind(serde_json::to_value(&matrix)?)

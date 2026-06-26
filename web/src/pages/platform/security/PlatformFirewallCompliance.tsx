@@ -166,12 +166,12 @@ export default function PlatformFirewallCompliance() {
       <MacGlassPanel title="Global temporary rule">
         <p className="text-sm text-slate-400 mb-3">Fleet-wide time-boxed allow rule — audited and auto-expires.</p>
         <div className="grid gap-3 md:grid-cols-4 max-w-2xl">
-          <input className="input text-sm" value={tempPort} onChange={(e) => setTempPort(e.target.value)} placeholder="Port" />
+          <input aria-label="Port" className="input text-sm" value={tempPort} onChange={(e) => setTempPort(e.target.value)} placeholder="Port" />
           <select className="input text-sm" value={tempProtocol} onChange={(e) => setTempProtocol(e.target.value)}>
             <option value="tcp">tcp</option>
             <option value="udp">udp</option>
           </select>
-          <input className="input text-sm" value={tempHours} onChange={(e) => setTempHours(e.target.value)} placeholder="Hours" />
+          <input aria-label="Duration hours" className="input text-sm" value={tempHours} onChange={(e) => setTempHours(e.target.value)} placeholder="Hours" />
           <button
             type="button"
             className="btn-primary text-sm"
@@ -192,7 +192,7 @@ export default function PlatformFirewallCompliance() {
             Create rule
           </button>
         </div>
-        <input className="input text-sm mt-3 w-full max-w-2xl" value={tempReason} onChange={(e) => setTempReason(e.target.value)} placeholder="Reason" />
+        <input aria-label="Reason" className="input text-sm mt-3 w-full max-w-2xl" value={tempReason} onChange={(e) => setTempReason(e.target.value)} placeholder="Reason" />
       </MacGlassPanel>
       <div className="flex flex-wrap gap-2">
         {REPORTS.map((r) => (

@@ -146,7 +146,9 @@ pub fn enrich_port_exposure(ports: &mut [OpenPort], rules: &[FirewallRule]) {
         let allowed_any = rules.iter().any(|r| {
             r.action == "allow"
                 && rule_matches_port(r, port.port, &port.protocol)
-                && r.sources.iter().any(|s| s == "any" || s == "0.0.0.0/0" || s == "Anywhere")
+                && r.sources
+                    .iter()
+                    .any(|s| s == "any" || s == "0.0.0.0/0" || s == "Anywhere")
         });
         port.allowed_from = rules
             .iter()
@@ -203,9 +205,9 @@ pub fn ports_to_services(ports: &[OpenPort]) -> Vec<super::types::AllowedService
                         uniq.push(s.clone());
                     }
                 }
-                let any_only = uniq.iter().all(|s| {
-                    matches!(s.as_str(), "any" | "0.0.0.0/0" | "Anywhere" | "*")
-                });
+                let any_only = uniq
+                    .iter()
+                    .all(|s| matches!(s.as_str(), "any" | "0.0.0.0/0" | "Anywhere" | "*"));
                 if any_only {
                     "Anywhere".into()
                 } else {
@@ -223,7 +225,9 @@ pub fn ports_to_services(ports: &[OpenPort]) -> Vec<super::types::AllowedService
                         "Restrict {} to application subnet or admin network only",
                         p.service_name
                     )),
-                    ExposureRisk::Warning => Some("Review whether this port should be public".into()),
+                    ExposureRisk::Warning => {
+                        Some("Review whether this port should be public".into())
+                    }
                     ExposureRisk::Safe => None,
                 },
             }

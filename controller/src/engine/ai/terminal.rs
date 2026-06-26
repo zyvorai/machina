@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -21,20 +21,20 @@ pub struct TerminalSuggestResult {
 }
 
 pub async fn suggest(
-    pool: &PgPool,
+    pool: &SqlitePool,
     vm_id: Option<Uuid>,
     vm_name_hint: Option<&str>,
 ) -> anyhow::Result<TerminalSuggestResult> {
     let row: Option<(Uuid, String, String, String)> = if let Some(id) = vm_id {
         sqlx::query_as(
-            "SELECT id, name, observed_state, COALESCE(guest_tools_status, 'unknown') FROM vms WHERE id = $1",
+            "SELECT id, name, observed_state, COALESCE(guest_tools_status, 'unknown') FROM vms WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(pool)
         .await?
     } else if let Some(name) = vm_name_hint {
         sqlx::query_as(
-            "SELECT id, name, observed_state, COALESCE(guest_tools_status, 'unknown') FROM vms WHERE name ILIKE $1 LIMIT 1",
+            "SELECT id, name, observed_state, COALESCE(guest_tools_status, 'unknown') FROM vms WHERE name LIKE ? LIMIT 1",
         )
         .bind(name)
         .fetch_optional(pool)
@@ -53,7 +53,8 @@ pub async fn suggest(
                 description: "Find the VM name in platform inventory.".into(),
                 scope: "operator".into(),
             }],
-            notes: "VM not found in platform inventory — connect control plane or sync hosts.".into(),
+            notes: "VM not found in platform inventory — connect control plane or sync hosts."
+                .into(),
         });
     };
 
@@ -75,7 +76,9 @@ pub async fn suggest(
         });
         suggestions.push(TerminalSuggestion {
             label: "Guest agent ping".into(),
-            command: format!("virsh qemu-agent-command {name} '{{\"execute\":\"guest-info\"}}' --pretty"),
+            command: format!(
+                "virsh qemu-agent-command {name} '{{\"execute\":\"guest-info\"}}' --pretty"
+            ),
             description: "Verify qemu-guest-agent responds.".into(),
             scope: "host".into(),
         });
@@ -108,7 +111,10 @@ pub async fn suggest(
             suggestions.push(TerminalSuggestion {
                 label: "Doctor follow-up".into(),
                 command: format!("open /platform/vms/{_id}?tab=doctor"),
-                description: format!("Health {}/100 — review Doctor fixes in Platform.", health.score_numeric),
+                description: format!(
+                    "Health {}/100 — review Doctor fixes in Platform.",
+                    health.score_numeric
+                ),
                 scope: "operator".into(),
             });
         }

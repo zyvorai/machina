@@ -1,12 +1,12 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use machina_core::{
-    compile_metal_plan, gather_metal_inventory, scan_ipmi_exposure, FirewallPlanRequest, FirewallPlanResult,
-    MetalServerInput,
+    compile_metal_plan, gather_metal_inventory, scan_ipmi_exposure, FirewallPlanRequest,
+    FirewallPlanResult, MetalServerInput,
 };
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -54,11 +54,11 @@ pub fn row_to_input(row: &BaremetalFirewallRow) -> MetalServerInput {
     }
 }
 
-pub async fn load_row(pool: &PgPool, id: Uuid) -> anyhow::Result<BaremetalFirewallRow> {
+pub async fn load_row(pool: &SqlitePool, id: Uuid) -> anyhow::Result<BaremetalFirewallRow> {
     sqlx::query_as(
         "SELECT id, hostname, bmc_address, bmc_type, state, firewall_profile, firewall_enabled,
                 bmc_vlan, pxe_vlan, posture_json
-         FROM baremetal_servers WHERE id = $1",
+         FROM baremetal_servers WHERE id = ?",
     )
     .bind(id)
     .fetch_optional(pool)
@@ -66,7 +66,7 @@ pub async fn load_row(pool: &PgPool, id: Uuid) -> anyhow::Result<BaremetalFirewa
     .ok_or_else(|| anyhow::anyhow!("bare metal server not found"))
 }
 
-pub async fn load_all(pool: &PgPool) -> anyhow::Result<Vec<BaremetalFirewallRow>> {
+pub async fn load_all(pool: &SqlitePool) -> anyhow::Result<Vec<BaremetalFirewallRow>> {
     Ok(sqlx::query_as(
         "SELECT id, hostname, bmc_address, bmc_type, state, firewall_profile, firewall_enabled,
                 bmc_vlan, pxe_vlan, posture_json
@@ -76,7 +76,7 @@ pub async fn load_all(pool: &PgPool) -> anyhow::Result<Vec<BaremetalFirewallRow>
     .await?)
 }
 
-pub async fn metal_overview(pool: &PgPool) -> anyhow::Result<BaremetalFirewallOverview> {
+pub async fn metal_overview(pool: &SqlitePool) -> anyhow::Result<BaremetalFirewallOverview> {
     let rows = load_all(pool).await?;
     let mut critical = 0usize;
     let mut warning = 0usize;
@@ -102,19 +102,28 @@ pub async fn metal_overview(pool: &PgPool) -> anyhow::Result<BaremetalFirewallOv
         })
         .collect();
     Ok(BaremetalFirewallOverview {
-        summary: format!("{} bare-metal servers · {} critical · {} warnings", servers.len(), critical, warning),
+        summary: format!(
+            "{} bare-metal servers · {} critical · {} warnings",
+            servers.len(),
+            critical,
+            warning
+        ),
         servers,
         critical_count: critical,
         warning_count: warning,
     })
 }
 
-pub async fn scan_exposure(pool: &PgPool, id: Uuid, actor: &str) -> anyhow::Result<serde_json::Value> {
+pub async fn scan_exposure(
+    pool: &SqlitePool,
+    id: Uuid,
+    actor: &str,
+) -> anyhow::Result<serde_json::Value> {
     let row = load_row(pool, id).await?;
     let scan = scan_ipmi_exposure(&row.bmc_address, &row.bmc_type);
     let posture = serde_json::to_value(&scan)?;
     sqlx::query(
-        "UPDATE baremetal_servers SET posture_json = $1, last_exposure_scan_at = NOW() WHERE id = $2",
+        "UPDATE baremetal_servers SET posture_json = ?, last_exposure_scan_at = datetime('now') WHERE id = ?",
     )
     .bind(&posture)
     .bind(id)
@@ -125,9 +134,9 @@ pub async fn scan_exposure(pool: &PgPool, id: Uuid, actor: &str) -> anyhow::Resu
     let _ = super::drift::save_snapshot(pool, "bare_metal", id, &inv).await;
 
     let _ = sqlx::query(
-        "INSERT INTO firewall_timeline (target_kind, target_id, kind, summary, detail_json, actor)
-         VALUES ('bare_metal', $1, 'metal_scan', $2, $3, $4)",
+        "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, 'bare_metal', ?, 'metal_scan', ?, ?, ?)",
     )
+    .bind(uuid::Uuid::new_v4())
     .bind(id)
     .bind(format!("Exposure scan — risk {}", scan.risk))
     .bind(&posture)
@@ -139,7 +148,7 @@ pub async fn scan_exposure(pool: &PgPool, id: Uuid, actor: &str) -> anyhow::Resu
 }
 
 pub async fn plan_metal(
-    pool: &PgPool,
+    pool: &SqlitePool,
     id: Uuid,
     req: FirewallPlanRequest,
 ) -> anyhow::Result<FirewallPlanResult> {
@@ -148,7 +157,7 @@ pub async fn plan_metal(
 }
 
 pub async fn apply_metal(
-    pool: &PgPool,
+    pool: &SqlitePool,
     id: Uuid,
     req: FirewallPlanRequest,
     actor: &str,
@@ -158,7 +167,9 @@ pub async fn apply_metal(
     apply_req.dry_run = false;
 
     let inv = gather_metal_inventory(&row_to_input(&row));
-    let _ = super::checkpoint::save_checkpoint(pool, "bare_metal", id, "pre-apply", &inv, Some(actor)).await;
+    let _ =
+        super::checkpoint::save_checkpoint(pool, "bare_metal", id, "pre-apply", &inv, Some(actor))
+            .await;
 
     let result = compile_metal_plan(&row_to_input(&row), &apply_req)?;
 
@@ -169,7 +180,7 @@ pub async fn apply_metal(
     let enabled = apply_req.enable.unwrap_or(true);
 
     sqlx::query(
-        "UPDATE baremetal_servers SET firewall_profile = $1, firewall_enabled = $2 WHERE id = $3",
+        "UPDATE baremetal_servers SET firewall_profile = ?, firewall_enabled = ? WHERE id = ?",
     )
     .bind(&profile)
     .bind(enabled)
@@ -190,9 +201,9 @@ pub async fn apply_metal(
         "metal_profile_applied"
     };
     let _ = sqlx::query(
-        "INSERT INTO firewall_timeline (target_kind, target_id, kind, summary, detail_json, actor)
-         VALUES ('bare_metal', $1, $2, $3, $4, $5)",
+        "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, 'bare_metal', ?, ?, ?, ?, ?)",
     )
+    .bind(uuid::Uuid::new_v4())
     .bind(id)
     .bind(kind)
     .bind(format!("Applied metal profile {profile} (policy-only)"))
@@ -204,15 +215,20 @@ pub async fn apply_metal(
     Ok(result)
 }
 
-pub async fn upsert_gitops_policy(pool: &PgPool, hostname: &str, profile: &str) -> anyhow::Result<()> {
+pub async fn upsert_gitops_policy(
+    pool: &SqlitePool,
+    hostname: &str,
+    profile: &str,
+) -> anyhow::Result<()> {
     let name = format!("metal-{hostname}");
     let spec_yaml = format!(
         "apiVersion: zeus.machina/v1\nkind: MachineFirewallPolicy\nmetadata:\n  name: {name}\nspec:\n  targetKind: bare_metal\n  profile: {profile}\n  scope: bmc+pxe\n"
     );
     sqlx::query(
-        "INSERT INTO firewall_policies (name, spec_yaml) VALUES ($1, $2)
-         ON CONFLICT (name) DO UPDATE SET spec_yaml = EXCLUDED.spec_yaml, updated_at = NOW()",
+        "INSERT INTO firewall_policies (id, name, spec_yaml) VALUES (?, ?, ?)
+         ON CONFLICT (name) DO UPDATE SET spec_yaml = EXCLUDED.spec_yaml, updated_at = datetime('now')",
     )
+    .bind(Uuid::new_v4())
     .bind(&name)
     .bind(&spec_yaml)
     .execute(pool)
@@ -229,7 +245,7 @@ pub struct MetalTemporaryPreset {
 }
 
 pub async fn create_metal_temporary_preset(
-    pool: &PgPool,
+    pool: &SqlitePool,
     id: Uuid,
     preset: &str,
     reason: &str,

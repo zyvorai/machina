@@ -31,7 +31,10 @@ fn running_as_root() -> bool {
 
 pub fn find_h2kvmctl() -> Option<PathBuf> {
     for name in ["h2kvmctl", "hyper2kvm"] {
-        if let Ok(o) = std::process::Command::new("command").args(["-v", name]).output() {
+        if let Ok(o) = std::process::Command::new("command")
+            .args(["-v", name])
+            .output()
+        {
             if o.status.success() {
                 let p = String::from_utf8_lossy(&o.stdout).trim().to_string();
                 if !p.is_empty() {
@@ -121,7 +124,10 @@ pub fn write_hyper2kvm_openstack_config(
         }
         if let Some(ref az) = upload.availability_zone {
             if !az.is_empty() {
-                yaml.push_str(&format!("openstack_availability_zone: {}\n", yaml_escape(az)));
+                yaml.push_str(&format!(
+                    "openstack_availability_zone: {}\n",
+                    yaml_escape(az)
+                ));
             }
         }
         if upload.wait_until_active == Some(true) {
@@ -129,9 +135,8 @@ pub fn write_hyper2kvm_openstack_config(
         }
     }
     let cfg_path = output_dir.join("machina-h2kvm-openstack.yaml");
-    std::fs::write(&cfg_path, &yaml).map_err(|e| {
-        LibvirtError::Operation(format!("write hyper2kvm config: {e}"))
-    })?;
+    std::fs::write(&cfg_path, &yaml)
+        .map_err(|e| LibvirtError::Operation(format!("write hyper2kvm config: {e}")))?;
     Ok((cfg_path, yaml))
 }
 
@@ -147,11 +152,9 @@ pub async fn run_hyper2kvm_openstack_push(
             "h2kvmctl not found on PATH; install hyper2kvm or use native Glance upload".into(),
         )
     })?;
-    let work = std::env::temp_dir().join(format!(
-        "machina-h2kvm-{}",
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&work).map_err(|e| LibvirtError::Operation(format!("mkdir work: {e}")))?;
+    let work = std::env::temp_dir().join(format!("machina-h2kvm-{}", std::process::id()));
+    std::fs::create_dir_all(&work)
+        .map_err(|e| LibvirtError::Operation(format!("mkdir work: {e}")))?;
     let (cfg_path, _yaml) =
         write_hyper2kvm_openstack_config(disk_path, &work, glance_name, upload, guest_fix)?;
 

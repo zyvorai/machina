@@ -111,7 +111,7 @@ export default function PlatformHosts() {
 
   const listContent = viewMode === 'list' ? (
     <div className="card overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm" aria-label="Managed hosts">
         <thead>
           <tr className="text-slate-400 border-b border-white/[0.06]">
             <th className="p-3 text-left">Host</th>

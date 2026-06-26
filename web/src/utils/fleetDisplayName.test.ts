@@ -21,8 +21,8 @@ describe('fleetDisplayName', () => {
   })
 
   it('prefers management IP when hostname is localhost', () => {
-    expect(formatPlatformHostLabel({ hostname: 'localhost', address: '212.8.252.194' })).toBe(
-      '212.8.252.194',
+    expect(formatPlatformHostLabel({ hostname: 'localhost', address: '10.0.0.1' })).toBe(
+      '10.0.0.1',
     )
   })
 
@@ -30,9 +30,9 @@ describe('fleetDisplayName', () => {
     expect(
       formatFleetDisplayTitle(
         { name: 'default' },
-        [{ hostname: 'localhost', address: '212.8.252.194', state: 'online' }],
+        [{ hostname: 'localhost', address: '10.0.0.1', state: 'online' }],
       ),
-    ).toBe('212.8.252.194')
+    ).toBe('10.0.0.1')
   })
 
   it('keeps a custom cluster name', () => {

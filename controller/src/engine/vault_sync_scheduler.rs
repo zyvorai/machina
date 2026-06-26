@@ -8,7 +8,9 @@ pub fn spawn(state: AppState) {
         let mut interval = tokio::time::interval(std::time::Duration::from_secs(1800));
         loop {
             interval.tick().await;
-            if let Err(e) = crate::engine::enterprise_security::sync_all_vault_providers(&state.pool).await {
+            if let Err(e) =
+                crate::engine::enterprise_security::sync_all_vault_providers(&state.pool).await
+            {
                 tracing::warn!("vault sync scheduler: {e:#}");
             }
         }

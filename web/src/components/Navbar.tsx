@@ -486,9 +486,9 @@ export default function Navbar({ onOpenHelp }: { onOpenHelp?: (tab?: HelpTab) =>
                   {events.length === 0 ? (
                     <div className={`px-4 py-6 text-center text-sm ${steel ? 'text-[#8fa0b2]' : aurora ? 'text-[#8b7aa8]' : 'text-slate-500'}`}>No recent events</div>
                   ) : (
-                    events.slice(0, 20).map((ev: VMEvent, i: number) => (
+                    events.slice(0, 20).map((ev: VMEvent) => (
                       <div
-                        key={i}
+                        key={`${ev.timestamp}-${ev.name}-${ev.event}`}
                         className={`px-4 py-2.5 transition text-sm ${
                           themed ? 'hover:bg-white/5 text-[#cfd8e3]' : 'hover:bg-slate-700/40'
                         }`}

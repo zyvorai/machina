@@ -21,11 +21,8 @@ pub fn require_admin(user: &AuthUser) -> Result<(), crate::api::ApiError> {
     if user.role == "admin" {
         Ok(())
     } else {
-        Err(
-            crate::api::ApiError::bad_request("admin role required")
-                .with_code("forbidden")
-                .with_remediation("Sign in with an administrator account to manage users."),
-        )
+        Err(crate::api::ApiError::forbidden("admin role required")
+            .with_remediation("Sign in with an administrator account to manage users."))
     }
 }
 
@@ -33,21 +30,20 @@ pub fn require_operator(user: &AuthUser) -> Result<(), crate::api::ApiError> {
     if user.role == "admin" || user.role == "operator" {
         Ok(())
     } else {
-        Err(crate::api::ApiError::bad_request("operator role required"))
+        Err(crate::api::ApiError::forbidden("operator role required"))
     }
 }
 
 pub async fn authenticate(
-    pool: &sqlx::PgPool,
+    pool: &sqlx::SqlitePool,
     username: &str,
     password: &str,
 ) -> anyhow::Result<Option<AuthUser>> {
-    let row: Option<(String, String)> = sqlx::query_as(
-        "SELECT password_hash, role FROM users WHERE username = $1",
-    )
-    .bind(username)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT password_hash, role FROM users WHERE username = ?")
+            .bind(username)
+            .fetch_optional(pool)
+            .await?;
 
     let Some((hash, role)) = row else {
         return Ok(None);

@@ -33,7 +33,8 @@ fn io_err(msg: impl Into<String>) -> LibvirtError {
 }
 
 fn trim_jsonl_to_budget(path: &Path, target_max_bytes: usize) -> Result<(), LibvirtError> {
-    let data = fs::read_to_string(path).map_err(|e| io_err(format!("read {}: {e}", path.display())))?;
+    let data =
+        fs::read_to_string(path).map_err(|e| io_err(format!("read {}: {e}", path.display())))?;
     if data.len() <= target_max_bytes {
         return Ok(());
     }

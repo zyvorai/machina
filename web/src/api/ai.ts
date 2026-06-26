@@ -335,7 +335,7 @@ export const aiTerminalSuggest = (vmId?: string, vmName?: string) =>
   })
 
 export const runAutopilotSafe = (vmId?: string, maxActions = 3) =>
-  platformFetch<{ executed_count: number; skipped_count: number; results: Array<{ message: string }> }>(
+  platformFetch<{ executed_count: number; skipped_count: number; results: Array<{ message: string; task_ids: string[] }> }>(
     '/api/v1/ai/autopilot/run',
     { method: 'POST', body: JSON.stringify({ vm_id: vmId, max_actions: maxActions }) },
   )
@@ -489,11 +489,28 @@ export interface FleetHeatmap {
 
 export const getFleetHeatmap = () => platformFetch<FleetHeatmap>('/api/v1/ai/fleet/heatmap')
 
+export interface FleetClusterSlice {
+  label: string
+  reachable: boolean
+  vm_count: number
+  estimated_monthly_usd: number
+  memory_headroom_mib: number
+  security_risk_level: string
+}
+
+export interface FleetZeusSummary {
+  clusters: FleetClusterSlice[]
+  aggregate_monthly_usd: number
+  aggregate_vm_count: number
+  peer_count: number
+  reachable_peers: number
+}
+
 export const getFleetSummary = () =>
-  platformFetch<{ summary: string; hosts: number; vms: number; alerts: string[] }>('/api/v1/ai/fleet/summary')
+  platformFetch<FleetZeusSummary>('/api/v1/ai/fleet/summary')
 
 export const getFleetLocal = () =>
-  platformFetch<{ summary: string; local_agent: Record<string, unknown> }>('/api/v1/ai/fleet/local')
+  platformFetch<FleetClusterSlice>('/api/v1/ai/fleet/local')
 
 export interface RebalanceProposal {
   moves: Array<{ vm_id: string; vm_name: string; from_host: string; to_host: string; reason: string; score: number }>

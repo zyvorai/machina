@@ -136,7 +136,10 @@ fn evaluate_probe(
             );
         }
     }
-    if open_ports.iter().any(|p| p.port == probe.port && p.risk == super::types::ExposureRisk::Critical) {
+    if open_ports
+        .iter()
+        .any(|p| p.port == probe.port && p.risk == super::types::ExposureRisk::Critical)
+    {
         return (
             "block".into(),
             format!("Port {} exposed but no matching allow rule", probe.port),

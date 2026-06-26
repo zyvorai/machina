@@ -45,12 +45,13 @@ export default function MachineFinderCanvas({ state }: Props) {
   }
 
   return (
+    <>
     <div className="machine-finder-canvas space-y-4 min-h-[40vh]" data-testid="machine-finder-canvas">
       {folder === 'missing' && filteredVms.length > 0 && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
           <p className="font-medium">Missing from hypervisor inventory</p>
           <p className="text-xs text-amber-200/80 mt-1">Prune removes stale database rows (admin only).</p>
-          <button type="button" className="btn-danger text-sm mt-2" disabled={pruneBusy} onClick={() => void pruneMissing()}>
+          <button type="button" className="btn-danger text-sm mt-2" disabled={pruneBusy} onClick={() => pruneMissing()}>
             {pruneBusy ? 'Pruning…' : 'Prune missing records'}
           </button>
         </div>
@@ -66,6 +67,7 @@ export default function MachineFinderCanvas({ state }: Props) {
 
       <MigrationHeroZone state={state} compact />
     </div>
+    </>
   )
 }
 
@@ -91,6 +93,7 @@ function GridLens({ state, compact }: { state: MachineFinderState; compact?: boo
                 onSsh={() => state.setSshVm(vm)}
                 guestIp={state.displayGuestIp(vm)}
                 onDoubleClickTheatre={() => openCenterPopout(cinemaPopoutPath(vm.id))}
+                aiSecurity={state.aiSecurity}
               />
             ))}
           </div>

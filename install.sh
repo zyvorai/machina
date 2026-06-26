@@ -163,7 +163,7 @@ check_arch() {
 
 # ── Node.js version check and upgrade ────────────────────────────────
 
-ensure_node_18() {
+ensure_node_20() {
     local node_ver=0
     if command -v node &>/dev/null; then
         node_ver=$(node --version 2>/dev/null | sed 's/v//' | cut -d. -f1)
@@ -172,16 +172,15 @@ ensure_node_18() {
         fi
     fi
 
-    if [ "$node_ver" -ge 18 ] 2>/dev/null; then
+    if [ "$node_ver" -ge 20 ] 2>/dev/null; then
         info "Node.js $(node --version) is sufficient"
         return 0
     fi
 
-    warn "Node.js 18+ required (found: ${node_ver:-none}). Installing Node.js 20..."
+    warn "Node.js 20+ required (found: ${node_ver:-none}). Installing Node.js 20 via NodeSource..."
 
     case "$OS_FAMILY" in
         fedora)
-            # Fedora usually has recent enough Node.js
             if [ "$node_ver" -gt 0 ] 2>/dev/null; then
                 $PKG_MANAGER remove -y nodejs npm 2>/dev/null || true
             fi
@@ -189,7 +188,6 @@ ensure_node_18() {
             $PKG_MANAGER install -y nodejs >> "$LOG_FILE" 2>&1 || fail "Node.js install failed"
             ;;
         rhel)
-            # RHEL/AlmaLinux/Rocky: must remove old node first to avoid conflicts
             $PKG_MANAGER remove -y nodejs npm nodejs-full-i18n nodejs-libs 2>/dev/null || true
             curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - >> "$LOG_FILE" 2>&1 || fail "NodeSource setup failed"
             $PKG_MANAGER install -y nodejs >> "$LOG_FILE" 2>&1 || fail "Node.js install failed"
@@ -200,7 +198,6 @@ ensure_node_18() {
             ;;
         suse)
             $PKG_MANAGER install -y nodejs20 npm20 >> "$LOG_FILE" 2>&1 || {
-                # Fallback to NodeSource
                 curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - >> "$LOG_FILE" 2>&1 || true
                 $PKG_MANAGER install -y nodejs >> "$LOG_FILE" 2>&1 || fail "Node.js install failed"
             }
@@ -263,10 +260,12 @@ install_deps_debian() {
     log_cmd $PKG_MANAGER update -qq
 
     # llvm-dev: llvm-config; libclang-dev + clang: libclang.so for pam-sys bindgen
+    # libssl-dev: OpenSSL headers required by openssl-sys crate at build time
     local packages=(gcc g++ make pkg-config
         libvirt-dev libvirt-daemon-system qemu-kvm virtinst
         libpam0g-dev libclang-dev clang llvm-dev
-        protobuf-compiler
+        protobuf-compiler libssl-dev
+        genisoimage
         openssl git curl unzip)
 
     info "Installing: ${packages[*]}"
@@ -365,7 +364,7 @@ install_deps() {
 
     install_console_packages
 
-    ensure_node_18
+    ensure_node_20
     ensure_mkosi
     ensure_packer
     ensure_helm
@@ -905,10 +904,37 @@ build_rust() {
 
     cd "$INSTALL_DIR"
     export_libclang_path
-    if ! log_cmd cargo build --workspace --release; then
-        echo "⚠️  Last 60 lines of $LOG_FILE:" >&2
-        tail -60 "$LOG_FILE" >&2 || true
-        fail "Rust build failed. Full log: $LOG_FILE"
+
+    # Capture cargo exit code via a temp file (pipes lose it).
+    local _rc_file
+    _rc_file=$(mktemp /tmp/machina-cargo-rc-XXXXXX)
+
+    # Run cargo in a subshell; stream ALL output to the log AND filter
+    # error/warning/progress lines to stderr so they appear over SSH.
+    # A heartbeat every 20s keeps the TCP session alive during quiet intervals.
+    (
+        cargo build --workspace --release 2>&1
+        printf '%s' "$?" > "$_rc_file"
+    ) | tee -a "$LOG_FILE" \
+      | grep --line-buffered -E "^(error|warning\[|Compiling |Finished |   = |note:)" \
+      | sed 's/^/  /' >&2 &
+    local _pipe_pid=$!
+    local _elapsed=0
+    while kill -0 "$_pipe_pid" 2>/dev/null; do
+        sleep 20
+        _elapsed=$((_elapsed + 20))
+        printf "  ⏳ compiling… %ds\n" "$_elapsed" >&2
+    done
+    wait "$_pipe_pid" || true
+
+    local _build_rc=1
+    [[ -f "$_rc_file" ]] && _build_rc=$(cat "$_rc_file" | tr -d '[:space:]') || true
+    rm -f "$_rc_file"
+
+    if [ "$_build_rc" != "0" ]; then
+        echo "⚠️  Last 80 lines of build log ($LOG_FILE):" >&2
+        tail -80 "$LOG_FILE" >&2 || true
+        fail "Rust build failed (exit $\_build_rc). Full log: $LOG_FILE"
     fi
 
     ok "Built: target/release/machina-daemon ($(du -h target/release/machina-daemon | cut -f1))"
@@ -922,16 +948,25 @@ build_web() {
 
     local node_ver
     node_ver=$(node --version 2>/dev/null | sed 's/v//' | cut -d. -f1)
-    if ! [[ "$node_ver" =~ ^[0-9]+$ ]] || [ "$node_ver" -lt 18 ]; then
-        fail "Node.js 18+ required (found: v${node_ver:-none})"
+    if ! [[ "$node_ver" =~ ^[0-9]+$ ]] || [ "$node_ver" -lt 20 ]; then
+        fail "Node.js 20+ required (found: v${node_ver:-none})"
     fi
     info "Node.js: $(node --version)"
 
     info "Installing npm dependencies..."
-    log_cmd npm install || fail "npm install failed. Check $LOG_FILE"
+    if ! log_cmd npm install; then
+        warn "npm install failed — retrying with clean node_modules..."
+        rm -rf node_modules package-lock.json
+        log_cmd npm install || fail "npm install failed after clean retry. Check $LOG_FILE"
+    fi
 
     info "Building production bundle..."
-    log_cmd npx vite build || log_cmd npm run build || fail "npm build failed. Check $LOG_FILE"
+    if ! log_cmd npm run build; then
+        warn "npm build failed — retrying with clean node_modules (native binding issue)..."
+        rm -rf node_modules package-lock.json
+        log_cmd npm install || fail "npm install failed on build retry. Check $LOG_FILE"
+        log_cmd npm run build || fail "npm build failed after clean retry. Check $LOG_FILE"
+    fi
 
     ok "Web UI built: $(find dist/assets -name '*.js' 2>/dev/null | wc -l) assets"
 }
@@ -1001,6 +1036,15 @@ install_files_bundle() {
         ok "Configured daemon to bind to $BIND_HOST"
     fi
 
+    if [ -n "${MACHINA_LICENSE_KEY:-}" ]; then
+        mkdir -p /etc/machina
+        printf '%s\n' "$MACHINA_LICENSE_KEY" > /etc/machina/license.key
+        chmod 600 /etc/machina/license.key
+        ok "License key -> /etc/machina/license.key"
+    elif [ ! -f /etc/machina/license.key ]; then
+        warn "No license key found — set MACHINA_LICENSE_KEY or place key in /etc/machina/license.key"
+    fi
+
     if [ -f "$root/machina-daemon.service" ]; then
         install -Dm644 "$root/machina-daemon.service" /usr/lib/systemd/system/machina-daemon.service
         systemctl daemon-reload
@@ -1053,6 +1097,15 @@ install_files() {
     if [ -n "$BIND_HOST" ]; then
         sed -i "s/^host = .*/host = \"$BIND_HOST\"/" /etc/machina/config.toml
         ok "Configured daemon to bind to $BIND_HOST"
+    fi
+
+    if [ -n "${MACHINA_LICENSE_KEY:-}" ]; then
+        mkdir -p /etc/machina
+        printf '%s\n' "$MACHINA_LICENSE_KEY" > /etc/machina/license.key
+        chmod 600 /etc/machina/license.key
+        ok "License key -> /etc/machina/license.key"
+    elif [ ! -f /etc/machina/license.key ]; then
+        warn "No license key found — set MACHINA_LICENSE_KEY or place key in /etc/machina/license.key"
     fi
 
     # Optional env overrides (hyper2kvm-style /etc/default)

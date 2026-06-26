@@ -56,7 +56,9 @@ pub fn guacamole_reachable() -> bool {
         .unwrap_or_else(|_| "http://127.0.0.1:8081/guacamole".into());
     let addr = guacamole_host_port(&base);
     std::net::TcpStream::connect_timeout(
-        &addr.parse().unwrap_or_else(|_| "127.0.0.1:8081".parse().unwrap()),
+        &addr
+            .parse()
+            .unwrap_or_else(|_| "127.0.0.1:8081".parse().unwrap()),
         Duration::from_millis(300),
     )
     .is_ok()
@@ -80,7 +82,11 @@ async fn guac_http_proxy(
 ) -> Result<Response, StatusCode> {
     let (parts, body) = req.into_parts();
     let path = path.trim_start_matches('/');
-    let query = parts.uri.query().map(|q| format!("?{q}")).unwrap_or_default();
+    let query = parts
+        .uri
+        .query()
+        .map(|q| format!("?{q}"))
+        .unwrap_or_default();
     let url = if path.is_empty() {
         format!("{}/{query}", st.upstream_base)
     } else {
@@ -114,17 +120,17 @@ async fn guac_http_proxy(
         rb = rb.body(body_bytes.to_vec());
     }
 
-    let resp = rb
-        .send()
-        .await
-        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+    let resp = rb.send().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
 
     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let mut out = Response::builder().status(status);
     let headers = out.headers_mut().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
     for (k, v) in resp.headers().iter() {
         let name = k.as_str();
-        if matches!(name, "transfer-encoding" | "connection" | "content-encoding") {
+        if matches!(
+            name,
+            "transfer-encoding" | "connection" | "content-encoding"
+        ) {
             continue;
         }
         if let Ok(val) = HeaderValue::from_bytes(v.as_bytes()) {
@@ -141,7 +147,10 @@ async fn guac_ws_tunnel(
     req: Request<Body>,
 ) -> impl IntoResponse {
     let query = req.uri().query().unwrap_or("").to_string();
-    let ws_url = st.upstream_base.replace("http://", "ws://").replace("https://", "wss://");
+    let ws_url = st
+        .upstream_base
+        .replace("http://", "ws://")
+        .replace("https://", "wss://");
     let target = if query.is_empty() {
         format!("{ws_url}/websocket-tunnel")
     } else {

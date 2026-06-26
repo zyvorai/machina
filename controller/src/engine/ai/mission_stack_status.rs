@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct StackVmStatus {
@@ -20,12 +20,12 @@ pub struct MissionStackStatus {
     pub summary: String,
 }
 
-pub async fn status(pool: &PgPool) -> anyhow::Result<MissionStackStatus> {
-    let rows: Vec<(String, String, Option<String>, Vec<String>)> = sqlx::query_as(
-        "SELECT v.name, v.observed_state, h.hostname, COALESCE(v.tags, '{}')
+pub async fn status(pool: &SqlitePool) -> anyhow::Result<MissionStackStatus> {
+    let raw_rows: Vec<(String, String, Option<String>, String)> = sqlx::query_as(
+        "SELECT v.name, v.observed_state, h.hostname, COALESCE(v.tags, '[]')
          FROM vms v
          LEFT JOIN hosts h ON h.id = v.host_id
-         WHERE 'mission-stack' = ANY(v.tags) OR 'gpu' = ANY(v.tags) OR 'environment' = ANY(v.tags)
+         WHERE EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value IN ('mission-stack','gpu','environment'))
          ORDER BY v.name",
     )
     .fetch_all(pool)
@@ -35,7 +35,8 @@ pub async fn status(pool: &PgPool) -> anyhow::Result<MissionStackStatus> {
     let mut environment_vms = Vec::new();
     let mut running = 0usize;
 
-    for (name, state, host, tags) in rows {
+    for (name, state, host, tags_json) in raw_rows {
+        let tags: Vec<String> = serde_json::from_str(&tags_json).unwrap_or_default();
         if state == "running" {
             running += 1;
         }

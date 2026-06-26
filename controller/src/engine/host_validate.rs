@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -21,15 +21,14 @@ pub struct HostValidationReport {
     pub checks: Vec<ValidationCheck>,
 }
 
-pub async fn validate_host(pool: &PgPool, host_id: Uuid) -> anyhow::Result<HostValidationReport> {
+pub async fn validate_host(pool: &SqlitePool, host_id: Uuid) -> anyhow::Result<HostValidationReport> {
     let mut checks = Vec::new();
 
-    let row: Option<(String, String, String)> = sqlx::query_as(
-        "SELECT hostname, agent_grpc_addr, libvirt_uri FROM hosts WHERE id = $1",
-    )
-    .bind(host_id)
-    .fetch_optional(pool)
-    .await?;
+    let row: Option<(String, String, String)> =
+        sqlx::query_as("SELECT hostname, agent_grpc_addr, libvirt_uri FROM hosts WHERE id = ?")
+            .bind(host_id)
+            .fetch_optional(pool)
+            .await?;
 
     let Some((hostname, agent_addr, libvirt_uri)) = row else {
         checks.push(fail(
@@ -39,7 +38,10 @@ pub async fn validate_host(pool: &PgPool, host_id: Uuid) -> anyhow::Result<HostV
         ));
         return Ok(HostValidationReport { ok: false, checks });
     };
-    checks.push(pass("host_exists", &format!("Host '{hostname}' registered")));
+    checks.push(pass(
+        "host_exists",
+        &format!("Host '{hostname}' registered"),
+    ));
 
     if libvirt_uri.trim().is_empty() {
         checks.push(fail(
@@ -76,7 +78,10 @@ pub async fn validate_host(pool: &PgPool, host_id: Uuid) -> anyhow::Result<HostV
                             "Install qemu-kvm and ensure /usr/bin/qemu-system-x86_64 or qemu-kvm exists",
                         ));
                     } else {
-                        checks.push(pass("qemu_installed", &format!("QEMU {}", info.qemu_version)));
+                        checks.push(pass(
+                            "qemu_installed",
+                            &format!("QEMU {}", info.qemu_version),
+                        ));
                     }
                     if info.cpu_model.is_empty() {
                         checks.push(warn(
@@ -134,15 +139,18 @@ pub async fn validate_host(pool: &PgPool, host_id: Uuid) -> anyhow::Result<HostV
 }
 
 pub async fn persist_validation(
-    pool: &PgPool,
+    pool: &SqlitePool,
     host_id: Uuid,
     report: &HostValidationReport,
 ) -> anyhow::Result<()> {
     let status = if report.ok { "passed" } else { "failed" };
-    let state = if report.ok { "online" } else { "pending_validation" };
+    let state = if report.ok {
+        "online"
+    } else {
+        "pending_validation"
+    };
     sqlx::query(
-        "UPDATE hosts SET validation_status = $1, validation_report = $2, state = $3, updated_at = NOW()
-         WHERE id = $4",
+        "UPDATE hosts SET validation_status = ?, validation_report = ?, state = ? WHERE id = ?",
     )
     .bind(status)
     .bind(serde_json::to_value(&report.checks)?)

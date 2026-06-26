@@ -748,6 +748,24 @@ export async function mockPlatformApi(page: Page, opts?: {
         json: { pam: { enabled: true }, ldap: { enabled: false }, oidc: { enabled: false } },
       })
     }
+    if (url.includes('/system/auth/ldap-settings')) {
+      return route.fulfill({
+        json: {
+          enabled: false,
+          url: '',
+          bind_dn: '',
+          bind_password: '',
+          bind_password_set: false,
+          user_search_base: '',
+          user_search_filter: '',
+          admin_group_substrings: [],
+          operator_group_substrings: [],
+          readonly_group_substrings: [],
+          config_path: '',
+          preset: null,
+        },
+      })
+    }
     if (url.includes('/ws-token') && route.request().method() === 'POST') {
       return route.fulfill({ json: { token: 'mock-ws-token' } })
     }

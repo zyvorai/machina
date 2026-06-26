@@ -449,6 +449,11 @@ function SparklineBar({
       </div>
       <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
         <div
+          role="progressbar"
+          aria-label={label}
+          aria-valuenow={Math.round(Math.min(100, Math.max(0, pct)))}
+          aria-valuemin={0}
+          aria-valuemax={100}
           className={`h-full rounded-full ${statusBgClass(tone === 'warn' ? 'warn' : 'info')}`}
           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
         />

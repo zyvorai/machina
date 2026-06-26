@@ -2,16 +2,22 @@
 
 use std::time::Duration;
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::leader::LeaderHandle;
 
-pub fn spawn(pool: PgPool, leader: LeaderHandle) {
+pub fn spawn(pool: SqlitePool, leader: LeaderHandle) {
     tokio::spawn(async move {
-        let client = reqwest::Client::builder()
+        let client = match reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
             .build()
-            .unwrap_or_default();
+        {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::error!("webhook worker: failed to build HTTP client: {e:#}");
+                return;
+            }
+        };
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         loop {
             interval.tick().await;
@@ -25,10 +31,10 @@ pub fn spawn(pool: PgPool, leader: LeaderHandle) {
     });
 }
 
-async fn process_batch(pool: &PgPool, client: &reqwest::Client) -> anyhow::Result<()> {
+async fn process_batch(pool: &SqlitePool, client: &reqwest::Client) -> anyhow::Result<()> {
     let rows: Vec<(uuid::Uuid, String, String, serde_json::Value, i32, i32)> = sqlx::query_as(
         "SELECT id, url, secret, body, attempts, max_attempts FROM webhook_deliveries
-         WHERE status = 'pending' AND next_retry_at <= NOW()
+         WHERE status = 'pending' AND next_retry_at <= datetime('now')
          ORDER BY next_retry_at LIMIT 20",
     )
     .fetch_all(pool)
@@ -45,7 +51,7 @@ async fn process_batch(pool: &PgPool, client: &reqwest::Client) -> anyhow::Resul
         match req.body(body_str).send().await {
             Ok(resp) if resp.status().is_success() => {
                 sqlx::query(
-                    "UPDATE webhook_deliveries SET status = 'delivered', last_error = '', attempts = attempts + 1 WHERE id = $1",
+                    "UPDATE webhook_deliveries SET status = 'delivered', last_error = '', attempts = attempts + 1 WHERE id = ?",
                 )
                 .bind(id)
                 .execute(pool)
@@ -64,7 +70,7 @@ async fn process_batch(pool: &PgPool, client: &reqwest::Client) -> anyhow::Resul
 }
 
 async fn mark_retry(
-    pool: &PgPool,
+    pool: &SqlitePool,
     id: uuid::Uuid,
     attempts: i32,
     max_attempts: i32,
@@ -73,7 +79,7 @@ async fn mark_retry(
     let next = attempts + 1;
     if next >= max_attempts {
         sqlx::query(
-            "UPDATE webhook_deliveries SET status = 'failed', attempts = $1, last_error = $2 WHERE id = $3",
+            "UPDATE webhook_deliveries SET status = 'failed', attempts = ?, last_error = ? WHERE id = ?",
         )
         .bind(next)
         .bind(err)
@@ -83,12 +89,12 @@ async fn mark_retry(
     } else {
         let backoff_secs = 2_i32.saturating_pow(next as u32).min(300);
         sqlx::query(
-            "UPDATE webhook_deliveries SET attempts = $1, last_error = $2,
-             next_retry_at = NOW() + make_interval(secs => $3) WHERE id = $4",
+            "UPDATE webhook_deliveries SET attempts = ?, last_error = ?,
+             next_retry_at = datetime('now', '+' || ? || ' seconds') WHERE id = ?",
         )
         .bind(next)
         .bind(err)
-        .bind(backoff_secs as f64)
+        .bind(backoff_secs)
         .bind(id)
         .execute(pool)
         .await?;

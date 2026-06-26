@@ -145,7 +145,7 @@ export default function PlatformVmAdvanced({
           <div className="space-y-2">
             <p className="text-xs text-slate-500">Disk cache / bus</p>
             <input className="input w-full" placeholder="target vda" value={diskTuneTarget} onChange={(e) => setDiskTuneTarget(e.target.value)} />
-            <select className="input w-full" value={diskCache} onChange={(e) => setDiskCache(e.target.value)}>
+            <select className="input w-full" aria-label="Disk cache mode" value={diskCache} onChange={(e) => setDiskCache(e.target.value)}>
               <option value="none">none</option>
               <option value="writethrough">writethrough</option>
               <option value="writeback">writeback</option>
@@ -156,7 +156,7 @@ export default function PlatformVmAdvanced({
           </div>
           <div className="space-y-2">
             <p className="text-xs text-slate-500">NIC model override</p>
-            <input className="input w-full font-mono" placeholder="MAC" value={nicMac} onChange={(e) => setNicMac(e.target.value)} />
+            <input aria-label="MAC address" className="input w-full font-mono" placeholder="MAC" value={nicMac} onChange={(e) => setNicMac(e.target.value)} />
             <button type="button" className="btn-secondary text-xs" disabled={disabled || !nicMac} onClick={() => void run('NIC tune applied', () => invokeVmLibvirt(vmId, 'nic.tune', { mac_address: nicMac, model: 'virtio' }))}>Set virtio model</button>
           </div>
         </div>
@@ -167,9 +167,9 @@ export default function PlatformVmAdvanced({
           <div className="space-y-2">
             <p className="text-xs text-slate-500">Scheduler (shares / period / quota)</p>
             <div className="flex gap-2">
-              <input className="input w-20" placeholder="shares" defaultValue={cputune?.shares ?? ''} id={`sched-shares-${vmId}`} />
-              <input className="input w-20" placeholder="period" defaultValue={cputune?.period ?? ''} id={`sched-period-${vmId}`} />
-              <input className="input w-20" placeholder="quota" defaultValue={cputune?.quota ?? ''} id={`sched-quota-${vmId}`} />
+              <input aria-label="CPU shares" className="input w-20" placeholder="shares" defaultValue={cputune?.shares ?? ''} id={`sched-shares-${vmId}`} />
+              <input aria-label="CPU period" className="input w-20" placeholder="period" defaultValue={cputune?.period ?? ''} id={`sched-period-${vmId}`} />
+              <input aria-label="CPU quota" className="input w-20" placeholder="quota" defaultValue={cputune?.quota ?? ''} id={`sched-quota-${vmId}`} />
             </div>
             <button
               type="button"
@@ -192,16 +192,16 @@ export default function PlatformVmAdvanced({
           <div className="space-y-2">
             <p className="text-xs text-slate-500">Memtune (KiB)</p>
             <div className="flex gap-2">
-              <input className="input w-24" placeholder="hard" value={memtune.hard_limit_kb ?? ''} onChange={(e) => setMemtune({ ...memtune, hard_limit_kb: e.target.value ? Number(e.target.value) : undefined })} />
-              <input className="input w-24" placeholder="soft" value={memtune.soft_limit_kb ?? ''} onChange={(e) => setMemtune({ ...memtune, soft_limit_kb: e.target.value ? Number(e.target.value) : undefined })} />
+              <input aria-label="Hard limit (KiB)" className="input w-24" placeholder="hard" value={memtune.hard_limit_kb ?? ''} onChange={(e) => setMemtune({ ...memtune, hard_limit_kb: e.target.value ? Number(e.target.value) : undefined })} />
+              <input aria-label="Soft limit (KiB)" className="input w-24" placeholder="soft" value={memtune.soft_limit_kb ?? ''} onChange={(e) => setMemtune({ ...memtune, soft_limit_kb: e.target.value ? Number(e.target.value) : undefined })} />
             </div>
             <button type="button" className="btn-secondary text-xs" disabled={disabled} onClick={() => void run('Memtune updated', () => invokeVmLibvirt(vmId, 'memtune.set', memtune))}>Apply memtune</button>
           </div>
           <div className="space-y-2">
             <p className="text-xs text-slate-500">Live vCPU / memory (running guest)</p>
             <div className="flex gap-2">
-              <input className="input w-20" type="number" min={1} value={liveVcpus} onChange={(e) => setLiveVcpus(e.target.value)} />
-              <input className="input w-20" type="number" min={1} value={liveMemoryGiB} onChange={(e) => setLiveMemoryGiB(e.target.value)} />
+              <input aria-label="Live vCPU count" className="input w-20" type="number" min={1} value={liveVcpus} onChange={(e) => setLiveVcpus(e.target.value)} />
+              <input aria-label="Live memory (GiB)" className="input w-20" type="number" min={1} value={liveMemoryGiB} onChange={(e) => setLiveMemoryGiB(e.target.value)} />
             </div>
             <div className="flex gap-2">
               <button type="button" className="btn-secondary text-xs" disabled={disabled} onClick={() => void run('Live vCPUs updated', () => invokeVmLibvirt(vmId, 'live.vcpus', { count: Number(liveVcpus) }))}>Live vCPUs</button>
@@ -211,8 +211,8 @@ export default function PlatformVmAdvanced({
           <div className="space-y-2">
             <p className="text-xs text-slate-500">Pin vCPU to host CPUs (comma list → bitmask)</p>
             <div className="flex gap-2">
-              <input className="input w-16" value={pinVcpu} onChange={(e) => setPinVcpu(e.target.value)} />
-              <input className="input flex-1 font-mono" value={pinCpus} onChange={(e) => setPinCpus(e.target.value)} placeholder="0,1,2" />
+              <input aria-label="vCPU index" className="input w-16" value={pinVcpu} onChange={(e) => setPinVcpu(e.target.value)} />
+              <input aria-label="Host CPU list" className="input flex-1 font-mono" value={pinCpus} onChange={(e) => setPinCpus(e.target.value)} placeholder="0,1,2" />
             </div>
             <button
               type="button"
@@ -245,8 +245,8 @@ export default function PlatformVmAdvanced({
               ))}
             </ul>
             <div className="flex gap-2">
-              <input className="input w-20 font-mono" placeholder="vid" value={usbVid} onChange={(e) => setUsbVid(e.target.value)} />
-              <input className="input w-20 font-mono" placeholder="pid" value={usbPid} onChange={(e) => setUsbPid(e.target.value)} />
+              <input aria-label="USB vendor ID" className="input w-20 font-mono" placeholder="vid" value={usbVid} onChange={(e) => setUsbVid(e.target.value)} />
+              <input aria-label="USB product ID" className="input w-20 font-mono" placeholder="pid" value={usbPid} onChange={(e) => setUsbPid(e.target.value)} />
               <button type="button" className="btn-secondary text-xs" disabled={disabled} onClick={() => void run('USB attached', () => invokeVmLibvirt(vmId, 'usb.attach', { vendor_id: usbVid, product_id: usbPid }))}>Attach</button>
               <button type="button" className="btn-secondary text-xs" disabled={disabled} onClick={() => void run('USB detached', () => invokeVmLibvirt(vmId, 'usb.detach', { vendor_id: usbVid, product_id: usbPid }))}>Detach</button>
             </div>
@@ -261,7 +261,7 @@ export default function PlatformVmAdvanced({
               ))}
             </ul>
             <div className="flex gap-2">
-              <input className="input flex-1 font-mono" placeholder="0000:03:00.0" value={pciBdf} onChange={(e) => setPciBdf(e.target.value)} />
+              <input aria-label="PCI BDF address" className="input flex-1 font-mono" placeholder="0000:03:00.0" value={pciBdf} onChange={(e) => setPciBdf(e.target.value)} />
               <button type="button" className="btn-secondary text-xs" disabled={disabled} onClick={() => void run('PCI attached', () => invokeVmLibvirt(vmId, 'pci.attach', { pci: pciBdf }))}>Attach</button>
               <button type="button" className="btn-secondary text-xs" disabled={disabled} onClick={() => void run('PCI detached', () => invokeVmLibvirt(vmId, 'pci.detach', { pci: pciBdf }))}>Detach</button>
             </div>
@@ -304,6 +304,7 @@ export default function PlatformVmAdvanced({
 
       <MacGlassPanel title="Domain XML" subtitle={`Edit persistent definition for ${vmName}`}>
         <textarea
+          aria-label="Domain XML"
           className="input w-full font-mono text-xs min-h-[16rem]"
           value={domainXml}
           onChange={(e) => setDomainXml(e.target.value)}

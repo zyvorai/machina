@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api::ApiError;
-use crate::auth::AuthUser;
+use crate::auth::{require_admin, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
@@ -29,15 +29,26 @@ pub async fn create_enrollment_token(
     Extension(actor): Extension<AuthUser>,
     Json(req): Json<CreateEnrollmentRequest>,
 ) -> Result<Json<EnrollmentTokenResponse>, ApiError> {
-    let ttl = if req.ttl_hours <= 0 { 24 } else { req.ttl_hours };
+    require_admin(&actor)?;
+    const MAX_TTL_HOURS: i64 = 720; // 30 days
+    let ttl = if req.ttl_hours <= 0 {
+        24
+    } else if req.ttl_hours > MAX_TTL_HOURS {
+        return Err(ApiError::bad_request(
+            "ttl_hours must be <= 720 (30 days)",
+        ));
+    } else {
+        req.ttl_hours
+    };
     let token = format!("join-{}", Uuid::new_v4());
     let expires = Utc::now() + Duration::hours(ttl);
     let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
-        .fetch_one(&state.pool)
-        .await?;
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::internal("no cluster configured"))?;
 
     sqlx::query(
-        "INSERT INTO enrollment_tokens (token, cluster_id, expires_at) VALUES ($1, $2, $3)",
+        "INSERT INTO enrollment_tokens (token, cluster_id, expires_at) VALUES (?, ?, ?)",
     )
     .bind(&token)
     .bind(cluster_id)
@@ -52,7 +63,7 @@ pub async fn create_enrollment_token(
 
     sqlx::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, detail)
-         VALUES ($1, $2, $3, $4, $5)",
+         VALUES (?, ?, ?, ?, ?)",
     )
     .bind(Uuid::new_v4())
     .bind(&actor.username)
@@ -69,7 +80,8 @@ pub async fn create_enrollment_token(
     }))
 }
 
-pub async fn install_script() -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), ApiError> {
+pub async fn install_script(
+) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), ApiError> {
     Ok((
         [(axum::http::header::CONTENT_TYPE, "text/x-shellscript")],
         r#"#!/usr/bin/env bash
@@ -77,9 +89,9 @@ set -euo pipefail
 CONTROLLER=""
 TOKEN=""
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --controller) CONTROLLER="$2"; shift 2 ;;
-    --token) TOKEN="$2"; shift 2 ;;
+  case "?" in
+    --controller) CONTROLLER="?"; shift 2 ;;
+    --token) TOKEN="?"; shift 2 ;;
     *) shift ;;
   esac
 done
@@ -91,7 +103,8 @@ if command -v machina-agent >/dev/null 2>&1; then
 fi
 echo "machina-agent not found — install the agent package, then run:"
 echo "  machina-agent join --controller \"$CONTROLLER\" --token \"$TOKEN\""
-"#.into(),
+"#
+        .into(),
     ))
 }
 
@@ -105,7 +118,9 @@ pub struct EnrollmentTokenRow {
 
 pub async fn list_enrollment_tokens(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<EnrollmentTokenRow>>, ApiError> {
+    require_admin(&actor)?;
     let rows = sqlx::query_as::<_, EnrollmentTokenRow>(
         "SELECT token, expires_at, used_at, created_at FROM enrollment_tokens
          ORDER BY created_at DESC LIMIT 50",
@@ -117,9 +132,11 @@ pub async fn list_enrollment_tokens(
 
 pub async fn revoke_enrollment_token(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Path(token): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    sqlx::query("DELETE FROM enrollment_tokens WHERE token = $1 AND used_at IS NULL")
+    require_admin(&actor)?;
+    sqlx::query("DELETE FROM enrollment_tokens WHERE token = ? AND used_at IS NULL")
         .bind(&token)
         .execute(&state.pool)
         .await?;

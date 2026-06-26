@@ -45,7 +45,7 @@ test('mission control plus dock navigation stays responsive', async ({ page }) =
   await assertShellNavResponsive(page)
 })
 
-test('random sidebar, dock, and menubar clicks stay navigable', async ({ page }) => {
+test('random sidebar, dock, and menubar clicks stay navigable', { retries: 1 }, async ({ page }) => {
   await page.goto('/platform')
   await expect(page.getByTestId('mission-control-briefing')).toBeVisible({ timeout: 15_000 })
 

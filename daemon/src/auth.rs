@@ -137,8 +137,7 @@ impl SessionStore {
         sessions
             .values()
             .filter(|d| {
-                d.created_at.elapsed().as_secs() < SESSION_TTL_SECS
-                    && d.actor.username == username
+                d.created_at.elapsed().as_secs() < SESSION_TTL_SECS && d.actor.username == username
             })
             .count()
     }
@@ -364,19 +363,11 @@ fn platform_jwt_secret() -> String {
 }
 
 fn skip_auth_enabled() -> bool {
-    std::env::var("MACHINA_DAEMON_SKIP_AUTH")
-        .ok()
-        .as_deref()
-        == Some("1")
+    std::env::var("MACHINA_DAEMON_SKIP_AUTH").ok().as_deref() == Some("1")
 }
 
 fn dev_bypass_actor() -> RequestActor {
-    browser_actor(
-        "dev".into(),
-        None,
-        Role::Admin,
-        AuthSource::Pam,
-    )
+    browser_actor("dev".into(), None, Role::Admin, AuthSource::Pam)
 }
 
 fn role_from_platform_jwt(role: &str) -> Role {
@@ -506,6 +497,14 @@ pub struct OidcAuth(pub std::sync::Arc<AuthConfig>);
 struct OidcProviderMetadata {
     enabled: bool,
     button_label: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct SamlProviderMetadata {
+    enabled: bool,
+    button_label: String,
+    /// SAML browser login is not implemented yet — metadata only.
+    login_available: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -700,7 +699,7 @@ pub async fn auth_middleware(
     let path = req.uri().path();
 
     // Public endpoints (paths after nest stripping of /api/v1 or /ws/v1)
-    if path == "/health" || path == "/openapi.json" || path.starts_with("/auth/") {
+    if path == "/health" || path == "/license" || path == "/openapi.json" || path.starts_with("/auth/") {
         return next.run(req).await;
     }
 
@@ -774,7 +773,9 @@ pub async fn ws_auth_middleware(
 ) -> Response {
     let path = req.uri().path();
     // Platform VNC/serial use controller-issued tokens; machina-controller validates them.
-    if path.starts_with("/platform/vnc/") || path.starts_with("/platform/serial/") {
+    // The WS routes are nested at /ws/v1, so the full path is /ws/v1/platform/vnc/... or
+    // /ws/v1/platform/serial/... — match either prefix to accommodate future re-nesting.
+    if path.contains("/platform/vnc/") || path.contains("/platform/serial/") || path.contains("/platform/spice/") {
         return next.run(req).await;
     }
 
@@ -817,16 +818,20 @@ async fn login_handler(
     }
 
     let cfg = &auth.0;
-    if !req
-        .username
-        .chars()
-        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || (c == '@' && cfg.ldap.is_enabled()))
-    {
+    if !req.username.chars().all(|c| {
+        c.is_alphanumeric()
+            || c == '_'
+            || c == '-'
+            || c == '.'
+            || (c == '@' && cfg.ldap.is_enabled())
+    }) {
         return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "Invalid username characters", "error_code": "invalid_request" }))).into_response();
     }
 
     if cfg.ldap.is_enabled() {
-        match crate::ldap_auth::ldap_authenticate_async(&cfg.ldap, &req.username, &req.password).await {
+        match crate::ldap_auth::ldap_authenticate_async(&cfg.ldap, &req.username, &req.password)
+            .await
+        {
             Ok(ldap) => {
                 let role = ldap.role.clone();
                 info!(
@@ -961,6 +966,7 @@ async fn auth_providers_handler(Extension(auth): Extension<OidcAuth>) -> Respons
     let cfg = &auth.0;
     let oidc = &cfg.oidc;
     let ldap_on = cfg.ldap.is_enabled();
+    let saml = &cfg.saml;
     (
         StatusCode::OK,
         Json(serde_json::json!({
@@ -969,6 +975,11 @@ async fn auth_providers_handler(Extension(auth): Extension<OidcAuth>) -> Respons
             "oidc": OidcProviderMetadata {
                 enabled: oidc.is_enabled(),
                 button_label: oidc.button_label.clone(),
+            },
+            "saml": SamlProviderMetadata {
+                enabled: saml.is_configured(),
+                button_label: saml.button_label.clone(),
+                login_available: false,
             }
         })),
     )
@@ -1150,7 +1161,10 @@ async fn oidc_callback_handler(
     stats.inc_auth_attempt("oidc", "success");
     (
         StatusCode::TEMPORARY_REDIRECT,
-        [(header::SET_COOKIE, cookie), (header::LOCATION, "/".to_string())],
+        [
+            (header::SET_COOKIE, cookie),
+            (header::LOCATION, "/".to_string()),
+        ],
     )
         .into_response()
 }
@@ -1261,6 +1275,106 @@ fn pam_authenticate(_username: &str, _password: &str, _pam_service: &str) -> Res
     Err("PAM authentication is only compiled on Linux".into())
 }
 
+#[derive(Debug, Deserialize)]
+struct TokenSessionRequest {
+    token: String,
+}
+
+/// Exchange a platform-issued JWT (`?token=` deep link) for a browser session cookie.
+async fn token_session_handler(
+    Extension(store): Extension<SessionStore>,
+    Extension(stats): Extension<std::sync::Arc<crate::daemon_stats::DaemonStats>>,
+    Json(req): Json<TokenSessionRequest>,
+) -> Response {
+    let token = req.token.trim();
+    if token.is_empty() {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "error": "token required", "error_code": "invalid_request" })),
+        )
+            .into_response();
+    }
+    if token.starts_with("mach_") || token.starts_with("vs_") {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({
+                "error": "API automation tokens cannot be exchanged for browser sessions",
+                "error_code": "invalid_request"
+            })),
+        )
+            .into_response();
+    }
+    let Some(actor) = actor_from_platform_jwt(token) else {
+        stats.inc_auth_attempt("oidc", "failure");
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": "Invalid or expired token", "error_code": "unauthorized" })),
+        )
+            .into_response();
+    };
+    let session_token = store.create_session(actor.clone());
+    let cookie = format!("machina_session={session_token}; Path=/; HttpOnly; SameSite=Strict");
+    stats.inc_auth_attempt("oidc", "success");
+    info!(
+        "Platform JWT exchanged for browser session for user '{}'",
+        actor.username
+    );
+    (
+        StatusCode::OK,
+        [(header::SET_COOKIE, cookie)],
+        Json(serde_json::json!({
+            "status": "ok",
+            "username": actor.username,
+            "role": actor.role,
+            "auth_source": actor.auth_source,
+        })),
+    )
+        .into_response()
+}
+
+async fn saml_metadata_handler(Extension(auth): Extension<OidcAuth>) -> Response {
+    let saml = &auth.0.saml;
+    if !saml.is_configured() {
+        return (
+            StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": "SAML is not configured" })),
+        )
+            .into_response();
+    }
+    let entity = xml_escape(&saml.sp_entity_id);
+    let acs = xml_escape(if saml.sp_acs_url.trim().is_empty() {
+        "/api/v1/auth/saml/acs"
+    } else {
+        saml.sp_acs_url.as_str()
+    });
+    let xml = format!(
+        r#"<?xml version="1.0"?>
+<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="{entity}">
+  <SPSSODescriptor AuthnRequestsSigned="false" WantAssertionsSigned="true" protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">
+    <NameIDFormat>{nameid}</NameIDFormat>
+    <AssertionConsumerService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST" Location="{acs}" index="1"/>
+  </SPSSODescriptor>
+</EntityDescriptor>"#,
+        entity = entity,
+        acs = acs,
+        nameid = xml_escape(&saml.name_id_format),
+    );
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/samlmetadata+xml")],
+        xml,
+    )
+        .into_response()
+}
+
+fn xml_escape(raw: &str) -> String {
+    raw.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
 async fn run_as_user_status_handler(Extension(auth): Extension<OidcAuth>) -> Response {
     let cfg = &auth.0.run_as_user;
     let mode = serde_json::to_value(&cfg.mode).unwrap_or(serde_json::json!("disabled"));
@@ -1284,6 +1398,8 @@ pub fn auth_routes(session_store: SessionStore, auth_cfg: AuthConfig) -> Router<
         .route("/auth/login", post(login_handler))
         .route("/auth/oidc/login", get(oidc_login_handler))
         .route("/auth/oidc/callback", get(oidc_callback_handler))
+        .route("/auth/token/session", post(token_session_handler))
+        .route("/auth/saml/metadata", get(saml_metadata_handler))
         .route("/auth/logout", post(logout_handler))
         .route("/auth/session", get(session_handler))
         .route("/ws-token", post(ws_token_handler))

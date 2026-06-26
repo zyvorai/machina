@@ -6,12 +6,11 @@ use anyhow::Result;
 use machina_core::format_http_error_body;
 use machina_core::libvirt::extras::BrowseDirResponse;
 use machina_core::{
-    BackupInfo, BackupRequest, CloneVmRequest, CreateInstanceRequest, CreateNetworkRequest,
-    CreateSnapshotRequest, NetworkInfo, NodeInfo, OpenStackConnectionStatus,
-    AssociateFloatingIpRequest, AttachVolumeRequest, OpenStackAttachedVolume, OpenStackFloatingIp,
-    OpenStackFlavor, OpenStackImage, OpenStackInstance, OpenStackKeyPair, OpenStackNetwork,
-    OpenStackRemoteConsole, RenameVmRequest, RestoreRequest, SnapshotInfo,
-    StoragePoolInfo, VmDetails, VmInfo, VmMetrics,
+    AssociateFloatingIpRequest, AttachVolumeRequest, BackupInfo, BackupRequest, CloneVmRequest,
+    CreateInstanceRequest, CreateNetworkRequest, CreateSnapshotRequest, NetworkInfo, NodeInfo,
+    OpenStackAttachedVolume, OpenStackConnectionStatus, OpenStackFlavor, OpenStackFloatingIp,
+    OpenStackImage, OpenStackInstance, OpenStackKeyPair, OpenStackNetwork, OpenStackRemoteConsole,
+    RenameVmRequest, RestoreRequest, SnapshotInfo, StoragePoolInfo, VmDetails, VmInfo, VmMetrics,
 };
 
 pub struct DaemonClient {
@@ -36,11 +35,7 @@ impl DaemonClient {
 
     fn http_error(status: reqwest::StatusCode, body: &str) -> anyhow::Error {
         let reason = status.canonical_reason().unwrap_or("");
-        anyhow::anyhow!(format_http_error_body(
-            status.as_u16(),
-            reason,
-            body,
-        ))
+        anyhow::anyhow!(format_http_error_body(status.as_u16(), reason, body,))
     }
 
     async fn get_json<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
@@ -379,7 +374,11 @@ impl DaemonClient {
     /// `op`: `apply` | `upload` | `start` — POST body is JSON overrides (same keys as kubevirt-bundle query).
     // ── OpenStack (Nova/Glance) — parity with web /api/v1/openstack/* ───
 
-    async fn post_json_value(&self, path: &str, body: &serde_json::Value) -> Result<serde_json::Value> {
+    async fn post_json_value(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value> {
         let url = format!("{}{}", self.base_url, path);
         let resp = self.client.post(&url).json(body).send().await?;
         let status = resp.status();
@@ -454,10 +453,8 @@ impl DaemonClient {
     }
 
     pub async fn openstack_instance_action(&self, id: &str, action: &str) -> Result<()> {
-        self.post_action(&format!(
-            "/api/v1/openstack/instances/{id}/{action}"
-        ))
-        .await
+        self.post_action(&format!("/api/v1/openstack/instances/{id}/{action}"))
+            .await
     }
 
     pub async fn openstack_reboot_instance(&self, id: &str, soft: bool) -> Result<()> {
@@ -513,7 +510,10 @@ impl DaemonClient {
         self.get_json("/api/v1/openstack/volume-snapshots").await
     }
 
-    pub async fn openstack_create_instance(&self, req: &CreateInstanceRequest) -> Result<serde_json::Value> {
+    pub async fn openstack_create_instance(
+        &self,
+        req: &CreateInstanceRequest,
+    ) -> Result<serde_json::Value> {
         self.post_json_value("/api/v1/openstack/instances", &serde_json::to_value(req)?)
             .await
     }
@@ -529,9 +529,7 @@ impl DaemonClient {
     }
 
     pub async fn openstack_console_output(&self, id: &str, lines: Option<u32>) -> Result<String> {
-        let suffix = lines
-            .map(|n| format!("?lines={n}"))
-            .unwrap_or_default();
+        let suffix = lines.map(|n| format!("?lines={n}")).unwrap_or_default();
         #[derive(serde::Deserialize)]
         struct R {
             output: String,
@@ -560,15 +558,13 @@ impl DaemonClient {
         id: &str,
         body: &serde_json::Value,
     ) -> Result<serde_json::Value> {
-        self.post_json_value(
-            &format!("/api/v1/openstack/instances/{id}/export"),
-            body,
-        )
-        .await
+        self.post_json_value(&format!("/api/v1/openstack/instances/{id}/export"), body)
+            .await
     }
 
     pub async fn openstack_list_json(&self, resource: &str) -> Result<serde_json::Value> {
-        self.get_json(&format!("/api/v1/openstack/{resource}")).await
+        self.get_json(&format!("/api/v1/openstack/{resource}"))
+            .await
     }
 
     pub async fn openstack_api_get(&self, path: &str) -> Result<serde_json::Value> {
@@ -651,11 +647,16 @@ impl DaemonClient {
     }
 
     pub async fn openstack_dissociate_floating_ip(&self, fip_id: &str) -> Result<()> {
-        self.post_action(&format!("/api/v1/openstack/floating-ips/{fip_id}/dissociate"))
-            .await
+        self.post_action(&format!(
+            "/api/v1/openstack/floating-ips/{fip_id}/dissociate"
+        ))
+        .await
     }
 
-    pub async fn openstack_allocate_floating_ip(&self, network_id: &str) -> Result<OpenStackFloatingIp> {
+    pub async fn openstack_allocate_floating_ip(
+        &self,
+        network_id: &str,
+    ) -> Result<OpenStackFloatingIp> {
         let v = self
             .post_json_value(
                 "/api/v1/openstack/floating-ips",
@@ -679,11 +680,13 @@ impl DaemonClient {
     }
 
     pub async fn openstack_lock_instance(&self, id: &str) -> Result<()> {
-        self.post_action(&format!("/api/v1/openstack/instances/{id}/lock")).await
+        self.post_action(&format!("/api/v1/openstack/instances/{id}/lock"))
+            .await
     }
 
     pub async fn openstack_unlock_instance(&self, id: &str) -> Result<()> {
-        self.post_action(&format!("/api/v1/openstack/instances/{id}/unlock")).await
+        self.post_action(&format!("/api/v1/openstack/instances/{id}/unlock"))
+            .await
     }
 
     pub async fn openstack_delete_port(&self, port_id: &str) -> Result<()> {
@@ -743,7 +746,11 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn openstack_remove_security_group(&self, instance_id: &str, name: &str) -> Result<()> {
+    pub async fn openstack_remove_security_group(
+        &self,
+        instance_id: &str,
+        name: &str,
+    ) -> Result<()> {
         self.post_json(
             &format!("/api/v1/openstack/instances/{instance_id}/security-groups/remove"),
             &serde_json::json!({ "name": name }),
@@ -761,11 +768,8 @@ impl DaemonClient {
         if let Some(h) = host.filter(|s| !s.is_empty()) {
             body["host"] = serde_json::json!(h);
         }
-        self.post_json(
-            &format!("/api/v1/openstack/instances/{id}/migrate"),
-            &body,
-        )
-        .await
+        self.post_json(&format!("/api/v1/openstack/instances/{id}/migrate"), &body)
+            .await
     }
 
     pub async fn openstack_backup_instance(&self, id: &str, name: &str) -> Result<()> {
@@ -785,8 +789,11 @@ impl DaemonClient {
     }
 
     pub async fn openstack_shelve_instance(&self, id: &str) -> Result<()> {
-        self.post_json(&format!("/api/v1/openstack/instances/{id}/shelve"), &serde_json::json!({}))
-            .await
+        self.post_json(
+            &format!("/api/v1/openstack/instances/{id}/shelve"),
+            &serde_json::json!({}),
+        )
+        .await
     }
 
     pub async fn openstack_unshelve_instance(&self, id: &str) -> Result<()> {
@@ -802,11 +809,8 @@ impl DaemonClient {
         if let Some(img) = image.filter(|s| !s.is_empty()) {
             body["image"] = serde_json::json!(img);
         }
-        self.post_json(
-            &format!("/api/v1/openstack/instances/{id}/rescue"),
-            &body,
-        )
-        .await
+        self.post_json(&format!("/api/v1/openstack/instances/{id}/rescue"), &body)
+            .await
     }
 
     pub async fn openstack_unrescue_instance(&self, id: &str) -> Result<()> {
@@ -837,7 +841,11 @@ impl DaemonClient {
         .await
     }
 
-    pub async fn openstack_upload_volume_image(&self, volume_id: &str, image_name: &str) -> Result<()> {
+    pub async fn openstack_upload_volume_image(
+        &self,
+        volume_id: &str,
+        image_name: &str,
+    ) -> Result<()> {
         self.post_json(
             &format!("/api/v1/openstack/volumes/{volume_id}/upload-image"),
             &serde_json::json!({ "image_name": image_name }),
@@ -884,7 +892,10 @@ impl DaemonClient {
                 body.insert("name".into(), serde_json::json!(value));
             }
             "admin" | "admin_state_up" | "admin_up" => {
-                let on = matches!(value.to_lowercase().as_str(), "1" | "true" | "yes" | "on" | "up");
+                let on = matches!(
+                    value.to_lowercase().as_str(),
+                    "1" | "true" | "yes" | "on" | "up"
+                );
                 body.insert("admin_state_up".into(), serde_json::json!(on));
             }
             _ => anyhow::bail!("port field must be name or admin"),
@@ -942,11 +953,7 @@ impl DaemonClient {
         host: &str,
         enable: bool,
     ) -> Result<()> {
-        let path = if enable {
-            "enable"
-        } else {
-            "disable"
-        };
+        let path = if enable { "enable" } else { "disable" };
         self.post_json(
             &format!("/api/v1/openstack/compute-services/{path}"),
             &serde_json::json!({ "binary": binary, "host": host, "disabled": !enable }),

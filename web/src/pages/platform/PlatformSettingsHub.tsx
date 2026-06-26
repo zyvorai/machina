@@ -15,7 +15,6 @@ import PlatformWebhooks from './PlatformWebhooks'
 import PlatformReports from './PlatformReports'
 import PlatformEvents from './PlatformEvents'
 import PlatformProjects from './PlatformProjects'
-import PlatformResourcesHub from './PlatformResourcesHub'
 import PlatformIntegrations from './PlatformIntegrations'
 import PlatformSupport from './PlatformSupport'
 import PlatformEnterprise from './PlatformEnterprise'
@@ -32,6 +31,7 @@ import { getAiPolicyExport } from '../../api/ai'
 import { getFirewallOverview, type FirewallOverview } from '../../api/zeusFirewall'
 import { listAlertRules, listAlerts, listTokens } from '../../api/automation'
 import { getSession, type AuthSession } from '../../api/auth'
+import IdentitySsoPanel from '../../components/IdentitySsoPanel'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
 import {hostStateTone, httpStatusTone, migrationReadinessTone, riskTone, statusBadgeClasses, statusPillClasses, statusToneClass, taskStatusTone, webhookDeliveryTone, hubLinkClasses} from '../../utils/semanticColors'
@@ -55,6 +55,7 @@ function BrowserSessionInfo() {
 
 type SettingsSection =
   | 'general'
+  | 'identity'
   | 'zeus'
   | 'ai-providers'
   | 'security'
@@ -75,6 +76,7 @@ type SettingsSection =
 
 const SETTINGS_SECTIONS: SettingsSection[] = [
   'general',
+  'identity',
   'zeus',
   'ai-providers',
   'security',
@@ -108,6 +110,7 @@ function SettingsWorkspaceLink({ to, label }: { to: string; label: string }) {
 
 const SECTIONS: Array<{ id: SettingsSection; label: string; icon: React.ReactNode; fullPath?: string }> = [
   { id: 'general', label: 'General', icon: <Settings className="w-4 h-4" /> },
+  { id: 'identity', label: 'Identity & SSO', icon: <Shield className="w-4 h-4" /> },
   { id: 'zeus', label: 'Zeus', icon: <Sparkles className="w-4 h-4" /> },
   { id: 'ai-providers', label: 'AI Providers', icon: <Plug className="w-4 h-4" /> },
   { id: 'security', label: 'Security', icon: <Shield className="w-4 h-4" /> },
@@ -278,6 +281,13 @@ export default function PlatformSettingsHub() {
         </div>
       )}
 
+      {section === 'identity' && (
+        <div className="space-y-4">
+          <BrowserSessionInfo />
+          <IdentitySsoPanel compact />
+        </div>
+      )}
+
       {section === 'zeus' && <PlatformZeusSettings embedded />}
 
       {section === 'ai-providers' && <PlatformAiProviders embedded />}
@@ -357,6 +367,7 @@ export default function PlatformSettingsHub() {
             <p className="text-xs text-slate-500 mb-2">Simulated sovereign export manifests — no live bundle runner.</p>
             <div className="flex gap-2 mb-3">
               <input
+                aria-label="Air-gap bundle name"
                 className="input flex-1 text-sm"
                 value={bundleName}
                 disabled={bundleCreating}
@@ -393,7 +404,7 @@ export default function PlatformSettingsHub() {
                   {asArray(asRecord(selectedBundle.manifest_json)?.artifacts).slice(0, 6).map((item, i) => {
                     const row = asRecord(item)
                     return (
-                      <div key={i} className="rounded-lg border border-white/[0.06] bg-slate-950/30 px-3 py-2 sm:col-span-2">
+                      <div key={String(row?.path ?? row?.name ?? i)} className="rounded-lg border border-white/[0.06] bg-slate-950/30 px-3 py-2 sm:col-span-2">
                         <dt className="text-xs text-slate-500">Artifact</dt>
                         <dd className="text-slate-200 mt-0.5 text-xs">{String(row?.path ?? row?.name ?? JSON.stringify(item))}</dd>
                       </div>
@@ -616,8 +627,7 @@ export default function PlatformSettingsHub() {
 
       {section === 'resources' && (
         <div>
-          <SettingsWorkspaceLink to="/platform/infrastructure" label="Open full Infrastructure hub" />
-          <PlatformResourcesHub embedded />
+          <SettingsWorkspaceLink to="/platform/storage" label="Open Infrastructure" />
         </div>
       )}
 

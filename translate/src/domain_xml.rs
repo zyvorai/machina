@@ -192,7 +192,8 @@ mod tests {
     #[test]
     fn generates_domain_xml() {
         let vm = VirtualMachine::new("demo", "1Gi");
-        let xml = domain_xml_from_spec(&vm, "/var/lib/libvirt/images/demo.qcow2", "qcow2", None).unwrap();
+        let xml =
+            domain_xml_from_spec(&vm, "/var/lib/libvirt/images/demo.qcow2", "qcow2", None).unwrap();
         assert!(xml.contains("<name>demo</name>"));
         assert!(xml.contains("source network='default'"));
         assert!(xml.contains("type='qcow2'"));
@@ -207,8 +208,13 @@ mod tests {
             "install_iso".into(),
             "/var/lib/libvirt/images/ubuntu.iso".into(),
         )]));
-        let xml = domain_xml_from_spec(&vm, "/var/lib/libvirt/images/installer.qcow2", "qcow2", None)
-            .unwrap();
+        let xml = domain_xml_from_spec(
+            &vm,
+            "/var/lib/libvirt/images/installer.qcow2",
+            "qcow2",
+            None,
+        )
+        .unwrap();
         assert!(xml.contains("boot dev='cdrom'"));
         assert!(xml.contains("ubuntu.iso"));
     }

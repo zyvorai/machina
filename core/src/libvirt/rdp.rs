@@ -10,15 +10,15 @@ use super::guest_agent;
 use crate::LibvirtError;
 
 /// Prefer the first non-loopback IPv4 guest address; default port 3389.
-pub fn resolve_rdp_endpoint(conn: &Connect, domain_name: &str) -> Result<(String, u16), LibvirtError> {
+pub fn resolve_rdp_endpoint(
+    conn: &Connect,
+    domain_name: &str,
+) -> Result<(String, u16), LibvirtError> {
     let addrs = guest_agent::get_guest_interfaces(conn, domain_name)?;
     for a in &addrs {
         if a.ip_type.eq_ignore_ascii_case("ipv4") {
             let ip = a.address.trim();
-            if !ip.is_empty()
-                && !ip.starts_with("127.")
-                && !ip.starts_with("169.254.")
-            {
+            if !ip.is_empty() && !ip.starts_with("127.") && !ip.starts_with("169.254.") {
                 return Ok((ip.to_string(), 3389));
             }
         }

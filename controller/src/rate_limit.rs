@@ -121,18 +121,12 @@ pub async fn rate_limit_middleware(
         }
     }
 
+    // Always bucket by the real TCP peer address — never by X-Forwarded-For, which is
+    // user-controlled and would allow any client to bypass the limit by spoofing that header.
     let ip_key = format!("ip:{}", addr.ip());
     let auth_header = request.headers().get(header::AUTHORIZATION);
     let key = rate_limit_key(&limiter, auth_header.and_then(|v| v.to_str().ok()));
-    let key = if key.is_empty() {
-        if let Some(ip) = request.headers().get("x-forwarded-for") {
-            format!("ip:{}", ip.to_str().unwrap_or("unknown"))
-        } else {
-            ip_key.clone()
-        }
-    } else {
-        key
-    };
+    let key = if key.is_empty() { ip_key.clone() } else { key };
 
     if !limiter.check(&key) {
         return Err(StatusCode::TOO_MANY_REQUESTS);

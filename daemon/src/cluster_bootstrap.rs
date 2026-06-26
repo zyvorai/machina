@@ -232,7 +232,11 @@ async fn wait_until_kubectl_nodes(
     ))
 }
 
-async fn phase_k3s(server_ip: &str, stdout_log: &mut String, stderr_log: &mut String) -> Result<(), LibvirtError> {
+async fn phase_k3s(
+    server_ip: &str,
+    stdout_log: &mut String,
+    stderr_log: &mut String,
+) -> Result<(), LibvirtError> {
     let install = format!(
         "curl -sfL {K3S_INSTALL_URL} | sh -s - server --flannel-backend=none --disable-network-policy --disable=traefik"
     );
@@ -248,24 +252,26 @@ async fn phase_k3s(server_ip: &str, stdout_log: &mut String, stderr_log: &mut St
     .await?;
 
     let kube_dir = home_dir().join(".kube");
-    std::fs::create_dir_all(&kube_dir).map_err(|e| {
-        LibvirtError::Operation(format!("mkdir ~/.kube: {e}"))
-    })?;
+    std::fs::create_dir_all(&kube_dir)
+        .map_err(|e| LibvirtError::Operation(format!("mkdir ~/.kube: {e}")))?;
 
     let cfg = kubeconfig_path();
-    std::fs::copy(KUBECONFIG_ADMIN, &cfg).map_err(|e| {
-        LibvirtError::Operation(format!("copy k3s admin kubeconfig: {e}"))
-    })?;
+    std::fs::copy(KUBECONFIG_ADMIN, &cfg)
+        .map_err(|e| LibvirtError::Operation(format!("copy k3s admin kubeconfig: {e}")))?;
 
     let mut yaml = std::fs::read_to_string(&cfg)
         .map_err(|e| LibvirtError::Operation(format!("read kubeconfig: {e}")))?;
     yaml = yaml.replace("127.0.0.1", server_ip);
-    std::fs::write(&cfg, yaml).map_err(|e| LibvirtError::Operation(format!("write kubeconfig: {e}")))?;
+    std::fs::write(&cfg, yaml)
+        .map_err(|e| LibvirtError::Operation(format!("write kubeconfig: {e}")))?;
 
     append_section(
         stdout_log,
         "kubeconfig",
-        &format!("wrote {} (replaced 127.0.0.1 with {server_ip})", cfg.display()),
+        &format!(
+            "wrote {} (replaced 127.0.0.1 with {server_ip})",
+            cfg.display()
+        ),
     );
 
     let k3s_bin = Path::new("/usr/local/bin/k3s");
@@ -273,10 +279,13 @@ async fn phase_k3s(server_ip: &str, stdout_log: &mut String, stderr_log: &mut St
     #[cfg(unix)]
     if !kubectl_link.exists() && k3s_bin.is_file() {
         let _ = std::fs::remove_file(kubectl_link);
-        std::os::unix::fs::symlink(k3s_bin, kubectl_link).map_err(|e| {
-            LibvirtError::Operation(format!("symlink kubectl -> k3s: {e}"))
-        })?;
-        append_section(stdout_log, "kubectl_symlink", "/usr/local/bin/kubectl -> k3s");
+        std::os::unix::fs::symlink(k3s_bin, kubectl_link)
+            .map_err(|e| LibvirtError::Operation(format!("symlink kubectl -> k3s: {e}")))?;
+        append_section(
+            stdout_log,
+            "kubectl_symlink",
+            "/usr/local/bin/kubectl -> k3s",
+        );
     }
 
     Ok(())
@@ -301,13 +310,14 @@ async fn download_text(client: &reqwest::Client, url: &str) -> Result<String, Li
     Ok(text.trim().to_string())
 }
 
-async fn download_file(client: &reqwest::Client, url: &str, dest: &Path) -> Result<(), LibvirtError> {
+async fn download_file(
+    client: &reqwest::Client,
+    url: &str,
+    dest: &Path,
+) -> Result<(), LibvirtError> {
     let bytes = client
         .get(url)
-        .header(
-            "User-Agent",
-            "machina-daemon-cluster-bootstrap/1.0",
-        )
+        .header("User-Agent", "machina-daemon-cluster-bootstrap/1.0")
         .timeout(Duration::from_secs(600))
         .send()
         .await
@@ -317,7 +327,8 @@ async fn download_file(client: &reqwest::Client, url: &str, dest: &Path) -> Resu
         .bytes()
         .await
         .map_err(|e| LibvirtError::Operation(format!("read bytes {url}: {e}")))?;
-    std::fs::write(dest, bytes).map_err(|e| LibvirtError::Operation(format!("write {}: {e}", dest.display())))?;
+    std::fs::write(dest, bytes)
+        .map_err(|e| LibvirtError::Operation(format!("write {}: {e}", dest.display())))?;
     Ok(())
 }
 
@@ -346,9 +357,8 @@ async fn phase_cilium(
 
     let ver = download_text(&client, CILIUM_CLI_STABLE).await?;
     let arch = cilium_arch();
-    let base = format!(
-        "https://github.com/cilium/cilium-cli/releases/download/{ver}/cilium-linux-{arch}"
-    );
+    let base =
+        format!("https://github.com/cilium/cilium-cli/releases/download/{ver}/cilium-linux-{arch}");
     let tg = format!("{base}.tar.gz");
     let sha_url = format!("{base}.tar.gz.sha256sum");
 
@@ -376,12 +386,17 @@ async fn phase_cilium(
     )
     .await?;
 
-    let tar_extract = format!(
-        "tar xzvfC {} /usr/local/bin",
-        tg_path.display()
-    );
+    let tar_extract = format!("tar xzvfC {} /usr/local/bin", tg_path.display());
     let no_env2: Vec<(String, String)> = vec![];
-    run_sh("cilium_tar", &tar_extract, &no_env2, 120, stdout_log, stderr_log).await?;
+    run_sh(
+        "cilium_tar",
+        &tar_extract,
+        &no_env2,
+        120,
+        stdout_log,
+        stderr_log,
+    )
+    .await?;
 
     let _ = std::fs::remove_dir_all(&tmp);
 
@@ -477,9 +492,9 @@ async fn phase_cilium(
     .await?;
 
     let mut sh_cmd = Command::new("/bin/sh");
-    sh_cmd.arg("-c").arg(
-        "kubectl get svc -n kube-system 2>/dev/null | grep hubble || true",
-    );
+    sh_cmd
+        .arg("-c")
+        .arg("kubectl get svc -n kube-system 2>/dev/null | grep hubble || true");
     sh_cmd.stdin(Stdio::null());
     for (k, v) in &kube_env {
         sh_cmd.env(k, v);
@@ -518,7 +533,12 @@ async fn phase_metrics(
     for (k, v) in &kube_env {
         check.env(k, v);
     }
-    let exists = check.output().await.ok().map(|o| o.status.success()).unwrap_or(false);
+    let exists = check
+        .output()
+        .await
+        .ok()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
 
     if exists {
         append_section(stdout_log, "metrics_server", "already present");
@@ -528,11 +548,7 @@ async fn phase_metrics(
     run_cmd_argv(
         "kubectl_apply_metrics_server",
         &kubectl,
-        &[
-            "apply".into(),
-            "-f".into(),
-            METRICS_SERVER_MANIFEST.into(),
-        ],
+        &["apply".into(), "-f".into(), METRICS_SERVER_MANIFEST.into()],
         &kube_env,
         TIMEOUT_KUBECTL_SECS,
         stdout_log,
@@ -587,7 +603,10 @@ async fn phase_metrics(
     Ok(())
 }
 
-async fn phase_kubevirt_cdi(stdout_log: &mut String, stderr_log: &mut String) -> Result<(), LibvirtError> {
+async fn phase_kubevirt_cdi(
+    stdout_log: &mut String,
+    stderr_log: &mut String,
+) -> Result<(), LibvirtError> {
     let kube_env = kubeconfig_env_pairs();
     let kubectl = kubectl_bin();
 
@@ -630,9 +649,8 @@ async fn phase_kubevirt_cdi(stdout_log: &mut String, stderr_log: &mut String) ->
     let op_url = format!(
         "https://github.com/kubevirt/kubevirt/releases/download/{kv_ver}/kubevirt-operator.yaml"
     );
-    let cr_url = format!(
-        "https://github.com/kubevirt/kubevirt/releases/download/{kv_ver}/kubevirt-cr.yaml"
-    );
+    let cr_url =
+        format!("https://github.com/kubevirt/kubevirt/releases/download/{kv_ver}/kubevirt-cr.yaml");
 
     run_cmd_argv(
         "kubectl_kubevirt_operator",
@@ -776,7 +794,8 @@ async fn phase_kubevirt_cdi(stdout_log: &mut String, stderr_log: &mut String) ->
 
     let dest = Path::new("/usr/local/bin/virtctl");
     let _ = std::fs::remove_file(dest);
-    std::fs::rename(&tmp_virt, dest).map_err(|e| LibvirtError::Operation(format!("install virtctl: {e}")))?;
+    std::fs::rename(&tmp_virt, dest)
+        .map_err(|e| LibvirtError::Operation(format!("install virtctl: {e}")))?;
 
     run_cmd_argv(
         "kubectl_get_kubevirt_ns",
@@ -825,7 +844,9 @@ fn print_footer(skip_kv: bool, stdout_log: &mut String) {
     stdout_log.push_str(&msg);
 }
 
-pub async fn run_cluster_bootstrap(params: ClusterBootstrapParams) -> Result<BootstrapCmdResult, LibvirtError> {
+pub async fn run_cluster_bootstrap(
+    params: ClusterBootstrapParams,
+) -> Result<BootstrapCmdResult, LibvirtError> {
     let phase = params.phase.trim().to_string();
     let summary = format!(
         "cluster_bootstrap Rust phase={phase} server_ip={:?} skip_kubevirt_cdi={} install_metrics_server={}",
@@ -849,7 +870,12 @@ pub async fn run_cluster_bootstrap(params: ClusterBootstrapParams) -> Result<Boo
             "full" => {
                 phase_k3s(&server_ip, &mut stdout_log, &mut stderr_log).await?;
                 phase_cilium(&server_ip, &mut stdout_log, &mut stderr_log).await?;
-                phase_metrics(params.install_metrics_server, &mut stdout_log, &mut stderr_log).await?;
+                phase_metrics(
+                    params.install_metrics_server,
+                    &mut stdout_log,
+                    &mut stderr_log,
+                )
+                .await?;
                 if params.skip_kubevirt_cdi {
                     append_section(
                         &mut stdout_log,
@@ -865,7 +891,12 @@ pub async fn run_cluster_bootstrap(params: ClusterBootstrapParams) -> Result<Boo
             "k3s" => phase_k3s(&server_ip, &mut stdout_log, &mut stderr_log).await,
             "cilium" => phase_cilium(&server_ip, &mut stdout_log, &mut stderr_log).await,
             "metrics" => {
-                phase_metrics(params.install_metrics_server, &mut stdout_log, &mut stderr_log).await
+                phase_metrics(
+                    params.install_metrics_server,
+                    &mut stdout_log,
+                    &mut stderr_log,
+                )
+                .await
             }
             "kubevirt_cdi" => phase_kubevirt_cdi(&mut stdout_log, &mut stderr_log).await,
             _ => Err(LibvirtError::Invalid(format!(

@@ -79,7 +79,10 @@ pub fn guest_ports_to_open_ports(vm_name: &str, ports: &[GuestListeningPort]) ->
             OpenPort {
                 port: p.port,
                 protocol: p.protocol.clone(),
-                service_name: p.process.clone().unwrap_or_else(|| format!("guest-{vm_name}")),
+                service_name: p
+                    .process
+                    .clone()
+                    .unwrap_or_else(|| format!("guest-{vm_name}")),
                 bind_address: p.bind_address.clone(),
                 process: p.process.clone(),
                 allowed_from: vec![],
@@ -123,5 +126,7 @@ fn parse_ss_output(text: &str) -> Vec<GuestListeningPort> {
 #[cfg(target_os = "linux")]
 fn base64_decode(s: &str) -> Option<Vec<u8>> {
     use base64::Engine;
-    base64::engine::general_purpose::STANDARD.decode(s.trim()).ok()
+    base64::engine::general_purpose::STANDARD
+        .decode(s.trim())
+        .ok()
 }

@@ -59,7 +59,11 @@ fn parse_audit_log_line(line: &str) -> Option<LinuxAuditEvent> {
         "USER_AUTH"
     } else if line.contains("type=SYSCALL") {
         "SYSCALL"
-    } else if let Some(t) = line.split("type=").nth(1).and_then(|s| s.split_whitespace().next()) {
+    } else if let Some(t) = line
+        .split("type=")
+        .nth(1)
+        .and_then(|s| s.split_whitespace().next())
+    {
         t.trim_end_matches(':')
     } else {
         "UNKNOWN"
@@ -129,7 +133,13 @@ fn probe_ausearch(max_events: usize) -> Option<Vec<LinuxAuditEvent>> {
             .and_then(|l| l.split("time->").nth(1))
             .map(|s| s.trim().to_string())
             .unwrap_or_default();
-        let summary = block.lines().next().unwrap_or("").chars().take(280).collect();
+        let summary = block
+            .lines()
+            .next()
+            .unwrap_or("")
+            .chars()
+            .take(280)
+            .collect();
         events.push(LinuxAuditEvent {
             timestamp: ts,
             event_type: event_type.to_string(),
@@ -177,10 +187,7 @@ fn gather_linux_audit_with_cfg(
         ];
         for path in paths {
             if let Some(events) = tail_audit_log(path, lim) {
-                let avc_count = events
-                    .iter()
-                    .filter(|e| e.event_type == "AVC")
-                    .count() as u32;
+                let avc_count = events.iter().filter(|e| e.event_type == "AVC").count() as u32;
                 return Ok(LinuxAuditReport {
                     available: true,
                     source: path.display().to_string(),
@@ -190,10 +197,7 @@ fn gather_linux_audit_with_cfg(
             }
         }
         if let Some(events) = probe_ausearch(lim) {
-            let avc_count = events
-                .iter()
-                .filter(|e| e.event_type == "AVC")
-                .count() as u32;
+            let avc_count = events.iter().filter(|e| e.event_type == "AVC").count() as u32;
             return Ok(LinuxAuditReport {
                 available: true,
                 source: "ausearch".into(),

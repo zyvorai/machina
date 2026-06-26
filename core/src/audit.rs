@@ -79,7 +79,9 @@ pub fn verify_audit_log(max_lines: usize) -> AuditVerifyReport {
             } else {
                 report.signed_invalid += 1;
                 if report.invalid_samples.len() < 20 {
-                    report.invalid_samples.push(line.chars().take(200).collect());
+                    report
+                        .invalid_samples
+                        .push(line.chars().take(200).collect());
                 }
             }
         } else {
@@ -241,5 +243,4 @@ mod tests {
         signed = signed.replace("vm.stop", "vm.start");
         assert!(!verify_signed_audit_line(&signed));
     }
-
 }

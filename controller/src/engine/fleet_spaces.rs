@@ -2,7 +2,7 @@
 // Fleet Stage Manager / workspace spaces rollup (Phase 47).
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::engine::enterprise_security;
 
@@ -27,13 +27,13 @@ pub struct FleetSpacesOverview {
     pub spaces: Vec<FleetSpaceItem>,
 }
 
-pub async fn overview(pool: &PgPool) -> anyhow::Result<FleetSpacesOverview> {
+pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetSpacesOverview> {
     let vm_rows: Vec<(String, i64, i64, i64, i64)> = sqlx::query_as(
         "SELECT COALESCE(NULLIF(project, ''), 'default') AS name,
-                COUNT(*)::bigint,
-                COUNT(*) FILTER (WHERE observed_state = 'running')::bigint,
-                COUNT(*) FILTER (WHERE observed_state IS DISTINCT FROM 'running')::bigint,
-                COUNT(DISTINCT host_id)::bigint
+                COUNT(*),
+                COUNT(*) FILTER (WHERE observed_state = 'running'),
+                COUNT(*) FILTER (WHERE observed_state IS DISTINCT FROM 'running'),
+                COUNT(DISTINCT host_id)
          FROM vms
          GROUP BY 1
          ORDER BY 2 DESC, 1",

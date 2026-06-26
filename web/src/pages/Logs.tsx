@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { getJournalBoots, getJournalLogs, JournalBootEntry, JournalEntry } from '../api/extras'
-import { RefreshCw, Search } from 'lucide-react'
+import { RefreshCw, Search, X } from 'lucide-react'
 import PageLayout from '../components/PageLayout'
 import { formatUserError } from '../utils/apiError'
 import { journalPriorityTone, statusSurfaceClasses, statusToneClass } from '../utils/semanticColors'
@@ -137,6 +137,7 @@ export default function LogsPage() {
         </button>
 
         <select
+          aria-label="Priority"
           value={priority}
           onChange={e => setPriority(e.target.value)}
           className="bg-slate-800/50 border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--machina-status-info)_50%,transparent)]"
@@ -151,25 +152,40 @@ export default function LogsPage() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
+            aria-label="Filter by unit"
             placeholder="Filter by unit (e.g. sshd, machina-daemon)"
             value={unit}
             onChange={e => setUnit(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--machina-status-info)_50%,transparent)]"
+            className={`w-full pl-10 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--machina-status-info)_50%,transparent)] ${unit ? 'pr-8' : 'pr-4'}`}
           />
+          {unit && (
+            <button type="button" aria-label="Clear unit filter" onClick={() => setUnit('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         <div className="relative flex-1 min-w-[220px] max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
           <input
             type="text"
+            aria-label="Search log messages"
             placeholder="Search log messages (like --grep)"
             value={grep}
             onChange={e => setGrep(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--machina-status-info)_50%,transparent)]"
+            className={`w-full pl-10 py-2 bg-slate-800/50 border border-slate-700/50 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--machina-status-info)_50%,transparent)] ${grep ? 'pr-8' : 'pr-4'}`}
           />
+          {grep && (
+            <button type="button" aria-label="Clear message filter" onClick={() => setGrep('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+              <X className="w-4 h-4" />
+            </button>
+          )}
         </div>
 
         <select
+          aria-label="Boot"
           value={boot}
           onChange={e => setBoot(e.target.value)}
           className="bg-slate-800/50 border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--machina-status-info)_50%,transparent)]"
@@ -186,6 +202,7 @@ export default function LogsPage() {
 
         <input
           type="text"
+          aria-label="Since"
           placeholder='Since (e.g. "1 hour ago" or 2026-04-20 10:00:00)'
           value={since}
           onChange={e => setSince(e.target.value)}
@@ -194,6 +211,7 @@ export default function LogsPage() {
 
         <input
           type="text"
+          aria-label="Until"
           placeholder='Until (e.g. "now" or 2026-04-27 13:00:00)'
           value={until}
           onChange={e => setUntil(e.target.value)}
@@ -202,6 +220,7 @@ export default function LogsPage() {
 
         <input
           type="number"
+          aria-label="UID filter"
           min={0}
           placeholder="UID"
           value={uid}
@@ -211,6 +230,7 @@ export default function LogsPage() {
 
         <input
           type="number"
+          aria-label="PID filter"
           min={0}
           placeholder="PID"
           value={pid}
@@ -219,6 +239,7 @@ export default function LogsPage() {
         />
 
         <select
+          aria-label="Line count"
           value={lineCount}
           onChange={e => setLineCount(Number(e.target.value))}
           className="bg-slate-800/50 border border-slate-700/50 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[color-mix(in_srgb,var(--machina-status-info)_50%,transparent)]"
@@ -264,7 +285,7 @@ export default function LogsPage() {
           {entries.length === 0 ? (
             <div className="text-center text-slate-500 py-12">No log entries found.</div>
           ) : (
-            <table className="w-full">
+            <table className="w-full" aria-label="System logs">
               <thead className="sticky top-0 bg-slate-800 z-10">
                 <tr className="border-b border-slate-700/50 text-slate-400 text-xs uppercase tracking-wider">
                   <th className="text-left px-3 py-2 whitespace-nowrap">Timestamp</th>
@@ -274,8 +295,8 @@ export default function LogsPage() {
                 </tr>
               </thead>
               <tbody>
-                {entries.map((entry, i) => (
-                  <tr key={i} className={`border-b border-slate-700/10 ${priorityBg(entry.priority)}`}>
+                {entries.map((entry) => (
+                  <tr key={`${entry.timestamp}-${entry.unit}`} className={`border-b border-slate-700/10 ${priorityBg(entry.priority)}`}>
                     <td className="px-3 py-1.5 text-slate-500 whitespace-nowrap">{entry.timestamp}</td>
                     <td className={`px-3 py-1.5 font-semibold ${priorityColor(entry.priority)}`}>{entry.priority}</td>
                     <td className={`px-3 py-1.5 whitespace-nowrap ${statusToneClass('info')}`}>{entry.unit}</td>

@@ -9,8 +9,9 @@ test('Security Center shows sensor matrix and fleet enroll CTA', async ({ page }
   await expect(page.getByRole('heading', { name: 'Security Center' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('Tetragon sensor matrix')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByText('host-1', { exact: true })).toBeVisible()
-  page.once('dialog', (d) => d.accept())
   await page.getByRole('button', { name: 'Enroll fleet Tetragon' }).click()
+  // ConfirmDialog (React modal) — click the "Enroll" confirm button
+  await page.getByRole('dialog').getByRole('button', { name: 'Enroll' }).click()
   await expect(page.getByText(/Tetragon enrollment queued/i)).toBeVisible({ timeout: 10_000 })
 })
 

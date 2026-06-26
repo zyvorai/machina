@@ -45,7 +45,7 @@ export default function MachinaMissionStack() {
   return (
     <MacGlassPanel title="AI Mission Control" subtitle="NL stack builder — GPU, Kubernetes, inference">
       <div className="flex flex-wrap gap-2">
-        <input className="input flex-1 text-sm min-w-[12rem]" value={query} onChange={(e) => setQuery(e.target.value)} />
+        <input aria-label="AI mission query" className="input flex-1 text-sm min-w-[12rem]" value={query} onChange={(e) => setQuery(e.target.value)} />
         <button type="button" className="btn-primary text-xs flex items-center gap-1" disabled={busy} onClick={() => void run()}>
           <Rocket className="w-3 h-3" /> Plan
         </button>

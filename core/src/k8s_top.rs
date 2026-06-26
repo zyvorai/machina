@@ -46,8 +46,7 @@ mod tests {
 
     #[test]
     fn parses_pod_line_with_namespace_in_name() {
-        let row =
-            parse_kubectl_top_line("kube-system/coredns-abc 2m 1% 15Mi 0%").unwrap();
+        let row = parse_kubectl_top_line("kube-system/coredns-abc 2m 1% 15Mi 0%").unwrap();
         assert_eq!(row.name, "kube-system/coredns-abc");
     }
 

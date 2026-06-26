@@ -2,7 +2,7 @@
 
 use std::time::Duration;
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -25,25 +25,34 @@ pub fn spawn(state: AppState) {
 }
 
 async fn run_auto_migrate(state: &AppState) -> anyhow::Result<()> {
-    let enabled: bool = sqlx::query_scalar(
-        "SELECT drs_auto_migrate FROM clusters ORDER BY created_at LIMIT 1",
-    )
-    .fetch_one(&state.pool)
-    .await?;
+    let Some(enabled): Option<bool> =
+        sqlx::query_scalar("SELECT drs_auto_migrate FROM clusters ORDER BY created_at LIMIT 1")
+            .fetch_optional(&state.pool)
+            .await?
+    else {
+        return Ok(());
+    };
 
     if !enabled {
         return Ok(());
     }
 
     let recs = crate::engine::placement::compute_recommendations(&state.pool).await?;
-    let _ = crate::engine::placement::persist_recommendations(&state.pool, &recs).await;
+    if let Err(e) = crate::engine::placement::persist_recommendations(&state.pool, &recs).await {
+        tracing::warn!("DRS: failed to persist placement recommendations: {e:#}");
+    }
 
     for rec in recs.into_iter().take(3) {
         if rec.score < 20.0 {
             continue;
         }
-        let vm_id = Uuid::parse_str(&rec.vm_id)?;
-        let dest_id = Uuid::parse_str(&rec.to_host_id)?;
+        let (vm_id, dest_id) = match (Uuid::parse_str(&rec.vm_id), Uuid::parse_str(&rec.to_host_id)) {
+            (Ok(v), Ok(d)) => (v, d),
+            _ => {
+                tracing::warn!(vm_id = %rec.vm_id, "DRS: malformed UUID in recommendation, skipping");
+                continue;
+            }
+        };
 
         let pre = crate::engine::migrate_precheck::run_migrate_precheck(
             &state.pool,
@@ -56,13 +65,13 @@ async fn run_auto_migrate(state: &AppState) -> anyhow::Result<()> {
             continue;
         }
 
-        let source_host: Option<Uuid> =
-            sqlx::query_scalar("SELECT host_id FROM vms WHERE id = $1")
-                .bind(vm_id)
-                .fetch_one(&state.pool)
-                .await?;
+        let source_host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            .bind(vm_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .flatten();
 
-        let _ = enqueue_task(
+        if let Err(e) = enqueue_task(
             state,
             "vm.migrate",
             serde_json::json!({
@@ -75,7 +84,10 @@ async fn run_auto_migrate(state: &AppState) -> anyhow::Result<()> {
             Some(vm_id),
             source_host,
         )
-        .await;
+        .await
+        {
+            tracing::warn!(vm_id = %rec.vm_id, "DRS: failed to enqueue vm.migrate task: {e:?}");
+        }
 
         state.emit_event(
             "drs.migrate",
@@ -85,82 +97,104 @@ async fn run_auto_migrate(state: &AppState) -> anyhow::Result<()> {
     Ok(())
 }
 
-pub async fn get_cluster_settings(pool: &PgPool) -> anyhow::Result<ClusterSettings> {
-    Ok(sqlx::query_as(
+pub async fn get_cluster_settings(pool: &SqlitePool) -> anyhow::Result<ClusterSettings> {
+    sqlx::query_as(
         "SELECT drs_auto_migrate, drs_cpu_threshold, ha_enabled, placement_policy,
                 inventory_sync_interval_secs, require_vm_delete_approval,
                 firewall_approval_sla_hours,
                 finops_vcpu_hour_usd, finops_gib_hour_usd
          FROM clusters ORDER BY created_at LIMIT 1",
     )
-    .fetch_one(pool)
-    .await?)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("no cluster configured — run machina-controller bootstrap"))
 }
 
-pub async fn get_inventory_sync_interval_secs(pool: &PgPool) -> anyhow::Result<i32> {
+pub async fn get_inventory_sync_interval_secs(pool: &SqlitePool) -> anyhow::Result<i32> {
     sqlx::query_scalar(
         "SELECT inventory_sync_interval_secs FROM clusters ORDER BY created_at LIMIT 1",
     )
-    .fetch_one(pool)
-    .await
-    .map_err(Into::into)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("no cluster configured — run machina-controller bootstrap"))
 }
 
-pub async fn update_cluster_settings(pool: &PgPool, settings: &ClusterSettingsPatch) -> anyhow::Result<()> {
+pub async fn update_cluster_settings(
+    pool: &SqlitePool,
+    settings: &ClusterSettingsPatch,
+) -> anyhow::Result<()> {
+    let cluster_id: Option<uuid::Uuid> =
+        sqlx::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
+            .fetch_optional(pool)
+            .await?;
+    let Some(cluster_id) = cluster_id else {
+        return Ok(());
+    };
+    let mut tx = pool.begin().await?;
     if let Some(v) = settings.drs_auto_migrate {
-        sqlx::query("UPDATE clusters SET drs_auto_migrate = $1")
+        sqlx::query("UPDATE clusters SET drs_auto_migrate = ? WHERE id = ?")
             .bind(v)
-            .execute(pool)
+            .bind(cluster_id)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.drs_cpu_threshold {
-        sqlx::query("UPDATE clusters SET drs_cpu_threshold = $1")
+        sqlx::query("UPDATE clusters SET drs_cpu_threshold = ? WHERE id = ?")
             .bind(v)
-            .execute(pool)
+            .bind(cluster_id)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.ha_enabled {
-        sqlx::query("UPDATE clusters SET ha_enabled = $1")
+        sqlx::query("UPDATE clusters SET ha_enabled = ? WHERE id = ?")
             .bind(v)
-            .execute(pool)
+            .bind(cluster_id)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &settings.placement_policy {
-        sqlx::query("UPDATE clusters SET placement_policy = $1")
+        sqlx::query("UPDATE clusters SET placement_policy = ? WHERE id = ?")
             .bind(v)
-            .execute(pool)
+            .bind(cluster_id)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.inventory_sync_interval_secs {
-        sqlx::query("UPDATE clusters SET inventory_sync_interval_secs = $1")
+        sqlx::query("UPDATE clusters SET inventory_sync_interval_secs = ? WHERE id = ?")
             .bind(v.clamp(0, 86400))
-            .execute(pool)
+            .bind(cluster_id)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.require_vm_delete_approval {
-        sqlx::query("UPDATE clusters SET require_vm_delete_approval = $1")
+        sqlx::query("UPDATE clusters SET require_vm_delete_approval = ? WHERE id = ?")
             .bind(v)
-            .execute(pool)
+            .bind(cluster_id)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.firewall_approval_sla_hours {
-        sqlx::query("UPDATE clusters SET firewall_approval_sla_hours = $1")
+        sqlx::query("UPDATE clusters SET firewall_approval_sla_hours = ? WHERE id = ?")
             .bind(v.clamp(1, 720))
-            .execute(pool)
+            .bind(cluster_id)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.finops_vcpu_hour_usd {
-        sqlx::query("UPDATE clusters SET finops_vcpu_hour_usd = $1")
+        sqlx::query("UPDATE clusters SET finops_vcpu_hour_usd = ? WHERE id = ?")
             .bind(v)
-            .execute(pool)
+            .bind(cluster_id)
+            .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.finops_gib_hour_usd {
-        sqlx::query("UPDATE clusters SET finops_gib_hour_usd = $1")
+        sqlx::query("UPDATE clusters SET finops_gib_hour_usd = ? WHERE id = ?")
             .bind(v)
-            .execute(pool)
+            .bind(cluster_id)
+            .execute(&mut *tx)
             .await?;
     }
+    tx.commit().await?;
     Ok(())
 }
 
@@ -193,14 +227,23 @@ pub struct ClusterSettingsPatch {
 pub async fn fence_host(state: &AppState, host_id: Uuid) -> anyhow::Result<bool> {
     let row: (String, String, String, String, String, String) = sqlx::query_as(
         "SELECT hostname, agent_grpc_addr, COALESCE(fence_method, 'shell'), COALESCE(ipmi_address, ''),
-                COALESCE(ipmi_username, ''), COALESCE(ipmi_password, '') FROM hosts WHERE id = $1",
+                COALESCE(ipmi_username, ''), COALESCE(ipmi_password, '') FROM hosts WHERE id = ?",
     )
     .bind(host_id)
-    .fetch_one(&state.pool)
-    .await?;
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| anyhow::anyhow!("host {} not found — may have been removed while HA was scanning", host_id))?;
 
     let shell_cmd = std::env::var("MACHINA_FENCE_COMMAND").unwrap_or_default();
-    let mut client = agent_client::connect(&row.1).await?;
+    let mut client = tokio::time::timeout(
+        std::time::Duration::from_secs(8),
+        agent_client::connect(&row.1),
+    )
+    .await
+    .map_err(|_| anyhow::anyhow!(
+        "agent on {} ({}) unreachable; configure IPMI fencing for reliable isolation of unresponsive hosts",
+        row.0, row.1
+    ))??;
     let resp = agent_client::fence_host(
         &mut client,
         &row.0,
@@ -214,11 +257,15 @@ pub async fn fence_host(state: &AppState, host_id: Uuid) -> anyhow::Result<bool>
 
     sqlx::query(
         "INSERT INTO fence_events (id, host_id, action, command, success, message)
-         VALUES ($1, $2, $3, $4, $5, $6)",
+         VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(Uuid::new_v4())
     .bind(host_id)
-    .bind(if row.2 == "ipmi" { "ipmi-fence" } else { "fence" })
+    .bind(if row.2 == "ipmi" {
+        "ipmi-fence"
+    } else {
+        "fence"
+    })
     .bind(if row.2 == "ipmi" {
         format!("ipmitool -H {} power off", row.3)
     } else {
@@ -230,7 +277,7 @@ pub async fn fence_host(state: &AppState, host_id: Uuid) -> anyhow::Result<bool>
     .await?;
 
     if resp.ok {
-        sqlx::query("UPDATE hosts SET fenced = TRUE WHERE id = $1")
+        sqlx::query("UPDATE hosts SET fenced = TRUE WHERE id = ?")
             .bind(host_id)
             .execute(&state.pool)
             .await?;

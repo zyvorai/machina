@@ -136,8 +136,8 @@ function NetworkSection({
             </div>
           ))}
           <div className="flex flex-wrap gap-2 mt-2">
-            <input className="input text-xs w-24" value={fwZone} onChange={(e) => setFwZone(e.target.value)} placeholder="zone" />
-            <input className="input text-xs w-28" value={fwService} onChange={(e) => setFwService(e.target.value)} placeholder="service" />
+            <input aria-label="Firewall zone" className="input text-xs w-24" value={fwZone} onChange={(e) => setFwZone(e.target.value)} placeholder="zone" />
+            <input aria-label="Firewall service" className="input text-xs w-28" value={fwService} onChange={(e) => setFwService(e.target.value)} placeholder="service" />
             <button type="button" className="btn-secondary text-xs" disabled={busy || !data.firewalld.running} onClick={() => void runAction('cockpit.firewalld.add_service', { zone: fwZone, service: fwService })}>
               Add service
             </button>
@@ -197,7 +197,7 @@ function SystemSection({
       )}
       {data.tuned.available && (
         <MacGlassPanel title="Tuned profile">
-          <select className="input text-xs w-full" value={profile} onChange={(e) => setProfile(e.target.value)}>
+          <select aria-label="Tuned profile" className="input text-xs w-full" value={profile} onChange={(e) => setProfile(e.target.value)}>
             {data.tuned.profiles.map((p) => (
               <option key={p} value={p}>{p}</option>
             ))}
@@ -221,8 +221,8 @@ function SystemSection({
       {data.journal_recent.length > 0 && (
         <MacGlassPanel title="Journal errors (1h)" subtitle={`${data.journal_errors_1h} total`}>
           <ul className="max-h-32 overflow-y-auto text-xs text-slate-500 space-y-1 font-mono">
-            {data.journal_recent.map((line, i) => (
-              <li key={i}>{line}</li>
+            {data.journal_recent.map((line) => (
+              <li key={line}>{line}</li>
             ))}
           </ul>
         </MacGlassPanel>

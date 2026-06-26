@@ -45,7 +45,9 @@ pub struct OpenStackRoleAssignment {
     pub user_name: Option<String>,
 }
 
-pub async fn list_identity_projects(cfg: &OpenStackConfig) -> Result<Vec<OpenStackProject>, LibvirtError> {
+pub async fn list_identity_projects(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackProject>, LibvirtError> {
     let session = connect_identity_session(cfg).await?;
     #[derive(Deserialize)]
     struct Resp {
@@ -83,7 +85,10 @@ pub async fn list_identity_projects(cfg: &OpenStackConfig) -> Result<Vec<OpenSta
     Ok(out)
 }
 
-pub async fn get_identity_project(cfg: &OpenStackConfig, id: &str) -> Result<OpenStackProject, LibvirtError> {
+pub async fn get_identity_project(
+    cfg: &OpenStackConfig,
+    id: &str,
+) -> Result<OpenStackProject, LibvirtError> {
     let pid = id.trim();
     if pid.is_empty() {
         return Err(LibvirtError::Invalid("project id is required".into()));
@@ -119,7 +124,9 @@ pub async fn get_identity_project(cfg: &OpenStackConfig, id: &str) -> Result<Ope
     })
 }
 
-pub async fn list_identity_users(cfg: &OpenStackConfig) -> Result<Vec<OpenStackIdentityUser>, LibvirtError> {
+pub async fn list_identity_users(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackIdentityUser>, LibvirtError> {
     let session = connect_identity_session(cfg).await?;
     #[derive(Deserialize)]
     struct Resp {
@@ -160,7 +167,10 @@ pub async fn list_identity_users(cfg: &OpenStackConfig) -> Result<Vec<OpenStackI
     Ok(out)
 }
 
-pub async fn get_identity_user(cfg: &OpenStackConfig, id: &str) -> Result<OpenStackIdentityUser, LibvirtError> {
+pub async fn get_identity_user(
+    cfg: &OpenStackConfig,
+    id: &str,
+) -> Result<OpenStackIdentityUser, LibvirtError> {
     let uid = id.trim();
     if uid.is_empty() {
         return Err(LibvirtError::Invalid("user id is required".into()));
@@ -199,7 +209,9 @@ pub async fn get_identity_user(cfg: &OpenStackConfig, id: &str) -> Result<OpenSt
     })
 }
 
-pub async fn list_identity_roles(cfg: &OpenStackConfig) -> Result<Vec<OpenStackRole>, LibvirtError> {
+pub async fn list_identity_roles(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackRole>, LibvirtError> {
     let session = connect_identity_session(cfg).await?;
     #[derive(Deserialize)]
     struct Resp {
@@ -219,7 +231,10 @@ pub async fn list_identity_roles(cfg: &OpenStackConfig) -> Result<Vec<OpenStackR
     let mut out: Vec<_> = body
         .roles
         .into_iter()
-        .map(|r| OpenStackRole { id: r.id, name: r.name })
+        .map(|r| OpenStackRole {
+            id: r.id,
+            name: r.name,
+        })
         .collect();
     out.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(out)
@@ -356,7 +371,9 @@ pub async fn create_identity_user(
 ) -> Result<OpenStackIdentityUser, LibvirtError> {
     let name = req.name.trim();
     if name.is_empty() || req.password.is_empty() {
-        return Err(LibvirtError::Invalid("user name and password are required".into()));
+        return Err(LibvirtError::Invalid(
+            "user name and password are required".into(),
+        ));
     }
     let session = connect_identity_session(cfg).await?;
     let mut user = serde_json::json!({
@@ -430,7 +447,9 @@ pub async fn update_identity_user(
         return Err(LibvirtError::Invalid("user id is required".into()));
     }
     if req.enabled.is_none() && req.email.is_none() {
-        return Err(LibvirtError::Invalid("at least one field to update is required".into()));
+        return Err(LibvirtError::Invalid(
+            "at least one field to update is required".into(),
+        ));
     }
     let session = connect_identity_session(cfg).await?;
     let mut user = serde_json::Map::new();
@@ -489,7 +508,9 @@ pub async fn grant_role_assignment(
     let uid = req.user_id.trim();
     let rid = req.role_id.trim();
     if pid.is_empty() || uid.is_empty() || rid.is_empty() {
-        return Err(LibvirtError::Invalid("project_id, user_id, and role_id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "project_id, user_id, and role_id are required".into(),
+        ));
     }
     let session = connect_identity_session(cfg).await?;
     session
@@ -508,7 +529,9 @@ pub async fn revoke_role_assignment(
     let uid = req.user_id.trim();
     let rid = req.role_id.trim();
     if pid.is_empty() || uid.is_empty() || rid.is_empty() {
-        return Err(LibvirtError::Invalid("project_id, user_id, and role_id are required".into()));
+        return Err(LibvirtError::Invalid(
+            "project_id, user_id, and role_id are required".into(),
+        ));
     }
     let session = connect_identity_session(cfg).await?;
     session

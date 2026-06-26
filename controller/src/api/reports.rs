@@ -1,10 +1,12 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::State;
+use axum::Extension;
 use axum::Json;
 use serde::Serialize;
 
 use crate::api::ApiError;
+use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize)]
@@ -37,7 +39,9 @@ pub struct FinOpsReport {
 
 pub async fn finops_report(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<FinOpsReport>, ApiError> {
+    require_operator(&actor)?;
     let rates: (f64, f64) = sqlx::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
@@ -51,7 +55,7 @@ pub async fn finops_report(
             .fetch_one(&state.pool)
             .await?;
     let totals: (i64, i64) = sqlx::query_as(
-        "SELECT COALESCE(SUM(vcpus), 0)::bigint, COALESCE(SUM(memory_mib), 0)::bigint FROM vms",
+        "SELECT COALESCE(SUM(vcpus), 0), COALESCE(SUM(memory_mib), 0) FROM vms",
     )
     .fetch_one(&state.pool)
     .await?;
@@ -70,11 +74,12 @@ pub async fn finops_report(
 
 pub async fn capacity_report(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<CapacityReport>, ApiError> {
-    let hosts_online: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
-            .fetch_one(&state.pool)
-            .await?;
+    require_operator(&actor)?;
+    let hosts_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+        .fetch_one(&state.pool)
+        .await?;
     let hosts_offline: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
             .fetch_one(&state.pool)
@@ -87,19 +92,17 @@ pub async fn capacity_report(
             .fetch_one(&state.pool)
             .await?;
     let mem: (i64, i64) = sqlx::query_as(
-        "SELECT COALESCE(SUM(memory_total_mib), 0)::bigint, COALESCE(SUM(memory_used_mib), 0)::bigint FROM hosts WHERE state = 'online'",
+        "SELECT COALESCE(SUM(memory_total_mib), 0), COALESCE(SUM(memory_used_mib), 0) FROM hosts WHERE state = 'online'",
     )
     .fetch_one(&state.pool)
     .await?;
     let avg_cpu: f32 = sqlx::query_scalar(
-        "SELECT COALESCE(AVG(cpu_percent)::double precision, 0)::real FROM hosts WHERE state = 'online'",
+        "SELECT COALESCE(AVG(cpu_percent), 0.0) FROM hosts WHERE state = 'online'",
     )
     .fetch_one(&state.pool)
     .await?;
 
-    let planner = crate::engine::ai::capacity::plan(&state.pool)
-        .await
-        .ok();
+    let planner = crate::engine::ai::capacity::plan(&state.pool).await.ok();
 
     Ok(Json(CapacityReport {
         hosts_online,
@@ -111,14 +114,18 @@ pub async fn capacity_report(
         memory_headroom_mib: mem.0.saturating_sub(mem.1),
         avg_cpu_percent: avg_cpu,
         storage_used_gib: planner.as_ref().map(|p| p.storage_used_gib).unwrap_or(0),
-        storage_capacity_gib: planner.as_ref().map(|p| p.storage_capacity_gib).unwrap_or(0),
+        storage_capacity_gib: planner
+            .as_ref()
+            .map(|p| p.storage_capacity_gib)
+            .unwrap_or(0),
         estimated_small_vms_addable: planner
             .as_ref()
             .map(|p| p.estimated_small_vms_addable)
             .unwrap_or(0),
-        forecast_30d_vms: planner.as_ref().map(|p| p.forecast_30d_vms).unwrap_or(total_vms),
-        planner_recommendations: planner
-            .map(|p| p.recommendations)
-            .unwrap_or_default(),
+        forecast_30d_vms: planner
+            .as_ref()
+            .map(|p| p.forecast_30d_vms)
+            .unwrap_or(total_vms),
+        planner_recommendations: planner.map(|p| p.recommendations).unwrap_or_default(),
     }))
 }

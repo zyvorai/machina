@@ -61,6 +61,40 @@ export async function pinLaunchpadApp(app: LaunchpadApp) {
   dispatchLaunchpadFavoritesChanged()
 }
 
+export async function shareLaunchpadApp(app: LaunchpadApp): Promise<void> {
+  const url = await launchpadOpenUrl(app)
+  const title = app.displayName
+  const text = app.description?.trim() || `${app.displayName} on Machina Launchpad`
+  if (typeof navigator.share === 'function') {
+    try {
+      await navigator.share({ title, text, url })
+      return
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === 'AbortError') return
+    }
+  }
+  await navigator.clipboard.writeText(url)
+}
+
+export async function openLaunchpadInWorkspace(app: LaunchpadApp): Promise<void> {
+  const route = app.routePath?.trim()
+  if (route.startsWith('/platform')) {
+    const { openCenterPopout } = await import('./platformCenterPopout')
+    openCenterPopout(route)
+    return
+  }
+  const url = await launchpadOpenUrl(app)
+  const width = Math.min(1280, window.screen.availWidth - 48)
+  const height = Math.min(860, window.screen.availHeight - 48)
+  const left = Math.max(0, Math.round((window.screen.availWidth - width) / 2))
+  const top = Math.max(0, Math.round((window.screen.availHeight - height) / 2))
+  window.open(
+    url,
+    `machina-launchpad-${app.id.replace(/\W+/g, '-')}`,
+    `popup=yes,width=${width},height=${height},left=${left},top=${top},menubar=no,toolbar=no,location=yes,status=no,resizable=yes,scrollbars=yes`,
+  )
+}
+
 export function launchpadDetailPath(app: LaunchpadApp): string {
   const slug = app.canonicalSlug || app.id.split('/').pop() || app.slug
   return `/platform/launchpad/apps/${encodeURIComponent(slug)}`

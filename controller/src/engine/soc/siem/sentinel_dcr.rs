@@ -1,13 +1,18 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde_json::json;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use super::{
-    fetch_unexported_events, integration_err, integration_ok, mark_exported, EventRow, IntegrationRow,
+    fetch_unexported_events, integration_err, integration_ok, mark_exported, EventRow,
+    IntegrationRow,
 };
 
-pub async fn forward(pool: &PgPool, integ: &IntegrationRow, controller_id: &str) -> anyhow::Result<usize> {
+pub async fn forward(
+    pool: &SqlitePool,
+    integ: &IntegrationRow,
+    controller_id: &str,
+) -> anyhow::Result<usize> {
     let dce = integ
         .config_json
         .get("dce_endpoint")
@@ -38,9 +43,15 @@ pub async fn forward(pool: &PgPool, integ: &IntegrationRow, controller_id: &str)
         .map(|ev| sentinel_record(ev, controller_id, stream))
         .collect();
 
-    let url = format!("{dce}/dataCollectionRules/{}/streams/{}?api-version=2023-01-01",
-        integ.config_json.get("dcr_immutable_id").and_then(|v| v.as_str()).unwrap_or("machina-soc"),
-        stream);
+    let url = format!(
+        "{dce}/dataCollectionRules/{}/streams/{}?api-version=2023-01-01",
+        integ
+            .config_json
+            .get("dcr_immutable_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("machina-soc"),
+        stream
+    );
 
     let res = client
         .post(&url)
@@ -79,15 +90,22 @@ async fn sentinel_token(config: &serde_json::Value) -> anyhow::Result<String> {
             return Ok(t.to_string());
         }
     }
-    let tenant = config.get("tenant_id").and_then(|v| v.as_str()).unwrap_or("");
-    let client_id = config.get("client_id").and_then(|v| v.as_str()).unwrap_or("");
-    let secret = config.get("client_secret").and_then(|v| v.as_str()).unwrap_or("");
+    let tenant = config
+        .get("tenant_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let client_id = config
+        .get("client_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let secret = config
+        .get("client_secret")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     if tenant.is_empty() || client_id.is_empty() || secret.is_empty() {
         anyhow::bail!("sentinel: configure bearer_token or tenant_id/client_id/client_secret");
     }
-    let url = format!(
-        "https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
-    );
+    let url = format!("https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token");
     let client = reqwest::Client::new();
     let res = client
         .post(&url)

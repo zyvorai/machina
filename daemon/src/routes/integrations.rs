@@ -6,8 +6,8 @@
 
 use axum::{routing::get, Json, Router};
 use machina_core::{
-    connection_status_skeleton, is_openstack_configured, libvirt::automation, MachinaConfig,
-    LibvirtManager,
+    connection_status_skeleton, is_openstack_configured, libvirt::automation, LibvirtManager,
+    MachinaConfig,
 };
 
 use crate::automation_worker;

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -53,7 +53,7 @@ pub struct MigrationReadinessReport {
 }
 
 pub async fn generate(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     req: &MigrationReadinessRequest,
 ) -> anyhow::Result<MigrationReadinessReport> {
@@ -68,12 +68,12 @@ pub async fn generate(
     };
 
     let provider = req.provider.as_deref().unwrap_or("vmware");
-    let meta: Vec<(Uuid, String, String)> = sqlx::query_as(
-        "SELECT id, name, observed_state FROM vms WHERE id = ANY($1::uuid[])",
-    )
-    .bind(&vm_ids)
-    .fetch_all(pool)
-    .await?;
+    let vm_ids_json = serde_json::to_string(&vm_ids.iter().map(|u| u.to_string()).collect::<Vec<_>>()).unwrap_or_default();
+    let meta: Vec<(Uuid, String, String)> =
+        sqlx::query_as("SELECT id, name, observed_state FROM vms WHERE id IN (SELECT value FROM json_each(?))")
+            .bind(&vm_ids_json)
+            .fetch_all(pool)
+            .await?;
 
     let mut running_ids = Vec::new();
     let mut stopped_ids = Vec::new();
@@ -90,11 +90,16 @@ pub async fn generate(
     let snapshots = guest_context::gather_fleet_snapshots(pool, cfg, running_ids, false).await;
     let mut rows = Vec::new();
     let mut all_remediation = Vec::new();
-    let name_by_id: std::collections::HashMap<Uuid, String> =
-        meta.iter().map(|(id, name, _)| (*id, name.clone())).collect();
+    let name_by_id: std::collections::HashMap<Uuid, String> = meta
+        .iter()
+        .map(|(id, name, _)| (*id, name.clone()))
+        .collect();
 
     for (id, res) in snapshots {
-        let vm_name = name_by_id.get(&id).cloned().unwrap_or_else(|| id.to_string());
+        let vm_name = name_by_id
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| id.to_string());
         let snap = match res {
             Ok(s) => s,
             Err(e) => {
@@ -106,7 +111,10 @@ pub async fn generate(
                     os_pretty_name: String::new(),
                     guest_ip: String::new(),
                     qga_gaps: vec![e],
-                    remediation: vec!["Start VM for live QGA inventory, or enable GuestKit for offline disk scan".into()],
+                    remediation: vec![
+                        "Start VM for live QGA inventory, or enable GuestKit for offline disk scan"
+                            .into(),
+                    ],
                     assurance_mode: None,
                     guestkit_summary: None,
                 });
@@ -119,16 +127,12 @@ pub async fn generate(
     }
 
     for id in stopped_ids {
-        let vm_name = name_by_id.get(&id).cloned().unwrap_or_else(|| id.to_string());
+        let vm_name = name_by_id
+            .get(&id)
+            .cloned()
+            .unwrap_or_else(|| id.to_string());
         if cfg.guestkit_enabled {
-            match guestkit_bridge::migrate_plan_vm(
-                cfg,
-                pool,
-                &cfg.disk_image_dir,
-                id,
-                "kvm",
-            )
-            .await
+            match guestkit_bridge::migrate_plan_vm(cfg, pool, &cfg.disk_image_dir, id, "kvm").await
             {
                 Ok(plan) => {
                     let doctor = guestkit_bridge::doctor_vm(
@@ -141,7 +145,8 @@ pub async fn generate(
                     )
                     .await
                     .ok();
-                    let (row, rem) = row_from_guestkit_offline(id, &vm_name, &plan, doctor.as_ref());
+                    let (row, rem) =
+                        row_from_guestkit_offline(id, &vm_name, &plan, doctor.as_ref());
                     all_remediation.extend(rem);
                     rows.push(row);
                 }
@@ -186,7 +191,8 @@ pub async fn generate(
     all_remediation.dedup();
     let prioritized_remediation: Vec<String> = all_remediation.into_iter().take(12).collect();
 
-    let executive_summary = if super::settings::llm_enabled(pool).await.unwrap_or(false) && !rows.is_empty()
+    let executive_summary = if super::settings::llm_enabled(pool).await.unwrap_or(false)
+        && !rows.is_empty()
     {
         let system = "Write a 3-5 sentence executive summary for a KVM migration readiness report. Mention QGA gaps and top remediation priorities.";
         let user = serde_json::to_string(&rows)?;
@@ -224,7 +230,10 @@ pub async fn generate(
     })
 }
 
-fn row_from_snapshot(s: &GuestAiSnapshot, _provider: &str) -> (VmMigrationReadinessRow, Vec<String>) {
+fn row_from_snapshot(
+    s: &GuestAiSnapshot,
+    _provider: &str,
+) -> (VmMigrationReadinessRow, Vec<String>) {
     let os_hint = if s.os_pretty_name.to_lowercase().contains("windows") {
         "windows"
     } else {
@@ -237,7 +246,8 @@ fn row_from_snapshot(s: &GuestAiSnapshot, _provider: &str) -> (VmMigrationReadin
 
     if !s.agent_ping {
         qga_gaps.push("guest agent not responding".into());
-        remediation.push("Install guestkit-agent and enable virtio channel (QGA-compatible)".into());
+        remediation
+            .push("Install guestkit-agent and enable virtio channel (QGA-compatible)".into());
         score -= 15;
     }
     if s.install_state == "channel_only" {
@@ -279,7 +289,8 @@ fn row_from_guestkit_offline(
     plan: &GuestkitMigratePlanReport,
     doctor: Option<&GuestkitDoctorReport>,
 ) -> (VmMigrationReadinessRow, Vec<String>) {
-    let mut qga_gaps = vec!["VM stopped — live QEMU guest-agent unavailable (GuestKit offline scan)".into()];
+    let mut qga_gaps =
+        vec!["VM stopped — live QEMU guest-agent unavailable (GuestKit offline scan)".into()];
     let mut remediation = plan.required_changes.clone();
     for w in &plan.licensing_warnings {
         remediation.push(format!("Licensing: {w}"));

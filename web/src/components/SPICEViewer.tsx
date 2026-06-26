@@ -102,7 +102,7 @@ export default function SPICEViewer({
           <span className="text-sm text-slate-300">SPICE — {vmName}</span>
           {port > 0 ? <span className="text-xs text-slate-500">port {port}</span> : null}
         </div>
-        <button onClick={() => setFullscreen(!fullscreen)} className="p-1.5 hover:bg-slate-700 rounded transition" title="Fullscreen">
+        <button onClick={() => setFullscreen(!fullscreen)} className="p-1.5 hover:bg-slate-700 rounded transition" title="Fullscreen" aria-label="Fullscreen">
           {fullscreen ? <Minimize className="w-4 h-4 text-slate-400" /> : <Maximize className="w-4 h-4 text-slate-400" />}
         </button>
       </div>

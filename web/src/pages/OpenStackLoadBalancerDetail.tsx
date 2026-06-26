@@ -138,9 +138,9 @@ function OpenStackLoadBalancerDetailContent() {
       <section className="rounded-xl border border-slate-700 p-4 space-y-3">
         <h2 className="text-sm font-medium text-slate-300">Listeners</h2>
         <div className="flex flex-wrap gap-2">
-          <input value={listenerName} onChange={(e) => setListenerName(e.target.value)} placeholder="Name"
+          <input aria-label="Listener name" value={listenerName} onChange={(e) => setListenerName(e.target.value)} placeholder="Name"
             className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm" />
-          <input value={listenerPort} onChange={(e) => setListenerPort(e.target.value)} placeholder="Port"
+          <input aria-label="Listener port" value={listenerPort} onChange={(e) => setListenerPort(e.target.value)} placeholder="Port"
             className="w-20 px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm" />
           <button type="button" className="px-2 py-1 rounded bg-emerald-700 text-white text-sm inline-flex items-center gap-1"
             onClick={async () => {
@@ -178,7 +178,7 @@ function OpenStackLoadBalancerDetailContent() {
         <div className="flex flex-wrap gap-2">
           <input value={poolName} onChange={(e) => setPoolName(e.target.value)} placeholder="Pool name"
             className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm" />
-          <select value={poolListenerId} onChange={(e) => setPoolListenerId(e.target.value)}
+          <select aria-label="Listener" value={poolListenerId} onChange={(e) => setPoolListenerId(e.target.value)}
             className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm">
             <option value="">Listener…</option>
             {listeners.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
@@ -252,14 +252,14 @@ function OpenStackLoadBalancerDetailContent() {
       <section className="rounded-xl border border-slate-700 p-4 space-y-3">
         <h2 className="text-sm font-medium text-slate-300">Add member / health monitor</h2>
         <div className="flex flex-wrap gap-2 items-center">
-          <select value={memberPoolId} onChange={(e) => setMemberPoolId(e.target.value)}
+          <select aria-label="Pool (add member)" value={memberPoolId} onChange={(e) => setMemberPoolId(e.target.value)}
             className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm">
             <option value="">Pool…</option>
             {pools.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <input value={memberAddress} onChange={(e) => setMemberAddress(e.target.value)} placeholder="Member IP"
+          <input aria-label="Member IP address" value={memberAddress} onChange={(e) => setMemberAddress(e.target.value)} placeholder="Member IP"
             className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm" />
-          <input value={memberPort} onChange={(e) => setMemberPort(e.target.value)} placeholder="Port"
+          <input aria-label="Member port" value={memberPort} onChange={(e) => setMemberPort(e.target.value)} placeholder="Port"
             className="w-20 px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm" />
           <button type="button" className="px-2 py-1 rounded bg-slate-700 text-sm" disabled={!memberPoolId}
             onClick={async () => {
@@ -275,7 +275,7 @@ function OpenStackLoadBalancerDetailContent() {
             }}>Add member</button>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
-          <select value={monitorPoolId} onChange={(e) => setMonitorPoolId(e.target.value)}
+          <select aria-label="Pool (health monitor)" value={monitorPoolId} onChange={(e) => setMonitorPoolId(e.target.value)}
             className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm">
             <option value="">Pool…</option>
             {pools.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}

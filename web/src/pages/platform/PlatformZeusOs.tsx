@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Link } from 'react-router'
 import { useToastContext } from '../../contexts/ToastContext'
 import { usePlatformDesktopTier } from '../../hooks/usePlatformDesktopTier'
@@ -85,6 +86,7 @@ export default function PlatformZeusOs() {
   const [capacitySummary, setCapacitySummary] = useState<string | null>(null)
   const [rebalancePreview, setRebalancePreview] = useState<string | null>(null)
   const [rebalanceExecuteBusy, setRebalanceExecuteBusy] = useState(false)
+  const [confirmRebalanceExecute, setConfirmRebalanceExecute] = useState(false)
   const [rebalanceTaskIds, setRebalanceTaskIds] = useState<string[]>([])
   const [frameworksSummary, setFrameworksSummary] = useState<string | null>(null)
   const [gpuSummary, setGpuSummary] = useState<string | null>(null)
@@ -110,18 +112,24 @@ export default function PlatformZeusOs() {
       const [h, r, gpu, power, linux, summary, local] = await Promise.all([
         getFleetHeatmap(),
         getFleetRebalanceProposal(),
-        getGpuPlacement('inference'),
-        getFleetPowerOptimize(),
+        getGpuPlacement('inference').catch(() => null),
+        getFleetPowerOptimize().catch(() => null),
         getFleetLinuxHealth().catch(() => null),
         getFleetSummary().catch(() => null),
         getFleetLocal().catch(() => null),
       ])
       setHeatmap(h)
       setRebalance(r)
-      setGpuSummary(gpu.summary)
-      setPowerSummary(power.summary)
+      setGpuSummary(gpu?.summary ?? null)
+      setPowerSummary(power?.summary ?? null)
       setLinuxHealth(linux)
-      setFleetSummaryLine([summary?.summary, local?.summary].filter(Boolean).join(' · ') || null)
+      const summaryStr = summary
+        ? `${summary.aggregate_vm_count} VMs · ${summary.reachable_peers}/${summary.peer_count} peers · $${summary.aggregate_monthly_usd.toFixed(0)}/mo`
+        : null
+      const localStr = local
+        ? `Local: ${local.vm_count} VMs · risk ${local.security_risk_level}`
+        : null
+      setFleetSummaryLine([summaryStr, localStr].filter(Boolean).join(' · ') || null)
     } catch (e: unknown) {
       setError(formatUserError(e))
     } finally {
@@ -139,7 +147,7 @@ export default function PlatformZeusOs() {
       setAttackSummary(path.summary)
       const fw = await getComplianceFrameworks()
       setFrameworksSummary(
-        fw.frameworks.map((f) => `${f.framework} ${f.grade} (${f.score})`).join(' · ') || fw.summary,
+        (fw.frameworks ?? []).map((f) => `${f.framework} ${f.grade} (${f.score})`).join(' · ') || fw.summary,
       )
       setSecurityLoaded(true)
     } catch (e: unknown) {
@@ -160,7 +168,7 @@ export default function PlatformZeusOs() {
         simulateServiceImpact('payments').catch(() => null),
       ])
       setServiceCount(sg.service_count)
-      setMemoryCount(mem.incidents.length)
+      setMemoryCount(mem.incidents?.length ?? 0)
       if (impact) setServiceImpact(impact.summary)
       setServicesLoaded(true)
     } catch (e: unknown) {
@@ -188,7 +196,7 @@ export default function PlatformZeusOs() {
     void getZeusSummary().then((z) => setZeusSummary(`${z.status} · ${z.highlights?.[0] ?? z.tagline}`)).catch(() => {})
     void getRemediateHub().then((h) => {
       setHubSummary(h.summary)
-      setHubItems(h.items.slice(0, 6))
+      setHubItems((h.items ?? []).slice(0, 6))
     }).catch(() => {})
   }, [])
 
@@ -199,6 +207,26 @@ export default function PlatformZeusOs() {
     if (tab === 'baremetal') void loadBaremetal()
   }, [tab, loadFleet, loadSecurity, loadServices, loadBaremetal])
 
+  const doExecuteRebalance = async () => {
+    setConfirmRebalanceExecute(false)
+    const n = rebalance?.moves.length ?? 0
+    setRebalanceExecuteBusy(true)
+    try {
+      const r = await executeFleetRebalance(false, n)
+      setRebalancePreview(r.summary)
+      setRebalanceTaskIds(r.task_ids ?? [])
+      if (r.task_ids?.length) {
+        toastQueuedOperation(toast, `Rebalance queued (${r.task_ids.length} moves)`, r.task_ids[0], tier)
+      } else {
+        toast.success(r.summary)
+      }
+    } catch (e: unknown) {
+      toast.error(formatUserError(e))
+    } finally {
+      setRebalanceExecuteBusy(false)
+    }
+  }
+
   const runKnowledge = async () => {
     try {
       const [r, diag, rb] = await Promise.all([
@@ -208,7 +236,7 @@ export default function PlatformZeusOs() {
       ])
       setKnowledgeHits(r.hits)
       setDiagnosisSummary(diag.hypotheses[0]?.title ?? diag.summary)
-      setRunbookSummary(`${rb.runbook_title}: ${rb.steps[0] ?? rb.summary}`)
+      setRunbookSummary(`${rb.runbook_title}: ${rb.steps?.[0] ?? rb.summary}`)
     } catch (e: unknown) {
       setError(formatUserError(e))
     }
@@ -292,9 +320,9 @@ export default function PlatformZeusOs() {
                 <Link to="/platform/activity" className={hubLinkClasses()}>Activity Monitor →</Link>
                 <Link to="/platform/maintenance?tab=mission" className={hubLinkClasses()}>Maintenance mission →</Link>
               </div>
-              {linuxHealth.hosts.length > 0 && (
+              {(linuxHealth.hosts ?? []).length > 0 && (
                 <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-xs mt-3">
-                  {linuxHealth.hosts.slice(0, 6).map((h) => (
+                  {(linuxHealth.hosts ?? []).slice(0, 6).map((h) => (
                     <Link key={h.host_id} to={`/platform/hosts/${h.host_id}?tab=linux`} className="rounded-lg border border-white/[0.06] p-2 hover:bg-slate-800/40">
                       <p className="font-medium text-slate-200">{h.hostname}</p>
                       <p className="text-slate-500">IO {h.io_pressure_pct.toFixed(0)}% · {h.status}</p>
@@ -306,7 +334,7 @@ export default function PlatformZeusOs() {
           )}
           <MacGlassPanel title="Fleet AI diagnose" subtitle="NL diagnosis across Zeus + Linux health">
             <div className="flex flex-wrap gap-2 mb-2">
-              <input className="input text-sm flex-1 min-w-[12rem]" value={fleetDiagnoseQuery} onChange={(e) => setFleetDiagnoseQuery(e.target.value)} />
+              <input aria-label="Fleet diagnose query" className="input text-sm flex-1 min-w-[12rem]" value={fleetDiagnoseQuery} onChange={(e) => setFleetDiagnoseQuery(e.target.value)} />
               <button
                 type="button"
                 className="btn-secondary text-xs"
@@ -319,7 +347,7 @@ export default function PlatformZeusOs() {
           </MacGlassPanel>
           <MacGlassPanel title="Fleet heat map" subtitle="Hot, cold, and power-waste hosts">
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 text-xs">
-              {heatmap.hosts.map((h) => (
+              {(heatmap.hosts ?? []).map((h) => (
                 <div key={h.host_id} className="rounded-lg border border-white/[0.06] p-2">
                   <p className="font-medium text-slate-200">{h.hostname}</p>
                   <p className="text-slate-500">CPU {h.cpu_percent.toFixed(0)}% · Mem {h.memory_percent.toFixed(0)}% · {h.classification}</p>
@@ -340,7 +368,7 @@ export default function PlatformZeusOs() {
           {rebalance && (
             <MacGlassPanel title="Autonomous rebalancer" subtitle={rebalance.summary}>
               <ul className="text-xs space-y-2 text-slate-400">
-                {rebalance.moves.map((m) => (
+                {(rebalance.moves ?? []).map((m) => (
                   <li key={m.vm_id}>{m.vm_name}: {m.from_host} → {m.to_host}</li>
                 ))}
               </ul>
@@ -355,30 +383,12 @@ export default function PlatformZeusOs() {
                 >
                   Preview execute
                 </button>
-                {rebalance.moves.length > 0 && (
+                {(rebalance.moves ?? []).length > 0 && (
                   <button
                     type="button"
                     className="btn-primary text-xs"
                     disabled={rebalanceExecuteBusy}
-                    onClick={async () => {
-                      const n = rebalance.moves.length
-                      if (!window.confirm(`Queue up to ${n} live migration${n === 1 ? '' : 's'}?`)) return
-                      setRebalanceExecuteBusy(true)
-                      try {
-                        const r = await executeFleetRebalance(false, n)
-                        setRebalancePreview(r.summary)
-                        setRebalanceTaskIds(r.task_ids ?? [])
-                        if (r.task_ids?.length) {
-                          toastQueuedOperation(toast, `Rebalance queued (${r.task_ids.length} moves)`, r.task_ids[0], tier)
-                        } else {
-                          toast.success(r.summary)
-                        }
-                      } catch (e: unknown) {
-                        toast.error(formatUserError(e))
-                      } finally {
-                        setRebalanceExecuteBusy(false)
-                      }
-                    }}
+                    onClick={() => setConfirmRebalanceExecute(true)}
                   >
                     {rebalanceExecuteBusy ? 'Queuing…' : 'Execute moves'}
                   </button>
@@ -432,7 +442,7 @@ export default function PlatformZeusOs() {
       {tab === 'knowledge' && (
         <MacGlassPanel title="Infrastructure knowledge engine" subtitle="Global search + NL diagnose">
           <div className="flex gap-2">
-            <input className="input flex-1 text-sm" value={knowledgeQuery} onChange={(e) => setKnowledgeQuery(e.target.value)} />
+            <input aria-label="Infrastructure knowledge search query" className="input flex-1 text-sm" value={knowledgeQuery} onChange={(e) => setKnowledgeQuery(e.target.value)} />
             <button type="button" className="btn-primary text-xs" onClick={() => void runKnowledge()}>Search</button>
           </div>
           {diagnosisSummary && <p className={`text-xs mt-2 ${statusToneClass('warn')}`}>Diagnosis: {diagnosisSummary}</p>}
@@ -460,11 +470,11 @@ export default function PlatformZeusOs() {
         <div className="space-y-4">
           <MacGlassPanel title="Bare metal servers" subtitle="Redfish / IPMI inventory + Zeus Firewall policy">
             <div className="flex flex-wrap gap-2 mb-3">
-              <input className="input text-sm" placeholder="hostname" value={bmcHost} onChange={(e) => setBmcHost(e.target.value)} />
-              <input className="input text-sm" placeholder="BMC address" value={bmcAddr} onChange={(e) => setBmcAddr(e.target.value)} />
-              <input className="input text-sm w-24" placeholder="BMC VLAN" value={bmcVlan} onChange={(e) => setBmcVlan(e.target.value)} />
-              <input className="input text-sm w-24" placeholder="PXE VLAN" value={pxeVlan} onChange={(e) => setPxeVlan(e.target.value)} />
-              <select className="input text-sm" value={metalProfile} onChange={(e) => setMetalProfile(e.target.value)}>
+              <input className="input text-sm" aria-label="Hostname" placeholder="hostname" value={bmcHost} onChange={(e) => setBmcHost(e.target.value)} />
+              <input className="input text-sm" aria-label="BMC address" placeholder="BMC address" value={bmcAddr} onChange={(e) => setBmcAddr(e.target.value)} />
+              <input className="input text-sm w-24" aria-label="BMC VLAN" placeholder="BMC VLAN" value={bmcVlan} onChange={(e) => setBmcVlan(e.target.value)} />
+              <input className="input text-sm w-24" aria-label="PXE VLAN" placeholder="PXE VLAN" value={pxeVlan} onChange={(e) => setPxeVlan(e.target.value)} />
+              <select className="input text-sm" aria-label="Bare metal profile" value={metalProfile} onChange={(e) => setMetalProfile(e.target.value)}>
                 <option value="BareMetalBmc">BareMetal BMC</option>
                 <option value="BareMetalPxe">BareMetal PXE</option>
                 <option value="BareMetalRedfish">BareMetal Redfish</option>
@@ -538,6 +548,15 @@ export default function PlatformZeusOs() {
           </MacGlassPanel>
         </div>
       )}
+      <ConfirmDialog
+        open={confirmRebalanceExecute}
+        title="Execute Fleet Rebalance"
+        message={`Queue up to ${rebalance?.moves.length ?? 0} live migration${(rebalance?.moves.length ?? 0) === 1 ? '' : 's'}? VMs will be live-migrated to more balanced hosts.`}
+        confirmLabel="Execute"
+        variant="warning"
+        onCancel={() => setConfirmRebalanceExecute(false)}
+        onConfirm={() => void doExecuteRebalance()}
+      />
     </PlatformPageChrome>
   )
 }

@@ -2,7 +2,7 @@
 // GPU Command Center rollup — host tags + VM inventory (Phase 54 v1).
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
@@ -75,7 +75,8 @@ fn tag_profile(tags: &[String]) -> GpuProfileKind {
         GpuProfileKind::Vgpu
     } else if joined.contains("cuda") {
         GpuProfileKind::Cuda
-    } else if joined.contains("gpu") || joined.contains("nvidia") || joined.contains("passthrough") {
+    } else if joined.contains("gpu") || joined.contains("nvidia") || joined.contains("passthrough")
+    {
         GpuProfileKind::Passthrough
     } else {
         GpuProfileKind::Unknown
@@ -98,7 +99,10 @@ fn model_hint(tags: &[String]) -> String {
     for t in tags {
         let tl = t.to_lowercase();
         if tl.starts_with("gpu:") || tl.starts_with("nvidia:") {
-            return t.split_once(':').map(|(_, m)| m.to_string()).unwrap_or_else(|| t.clone());
+            return t
+                .split_once(':')
+                .map(|(_, m)| m.to_string())
+                .unwrap_or_else(|| t.clone());
         }
         if tl.contains("a100") || tl.contains("h100") || tl.contains("l40") || tl.contains("rtx") {
             return t.clone();
@@ -126,17 +130,17 @@ fn vgpu_slices_from_tags(tags: &[String]) -> i32 {
     }
 }
 
-pub async fn overview(pool: &PgPool) -> anyhow::Result<FleetGpuOverview> {
-    let host_rows: Vec<(Uuid, String, String, String, String, i32, Vec<String>)> = sqlx::query_as(
+pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetGpuOverview> {
+    let host_rows: Vec<(Uuid, String, String, String, String, i32, sqlx::types::Json<Vec<String>>)> = sqlx::query_as(
         "SELECT id, hostname, state, COALESCE(site, ''), COALESCE(rack, ''), vm_count,
-                COALESCE(tags, '{}') AS tags
+                COALESCE(tags, '[]') AS tags
          FROM hosts ORDER BY hostname",
     )
     .fetch_all(pool)
     .await?;
 
-    let vm_rows: Vec<(Uuid, String, Option<Uuid>, String, Vec<String>)> = sqlx::query_as(
-        "SELECT id, name, host_id, observed_state, COALESCE(tags, '{}') AS tags FROM vms ORDER BY name",
+    let vm_rows: Vec<(Uuid, String, Option<Uuid>, String, sqlx::types::Json<Vec<String>>)> = sqlx::query_as(
+        "SELECT id, name, host_id, observed_state, COALESCE(tags, '[]') AS tags FROM vms ORDER BY name",
     )
     .fetch_all(pool)
     .await?;
@@ -148,7 +152,7 @@ pub async fn overview(pool: &PgPool) -> anyhow::Result<FleetGpuOverview> {
 
     let mut gpu_vms = Vec::new();
     for (vm_id, name, host_id, state, tags) in &vm_rows {
-        if !gpu_capable(tags) {
+        if !gpu_capable(&**tags) {
             continue;
         }
         gpu_vms.push(GpuVmItem {
@@ -157,8 +161,8 @@ pub async fn overview(pool: &PgPool) -> anyhow::Result<FleetGpuOverview> {
             host_id: host_id.map(|h| h.to_string()),
             hostname: host_id.and_then(|h| host_names.get(&h).cloned()),
             observed_state: state.clone(),
-            profile: tag_profile(tags),
-            tags: tags.clone(),
+            profile: tag_profile(&**tags),
+            tags: (**tags).clone(),
         });
     }
 
@@ -172,11 +176,11 @@ pub async fn overview(pool: &PgPool) -> anyhow::Result<FleetGpuOverview> {
 
     let mut hosts = Vec::new();
     for (id, hostname, state, site, rack, vm_count, tags) in host_rows {
-        let capable = gpu_capable(&tags);
+        let capable = gpu_capable(&*tags);
         if !capable {
             continue;
         }
-        let profile = tag_profile(&tags);
+        let profile = tag_profile(&*tags);
         let hid = id.to_string();
         let gpu_vm_count = gpu_vm_by_host.get(&hid).copied().unwrap_or(0);
         hosts.push(GpuHostItem {
@@ -187,19 +191,26 @@ pub async fn overview(pool: &PgPool) -> anyhow::Result<FleetGpuOverview> {
             state,
             gpu_capable: capable,
             profile: profile.clone(),
-            model_hint: model_hint(&tags),
+            model_hint: model_hint(&*tags),
             vm_count,
             gpu_vm_count,
-            vgpu_slices: vgpu_slices_from_tags(&tags),
-            cuda_ready: profile == GpuProfileKind::Cuda || tags.iter().any(|t| t.to_lowercase().contains("cuda")),
+            vgpu_slices: vgpu_slices_from_tags(&*tags),
+            cuda_ready: profile == GpuProfileKind::Cuda
+                || tags.iter().any(|t| t.to_lowercase().contains("cuda")),
         });
     }
 
     let gpu_host_count = hosts.len() as i64;
     let gpu_vm_count = gpu_vms.len() as i64;
     let cuda_ready_hosts = hosts.iter().filter(|h| h.cuda_ready).count() as i64;
-    let mig_hosts = hosts.iter().filter(|h| h.profile == GpuProfileKind::Mig).count() as i64;
-    let vgpu_hosts = hosts.iter().filter(|h| h.profile == GpuProfileKind::Vgpu).count() as i64;
+    let mig_hosts = hosts
+        .iter()
+        .filter(|h| h.profile == GpuProfileKind::Mig)
+        .count() as i64;
+    let vgpu_hosts = hosts
+        .iter()
+        .filter(|h| h.profile == GpuProfileKind::Vgpu)
+        .count() as i64;
 
     let mut profile_counts: std::collections::HashMap<GpuProfileKind, (i32, i32)> =
         std::collections::HashMap::new();

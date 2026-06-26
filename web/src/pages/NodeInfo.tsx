@@ -3,6 +3,7 @@
 // https://zyvor.dev · info@zyvor.dev
 
 import { useEffect, useState, useCallback } from 'react'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Link } from 'react-router'
 import { getNodeInfo, getHealth, NodeInfo, HealthStatus } from '../api/node'
 import {
@@ -106,7 +107,7 @@ function HostProcessTableBlock({
         </span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" aria-label="Running processes">
           <thead>
             <tr className="text-left text-slate-400 border-b border-slate-700/50">
               <th className="px-6 py-3 font-medium">PID</th>
@@ -192,8 +193,12 @@ export default function NodeInfoPage() {
   const [editingTimezone, setEditingTimezone] = useState(false)
   const [hostnameInput, setHostnameInput] = useState('')
   const [timezoneInput, setTimezoneInput] = useState('')
+  const [savingHostname, setSavingHostname] = useState(false)
+  const [savingTimezone, setSavingTimezone] = useState(false)
   const [sessionRole, setSessionRole] = useState<SessionRole | null>(null)
   const [killBusyPid, setKillBusyPid] = useState<number | null>(null)
+  const [pkgConfirmOp, setPkgConfirmOp] = useState<'upgrade' | 'autoremove' | 'remove' | null>(null)
+  const [killConfirm, setKillConfirm] = useState<{ process: HostProcess; signal: 'TERM' | 'KILL' } | null>(null)
   const [libvirtBoot, setLibvirtBoot] = useState<LibvirtBootStatus | null>(null)
   const [libvirtBootBusy, setLibvirtBootBusy] = useState(false)
   const [hardwareInventory, setHardwareInventory] = useState<HardwareInventoryReport | null>(null)
@@ -284,15 +289,12 @@ export default function NodeInfoPage() {
     return [...new Set(parts)]
   }
 
-  const runPackageUpgrade = useCallback(async () => {
+  const runPackageUpgrade = useCallback(() => {
     if (!pkgUpdates || pkgUpdates.backend === 'unknown') return
-    if (
-      !window.confirm(
-        'Run a full system package upgrade on this host? This uses your distro package manager (apt, dnf, …), can take a long time, and may restart services. Continue?',
-      )
-    ) {
-      return
-    }
+    setPkgConfirmOp('upgrade')
+  }, [pkgUpdates])
+
+  const doRunPackageUpgrade = useCallback(async () => {
     setPkgMutBusy(true)
     setPkgActionResult(null)
     try {
@@ -310,7 +312,7 @@ export default function NodeInfoPage() {
     } finally {
       setPkgMutBusy(false)
     }
-  }, [pkgUpdates, toast])
+  }, [toast])
 
   const runPackageUpgradeDryRun = useCallback(async () => {
     if (!pkgUpdates || pkgUpdates.backend === 'unknown') return
@@ -328,18 +330,15 @@ export default function NodeInfoPage() {
     }
   }, [pkgUpdates, toast])
 
-  const runPackageAutoremove = useCallback(async () => {
+  const runPackageAutoremove = useCallback(() => {
     if (!pkgUpdates || pkgUpdates.backend !== 'apt') {
       toast.error('Autoremove is only available when the package backend is apt.')
       return
     }
-    if (
-      !window.confirm(
-        'Run apt autoremove on this host? This removes packages that were installed only as dependencies and are no longer needed.',
-      )
-    ) {
-      return
-    }
+    setPkgConfirmOp('autoremove')
+  }, [pkgUpdates, toast])
+
+  const doRunPackageAutoremove = useCallback(async () => {
     setPkgMutBusy(true)
     setPkgActionResult(null)
     try {
@@ -357,7 +356,7 @@ export default function NodeInfoPage() {
     } finally {
       setPkgMutBusy(false)
     }
-  }, [pkgUpdates, toast])
+  }, [toast])
 
   const runPackageInstall = useCallback(async () => {
     if (!pkgUpdates || pkgUpdates.backend === 'unknown') return
@@ -385,20 +384,18 @@ export default function NodeInfoPage() {
     }
   }, [pkgInstallInput, pkgUpdates, toast])
 
-  const runPackageRemove = useCallback(async () => {
+  const runPackageRemove = useCallback(() => {
     if (!pkgUpdates || pkgUpdates.backend === 'unknown') return
     const pkgs = parsePackageList(pkgRemoveInput)
     if (pkgs.length === 0) {
       toast.error('Enter at least one package name to remove.')
       return
     }
-    if (
-      !window.confirm(
-        `Remove these packages from the host? This may break dependent software: ${pkgs.join(', ')}`,
-      )
-    ) {
-      return
-    }
+    setPkgConfirmOp('remove')
+  }, [pkgRemoveInput, pkgUpdates, toast])
+
+  const doRunPackageRemove = useCallback(async () => {
+    const pkgs = parsePackageList(pkgRemoveInput)
     setPkgMutBusy(true)
     setPkgActionResult(null)
     try {
@@ -416,7 +413,7 @@ export default function NodeInfoPage() {
     } finally {
       setPkgMutBusy(false)
     }
-  }, [pkgRemoveInput, pkgRemovePurge, pkgUpdates, toast])
+  }, [pkgRemoveInput, pkgRemovePurge, toast])
 
   const measureNetRates = useCallback(async () => {
     setNetRatesLoading(true)
@@ -431,13 +428,15 @@ export default function NodeInfoPage() {
   }, [rateSampleMs, toast])
 
   const killHostProcess = useCallback(
-    async (p: HostProcess, signal: 'TERM' | 'KILL') => {
+    (p: HostProcess, signal: 'TERM' | 'KILL') => {
       if (!canKillHostProcess) return
-      const warn =
-        signal === 'KILL'
-          ? `Force-kill PID ${p.pid} (${p.command}) with SIGKILL? The application cannot catch this signal.`
-          : `Send SIGTERM to PID ${p.pid} (${p.command})? The process should exit gracefully if it handles the signal.`
-      if (!window.confirm(warn)) return
+      setKillConfirm({ process: p, signal })
+    },
+    [canKillHostProcess],
+  )
+
+  const doKillHostProcess = useCallback(
+    async (p: HostProcess, signal: 'TERM' | 'KILL') => {
       setKillBusyPid(p.pid)
       try {
         await postHostKillProcess(p.pid, { signal })
@@ -460,7 +459,7 @@ export default function NodeInfoPage() {
         setKillBusyPid(null)
       }
     },
-    [canKillHostProcess, toast],
+    [toast],
   )
 
   const enableLibvirtBootUnit = useCallback(async () => {
@@ -611,16 +610,31 @@ export default function NodeInfoPage() {
               <div className="flex items-center gap-2">
                 <input
                   type="text"
+                  aria-label="Hostname"
                   value={hostnameInput}
                   onChange={e => setHostnameInput(e.target.value)}
                   className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--machina-status-info)]"
                   autoFocus
                 />
-                <button onClick={async () => {
-                  try { await setHostname(hostnameInput); load() } catch (e) { console.error(e) }
-                  setEditingHostname(false)
-                }} className={`p-1 rounded hover:bg-green-500/20 ${statusToneClass('ok')}`}><Check className="w-4 h-4" /></button>
-                <button onClick={() => setEditingHostname(false)} className={`p-1 rounded hover:bg-[color-mix(in_srgb,var(--machina-status-error)_25%,transparent)] ${statusToneClass('error')}`}><X className="w-4 h-4" /></button>
+                <button
+                  disabled={savingHostname}
+                  onClick={async () => {
+                    setSavingHostname(true)
+                    try {
+                      await setHostname(hostnameInput)
+                      toast.success('Hostname updated')
+                      setEditingHostname(false)
+                      load()
+                    } catch (e) {
+                      toast.error(formatUserError(e))
+                    } finally {
+                      setSavingHostname(false)
+                    }
+                  }}
+                  className={`p-1 rounded hover:bg-green-500/20 disabled:opacity-40 ${statusToneClass('ok')}`}
+                  aria-label="Save hostname"
+                ><Check className="w-4 h-4" /></button>
+                <button onClick={() => setEditingHostname(false)} className={`p-1 rounded hover:bg-[color-mix(in_srgb,var(--machina-status-error)_25%,transparent)] ${statusToneClass('error')}`} aria-label="Cancel"><X className="w-4 h-4" /></button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
@@ -637,17 +651,32 @@ export default function NodeInfoPage() {
               <div className="flex items-center gap-2">
                 <input
                   type="text"
+                  aria-label="Timezone"
                   value={timezoneInput}
                   onChange={e => setTimezoneInput(e.target.value)}
                   placeholder="e.g. America/New_York"
                   className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-[var(--machina-status-info)]"
                   autoFocus
                 />
-                <button onClick={async () => {
-                  try { await setTimezone(timezoneInput); load() } catch (e) { console.error(e) }
-                  setEditingTimezone(false)
-                }} className={`p-1 rounded hover:bg-green-500/20 ${statusToneClass('ok')}`}><Check className="w-4 h-4" /></button>
-                <button onClick={() => setEditingTimezone(false)} className={`p-1 rounded hover:bg-[color-mix(in_srgb,var(--machina-status-error)_25%,transparent)] ${statusToneClass('error')}`}><X className="w-4 h-4" /></button>
+                <button
+                  disabled={savingTimezone}
+                  onClick={async () => {
+                    setSavingTimezone(true)
+                    try {
+                      await setTimezone(timezoneInput)
+                      toast.success('Timezone updated')
+                      setEditingTimezone(false)
+                      load()
+                    } catch (e) {
+                      toast.error(formatUserError(e))
+                    } finally {
+                      setSavingTimezone(false)
+                    }
+                  }}
+                  className={`p-1 rounded hover:bg-green-500/20 disabled:opacity-40 ${statusToneClass('ok')}`}
+                  aria-label="Save timezone"
+                ><Check className="w-4 h-4" /></button>
+                <button onClick={() => setEditingTimezone(false)} className={`p-1 rounded hover:bg-[color-mix(in_srgb,var(--machina-status-error)_25%,transparent)] ${statusToneClass('error')}`} aria-label="Cancel"><X className="w-4 h-4" /></button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
@@ -926,8 +955,8 @@ export default function NodeInfoPage() {
 
           {hardwareInventory.consistency_notes.length > 0 && (
             <div className={`rounded-lg px-4 py-3 text-sm space-y-1 ${statusSurfaceClasses('warn')}`}>
-              {hardwareInventory.consistency_notes.map((note, i) => (
-                <p key={i}>{note}</p>
+              {hardwareInventory.consistency_notes.map((note) => (
+                <p key={note}>{note}</p>
               ))}
             </div>
           )}
@@ -994,7 +1023,7 @@ export default function NodeInfoPage() {
             <div>
               <h4 className="text-sm font-medium text-slate-300 mb-2">NUMA (sysfs)</h4>
               <div className="overflow-x-auto rounded-lg border border-slate-700/40">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm" aria-label="NUMA topology">
                   <thead>
                     <tr className="text-left text-slate-400 border-b border-slate-700/50">
                       <th className="px-4 py-2">Node</th>
@@ -1065,7 +1094,7 @@ export default function NodeInfoPage() {
             </p>
           ) : (
             <div className="overflow-x-auto rounded-lg border border-slate-700/40">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" aria-label="Hardware inventory history">
                 <thead>
                   <tr className="text-left text-slate-400 border-b border-slate-700/50">
                     <th className="px-4 py-2 whitespace-nowrap">Collected (UTC)</th>
@@ -1137,7 +1166,7 @@ export default function NodeInfoPage() {
             <span className="text-xs text-slate-500">Per mount from the hypervisor (same idea as Cockpit Storage)</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="Filesystem mounts">
               <thead>
                 <tr className="text-left text-slate-400 border-b border-slate-700/50">
                   <th className="px-6 py-3 font-medium">Mounted on</th>
@@ -1346,7 +1375,7 @@ export default function NodeInfoPage() {
             <div className="pt-2 border-t border-slate-700/50">
               <div className="text-slate-500 text-xs mb-2">Block devices (/proc/diskstats)</div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="w-full text-xs" aria-label="Block device I/O">
                   <thead>
                     <tr className="text-slate-400 text-left">
                       <th className="py-1 pr-3">Device</th>
@@ -1429,7 +1458,7 @@ export default function NodeInfoPage() {
           {(linuxObs.vm_cgroups?.length ?? 0) > 0 && (
             <div className="pt-2 border-t border-slate-700/50 text-sm overflow-x-auto">
               <div className="text-slate-500 text-xs mb-2">VM cgroups (machine-qemu)</div>
-              <table className="w-full text-xs">
+              <table className="w-full text-xs" aria-label="VM cgroups">
                 <thead>
                   <tr className="text-slate-500 text-left">
                     <th className="pr-3 pb-1">VM</th>
@@ -1485,7 +1514,7 @@ export default function NodeInfoPage() {
             <span className="text-xs text-slate-500">From /proc/net/dev — same counters on Ubuntu, Fedora, Arch, …</span>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="Network I/O counters">
               <thead>
                 <tr className="text-left text-slate-400 border-b border-slate-700/50">
                   <th className="px-6 py-3 font-medium">Interface</th>
@@ -1519,6 +1548,7 @@ export default function NodeInfoPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <select
+              aria-label="Throughput sample window"
               value={rateSampleMs}
               onChange={(e) => setRateSampleMs(Number(e.target.value))}
               disabled={netRatesLoading}
@@ -1543,7 +1573,7 @@ export default function NodeInfoPage() {
         {netRates && netRates.interfaces.length > 0 && (
           <div className="overflow-x-auto">
             <p className="text-xs text-slate-500 px-6 pt-3">Averaged over {netRates.sample_interval_ms} ms</p>
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="Network interface rates">
               <thead>
                 <tr className="text-left text-slate-400 border-b border-slate-700/50">
                   <th className="px-6 py-3 font-medium">Interface</th>
@@ -1585,7 +1615,7 @@ export default function NodeInfoPage() {
             </label>
           </div>
           <div className="overflow-x-auto max-h-80 overflow-y-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="System users">
               <thead className="sticky top-0 bg-slate-800 z-10">
                 <tr className="text-left text-slate-400 border-b border-slate-700/50">
                   <th className="px-6 py-3 font-medium">User</th>
@@ -1618,7 +1648,7 @@ export default function NodeInfoPage() {
             <p className="text-xs text-slate-500 mt-1">Truncated list from getent/file; large LDAP domains may be incomplete.</p>
           </div>
           <div className="overflow-x-auto max-h-72 overflow-y-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="System groups">
               <thead className="sticky top-0 bg-slate-800 z-10">
                 <tr className="text-left text-slate-400 border-b border-slate-700/50">
                   <th className="px-6 py-3 font-medium">Group</th>
@@ -1658,6 +1688,50 @@ export default function NodeInfoPage() {
       </div>
       </>
       )}
+      <ConfirmDialog
+        open={pkgConfirmOp === 'upgrade'}
+        title="Run system package upgrade"
+        message="Run a full system package upgrade on this host? This uses your distro package manager (apt, dnf, …), can take a long time, and may restart services."
+        confirmLabel="Upgrade"
+        variant="warning"
+        onCancel={() => setPkgConfirmOp(null)}
+        onConfirm={() => { setPkgConfirmOp(null); void doRunPackageUpgrade() }}
+      />
+      <ConfirmDialog
+        open={pkgConfirmOp === 'autoremove'}
+        title="Run apt autoremove"
+        message="Remove packages that were installed only as dependencies and are no longer needed?"
+        confirmLabel="Autoremove"
+        variant="warning"
+        onCancel={() => setPkgConfirmOp(null)}
+        onConfirm={() => { setPkgConfirmOp(null); void doRunPackageAutoremove() }}
+      />
+      <ConfirmDialog
+        open={pkgConfirmOp === 'remove'}
+        title="Remove packages"
+        message={`Remove these packages from the host? This may break dependent software: ${pkgRemoveInput}`}
+        confirmLabel={pkgRemovePurge ? 'Purge' : 'Remove'}
+        variant="danger"
+        onCancel={() => setPkgConfirmOp(null)}
+        onConfirm={() => { setPkgConfirmOp(null); void doRunPackageRemove() }}
+      />
+      <ConfirmDialog
+        open={killConfirm !== null}
+        title={killConfirm?.signal === 'KILL' ? 'Force-kill process' : 'Terminate process'}
+        message={
+          killConfirm?.signal === 'KILL'
+            ? `Force-kill PID ${killConfirm.process.pid} (${killConfirm.process.command}) with SIGKILL? The application cannot catch this signal.`
+            : `Send SIGTERM to PID ${killConfirm?.process.pid} (${killConfirm?.process.command})? The process should exit gracefully if it handles the signal.`
+        }
+        confirmLabel={killConfirm?.signal === 'KILL' ? 'Force kill' : 'Terminate'}
+        variant="danger"
+        onCancel={() => setKillConfirm(null)}
+        onConfirm={() => {
+          const k = killConfirm
+          setKillConfirm(null)
+          if (k) void doKillHostProcess(k.process, k.signal)
+        }}
+      />
     </PageLayout>
   )
 }

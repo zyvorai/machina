@@ -96,6 +96,7 @@ function OpenStackConsoleContent() {
           Remote console
         </h1>
         <select
+          aria-label="Console type"
           value={consoleType}
           onChange={(e) => setConsoleType(e.target.value as OpenStackConsoleType)}
           className="ml-auto px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm"

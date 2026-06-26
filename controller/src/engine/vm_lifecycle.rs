@@ -1,6 +1,6 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 pub const PHASE_IDLE: &str = "idle";
@@ -28,8 +28,8 @@ pub fn phase_for_operation(op: &str) -> &'static str {
     }
 }
 
-pub async fn set_vm_phase(pool: &PgPool, vm_id: Uuid, phase: &str) -> anyhow::Result<()> {
-    sqlx::query("UPDATE vms SET lifecycle_phase = $1, updated_at = NOW() WHERE id = $2")
+pub async fn set_vm_phase(pool: &SqlitePool, vm_id: Uuid, phase: &str) -> anyhow::Result<()> {
+    sqlx::query("UPDATE vms SET lifecycle_phase = ?, updated_at = datetime('now') WHERE id = ?")
         .bind(phase)
         .bind(vm_id)
         .execute(pool)
@@ -37,9 +37,13 @@ pub async fn set_vm_phase(pool: &PgPool, vm_id: Uuid, phase: &str) -> anyhow::Re
     Ok(())
 }
 
-pub async fn set_vm_phase_clear_error(pool: &PgPool, vm_id: Uuid, phase: &str) -> anyhow::Result<()> {
+pub async fn set_vm_phase_clear_error(
+    pool: &SqlitePool,
+    vm_id: Uuid,
+    phase: &str,
+) -> anyhow::Result<()> {
     sqlx::query(
-        "UPDATE vms SET lifecycle_phase = $1, last_error = '', updated_at = NOW() WHERE id = $2",
+        "UPDATE vms SET lifecycle_phase = ?, last_error = '', updated_at = datetime('now') WHERE id = ?",
     )
     .bind(phase)
     .bind(vm_id)
@@ -48,9 +52,9 @@ pub async fn set_vm_phase_clear_error(pool: &PgPool, vm_id: Uuid, phase: &str) -
     Ok(())
 }
 
-pub async fn set_vm_error(pool: &PgPool, vm_id: Uuid, message: &str) -> anyhow::Result<()> {
+pub async fn set_vm_error(pool: &SqlitePool, vm_id: Uuid, message: &str) -> anyhow::Result<()> {
     sqlx::query(
-        "UPDATE vms SET lifecycle_phase = $1, last_error = $2, updated_at = NOW() WHERE id = $3",
+        "UPDATE vms SET lifecycle_phase = ?, last_error = ?, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(PHASE_ERROR)
     .bind(message)
@@ -60,9 +64,9 @@ pub async fn set_vm_error(pool: &PgPool, vm_id: Uuid, message: &str) -> anyhow::
     Ok(())
 }
 
-pub async fn sync_phase_from_observed(pool: &PgPool, vm_id: Uuid) -> anyhow::Result<()> {
+pub async fn sync_phase_from_observed(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<()> {
     let row: Option<(String, String)> =
-        sqlx::query_as("SELECT desired_state, observed_state FROM vms WHERE id = $1")
+        sqlx::query_as("SELECT desired_state, observed_state FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(pool)
             .await?;

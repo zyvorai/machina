@@ -3,7 +3,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::auth::AuthUser;
 use crate::state::AppState;
@@ -38,7 +38,7 @@ pub fn spawn(state: AppState) {
     });
 }
 
-async fn get_autopilot_interval_secs(pool: &PgPool) -> anyhow::Result<i32> {
+async fn get_autopilot_interval_secs(pool: &SqlitePool) -> anyhow::Result<i32> {
     let v: i32 = sqlx::query_scalar(
         "SELECT ai_autopilot_interval_secs FROM clusters ORDER BY created_at LIMIT 1",
     )
@@ -47,7 +47,7 @@ async fn get_autopilot_interval_secs(pool: &PgPool) -> anyhow::Result<i32> {
     Ok(v)
 }
 
-async fn should_run(pool: &PgPool, interval_secs: i32) -> bool {
+async fn should_run(pool: &SqlitePool, interval_secs: i32) -> bool {
     let settings = match super::settings::get_ai_settings(pool).await {
         Ok(s) => s,
         Err(_) => return false,
@@ -57,7 +57,7 @@ async fn should_run(pool: &PgPool, interval_secs: i32) -> bool {
     }
 
     let last: Option<DateTime<Utc>> = sqlx::query_scalar(
-        "SELECT ai_autopilot_last_run FROM clusters ORDER BY created_at LIMIT 1",
+        "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', ai_autopilot_last_run) FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
     .await
@@ -88,7 +88,7 @@ async fn run_scheduled_batch(state: &AppState) {
                 result.executed_count,
                 result.skipped_count
             );
-            if let Err(e) = sqlx::query("UPDATE clusters SET ai_autopilot_last_run = NOW()")
+            if let Err(e) = sqlx::query("UPDATE clusters SET ai_autopilot_last_run = datetime('now')")
                 .execute(&state.pool)
                 .await
             {

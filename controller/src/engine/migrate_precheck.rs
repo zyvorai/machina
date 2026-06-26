@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -20,7 +20,7 @@ pub struct MigratePrecheckResult {
 }
 
 pub async fn run_migrate_precheck(
-    pool: &PgPool,
+    pool: &SqlitePool,
     vm_id: Uuid,
     dest_host_id: Uuid,
     live: bool,
@@ -28,7 +28,7 @@ pub async fn run_migrate_precheck(
     let mut checks = Vec::new();
 
     let vm_row: Option<(String, Option<Uuid>, i64, i32, String)> = sqlx::query_as(
-        "SELECT name, host_id, memory_mib, vcpus, desired_state FROM vms WHERE id = $1",
+        "SELECT name, host_id, memory_mib, vcpus, desired_state FROM vms WHERE id = ?",
     )
     .bind(vm_id)
     .fetch_optional(pool)
@@ -68,7 +68,7 @@ pub async fn run_migrate_precheck(
 
     let dest: Option<(String, String, bool, i64, i64, f32)> = sqlx::query_as(
         "SELECT hostname, state, maintenance_mode, memory_total_mib, memory_used_mib, cpu_percent
-         FROM hosts WHERE id = $1",
+         FROM hosts WHERE id = ?",
     )
     .bind(dest_host_id)
     .fetch_optional(pool)
@@ -90,7 +90,10 @@ pub async fn run_migrate_precheck(
             "Wait for host validation to pass or clear maintenance before migrating",
         ));
     } else {
-        checks.push(pass("dest_online", &format!("Host '{dest_name}' is online")));
+        checks.push(pass(
+            "dest_online",
+            &format!("Host '{dest_name}' is online"),
+        ));
     }
 
     if maint {
@@ -127,12 +130,11 @@ pub async fn run_migrate_precheck(
         checks.push(pass("dest_cpu", &format!("Destination CPU at {cpu:.0}%")));
     }
 
-    let dest_uri: Option<String> = sqlx::query_scalar(
-        "SELECT COALESCE(NULLIF(libvirt_uri, ''), '') FROM hosts WHERE id = $1",
-    )
-    .bind(dest_host_id)
-    .fetch_optional(pool)
-    .await?;
+    let dest_uri: Option<String> =
+        sqlx::query_scalar("SELECT COALESCE(NULLIF(libvirt_uri, ''), '') FROM hosts WHERE id = ?")
+            .bind(dest_host_id)
+            .fetch_optional(pool)
+            .await?;
 
     if dest_uri.as_deref().unwrap_or("").is_empty() {
         checks.push(fail(
@@ -161,11 +163,12 @@ pub async fn run_migrate_precheck(
     if let Ok((source_addr, dest_cpu, dest_lv)) =
         host_addrs_for_precheck(pool, source_host_id, dest_host_id).await
     {
-        let source_cpu: String = sqlx::query_scalar("SELECT COALESCE(cpu_model, '') FROM hosts WHERE id = $1")
-            .bind(source_host_id)
-            .fetch_one(pool)
-            .await
-            .unwrap_or_default();
+        let source_cpu: String =
+            sqlx::query_scalar("SELECT COALESCE(cpu_model, '') FROM hosts WHERE id = ?")
+                .bind(source_host_id)
+                .fetch_one(pool)
+                .await
+                .unwrap_or_default();
         let matrix: serde_json::Value = sqlx::query_scalar(
             "SELECT cpu_compat_matrix FROM clusters ORDER BY created_at LIMIT 1",
         )
@@ -212,16 +215,16 @@ pub async fn run_migrate_precheck(
 }
 
 async fn host_addrs_for_precheck(
-    pool: &PgPool,
+    pool: &SqlitePool,
     source_host_id: Uuid,
     dest_host_id: Uuid,
 ) -> anyhow::Result<(String, String, String)> {
-    let source: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = $1")
+    let source: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(source_host_id)
         .fetch_one(pool)
         .await?;
     let dest: (String, String) = sqlx::query_as(
-        "SELECT COALESCE(cpu_model, ''), COALESCE(libvirt_version, '') FROM hosts WHERE id = $1",
+        "SELECT COALESCE(cpu_model, ''), COALESCE(libvirt_version, '') FROM hosts WHERE id = ?",
     )
     .bind(dest_host_id)
     .fetch_one(pool)

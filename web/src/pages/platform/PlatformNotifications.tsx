@@ -134,9 +134,9 @@ export default function PlatformNotifications() {
       )}
       {runbook && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50" onClick={() => setRunbook(null)}>
-          <div className="max-w-lg w-full rounded-2xl bg-slate-900 border border-white/10 p-5" onClick={(e) => e.stopPropagation()}>
+          <div className="max-w-lg w-full rounded-2xl bg-slate-900 border border-white/10 p-5" role="dialog" aria-modal="true" aria-label={runbook.title} onClick={(e) => e.stopPropagation()}>
             <h3 className="font-semibold mb-2">{runbook.title}</h3>
-            <ol className="text-sm text-slate-300 space-y-2 list-decimal pl-5">{runbook.steps.map((s, i) => <li key={i}>{s}</li>)}</ol>
+            <ol className="text-sm text-slate-300 space-y-2 list-decimal pl-5">{runbook.steps.map((s) => <li key={s}>{s}</li>)}</ol>
             <button type="button" className="btn-secondary mt-4 w-full" onClick={() => setRunbook(null)}>Close</button>
           </div>
         </div>

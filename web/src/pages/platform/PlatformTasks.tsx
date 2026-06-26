@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router'
-import { ClipboardList } from 'lucide-react'
+import { ClipboardList, X } from 'lucide-react'
 import ExplainButton from '../../components/ai/ExplainButton'
 import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
@@ -160,7 +160,15 @@ export default function PlatformTasks() {
           { id: 'failed', label: 'Failed' },
         ]}
       />
-      <input className="input max-w-xs" placeholder="Filter by operation" value={opFilter} onChange={(e) => setOpFilter(e.target.value)} />
+      <div className="relative max-w-xs">
+        <input className={`input w-full ${opFilter ? 'pr-8' : 'pr-4'}`} aria-label="Filter by operation" placeholder="Filter by operation" value={opFilter} onChange={(e) => setOpFilter(e.target.value)} />
+        {opFilter && (
+          <button type="button" aria-label="Clear filter" onClick={() => setOpFilter('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200">
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
       {rows.length === 0 && !error ? (
         <PlatformEmptyState title="No tasks" subtitle="Operations like VM create, migrate, and backup appear here." />
       ) : (

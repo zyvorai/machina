@@ -8,7 +8,7 @@ use machina_core::{
     storage_profile_exposure_cost, ExposureRisk, OpenPort,
 };
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -84,7 +84,7 @@ pub struct ExposureFinOpsReport {
 }
 
 pub async fn exposure_rollup(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<ExposureFinOpsReport> {
     let ov = overview(pool, cfg).await?;
@@ -147,8 +147,7 @@ pub async fn exposure_rollup(
         .iter()
         .filter(|r| r.source == "0.0.0.0/0" || r.source == "::/0")
         .count();
-    let cloud_sg_monthly =
-        cloud_sg_monthly_cost(cloud_inv.security_groups.len(), public_rules);
+    let cloud_sg_monthly = cloud_sg_monthly_cost(cloud_inv.security_groups.len(), public_rules);
     let cloud_attribution = CloudSgAttribution {
         provider: cloud_inv.provider.as_str().into(),
         rule_count: cloud_inv.security_groups.len(),
@@ -186,14 +185,15 @@ pub async fn exposure_rollup(
     })
 }
 
-async fn resolve_team(pool: &PgPool, target_id: &str, kind: &str) -> String {
+async fn resolve_team(pool: &SqlitePool, target_id: &str, kind: &str) -> String {
     if kind == "bare_metal" {
         if let Ok(uid) = Uuid::parse_str(target_id) {
-            if let Ok(hostname) =
-                sqlx::query_scalar::<_, String>("SELECT hostname FROM baremetal_servers WHERE id = $1")
-                    .bind(uid)
-                    .fetch_optional(pool)
-                    .await
+            if let Ok(hostname) = sqlx::query_scalar::<_, String>(
+                "SELECT hostname FROM baremetal_servers WHERE id = ?",
+            )
+            .bind(uid)
+            .fetch_optional(pool)
+            .await
             {
                 if let Some(h) = hostname {
                     return format!("metal:{h}");
@@ -204,8 +204,8 @@ async fn resolve_team(pool: &PgPool, target_id: &str, kind: &str) -> String {
     }
     if let Ok(uid) = Uuid::parse_str(target_id) {
         if let Ok(tag) = sqlx::query_scalar::<_, Option<String>>(
-            "SELECT (SELECT t FROM unnest(tags) t WHERE t LIKE 'team:%' LIMIT 1)
-             FROM vms WHERE host_id = $1 LIMIT 1",
+            "SELECT (SELECT value FROM json_each(COALESCE(tags,'[]')) WHERE value LIKE 'team:%' LIMIT 1)
+             FROM vms WHERE host_id = ? LIMIT 1",
         )
         .bind(uid)
         .fetch_optional(pool)
@@ -219,10 +219,10 @@ async fn resolve_team(pool: &PgPool, target_id: &str, kind: &str) -> String {
     "platform".into()
 }
 
-pub async fn vm_idle_port_ranking(pool: &PgPool) -> anyhow::Result<Vec<VmIdlePortRow>> {
+pub async fn vm_idle_port_ranking(pool: &SqlitePool) -> anyhow::Result<Vec<VmIdlePortRow>> {
     let rows: Vec<(Uuid, String, Option<String>)> = sqlx::query_as(
         "SELECT id, name,
-                (SELECT t FROM unnest(tags) t WHERE t LIKE 'team:%' LIMIT 1) AS team_tag
+                (SELECT value FROM json_each(COALESCE(tags,'[]')) WHERE value LIKE 'team:%' LIMIT 1) AS team_tag
          FROM vms ORDER BY name",
     )
     .fetch_all(pool)
@@ -236,7 +236,7 @@ pub async fn vm_idle_port_ranking(pool: &PgPool) -> anyhow::Result<Vec<VmIdlePor
             .unwrap_or("unassigned")
             .to_string();
         let host: Option<(String,)> = sqlx::query_as(
-            "SELECT h.hostname FROM hosts h JOIN vms v ON v.host_id = h.id WHERE v.id = $1",
+            "SELECT h.hostname FROM hosts h JOIN vms v ON v.host_id = h.id WHERE v.id = ?",
         )
         .bind(vm_id)
         .fetch_optional(pool)
@@ -250,7 +250,9 @@ pub async fn vm_idle_port_ranking(pool: &PgPool) -> anyhow::Result<Vec<VmIdlePor
             .unwrap_or_default();
         let idle_ports: Vec<&OpenPort> = ports
             .iter()
-            .filter(|p| p.risk == ExposureRisk::Safe && machina_core::is_public_bind(&p.bind_address))
+            .filter(|p| {
+                p.risk == ExposureRisk::Safe && machina_core::is_public_bind(&p.bind_address)
+            })
             .collect();
         let waste: f64 = idle_ports.iter().map(|p| port_monthly_cost(p, true)).sum();
         if waste > 0.0 || !idle_ports.is_empty() {
@@ -320,7 +322,7 @@ fn synthetic_monthly_trend(current_exposure: f64, current_idle: f64) -> Vec<Expo
         .collect()
 }
 
-pub async fn export_csv(pool: &PgPool, cfg: &ControllerConfig) -> anyhow::Result<String> {
+pub async fn export_csv(pool: &SqlitePool, cfg: &ControllerConfig) -> anyhow::Result<String> {
     let report = exposure_rollup(pool, cfg).await?;
     let mut csv = String::from(
         "Machina Zeus Firewall Exposure Cost Export\n\
@@ -328,11 +330,19 @@ Metric,USD\n\
 Fleet exposure monthly,",
     );
     csv.push_str(&format!("{:.2}\n", report.fleet_exposure_monthly_usd));
-    csv.push_str(&format!("Idle port waste,{:.2}\n", report.idle_port_waste_usd));
+    csv.push_str(&format!(
+        "Idle port waste,{:.2}\n",
+        report.idle_port_waste_usd
+    ));
     csv.push_str(&format!("Cloud SG,{:.2}\n", report.cloud_sg_monthly_usd));
     csv.push_str(&format!("GPU exposure,{:.2}\n", report.gpu_exposure_usd));
-    csv.push_str(&format!("Storage exposure,{:.2}\n", report.storage_exposure_usd));
-    csv.push_str("\nTarget,Kind,Team,Open Ports,Critical,Exposure USD,Idle Waste USD,Chargeback Tag\n");
+    csv.push_str(&format!(
+        "Storage exposure,{:.2}\n",
+        report.storage_exposure_usd
+    ));
+    csv.push_str(
+        "\nTarget,Kind,Team,Open Ports,Critical,Exposure USD,Idle Waste USD,Chargeback Tag\n",
+    );
     for t in &report.targets {
         csv.push_str(&format!(
             "{},{},{},{},{},{:.2},{:.2},{}\n",
@@ -370,7 +380,7 @@ fn csv_escape(s: &str) -> String {
 
 /// Per-team exposure attribution rollup (AI-302).
 pub async fn team_exposure_attribution(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<Vec<(String, f64, f64)>> {
     let report = exposure_rollup(pool, cfg).await?;

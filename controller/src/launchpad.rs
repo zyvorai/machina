@@ -30,7 +30,9 @@ pub fn api_routes() -> Router<AppState> {
         .route("/api/v1/launchpad/{*path}", any(launchpad_proxy))
 }
 
-async fn launchpad_config(State(state): State<AppState>) -> Result<axum::Json<LaunchpadConfig>, ApiError> {
+async fn launchpad_config(
+    State(state): State<AppState>,
+) -> Result<axum::Json<LaunchpadConfig>, ApiError> {
     Ok(axum::Json(LaunchpadConfig {
         public_base: state.config.hermes_public_base.clone(),
         path_prefix: state.config.hermes_path_prefix.clone(),
@@ -53,7 +55,9 @@ async fn launchpad_proxy(
             status: StatusCode::SERVICE_UNAVAILABLE,
             message: "Launchpad is not configured (set HERMES_API_BASE)".into(),
             error_code: Some("launchpad_unavailable".into()),
-            remediation: Some("Install Hermes and set HERMES_API_BASE on machina-controller.".into()),
+            remediation: Some(
+                "Install Hermes and set HERMES_API_BASE on machina-controller.".into(),
+            ),
             object_ref: None,
         });
     }
@@ -100,19 +104,15 @@ async fn launchpad_proxy(
         rb = rb.body(body_bytes.to_vec());
     }
 
-    let resp = rb
-        .send()
-        .await
-        .map_err(|e| ApiError {
-            status: StatusCode::BAD_GATEWAY,
-            message: format!("Hermes proxy error: {e}"),
-            error_code: Some("hermes_proxy_error".into()),
-            remediation: None,
-            object_ref: None,
-        })?;
+    let resp = rb.send().await.map_err(|e| ApiError {
+        status: StatusCode::BAD_GATEWAY,
+        message: format!("Hermes proxy error: {e}"),
+        error_code: Some("hermes_proxy_error".into()),
+        remediation: None,
+        object_ref: None,
+    })?;
 
-    let status =
-        StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let mut out = HeaderMap::new();
     for (k, v) in resp.headers() {
         if k == header::TRANSFER_ENCODING || k == header::CONNECTION {
@@ -122,16 +122,13 @@ async fn launchpad_proxy(
             out.insert(k.clone(), val);
         }
     }
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| ApiError {
-            status: StatusCode::BAD_GATEWAY,
-            message: e.to_string(),
-            error_code: Some("hermes_proxy_error".into()),
-            remediation: None,
-            object_ref: None,
-        })?;
+    let bytes = resp.bytes().await.map_err(|e| ApiError {
+        status: StatusCode::BAD_GATEWAY,
+        message: e.to_string(),
+        error_code: Some("hermes_proxy_error".into()),
+        remediation: None,
+        object_ref: None,
+    })?;
 
     Ok((status, out, bytes).into_response())
 }

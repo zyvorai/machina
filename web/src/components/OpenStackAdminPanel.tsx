@@ -65,7 +65,11 @@ export default function OpenStackAdminPanel() {
   }, [load])
 
   if (loading) {
-    return <Loader2 className="w-6 h-6 animate-spin text-sky-400" />
+    return (
+      <div role="status" aria-label="Loading" className="flex justify-center py-4">
+        <Loader2 className="w-6 h-6 animate-spin text-sky-400" aria-hidden="true" />
+      </div>
+    )
   }
 
   const visibleServices = downOnly

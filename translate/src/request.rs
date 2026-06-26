@@ -16,7 +16,10 @@ pub struct TranslatedVmRequest {
     pub cloud_init_iso: String,
 }
 
-pub fn translate_vm(vm: &VirtualMachine, disk_path: &str) -> Result<TranslatedVmRequest, machina_spec::SpecError> {
+pub fn translate_vm(
+    vm: &VirtualMachine,
+    disk_path: &str,
+) -> Result<TranslatedVmRequest, machina_spec::SpecError> {
     vm.validate()?;
     let network = vm
         .spec

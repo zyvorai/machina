@@ -95,10 +95,10 @@ export default function FinderView({
     <div className="mac-finder flex flex-col -mx-1">
       <div className="mac-finder-toolbar tahoe-toolbar flex flex-wrap items-center gap-2 px-1 sm:px-2 py-2 mx-1 sm:mx-2 mt-2">
         <div className="flex items-center gap-1">
-          <button type="button" className="mac-finder-nav-btn" onClick={handleBack} title="Back">
+          <button type="button" className="mac-finder-nav-btn" onClick={handleBack} title="Back" aria-label="Back">
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <button type="button" className="mac-finder-nav-btn" onClick={handleForward} title="Forward">
+          <button type="button" className="mac-finder-nav-btn" onClick={handleForward} title="Forward" aria-label="Forward">
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>
@@ -114,6 +114,7 @@ export default function FinderView({
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-white/40" />
           <input
             type="search"
+            aria-label={searchPlaceholder || 'Search'}
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
             placeholder={searchPlaceholder}

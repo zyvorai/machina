@@ -149,7 +149,7 @@ export default function PlatformWelcome({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900/95 shadow-2xl overflow-hidden">
+      <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-slate-900/95 shadow-2xl overflow-hidden" role="dialog" aria-modal="true" aria-label="Welcome">
         <div className="flex items-start justify-between p-6 border-b border-white/[0.06]">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80 flex items-center gap-1">

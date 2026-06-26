@@ -26,7 +26,10 @@ struct VmSummaryRow {
     guest_ip: Option<String>,
 }
 
-fn service_matches_vm(selector: &serde_json::Map<String, serde_json::Value>, vm_name: &str) -> bool {
+fn service_matches_vm(
+    selector: &serde_json::Map<String, serde_json::Value>,
+    vm_name: &str,
+) -> bool {
     selector.values().any(|v| v.as_str() == Some(vm_name))
         || selector
             .get("kubevirt.io/domain")
@@ -39,7 +42,8 @@ fn service_matches_vm(selector: &serde_json::Map<String, serde_json::Value>, vm_
 }
 
 fn parse_target_port(v: &serde_json::Value) -> Option<u64> {
-    v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+    v.as_u64()
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
 }
 
 fn extract_ssh_node_port(svc: &serde_json::Value) -> Option<u16> {

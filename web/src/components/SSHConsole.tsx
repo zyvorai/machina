@@ -160,9 +160,9 @@ export default function SSHConsole({ host, sshUser = 'root', sshPort }: Props) {
           </span>
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={clear} className="p-1.5 hover:bg-slate-700 rounded transition" title="Clear"><Trash2 className="w-4 h-4 text-slate-400" /></button>
-          <button onClick={reconnect} className="p-1.5 hover:bg-slate-700 rounded transition" title="Reconnect"><RefreshCw className="w-4 h-4 text-slate-400" /></button>
-          <button onClick={() => setFullscreen(!fullscreen)} className="p-1.5 hover:bg-slate-700 rounded transition" title="Fullscreen">
+          <button onClick={clear} className="p-1.5 hover:bg-slate-700 rounded transition" title="Clear" aria-label="Clear"><Trash2 className="w-4 h-4 text-slate-400" /></button>
+          <button onClick={reconnect} className="p-1.5 hover:bg-slate-700 rounded transition" title="Reconnect" aria-label="Reconnect"><RefreshCw className="w-4 h-4 text-slate-400" /></button>
+          <button onClick={() => setFullscreen(!fullscreen)} className="p-1.5 hover:bg-slate-700 rounded transition" title="Fullscreen" aria-label="Fullscreen">
             {fullscreen ? <Minimize className="w-4 h-4 text-slate-400" /> : <Maximize className="w-4 h-4 text-slate-400" />}
           </button>
         </div>

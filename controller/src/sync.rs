@@ -36,12 +36,12 @@ pub fn spawn_periodic(state: AppState) {
 }
 
 async fn sync_all_hosts(state: &AppState) -> anyhow::Result<()> {
-    let host_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM hosts")
+    let host_ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM hosts LIMIT 200")
         .fetch_all(&state.pool)
         .await?;
 
     for host_id in host_ids {
-        let _ = enqueue_task(
+        if let Err(e) = enqueue_task(
             state,
             "host.inventory",
             serde_json::json!({ "host_id": host_id.to_string() }),
@@ -49,19 +49,23 @@ async fn sync_all_hosts(state: &AppState) -> anyhow::Result<()> {
             Some(host_id),
             Some(host_id),
         )
-        .await;
+        .await
+        {
+            tracing::warn!(host_id = %host_id, "host.inventory enqueue failed in sync: {}", e.message);
+        }
     }
     Ok(())
 }
 
 async fn sync_kubevirt_inventory(state: &AppState) -> anyhow::Result<()> {
-    let cluster_id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
-        .fetch_optional(&state.pool)
-        .await?;
+    let cluster_id: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
+            .fetch_optional(&state.pool)
+            .await?;
     let Some(cluster_id) = cluster_id else {
         return Ok(());
     };
-    let _ = enqueue_task(
+    if let Err(e) = enqueue_task(
         state,
         "kubevirt.inventory",
         serde_json::json!({ "cluster_id": cluster_id.to_string() }),
@@ -69,6 +73,9 @@ async fn sync_kubevirt_inventory(state: &AppState) -> anyhow::Result<()> {
         Some(cluster_id),
         None,
     )
-    .await;
+    .await
+    {
+        tracing::warn!(cluster_id = %cluster_id, "kubevirt.inventory enqueue failed in sync: {}", e.message);
+    }
     Ok(())
 }

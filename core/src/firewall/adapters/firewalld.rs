@@ -32,7 +32,8 @@ impl FirewallAdapter for FirewalldAdapter {
     fn read_rules(&self) -> Result<Vec<FirewallRule>, LibvirtError> {
         let mut rules = Vec::new();
         let list = run_cmd("firewall-cmd", &["--list-all"]).unwrap_or_default();
-        let zone = run_cmd("firewall-cmd", &["--get-default-zone"]).unwrap_or_else(|_| "public".into());
+        let zone =
+            run_cmd("firewall-cmd", &["--get-default-zone"]).unwrap_or_else(|_| "public".into());
         for line in list.lines() {
             let line = line.trim();
             if line.starts_with("services:") {

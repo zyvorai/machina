@@ -93,7 +93,7 @@ export default function LoginPage() {
   })()
 
   const [username, setUsername] = useState(saved?.username ?? '')
-  const [password, setPassword] = useState(saved?.password ? atob(saved.password) : '')
+  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
@@ -102,6 +102,7 @@ export default function LoginPage() {
     pam: { enabled: true },
     ldap: { enabled: false },
     oidc: { enabled: false, button_label: 'Sign in with SSO' },
+    saml: { enabled: false, button_label: 'Sign in with SAML', login_available: false },
   })
   const { t } = useTranslation()
   const { login } = useAuth()
@@ -115,8 +116,15 @@ export default function LoginPage() {
   useEffect(() => {
     void getAuthProviders().then(setProviders).catch(() => {})
     const params = new URLSearchParams(window.location.search)
-    if (params.get('error') === 'oidc') {
+    const errorParam = params.get('error')
+    if (errorParam === 'oidc') {
       setError('SSO login failed')
+    } else if (errorParam === 'token') {
+      setError('Sign-in link is invalid or expired')
+    } else if (errorParam === 'saml') {
+      setError('SAML authentication failed')
+    } else if (errorParam) {
+      setError('Authentication failed — please try again')
     }
   }, [])
 
@@ -133,7 +141,7 @@ export default function LoginPage() {
       if (rememberMe) {
         localStorage.setItem(
           'machina-saved-login',
-          JSON.stringify({ username: username.trim(), password: btoa(password) }),
+          JSON.stringify({ username: username.trim() }),
         )
       } else {
         localStorage.removeItem('machina-saved-login')
@@ -190,6 +198,12 @@ export default function LoginPage() {
           aria-label={t('login.title')}
         >
           {error ? <LoginError message={error} /> : null}
+
+          {providers.saml?.enabled && !providers.saml.login_available ? (
+            <p className="text-xs text-slate-500 mb-4" role="status">
+              SAML metadata is configured for IdP federation — browser SAML login coming soon.
+            </p>
+          ) : null}
 
           {oidcEnabled ? (
             <button type="button" onClick={() => beginOidcLogin()} className="login-btn-primary group w-full">

@@ -23,6 +23,7 @@ pub struct ConsoleProxyState {
 pub fn vnc_router(state: ConsoleProxyState) -> Router {
     Router::new()
         .route("/ws/vnc/{name}", get(vnc_ws))
+        .route("/ws/spice/{name}", get(spice_ws))
         .route("/ws/serial/{name}", get(serial_ws))
         .with_state(state)
 }
@@ -43,6 +44,15 @@ async fn serial_ws(
 ) -> impl IntoResponse {
     let libvirt = st.libvirt.clone();
     ws.on_upgrade(move |socket| handle_serial(socket, name, libvirt))
+}
+
+async fn spice_ws(
+    ws: WebSocketUpgrade,
+    State(st): State<ConsoleProxyState>,
+    Path(name): Path<String>,
+) -> impl IntoResponse {
+    let libvirt = st.libvirt.clone();
+    ws.on_upgrade(move |socket| handle_spice(socket, name, libvirt))
 }
 
 fn resolve_console_pty(xml: &str) -> Option<String> {
@@ -129,9 +139,11 @@ async fn handle_vnc(socket: WebSocket, name: String, libvirt: Arc<Mutex<LibvirtC
         }
     });
 
+    let read_abort = read_task.abort_handle();
+    let write_abort = write_task.abort_handle();
     tokio::select! {
-        _ = read_task => {},
-        _ = write_task => {},
+        _ = read_task => { write_abort.abort(); },
+        _ = write_task => { read_abort.abort(); },
     }
 }
 
@@ -154,7 +166,8 @@ async fn handle_serial(socket: WebSocket, name: String, libvirt: Arc<Mutex<Libvi
             let (mut sink, _) = socket.split();
             let _ = sink
                 .send(Message::Text(
-                    format!("\r\nNo console PTY found for VM '{display_name}'. Is it running?\r\n").into(),
+                    format!("\r\nNo console PTY found for VM '{display_name}'. Is it running?\r\n")
+                        .into(),
                 ))
                 .await;
             let _ = sink.close().await;
@@ -253,6 +266,109 @@ async fn handle_serial(socket: WebSocket, name: String, libvirt: Arc<Mutex<Libvi
     tokio::select! {
         _ = read_task => {},
         _ = write_task => {},
+    }
+}
+
+fn resolve_spice_endpoint(xml: &str) -> Option<(String, u16)> {
+    for block in machina_core::xml::split_blocks(xml, "graphics") {
+        if machina_core::xml::extract_attr(&block, "graphics", "type").as_deref() != Some("spice") {
+            continue;
+        }
+        let port: i32 = machina_core::xml::extract_attr(&block, "graphics", "port")
+            .and_then(|p| p.parse().ok())
+            .unwrap_or(0);
+        if port <= 0 {
+            continue;
+        }
+        let port = u16::try_from(port).ok()?;
+        let listen = machina_core::xml::extract_attr(&block, "graphics", "listen")
+            .or_else(|| machina_core::xml::extract_attr(&block, "listen", "address"))
+            .unwrap_or_default();
+        let host = match listen.trim() {
+            "" | "0.0.0.0" | "::" | "[::]" => "127.0.0.1".to_string(),
+            h => h.to_string(),
+        };
+        return Some((host, port));
+    }
+    None
+}
+
+async fn handle_spice(socket: WebSocket, name: String, libvirt: Arc<Mutex<LibvirtCtx>>) {
+    let endpoint = tokio::task::spawn_blocking(move || {
+        let ctx = libvirt
+            .lock()
+            .map_err(|e| machina_core::LibvirtError::Internal(e.to_string()))?;
+        let xml = ctx.get_domain_xml(&name)?;
+        resolve_spice_endpoint(&xml)
+            .ok_or_else(|| machina_core::LibvirtError::Operation(format!("no SPICE port for VM '{name}'")))
+    })
+    .await;
+
+    let (host, port) = match endpoint {
+        Ok(Ok(ep)) => ep,
+        _ => {
+            let (mut sink, _) = socket.split();
+            let _ = sink.close().await;
+            return;
+        }
+    };
+
+    let tcp = match tokio::net::TcpStream::connect(format!("{host}:{port}")).await {
+        Ok(s) => s,
+        Err(_) => {
+            let (mut sink, _) = socket.split();
+            let _ = sink.close().await;
+            return;
+        }
+    };
+    let _ = tcp.set_nodelay(true);
+
+    let (mut tcp_read, mut tcp_write) = tcp.into_split();
+    let (mut ws_sink, mut ws_stream) = socket.split();
+
+    let read_task = tokio::spawn(async move {
+        let mut buf = [0u8; 65536];
+        loop {
+            match tcp_read.read(&mut buf).await {
+                Ok(0) => break,
+                Ok(n) => {
+                    if ws_sink
+                        .send(Message::Binary(buf[..n].to_vec().into()))
+                        .await
+                        .is_err()
+                    {
+                        break;
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+
+    let write_task = tokio::spawn(async move {
+        while let Some(Ok(msg)) = ws_stream.next().await {
+            match msg {
+                Message::Binary(data) => {
+                    if tcp_write.write_all(&data).await.is_err() {
+                        break;
+                    }
+                }
+                Message::Text(text) => {
+                    if tcp_write.write_all(text.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+                Message::Close(_) => break,
+                _ => {}
+            }
+        }
+    });
+
+    let read_abort = read_task.abort_handle();
+    let write_abort = write_task.abort_handle();
+    tokio::select! {
+        _ = read_task => { write_abort.abort(); },
+        _ = write_task => { read_abort.abort(); },
     }
 }
 

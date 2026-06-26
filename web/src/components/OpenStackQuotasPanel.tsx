@@ -26,7 +26,7 @@ function QuotaTable({
     <div>
       <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">{title}</h3>
       <div className="overflow-x-auto rounded-lg border border-slate-800">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm" aria-label={title}>
           <thead className="bg-slate-900/80 text-slate-400 text-left">
             <tr>
               <th className="px-3 py-2">Resource</th>
@@ -46,7 +46,7 @@ function QuotaTable({
                 {onEdit && (
                   <td className="px-3 py-2">
                     {r.key && r.service && r.max >= 0 && (
-                      <button type="button" title="Edit limit" className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-sky-400"
+                      <button type="button" title="Edit limit" aria-label="Edit limit" className="p-1 rounded hover:bg-slate-800 text-slate-500 hover:text-sky-400"
                         onClick={() => onEdit(r)}>
                         <Pencil className="w-3.5 h-3.5" />
                       </button>
@@ -133,8 +133,8 @@ export default function OpenStackQuotasPanel({ compact }: Props) {
       </div>
       <p className="text-xs text-slate-500 mb-3">Requires admin role on the cloud. Click the pencil to edit a limit.</p>
       {loading && (
-        <div className="flex items-center gap-2 text-sm text-slate-500 py-4">
-          <Loader2 className="w-4 h-4 animate-spin text-sky-400" />
+        <div role="status" className="flex items-center gap-2 text-sm text-slate-500 py-4">
+          <Loader2 className="w-4 h-4 animate-spin text-sky-400" aria-hidden="true" />
           Loading quotas…
         </div>
       )}

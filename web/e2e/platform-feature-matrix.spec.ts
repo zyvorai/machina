@@ -112,6 +112,7 @@ test('F10 — Doctor tab deep-links GuestKit migrate plan', async ({ page }) => 
 })
 
 test('F11 — Cinema ConsoleHub shell, ops shelf, and serial recovery', async ({ page }) => {
+  test.setTimeout(60_000)
   await page.goto('/platform/vms/v1/consolehub?mode=studio')
   await expect(page.getByTestId('studio-layout')).toBeVisible({ timeout: 15_000 })
   await page.getByRole('button', { name: 'Serial' }).first().click()
@@ -214,4 +215,81 @@ test('F18 — Devices tab, CD-ROM inventory, and insert ISO', async ({ page }) =
   const body = req.postDataJSON() as { payload: { iso_path: string; target: string } }
   expect(body.payload.iso_path).toContain('.iso')
   expect(body.payload.target).toBeTruthy()
+})
+
+test('F18b — CD-ROM eject Linux VM sends cdrom.eject with correct target', async ({ page }) => {
+  await openMockVmDetail(page, 'disks')
+  await expect(page.getByTestId('cdrom-eject-sda')).toBeVisible({ timeout: 15_000 })
+  const ejectReq = page.waitForRequest((req) => {
+    if (req.method() !== 'POST' || !req.url().includes('/libvirt')) return false
+    try {
+      const body = req.postDataJSON() as { action?: string; payload?: { target?: string } }
+      return body.action === 'cdrom.eject'
+    } catch { return false }
+  })
+  await page.getByTestId('cdrom-eject-sda').click()
+  const req = await ejectReq
+  const body = req.postDataJSON() as { payload: { target: string } }
+  expect(body.payload.target).toBe('sda')
+})
+
+test('F19 — Windows VM CD-ROM insert and eject', async ({ page }) => {
+  // override libvirt-details to return a Windows VM with a Windows ISO on sdb
+  await page.route('**/api/v1/vms/*/libvirt-details', async (route) => {
+    await route.fulfill({
+      json: {
+        name: 'win-server-2022',
+        uuid: '00000000-0000-4000-8000-000000000002',
+        state: 'running',
+        vcpus: 4,
+        memory_mb: 8192,
+        os_type: 'hvm',
+        arch: 'x86_64',
+        autostart: true,
+        persistent: true,
+        interfaces: [{ mac_address: '52:54:00:ab:cd:ef', ip: '192.168.122.51', source: 'default', model: 'e1000e' }],
+        disks: [
+          { target: 'vda', device: 'disk', source: '/var/lib/libvirt/images/win-server-2022.qcow2', bus: 'virtio' },
+          { target: 'sdb', device: 'cdrom', source: '/var/lib/libvirt/images/windows-server-2022.iso', bus: 'sata' },
+        ],
+        filesystems: [],
+      },
+    })
+  })
+
+  await openMockVmDetail(page, 'disks')
+  await expect(page.getByTestId('vm-disks-panel')).toBeVisible({ timeout: 15_000 })
+
+  // Windows ISO shows in disk inventory with eject button on target sdb
+  await expect(page.getByTestId('cdrom-eject-sdb')).toBeVisible()
+  await expect(page.getByText('windows-server-2022.iso')).toBeVisible()
+
+  // Eject: verify cdrom.eject POST with target sdb
+  const ejectReq = page.waitForRequest((req) => {
+    if (req.method() !== 'POST' || !req.url().includes('/libvirt')) return false
+    try {
+      const b = req.postDataJSON() as { action?: string; payload?: { target?: string } }
+      return b.action === 'cdrom.eject' && b.payload?.target === 'sdb'
+    } catch { return false }
+  })
+  await page.getByTestId('cdrom-eject-sdb').click()
+  await ejectReq
+
+  // Insert panel is visible; select sdb from the CD-ROM target dropdown
+  await expect(page.getByTestId('vm-insert-iso-panel')).toBeVisible()
+  await page.getByLabel('CD-ROM target').selectOption('sdb')
+
+  // Type a Windows ISO path and submit
+  await page.getByRole('textbox', { name: 'ISO path' }).fill('/var/lib/libvirt/images/windows-server-2022.iso')
+  const insertReq = page.waitForRequest((req) => {
+    if (req.method() !== 'POST' || !req.url().includes('/libvirt')) return false
+    try {
+      const b = req.postDataJSON() as { action?: string; payload?: { iso_path?: string; target?: string } }
+      return b.action === 'cdrom.insert' && (b.payload?.iso_path ?? '').includes('windows')
+    } catch { return false }
+  })
+  await page.getByTestId('vm-insert-iso-submit').click()
+  const insertBody = (await insertReq).postDataJSON() as { payload: { iso_path: string; target: string } }
+  expect(insertBody.payload.iso_path).toContain('windows')
+  expect(insertBody.payload.target).toBe('sdb')
 })

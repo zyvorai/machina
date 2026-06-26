@@ -149,7 +149,10 @@ pub async fn delete_image_member(
 ) -> Result<(), LibvirtError> {
     let session = connect_session(cfg).await?;
     session
-        .delete(IMAGE, &["images", image_id.trim(), "members", member_id.trim()])
+        .delete(
+            IMAGE,
+            &["images", image_id.trim(), "members", member_id.trim()],
+        )
         .send()
         .await
         .map_err(map_osauth_err)?;

@@ -36,7 +36,9 @@ pub struct NetworkTopologyGraph {
     pub edges: Vec<TopologyEdge>,
 }
 
-pub async fn build_network_topology(cfg: &OpenStackConfig) -> Result<NetworkTopologyGraph, LibvirtError> {
+pub async fn build_network_topology(
+    cfg: &OpenStackConfig,
+) -> Result<NetworkTopologyGraph, LibvirtError> {
     let (networks, subnets, routers, ports, fips) = tokio::try_join!(
         list_networks(cfg),
         list_subnets(cfg),

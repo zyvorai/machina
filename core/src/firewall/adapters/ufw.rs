@@ -36,13 +36,7 @@ impl FirewallAdapter for UfwAdapter {
             default_inbound,
             default_outbound,
             backend_zone: None,
-            status_line: Some(
-                status
-                    .lines()
-                    .next()
-                    .unwrap_or("ufw unknown")
-                    .to_string(),
-            ),
+            status_line: Some(status.lines().next().unwrap_or("ufw unknown").to_string()),
             drift_detected: false,
             last_changed: None,
         })

@@ -234,10 +234,7 @@ pub fn run_guest_agent_action(
             Ok(GuestAgentActionResult {
                 action: "sync_time".into(),
                 ok: true,
-                message: format!(
-                    "Guest time synced (delta was {} ms)",
-                    time.delta_ms
-                ),
+                message: format!("Guest time synced (delta was {} ms)", time.delta_ms),
                 time: Some(time),
                 fs_freeze: None,
                 fstrim: Vec::new(),

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use super::providers::{self, ResolvedProvider};
@@ -51,7 +51,10 @@ pub struct RoutingRequest {
     pub user_id: Option<String>,
 }
 
-pub async fn resolve(pool: &PgPool, req: &RoutingRequest) -> anyhow::Result<Option<ResolvedProvider>> {
+pub async fn resolve(
+    pool: &SqlitePool,
+    req: &RoutingRequest,
+) -> anyhow::Result<Option<ResolvedProvider>> {
     let air_gap: bool = sqlx::query_scalar(
         "SELECT COALESCE(zeus_air_gap_llm, FALSE) FROM clusters ORDER BY created_at LIMIT 1",
     )
@@ -61,7 +64,7 @@ pub async fn resolve(pool: &PgPool, req: &RoutingRequest) -> anyhow::Result<Opti
 
     let task_key = req.task_class.as_db_key();
     let rule: Option<(Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
-        "SELECT provider_id, model_id FROM ai_routing_rules WHERE task_class = $1 AND enabled = TRUE",
+        "SELECT provider_id, model_id FROM ai_routing_rules WHERE task_class = ? AND enabled = TRUE",
     )
     .bind(task_key)
     .fetch_optional(pool)
@@ -69,7 +72,7 @@ pub async fn resolve(pool: &PgPool, req: &RoutingRequest) -> anyhow::Result<Opti
 
     let mut resolved = if let Some((Some(pid), model_uuid)) = rule {
         let model_id = if let Some(mid) = model_uuid {
-            sqlx::query_scalar::<_, String>("SELECT model_id FROM ai_models WHERE id = $1")
+            sqlx::query_scalar::<_, String>("SELECT model_id FROM ai_models WHERE id = ?")
                 .bind(mid)
                 .fetch_optional(pool)
                 .await?
@@ -110,7 +113,7 @@ pub struct RoutingRuleRow {
     pub enabled: bool,
 }
 
-pub async fn list_rules(pool: &PgPool) -> anyhow::Result<Vec<RoutingRuleRow>> {
+pub async fn list_rules(pool: &SqlitePool) -> anyhow::Result<Vec<RoutingRuleRow>> {
     let rows: Vec<(String, Option<Uuid>, Option<Uuid>, bool)> = sqlx::query_as(
         "SELECT task_class, provider_id, model_id, enabled FROM ai_routing_rules ORDER BY priority",
     )
@@ -118,12 +121,14 @@ pub async fn list_rules(pool: &PgPool) -> anyhow::Result<Vec<RoutingRuleRow>> {
     .await?;
     Ok(rows
         .into_iter()
-        .map(|(task_class, provider_id, model_id, enabled)| RoutingRuleRow {
-            task_class,
-            provider_id,
-            model_id,
-            enabled,
-        })
+        .map(
+            |(task_class, provider_id, model_id, enabled)| RoutingRuleRow {
+                task_class,
+                provider_id,
+                model_id,
+                enabled,
+            },
+        )
         .collect())
 }
 
@@ -135,19 +140,19 @@ pub struct PatchRoutingRuleBody {
 }
 
 pub async fn patch_rule(
-    pool: &PgPool,
+    pool: &SqlitePool,
     task_class: &str,
     body: &PatchRoutingRuleBody,
 ) -> anyhow::Result<RoutingRuleRow> {
     let row: (String, Option<Uuid>, Option<Uuid>, bool) = sqlx::query_as(
-        "INSERT INTO ai_routing_rules (task_class, provider_id, model_id, enabled)
-         VALUES ($1, $2, $3, $4)
+        "INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, enabled) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (task_class) DO UPDATE SET
             provider_id = EXCLUDED.provider_id,
             model_id = EXCLUDED.model_id,
             enabled = EXCLUDED.enabled
          RETURNING task_class, provider_id, model_id, enabled",
     )
+    .bind(uuid::Uuid::new_v4())
     .bind(task_class)
     .bind(body.provider_id)
     .bind(body.model_id)

@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -36,19 +36,19 @@ pub struct ReviewBody {
 }
 
 pub async fn request_approval(
-    pool: &PgPool,
+    pool: &SqlitePool,
     body: ApprovalRequest,
     actor: &str,
 ) -> anyhow::Result<FirewallApproval> {
     let target_id = Uuid::parse_str(&body.target_id)?;
     let id = Uuid::new_v4();
-    let plan_json = body.plan_json.unwrap_or_else(|| {
-        serde_json::json!({ "profile": body.profile, "dry_run": true })
-    });
+    let plan_json = body
+        .plan_json
+        .unwrap_or_else(|| serde_json::json!({ "profile": body.profile, "dry_run": true }));
 
     sqlx::query(
         "INSERT INTO firewall_approvals (id, target_kind, target_id, profile, plan_json, requested_by)
-         VALUES ($1, 'host', $2, $3, $4, $5)",
+         VALUES (?, 'host', ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(target_id)
@@ -59,9 +59,9 @@ pub async fn request_approval(
     .await?;
 
     let _ = sqlx::query(
-        "INSERT INTO events (kind, severity, message, resource_type, resource_id)
-         VALUES ('approval', 'warning', $1, 'zeus_firewall', $2)",
+        "INSERT INTO events (id, kind, message, resource_type, resource_id, payload) VALUES (?, 'approval', ?, 'zeus_firewall', ?, '{\"severity\":\"warning\"}')",
     )
+    .bind(uuid::Uuid::new_v4())
     .bind(format!(
         "Firewall change approval requested by {actor} for profile {:?}",
         body.profile
@@ -74,7 +74,7 @@ pub async fn request_approval(
 }
 
 pub async fn list_approvals(
-    pool: &PgPool,
+    pool: &SqlitePool,
     status: Option<&str>,
 ) -> anyhow::Result<Vec<FirewallApproval>> {
     let rows: Vec<(
@@ -93,7 +93,7 @@ pub async fn list_approvals(
         sqlx::query_as(
             "SELECT id, target_kind, target_id, profile, plan_json, status, requested_by,
                     reviewed_by, review_note, created_at, reviewed_at
-             FROM firewall_approvals WHERE status = $1 ORDER BY created_at DESC LIMIT 100",
+             FROM firewall_approvals WHERE status = ? ORDER BY created_at DESC LIMIT 100",
         )
         .bind(st)
         .fetch_all(pool)
@@ -120,7 +120,7 @@ pub struct ApprovalApplyResult {
 }
 
 pub async fn approve_and_apply(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
     approval_id: Uuid,
     reviewer: &str,
@@ -160,7 +160,7 @@ pub async fn approve_and_apply(
 }
 
 pub async fn approve(
-    pool: &PgPool,
+    pool: &SqlitePool,
     approval_id: Uuid,
     reviewer: &str,
     note: Option<&str>,
@@ -169,7 +169,7 @@ pub async fn approve(
 }
 
 pub async fn reject(
-    pool: &PgPool,
+    pool: &SqlitePool,
     approval_id: Uuid,
     reviewer: &str,
     note: Option<&str>,
@@ -178,15 +178,15 @@ pub async fn reject(
 }
 
 async fn review(
-    pool: &PgPool,
+    pool: &SqlitePool,
     approval_id: Uuid,
     reviewer: &str,
     status: &str,
     note: Option<&str>,
 ) -> anyhow::Result<FirewallApproval> {
     let updated = sqlx::query(
-        "UPDATE firewall_approvals SET status = $1, reviewed_by = $2, review_note = $3, reviewed_at = NOW()
-         WHERE id = $4 AND status = 'pending'",
+        "UPDATE firewall_approvals SET status = ?, reviewed_by = ?, review_note = ?, reviewed_at = datetime('now')
+         WHERE id = ? AND status = 'pending'",
     )
     .bind(status)
     .bind(reviewer)
@@ -202,7 +202,7 @@ async fn review(
     get_approval(pool, approval_id).await
 }
 
-async fn get_approval(pool: &PgPool, id: Uuid) -> anyhow::Result<FirewallApproval> {
+async fn get_approval(pool: &SqlitePool, id: Uuid) -> anyhow::Result<FirewallApproval> {
     let row: (
         Uuid,
         String,
@@ -218,7 +218,7 @@ async fn get_approval(pool: &PgPool, id: Uuid) -> anyhow::Result<FirewallApprova
     ) = sqlx::query_as(
         "SELECT id, target_kind, target_id, profile, plan_json, status, requested_by,
                 reviewed_by, review_note, created_at, reviewed_at
-         FROM firewall_approvals WHERE id = $1",
+         FROM firewall_approvals WHERE id = ?",
     )
     .bind(id)
     .fetch_one(pool)

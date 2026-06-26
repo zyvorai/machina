@@ -42,10 +42,7 @@ async fn post_otlp(
     if !auth.is_empty() {
         req = req.header("Authorization", auth);
     }
-    let res = req
-        .send()
-        .await
-        .map_err(|e| format!("request: {e}"))?;
+    let res = req.send().await.map_err(|e| format!("request: {e}"))?;
     if res.status().is_success() {
         Ok(())
     } else {

@@ -3271,6 +3271,54 @@
         }
       }
     },
+    "/api/v1/consolehub/sessions/{session_id}/replay": {
+      "get": {
+        "summary": "GET /api/v1/consolehub/sessions/{session_id}/replay",
+        "tags": [
+          "consolehub"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "session_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/consolehub/spectator/validate": {
+      "get": {
+        "summary": "GET /api/v1/consolehub/spectator/validate",
+        "tags": [
+          "consolehub"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
     "/api/v1/content/images": {
       "get": {
         "summary": "GET /api/v1/content/images",
@@ -8279,6 +8327,45 @@
         }
       }
     },
+    "/api/v1/vms/{id}/consolehub/collaborate": {
+      "post": {
+        "summary": "POST /api/v1/vms/{id}/consolehub/collaborate",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/vms/{id}/consolehub/explain": {
       "post": {
         "summary": "POST /api/v1/vms/{id}/consolehub/explain",
@@ -8769,6 +8856,84 @@
             }
           }
         ]
+      }
+    },
+    "/api/v1/vms/{id}/graphics/add": {
+      "post": {
+        "summary": "POST /api/v1/vms/{id}/graphics/add",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/vms/{id}/graphics/remove": {
+      "post": {
+        "summary": "POST /api/v1/vms/{id}/graphics/remove",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/vms/{id}/graphics/spice-to-vnc": {

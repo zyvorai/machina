@@ -60,7 +60,7 @@ export default function SnapshotsPage() {
         />
       ) : (
         <div className="bg-slate-800/50 rounded-xl border border-slate-700/50 overflow-hidden">
-          <table className="w-full">
+          <table className="w-full" aria-label="VM snapshots">
             <thead><tr className="border-b border-slate-700/50 text-left text-sm text-slate-400"><th className="px-6 py-3">Snapshot</th><th className="px-6 py-3">VM</th><th className="px-6 py-3">State</th><th className="px-6 py-3 hidden md:table-cell">Created</th><th className="px-6 py-3">Current</th><th className="px-6 py-3 text-right">Actions</th></tr></thead>
             <tbody className="divide-y divide-slate-700/50">
               {snapshots.map((s) => (
@@ -72,8 +72,8 @@ export default function SnapshotsPage() {
                   <td className="px-6 py-3">{s.is_current && <span className={`text-xs font-medium ${statusToneClass('ok')}`}>● Current</span>}</td>
                   <td className="px-6 py-3">
                     <div className="flex items-center justify-end gap-1">
-                      <button onClick={() => handleRevert(s)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="Revert"><RotateCcw className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
-                      <button onClick={() => setDeleteTarget(s)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
+                      <button onClick={() => handleRevert(s)} className="p-1.5 hover:bg-blue-600/20 rounded transition" title="Revert" aria-label="Revert"><RotateCcw className={`w-4 h-4 ${statusToneClass('info')}`} /></button>
+                      <button onClick={() => setDeleteTarget(s)} className="p-1.5 hover:bg-red-600/20 rounded transition" title="Delete" aria-label="Delete"><Trash2 className={`w-4 h-4 ${statusToneClass('error')}`} /></button>
                     </div>
                   </td>
                 </tr>

@@ -34,16 +34,19 @@ fn platform_service_basic_auth() -> Option<HeaderValue> {
 
 fn forward_headers(src: &HeaderMap) -> HeaderMap {
     let mut h = HeaderMap::new();
-    for name in ["authorization", "content-type", "accept"] {
+    for name in ["content-type", "accept"] {
         if let Some(v) = src.get(name) {
             h.insert(name, v.clone());
         }
     }
-    // Browser uses daemon session cookie; inject controller credentials when the UI has none stored.
-    if !h.contains_key(header::AUTHORIZATION) {
-        if let Some(v) = platform_service_basic_auth() {
-            h.insert(header::AUTHORIZATION, v);
-        }
+    // When MACHINA_PLATFORM_AUTH is set, always use it — the browser's Bearer token
+    // is a daemon JWT which the controller cannot verify (different JWT secret).
+    // If MACHINA_PLATFORM_AUTH is not set, forward whatever the browser sent as a
+    // fallback (allows shared-secret or API-key setups).
+    if let Some(v) = platform_service_basic_auth() {
+        h.insert(header::AUTHORIZATION, v);
+    } else if let Some(v) = src.get(header::AUTHORIZATION) {
+        h.insert(header::AUTHORIZATION, v.clone());
     }
     h
 }
@@ -89,24 +92,26 @@ async fn platform_controller_proxy(
         )))
     })?;
 
-    let status =
-        StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+    let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
     let mut out_headers = HeaderMap::new();
     if let Some(ct) = resp.headers().get(header::CONTENT_TYPE) {
         out_headers.insert(header::CONTENT_TYPE, ct.clone());
     }
     let bytes = resp.bytes().await.map_err(|e| {
-        AppError::from(LibvirtError::Internal(format!("read controller response: {e}")))
+        AppError::from(LibvirtError::Internal(format!(
+            "read controller response: {e}"
+        )))
     })?;
 
     Ok(Response::builder()
         .status(status)
         .body(Body::from(bytes))
-        .map_err(|e| {
-            AppError::from(LibvirtError::Internal(format!("response build: {e}")))
-        })?)
+        .map_err(|e| AppError::from(LibvirtError::Internal(format!("response build: {e}"))))?)
 }
 
 pub fn platform_controller_routes() -> Router<LibvirtManager> {
-    Router::new().route("/platform/controller/{*rest}", any(platform_controller_proxy))
+    Router::new().route(
+        "/platform/controller/{*rest}",
+        any(platform_controller_proxy),
+    )
 }

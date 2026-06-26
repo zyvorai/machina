@@ -54,7 +54,7 @@ impl Default for ControllerConfig {
             host: "127.0.0.1".into(),
             port: 5093,
             database_url: std::env::var("DATABASE_URL")
-                .unwrap_or_else(|_| "postgres://machina:machina@127.0.0.1:5432/machina".into()),
+                .unwrap_or_else(|_| "sqlite:///var/lib/machina/controller.db".into()),
             nats_url: std::env::var("NATS_URL").ok(),
             default_agent_addr: std::env::var("MACHINA_AGENT_ADDR")
                 .unwrap_or_else(|_| "http://127.0.0.1:50051".into()),
@@ -66,9 +66,8 @@ impl Default for ControllerConfig {
             admin_password: "admin".into(),
             jwt_secret: std::env::var("MACHINA_JWT_SECRET")
                 .unwrap_or_else(|_| "machina-dev-jwt-secret-change-me".into()),
-            controller_id: std::env::var("MACHINA_CONTROLLER_ID").unwrap_or_else(|_| {
-                format!("ctrl-{}", &uuid::Uuid::new_v4().to_string()[..8])
-            }),
+            controller_id: std::env::var("MACHINA_CONTROLLER_ID")
+                .unwrap_or_else(|_| format!("ctrl-{}", &uuid::Uuid::new_v4().to_string()[..8])),
             public_base_url: std::env::var("MACHINA_PUBLIC_URL")
                 .unwrap_or_else(|_| "http://127.0.0.1:5093".into()),
             web_base_url: std::env::var("MACHINA_WEB_URL")

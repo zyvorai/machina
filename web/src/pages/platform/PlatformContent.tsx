@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Check, Disc, Plus, RefreshCw, ShieldAlert, ShieldCheck, X } from 'lucide-react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformFilterPills from '../../components/platform/PlatformFilterPills'
 import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
@@ -53,6 +54,7 @@ export default function PlatformContent() {
   const [path, setPath] = useState('/var/lib/libvirt/images/ubuntu-24.04.iso')
   const [description, setDescription] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [rejectTargetId, setRejectTargetId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setError(null)
@@ -102,13 +104,14 @@ export default function PlatformContent() {
   }
 
   const reject = async (id: string) => {
-    const reason = window.prompt('Rejection reason (optional):') ?? undefined
     try {
-      await rejectContentImage(id, reason)
+      await rejectContentImage(id)
       toast.success('ISO rejected')
       await load()
     } catch (e: unknown) {
       toast.error(formatUserError(e))
+    } finally {
+      setRejectTargetId(null)
     }
   }
 
@@ -150,7 +153,7 @@ export default function PlatformContent() {
                   <button type="button" className="btn-primary text-xs flex items-center gap-1" onClick={() => void approve(r.id)}>
                     <Check className="w-3 h-3" /> Approve
                   </button>
-                  <button type="button" className="btn-danger text-xs flex items-center gap-1" onClick={() => void reject(r.id)}>
+                  <button type="button" className="btn-danger text-xs flex items-center gap-1" onClick={() => setRejectTargetId(r.id)}>
                     <X className="w-3 h-3" /> Reject
                   </button>
                 </div>
@@ -221,7 +224,7 @@ export default function PlatformContent() {
               {r.status === 'pending' && (
                 <div className="flex gap-2 mt-3">
                   <button type="button" className="btn-primary text-xs" onClick={() => void approve(r.id)}>Approve</button>
-                  <button type="button" className="btn-danger text-xs" onClick={() => void reject(r.id)}>Reject</button>
+                  <button type="button" className="btn-danger text-xs" onClick={() => setRejectTargetId(r.id)}>Reject</button>
                 </div>
               )}
               {r.status === 'available' && r.kind === 'iso' && (
@@ -242,12 +245,21 @@ export default function PlatformContent() {
 
       <MacSheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Submit image" subtitle="Path must exist on a hypervisor — approval required for production.">
         <div className="space-y-3">
-          <input className="input w-full" placeholder="name" value={name} onChange={(e) => setName(e.target.value)} />
-          <input className="input w-full" placeholder="host path" value={path} onChange={(e) => setPath(e.target.value)} />
-          <input className="input w-full" placeholder="description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
+          <input className="input w-full" aria-label="Image name" placeholder="name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input className="input w-full" aria-label="Host path" placeholder="host path" value={path} onChange={(e) => setPath(e.target.value)} />
+          <input className="input w-full" aria-label="Description" placeholder="description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} />
           <button type="button" className="btn-primary w-full" onClick={async () => { await add(); setSheetOpen(false) }}>Submit for approval</button>
         </div>
       </MacSheet>
+      <ConfirmDialog
+        open={rejectTargetId !== null}
+        title="Reject ISO"
+        message={`Reject "${rows.find((r) => r.id === rejectTargetId)?.name}"? It will not be available for VM creation.`}
+        confirmLabel="Reject"
+        variant="danger"
+        onCancel={() => setRejectTargetId(null)}
+        onConfirm={() => { if (rejectTargetId) void reject(rejectTargetId) }}
+      />
     </PlatformPageChrome>
   )
 }

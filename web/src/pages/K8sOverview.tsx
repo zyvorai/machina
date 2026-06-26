@@ -3,6 +3,7 @@
 // https://zyvor.dev · info@zyvor.dev
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import ConfirmDialog from '../components/ConfirmDialog'
 import { Link } from 'react-router'
 import { usePlatformInfo } from '../contexts/PlatformInfoContext'
 import CollapsibleCodeBlock from '../components/CollapsibleCodeBlock'
@@ -307,6 +308,8 @@ export default function K8sOverviewPage() {
   const [bootstrapSkipKv, setBootstrapSkipKv] = useState(false)
   const [bootstrapInstallMetrics, setBootstrapInstallMetrics] = useState(true)
   const [bootstrapBusy, setBootstrapBusy] = useState<ClusterBootstrapPhase | null>(null)
+  const [k3sConfirmOp, setK3sConfirmOp] = useState<'install' | 'uninstall' | null>(null)
+  const [bootstrapConfirmPhase, setBootstrapConfirmPhase] = useState<ClusterBootstrapPhase | null>(null)
   const [bootstrapLastLog, setBootstrapLastLog] = useState('')
   const [liveNodesCount, setLiveNodesCount] = useState<number | null>(null)
 
@@ -433,11 +436,11 @@ export default function K8sOverviewPage() {
     }
   }, [ctxTrim, toast])
 
-  const runHostK3sInstall = useCallback(async () => {
-    const ok = window.confirm(
-      'Install k3s on this machine using https://get.k3s.io ? This runs as root on the Machina daemon host.',
-    )
-    if (!ok) return
+  const runHostK3sInstall = useCallback(() => {
+    setK3sConfirmOp('install')
+  }, [])
+
+  const doRunHostK3sInstall = useCallback(async () => {
     setK3sBusy('install')
     try {
       const exec = k3sInstallExec.trim()
@@ -458,11 +461,11 @@ export default function K8sOverviewPage() {
     }
   }, [k3sInstallExec, k3sInstallVersion, load, toast])
 
-  const runHostK3sUninstall = useCallback(async () => {
-    const ok = window.confirm(
-      'Remove k3s from this host using the upstream uninstall script? This destroys the local cluster and runs as root.',
-    )
-    if (!ok) return
+  const runHostK3sUninstall = useCallback(() => {
+    setK3sConfirmOp('uninstall')
+  }, [])
+
+  const doRunHostK3sUninstall = useCallback(async () => {
     setK3sBusy('uninstall')
     try {
       const result = await postK8sK3sUninstall({ role: 'auto' })
@@ -481,13 +484,14 @@ export default function K8sOverviewPage() {
   const hostSetupBusy = k3sBusy !== null || bootstrapBusy !== null
 
   const runClusterBootstrap = useCallback(
+    (phase: ClusterBootstrapPhase) => {
+      setBootstrapConfirmPhase(phase)
+    },
+    [],
+  )
+
+  const doRunClusterBootstrap = useCallback(
     async (phase: ClusterBootstrapPhase) => {
-      const ok = window.confirm(
-        phase === 'full'
-          ? 'Run the full install-k3s-cilium.sh pipeline on this host (can take 30+ minutes: k3s → Cilium → metrics → KubeVirt/CDI)?'
-          : `Run bootstrap phase "${phase}" on the Machina daemon host? Later phases assume earlier steps already succeeded.`,
-      )
-      if (!ok) return
       setBootstrapBusy(phase)
       try {
         const ip = bootstrapServerIp.trim()
@@ -566,6 +570,7 @@ export default function K8sOverviewPage() {
             </>
           )}
           <select
+            aria-label="kubectl context"
             value={context}
             onChange={(e) => setContext(e.target.value)}
             className="bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-slate-200 max-w-[18rem]"
@@ -733,8 +738,8 @@ export default function K8sOverviewPage() {
               </p>
               {(clusterInventory?.cluster_health_notes?.length ?? 0) > 0 && (
                 <ul className="text-[11px] text-slate-400 list-disc pl-5 space-y-0.5">
-                  {clusterInventory?.cluster_health_notes?.map((note, i) => (
-                    <li key={i}>{note}</li>
+                  {clusterInventory?.cluster_health_notes?.map((note) => (
+                    <li key={note}>{note}</li>
                   ))}
                 </ul>
               )}
@@ -895,8 +900,8 @@ export default function K8sOverviewPage() {
               )}
               {(clusterInventory.upgrade_insights?.upgrade_warnings?.length ?? 0) > 0 && (
                 <ul className={`text-[11px] list-disc pl-5 space-y-1 ${statusToneClass('warn')}`}>
-                  {clusterInventory.upgrade_insights?.upgrade_warnings?.map((w, i) => (
-                    <li key={i}>{w}</li>
+                  {clusterInventory.upgrade_insights?.upgrade_warnings?.map((w) => (
+                    <li key={w}>{w}</li>
                   ))}
                 </ul>
               )}
@@ -906,8 +911,8 @@ export default function K8sOverviewPage() {
                     Suggested upgrade order (generic)
                   </summary>
                   <ol className="list-decimal pl-8 pr-3 pb-3 text-[11px] text-slate-400 space-y-1">
-                    {clusterInventory.upgrade_insights?.suggested_upgrade_order?.map((line, i) => (
-                      <li key={i}>{line}</li>
+                    {clusterInventory.upgrade_insights?.suggested_upgrade_order?.map((line) => (
+                      <li key={line}>{line}</li>
                     ))}
                   </ol>
                 </details>
@@ -920,7 +925,7 @@ export default function K8sOverviewPage() {
                 etcd placement (inferred from pods — not Raft membership API)
               </div>
               <div className="overflow-x-auto">
-                <table className="w-full text-xs">
+                <table className="w-full text-xs" aria-label="etcd pods">
                   <thead>
                     <tr className="text-left text-slate-500 border-b border-slate-700/40">
                       <th className="px-3 py-2">Pod</th>
@@ -954,7 +959,7 @@ export default function K8sOverviewPage() {
                 Control plane static pods ({clusterInventory.control_plane_stack_pods?.length})
               </summary>
               <div className="overflow-x-auto border-t border-slate-700/40">
-                <table className="w-full text-xs">
+                <table className="w-full text-xs" aria-label="Control plane pods">
                   <thead>
                     <tr className="text-left text-slate-500 border-b border-slate-700/40">
                       <th className="px-3 py-2">Component</th>
@@ -1004,7 +1009,7 @@ export default function K8sOverviewPage() {
                   <div>
                     <div className="text-[11px] text-slate-500 mb-2">ValidatingWebhookConfiguration (summary)</div>
                     <div className="overflow-x-auto rounded-lg border border-slate-700/40">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-xs" aria-label="Validating webhook configurations">
                         <thead>
                           <tr className="text-left text-slate-500 border-b border-slate-700/40">
                             <th className="px-3 py-2">Name</th>
@@ -1027,7 +1032,7 @@ export default function K8sOverviewPage() {
                   <div>
                     <div className="text-[11px] text-slate-500 mb-2">MutatingWebhookConfiguration (summary)</div>
                     <div className="overflow-x-auto rounded-lg border border-slate-700/40">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-xs" aria-label="Mutating webhook configurations">
                         <thead>
                           <tr className="text-left text-slate-500 border-b border-slate-700/40">
                             <th className="px-3 py-2">Name</th>
@@ -1050,7 +1055,7 @@ export default function K8sOverviewPage() {
                   <div>
                     <div className="text-[11px] text-slate-500 mb-2">Notable addon DaemonSets</div>
                     <div className="overflow-x-auto rounded-lg border border-slate-700/40">
-                      <table className="w-full text-xs">
+                      <table className="w-full text-xs" aria-label="Addon DaemonSets">
                         <thead>
                           <tr className="text-left text-slate-500 border-b border-slate-700/40">
                             <th className="px-3 py-2">Namespace</th>
@@ -1107,8 +1112,8 @@ export default function K8sOverviewPage() {
                   <div>
                     <div className="text-[11px] text-slate-500 mb-1">Operator-style alerts</div>
                     <ul className={`text-[11px] list-disc pl-5 space-y-1 ${statusToneClass('warn')}`}>
-                      {clusterInventory.extended?.operator_alerts?.map((a, i) => (
-                        <li key={i}>{a}</li>
+                      {clusterInventory.extended?.operator_alerts?.map((a) => (
+                        <li key={a}>{a}</li>
                       ))}
                     </ul>
                   </div>
@@ -1142,7 +1147,7 @@ export default function K8sOverviewPage() {
                   </div>
                   <div className="text-[11px] text-slate-400">{invHist.entries.length} snapshot(s)</div>
                   <div className="overflow-x-auto rounded-lg border border-slate-700/50">
-                    <table className="w-full text-[11px] text-left">
+                    <table className="w-full text-[11px] text-left" aria-label="Node inventory snapshots">
                       <thead className="text-slate-500 border-b border-slate-700/50">
                         <tr>
                           <th className="px-3 py-2">Snapshot</th>
@@ -1153,7 +1158,7 @@ export default function K8sOverviewPage() {
                         {asArray(invHist.entries).slice(0, 12).map((entry, i) => {
                           const row = asRecord(entry) ?? {}
                           return (
-                            <tr key={i} className="border-b border-slate-800/60">
+                            <tr key={String(row.id ?? row.name ?? i)} className="border-b border-slate-800/60">
                               <td className="px-3 py-2 text-slate-300">{String(row.id ?? row.name ?? i + 1)}</td>
                               <td className="px-3 py-2 text-slate-500">{String(row.timestamp ?? row.created_at ?? '—')}</td>
                             </tr>
@@ -1343,8 +1348,8 @@ export default function K8sOverviewPage() {
             <div>
               <div className="text-xs text-slate-500 mb-1">Detection hints</div>
               <ul className="text-xs text-slate-400 list-disc pl-5 space-y-0.5">
-                {environment.cluster_distribution_hints.map((h, i) => (
-                  <li key={i}>{h}</li>
+                {environment.cluster_distribution_hints.map((h) => (
+                  <li key={h}>{h}</li>
                 ))}
               </ul>
             </div>
@@ -1405,6 +1410,7 @@ export default function K8sOverviewPage() {
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-slate-500">Filters</span>
             <select
+              aria-label="Filter by plane"
               value={filterPlane}
               onChange={(e) => setFilterPlane(e.target.value)}
               className="bg-slate-900 border border-slate-600 rounded-md px-2 py-1.5 text-slate-200"
@@ -1416,6 +1422,7 @@ export default function K8sOverviewPage() {
               <option value="unknown">Unknown</option>
             </select>
             <select
+              aria-label="Filter by readiness"
               value={filterReady}
               onChange={(e) => {
                 const v = e.target.value
@@ -1428,6 +1435,7 @@ export default function K8sOverviewPage() {
               <option value="not_ready">Not ready</option>
             </select>
             <select
+              aria-label="Filter by zone"
               value={filterZone}
               onChange={(e) => setFilterZone(e.target.value)}
               className="bg-slate-900 border border-slate-600 rounded-md px-2 py-1.5 text-slate-200 max-w-[12rem]"
@@ -1440,6 +1448,7 @@ export default function K8sOverviewPage() {
               ))}
             </select>
             <select
+              aria-label="Filter by instance type"
               value={filterInstance}
               onChange={(e) => setFilterInstance(e.target.value)}
               className="bg-slate-900 border border-slate-600 rounded-md px-2 py-1.5 text-slate-200 max-w-[14rem]"
@@ -1454,7 +1463,7 @@ export default function K8sOverviewPage() {
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm" aria-label="Cluster nodes">
             <thead>
               <tr className="border-b border-slate-700/50 text-slate-400 text-xs uppercase tracking-wider">
                 <th className="text-left px-4 py-3">Node</th>
@@ -1623,6 +1632,41 @@ export default function K8sOverviewPage() {
           <code className={`text-xs break-all ${statusToneClass('ok')}`}>{lastCommand}</code>
         </div>
       )}
+      <ConfirmDialog
+        open={k3sConfirmOp === 'install'}
+        title="Install k3s"
+        message="Install k3s on this machine using https://get.k3s.io? This runs as root on the Machina daemon host."
+        confirmLabel="Install"
+        variant="warning"
+        onCancel={() => setK3sConfirmOp(null)}
+        onConfirm={() => { setK3sConfirmOp(null); void doRunHostK3sInstall() }}
+      />
+      <ConfirmDialog
+        open={k3sConfirmOp === 'uninstall'}
+        title="Remove k3s"
+        message="Remove k3s from this host using the upstream uninstall script? This destroys the local cluster and runs as root."
+        confirmLabel="Uninstall"
+        variant="danger"
+        onCancel={() => setK3sConfirmOp(null)}
+        onConfirm={() => { setK3sConfirmOp(null); void doRunHostK3sUninstall() }}
+      />
+      <ConfirmDialog
+        open={bootstrapConfirmPhase !== null}
+        title={bootstrapConfirmPhase === 'full' ? 'Run full cluster bootstrap' : `Run bootstrap phase "${bootstrapConfirmPhase}"`}
+        message={
+          bootstrapConfirmPhase === 'full'
+            ? 'Run the full install-k3s-cilium.sh pipeline on this host (can take 30+ minutes: k3s → Cilium → metrics → KubeVirt/CDI)?'
+            : `Run bootstrap phase "${bootstrapConfirmPhase}" on the Machina daemon host? Later phases assume earlier steps already succeeded.`
+        }
+        confirmLabel="Run"
+        variant="warning"
+        onCancel={() => setBootstrapConfirmPhase(null)}
+        onConfirm={() => {
+          const phase = bootstrapConfirmPhase
+          setBootstrapConfirmPhase(null)
+          if (phase) void doRunClusterBootstrap(phase)
+        }}
+      />
     </PageLayout>
   )
 }

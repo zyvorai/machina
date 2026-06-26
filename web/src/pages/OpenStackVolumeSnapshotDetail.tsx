@@ -83,7 +83,7 @@ function OpenStackVolumeSnapshotDetailContent() {
       <section className="rounded-xl border border-slate-700 p-4 space-y-3">
         <h2 className="text-sm font-medium text-slate-300">Restore to new volume</h2>
         <div className="flex flex-wrap gap-2 items-end">
-          <input value={restoreName} onChange={(e) => setRestoreName(e.target.value)} placeholder="Volume name"
+          <input aria-label="Volume name" value={restoreName} onChange={(e) => setRestoreName(e.target.value)} placeholder="Volume name"
             className="px-2 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-sm min-w-[14rem]" />
           <button type="button" className="px-3 py-1.5 rounded-lg bg-sky-600 text-white text-sm"
             onClick={async () => {

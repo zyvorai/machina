@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Link, useNavigate } from 'react-router'
 import { Boxes, Plus, Users } from 'lucide-react'
 import {
@@ -50,6 +51,7 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [formError, setFormError] = useState<string | null>(null)
+  const [deleteUserId, setDeleteUserId] = useState<string | null>(null)
   const [newUsername, setNewUsername] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [role, setRole] = useState('operator')
@@ -223,6 +225,7 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
                   <td className="p-3 font-medium text-slate-200">{u.username}</td>
                   <td className="p-3">
                     <select
+                      aria-label="User role"
                       className="input text-xs capitalize w-full max-w-[160px]"
                       value={u.role}
                       onChange={async (e) => {
@@ -244,14 +247,7 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
                       className="btn-secondary text-xs"
                       disabled={me?.username === u.username}
                       title={me?.username === u.username ? 'Cannot delete your own account' : undefined}
-                      onClick={async () => {
-                        if (!window.confirm(`Delete user ${u.username}?`)) return
-                        try {
-                          await deleteUser(u.id)
-                          toast.success('User deleted')
-                          await load()
-                        } catch (e: unknown) { toast.error(formatUserError(e)) }
-                      }}
+                      onClick={() => setDeleteUserId(u.id)}
                     >
                       Delete
                     </button>
@@ -313,6 +309,19 @@ export default function PlatformUsers({ embedded }: { embedded?: boolean } = {})
         )}
       </OperatingSurfaceLayout>
       <FleetSettingsPane kind="users" />
+      <ConfirmDialog
+        open={deleteUserId !== null}
+        title="Delete User"
+        message={`Delete user "${rows.find((u) => u.id === deleteUserId)?.username}"? This cannot be undone.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onCancel={() => setDeleteUserId(null)}
+        onConfirm={async () => {
+          try { await deleteUser(deleteUserId!); toast.success('User deleted'); await load() }
+          catch (e: unknown) { toast.error(formatUserError(e)) }
+          finally { setDeleteUserId(null) }
+        }}
+      />
     </PlatformPageChrome>
   )
 }

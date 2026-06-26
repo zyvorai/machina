@@ -305,6 +305,7 @@ export default function ZeusAssistant() {
         </div>
         <footer className="p-3 border-t border-white/[0.06] flex gap-2">
           <input
+            aria-label={showGuestPrompts ? 'Ask about guest agents' : 'Ask Zeus'}
             className="input flex-1 text-sm"
             placeholder={showGuestPrompts ? 'Ask about guest agents…' : 'Ask Zeus…'}
             value={input}

@@ -1,6 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { Link, useSearchParams } from 'react-router'
 import {
   AlertTriangle,
@@ -96,6 +97,8 @@ export default function PlatformMaintenance() {
   const [error, setError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [pageLoading, setPageLoading] = useState(true)
+  const [confirmApplyUpgradeHost, setConfirmApplyUpgradeHost] = useState(false)
+  const [confirmApplyAllUpgrades, setConfirmApplyAllUpgrades] = useState(false)
   const [loadingUpdates, setLoadingUpdates] = useState(false)
   const [hostId, setHostId] = useState('')
   const [missionHostId, setMissionHostId] = useState('')
@@ -334,7 +337,7 @@ export default function PlatformMaintenance() {
                               setPreviewSummary(r.summary ?? 'Preview complete')
                               toast.success('Package upgrade preview ready')
                             })
-                            .catch((e: unknown) => toast.error(formatUserError(e)))
+                            .catch((e: unknown) => { setPreviewSummary(null); toast.error(formatUserError(e)) })
                             .finally(() => setUpgradeBusy(false))
                         }}
                       >
@@ -344,16 +347,7 @@ export default function PlatformMaintenance() {
                         type="button"
                         className="btn-primary text-sm"
                         disabled={!selectedMission.maintenance_mode || !(selectedMission.pending_packages ?? 0)}
-                        onClick={() => {
-                          if (!selectedMission) return
-                          if (!window.confirm('Apply OS package upgrades on this host? VMs may be affected.')) return
-                          void applyHostPackageUpgrade(selectedMission.host_id)
-                            .then((r) => {
-                              toastQueuedOperation(toast, 'Package upgrade queued', r.task_id, tier)
-                              return loadMission()
-                            })
-                            .catch((e: unknown) => toast.error(formatUserError(e)))
-                        }}
+                        onClick={() => { if (selectedMission) setConfirmApplyUpgradeHost(true) }}
                       >
                         Apply upgrades
                       </button>
@@ -361,16 +355,7 @@ export default function PlatformMaintenance() {
                         <button
                           type="button"
                           className="btn-secondary text-sm"
-                          onClick={() => {
-                            if (!window.confirm(`Apply upgrades on ${maintenanceUpgradeTargets.length} host(s) in maintenance?`)) return
-                            void Promise.all(maintenanceUpgradeTargets.map((h) => applyHostPackageUpgrade(h.host_id)))
-                              .then((results) => {
-                                const last = results[results.length - 1]
-                                if (last) toastQueuedOperation(toast, `Queued ${results.length} upgrade(s)`, last.task_id, tier)
-                                return loadMission()
-                              })
-                              .catch((e: unknown) => toast.error(formatUserError(e)))
-                          }}
+                          onClick={() => setConfirmApplyAllUpgrades(true)}
                         >
                           Upgrade all in maintenance
                         </button>
@@ -517,10 +502,10 @@ export default function PlatformMaintenance() {
       {tab === 'schedules' && !pageLoading && (
         <>
           <div className="card p-4 grid gap-3 md:grid-cols-4">
-            <select className="input" value={hostId} onChange={(e) => setHostId(e.target.value)}>
+            <select className="input" aria-label="Host" value={hostId} onChange={(e) => setHostId(e.target.value)}>
               {hosts.map((h) => <option key={h.id} value={h.id}>{h.hostname}</option>)}
             </select>
-            <input className="input md:col-span-2" type="datetime-local" value={runAt} onChange={(e) => setRunAt(e.target.value)} />
+            <input className="input md:col-span-2" type="datetime-local" aria-label="Scheduled date/time" value={runAt} onChange={(e) => setRunAt(e.target.value)} />
             <button
               type="button"
               className="btn-primary w-fit flex items-center gap-2"
@@ -553,7 +538,7 @@ export default function PlatformMaintenance() {
             />
           ) : (
           <div className="card overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="w-full text-sm" aria-label="Maintenance schedules">
               <thead><tr className="text-slate-400 border-b border-slate-800"><th className="p-3 text-left">Host</th><th className="p-3">Action</th><th className="p-3">Run at</th><th className="p-3">Status</th><th className="p-3" /></tr></thead>
               <tbody>{rows.map((s) => (
                 <tr key={s.id} className="border-b border-slate-900">
@@ -579,6 +564,39 @@ export default function PlatformMaintenance() {
       )}
       {tab === 'updates' && <FleetSettingsPane kind="updates" />}
       <HostEnrollWizard open={enrollOpen} onClose={() => { setEnrollOpen(false); void loadSchedules() }} />
+      <ConfirmDialog
+        open={confirmApplyUpgradeHost}
+        title="Apply Package Upgrades"
+        message="Apply OS package upgrades on this host? VMs may be affected if packages require service restarts."
+        confirmLabel="Apply"
+        variant="warning"
+        onCancel={() => setConfirmApplyUpgradeHost(false)}
+        onConfirm={() => {
+          setConfirmApplyUpgradeHost(false)
+          if (!selectedMission) return
+          void applyHostPackageUpgrade(selectedMission.host_id)
+            .then((r) => { toastQueuedOperation(toast, 'Package upgrade queued', r.task_id, tier); return loadMission() })
+            .catch((e: unknown) => toast.error(formatUserError(e)))
+        }}
+      />
+      <ConfirmDialog
+        open={confirmApplyAllUpgrades}
+        title="Upgrade All Hosts in Maintenance"
+        message={`Apply upgrades on ${maintenanceUpgradeTargets.length} host(s) in maintenance mode? VMs may be affected.`}
+        confirmLabel="Upgrade all"
+        variant="warning"
+        onCancel={() => setConfirmApplyAllUpgrades(false)}
+        onConfirm={() => {
+          setConfirmApplyAllUpgrades(false)
+          void Promise.all(maintenanceUpgradeTargets.map((h) => applyHostPackageUpgrade(h.host_id)))
+            .then((results) => {
+              const last = results[results.length - 1]
+              if (last) toastQueuedOperation(toast, `Queued ${results.length} upgrade(s)`, last.task_id, tier)
+              return loadMission()
+            })
+            .catch((e: unknown) => toast.error(formatUserError(e)))
+        }}
+      />
     </PlatformPageChrome>
   )
 }

@@ -73,21 +73,23 @@ fn assess_rules_risk(rules: &[FirewallRule]) -> ExposureRisk {
     });
     if critical {
         ExposureRisk::Critical
-    } else if rules.iter().any(|r| r.action == "allow" && r.sources.contains(&"any".to_string())) {
+    } else if rules
+        .iter()
+        .any(|r| r.action == "allow" && r.sources.contains(&"any".to_string()))
+    {
         ExposureRisk::Warning
     } else {
         ExposureRisk::Safe
     }
 }
 
-pub fn simulate_connectivity(
-    diff: &FirewallDiff,
-    sources: &[(&str, &str)],
-) -> Vec<String> {
+pub fn simulate_connectivity(diff: &FirewallDiff, sources: &[(&str, &str)]) -> Vec<String> {
     let mut results = Vec::new();
     for (name, _cidr) in sources {
         if diff.risk_after == ExposureRisk::Critical {
-            results.push(format!("⚠ {name} → sensitive port may be blocked or exposed"));
+            results.push(format!(
+                "⚠ {name} → sensitive port may be blocked or exposed"
+            ));
         } else {
             results.push(format!("✓ {name} → allowed per plan"));
         }

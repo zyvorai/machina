@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct NetworkExplainResult {
@@ -12,7 +12,7 @@ pub struct NetworkExplainResult {
 }
 
 pub async fn explain_reach(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &crate::config::ControllerConfig,
     vm_a_name: &str,
     vm_b_name: &str,

@@ -149,3 +149,7 @@ export const deletePortForward = (req: { protocol: string; host_port: number; vm
 export const listFirewallRules = () => readJsonArray<FirewallRule>(`${API}/firewall`)
 export const createFirewallRule = (req: CreateFirewallRuleRequest) => apiPost<unknown>(`${API}/firewall`, req)
 export const deleteFirewallRule = (req: CreateFirewallRuleRequest) => apiPost<unknown>(`${API}/firewall/delete`, req)
+
+// Host network & firewall backend detection
+export interface HostNetworkBackends { network_backend: string; firewall_backend: string }
+export const getHostNetworkBackends = () => readJsonObject<HostNetworkBackends>(`${API}/host/backends`)

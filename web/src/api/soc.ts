@@ -151,11 +151,25 @@ export const getSocAlert = (id: string) => platformFetch<SocAlertDetail>(`/api/v
 
 export const patchSocAlert = (id: string, body: { status?: string; assigned_to?: string }) =>
   platformFetch<SocAlert>(`/api/v1/soc/alerts/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+export const deleteSocAlert = (id: string) =>
+  platformFetch<{ deleted: boolean }>(`/api/v1/soc/alerts/${id}`, { method: 'DELETE' })
 
 export const getSocRules = () => platformFetch<SocRule[]>('/api/v1/soc/rules')
 
+export const createSocRule = (body: {
+  name: string
+  description?: string
+  enabled?: boolean
+  severity?: string
+  query_json: Record<string, unknown>
+  throttle_minutes?: number
+}) =>
+  platformFetch<SocRule>('/api/v1/soc/rules', { method: 'POST', body: JSON.stringify(body) })
+
 export const patchSocRule = (id: string, body: { enabled?: boolean }) =>
   platformFetch<SocRule>(`/api/v1/soc/rules/${id}`, { method: 'PATCH', body: JSON.stringify(body) })
+export const deleteSocRule = (id: string) =>
+  platformFetch<{ deleted: boolean }>(`/api/v1/soc/rules/${id}`, { method: 'DELETE' })
 
 export const testSocRule = (id: string, hours = 24) =>
   platformFetch<{ match_count: number; would_fire: boolean }>(

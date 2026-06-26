@@ -1,7 +1,7 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 #[derive(Debug, Serialize)]
 pub struct KnowledgeRunbook {
@@ -13,7 +13,7 @@ pub struct KnowledgeRunbook {
     pub summary: String,
 }
 
-pub async fn from_query(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeRunbook> {
+pub async fn from_query(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeRunbook> {
     let diagnosis = super::knowledge_diagnose::diagnose(pool, query).await?;
 
     let incident = if query.to_lowercase().contains("backup") {
@@ -39,6 +39,8 @@ pub async fn from_query(pool: &PgPool, query: &str) -> anyhow::Result<KnowledgeR
         runbook_title: rb.title,
         steps: rb.steps,
         commands: rb.commands,
-        summary: rb.summary.unwrap_or_else(|| format!("Runbook for: {query}")),
+        summary: rb
+            .summary
+            .unwrap_or_else(|| format!("Runbook for: {query}")),
     })
 }

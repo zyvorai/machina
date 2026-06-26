@@ -48,8 +48,10 @@ impl FirewallAdapter for K8sNetworkPolicyAdapter {
     }
 
     fn snapshot_state(&self) -> Result<serde_json::Value, LibvirtError> {
-        let out = run_cmd("kubectl", &["get", "networkpolicy", "-A", "-o", "json"]).unwrap_or_else(|_| "{}".into());
-        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|_| serde_json::json!({}));
+        let out = run_cmd("kubectl", &["get", "networkpolicy", "-A", "-o", "json"])
+            .unwrap_or_else(|_| "{}".into());
+        let parsed: serde_json::Value =
+            serde_json::from_str(&out).unwrap_or_else(|_| serde_json::json!({}));
         Ok(parsed)
     }
 }
@@ -97,9 +99,13 @@ impl FirewallAdapter for CiliumAdapter {
     }
 
     fn snapshot_state(&self) -> Result<serde_json::Value, LibvirtError> {
-        let out = run_cmd("kubectl", &["get", "ciliumnetworkpolicies", "-A", "-o", "json"])
-            .unwrap_or_else(|_| "{}".into());
-        let parsed: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|_| serde_json::json!({}));
+        let out = run_cmd(
+            "kubectl",
+            &["get", "ciliumnetworkpolicies", "-A", "-o", "json"],
+        )
+        .unwrap_or_else(|_| "{}".into());
+        let parsed: serde_json::Value =
+            serde_json::from_str(&out).unwrap_or_else(|_| serde_json::json!({}));
         Ok(parsed)
     }
 }

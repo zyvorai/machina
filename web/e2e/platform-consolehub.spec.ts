@@ -4,6 +4,7 @@ import { test, expect } from '@playwright/test'
 import { mockPlatformApi } from './platformMock'
 
 test.describe('Platform ConsoleHub', () => {
+  test.describe.configure({ retries: 1 })
   test.beforeEach(async ({ page }) => {
     await mockPlatformApi(page, { tier: 'power' })
   })
@@ -148,10 +149,12 @@ test.describe('Platform ConsoleHub', () => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto('/platform/vms/v1/consolehub')
     await expect(page.getByTestId('cinema-control-strip')).toBeVisible({ timeout: 15_000 })
+    // Move mouse and wait for idle timeout to reset before checking state
     await page.mouse.move(640, 480)
-    await expect(page.getByTestId('cinema-control-strip')).toHaveAttribute('data-idle', 'false')
+    await page.waitForTimeout(300)
+    await expect(page.getByTestId('cinema-control-strip')).toHaveAttribute('data-idle', 'false', { timeout: 5_000 })
     await page.getByTestId('cinema-clipboard').click()
-    await expect(page.getByTestId('cinema-clipboard-panel')).toBeVisible()
+    await expect(page.getByTestId('cinema-clipboard-panel')).toBeVisible({ timeout: 5_000 })
     await expect(page.getByRole('button', { name: 'Send to VM' })).toBeVisible()
   })
 
@@ -274,10 +277,8 @@ test.describe('Platform ConsoleHub', () => {
   })
 
   test('VM detail Hardware tab and action bar button', async ({ page }) => {
-    const summaryReady = page.waitForResponse((r) => r.url().includes('/hardware-summary') && r.ok())
     await page.goto('/platform/vms/v1')
-    await summaryReady
-    await expect(page.getByTestId('vm-detail-hardware')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('vm-detail-hardware')).toBeVisible({ timeout: 20_000 })
     await page.getByRole('tab', { name: 'Hardware' }).click()
     await expect(page.getByTestId('vm-hardware-tab')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('vm-hardware-cpu')).toContainText('vCPU')

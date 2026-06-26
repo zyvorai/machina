@@ -192,16 +192,43 @@ pub fn detach_interface(conn: &Connect, vm_name: &str, mac: &str) -> Result<(), 
 
     let domain = lookup_domain(conn, vm_name)?;
 
-    let xml = format!(
-        r#"<interface type='network'>
-  <mac address='{}'/>
-</interface>"#,
-        crate::xml::escape(mac),
-    );
+    // Extract the full <interface> XML from the running domain — libvirt requires the
+    // <source> element to be present for type='network' interfaces, so passing just
+    // <mac address='...'/> results in "XML error: interface type='network' requires a
+    // 'source' element". Using the exact XML from the domain ensures all required fields
+    // are present.
+    let domain_xml = domain
+        .get_xml_desc(0)
+        .map_err(LibvirtError::map_op("Failed to get domain XML for NIC detach"))?;
+    let xml = extract_interface_xml_by_mac(&domain_xml, mac).ok_or_else(|| {
+        LibvirtError::NotFound(format!("Interface with MAC '{mac}' not found in domain XML"))
+    })?;
 
     let flags = get_domain_flags(&domain);
     domain
         .detach_device_flags(&xml, flags)
         .map_err(|e| LibvirtError::Operation(format!("Failed to detach interface '{mac}': {e}")))?;
     Ok(())
+}
+
+/// Extract the `<interface>…</interface>` block containing the given MAC address.
+fn extract_interface_xml_by_mac(domain_xml: &str, mac: &str) -> Option<String> {
+    let mac_lower = mac.to_ascii_lowercase();
+    let lower = domain_xml.to_ascii_lowercase();
+    // Try both single-quote and double-quote attribute styles
+    for q in [('\'', '\''), ('"', '"')] {
+        let needle = format!("address={}{}{}", q.0, mac_lower, q.1);
+        if let Some(mac_pos) = lower.find(&needle) {
+            // Walk backwards to the opening <interface tag
+            if let Some(iface_off) = lower[..mac_pos].rfind("<interface") {
+                // Walk forwards to the closing </interface>
+                let suffix = &lower[iface_off..];
+                if let Some(close_off) = suffix.find("</interface>") {
+                    let end = iface_off + close_off + "</interface>".len();
+                    return Some(domain_xml[iface_off..end].to_string());
+                }
+            }
+        }
+    }
+    None
 }

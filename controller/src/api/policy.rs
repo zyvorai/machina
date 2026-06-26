@@ -1,11 +1,13 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
 use axum::extract::State;
+use axum::Extension;
 use axum::Json;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::api::ApiError;
+use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::engine::policy;
 use crate::state::AppState;
 
@@ -28,7 +30,9 @@ pub struct ProjectQuotaRow {
 
 pub async fn list_policy_rules(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<PolicyRuleRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = policy::list_policy_rules(&state.pool).await?;
     Ok(Json(
         rows.into_iter()
@@ -44,9 +48,11 @@ pub async fn list_policy_rules(
 
 pub async fn list_project_quotas(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ProjectQuotaRow>>, ApiError> {
+    require_operator(&actor)?;
     let rows = sqlx::query_as::<_, ProjectQuotaRow>(
-        "SELECT project, max_vms, max_vcpu, max_memory_mib, max_storage_gib FROM project_quotas ORDER BY project",
+        "SELECT project, max_vms, max_vcpu, max_memory_mib, max_storage_gib FROM project_quotas ORDER BY project LIMIT 500",
     )
     .fetch_all(&state.pool)
     .await?;
@@ -64,8 +70,10 @@ pub struct UpsertQuotaBody {
 
 pub async fn upsert_project_quota(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<UpsertQuotaBody>,
 ) -> Result<Json<ProjectQuotaRow>, ApiError> {
+    require_admin(&actor)?;
     policy::upsert_project_quota(
         &state.pool,
         &body.project,

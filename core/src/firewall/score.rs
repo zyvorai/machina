@@ -56,8 +56,12 @@ pub fn compute_firewall_score(
     let ssh_public = rules.iter().any(|r| {
         r.action == "allow"
             && (r.ports == "22" || r.ports.contains("22"))
-            && r.sources.iter().any(|s| s == "any" || s == "0.0.0.0/0" || s == "Anywhere")
-    }) || ports.iter().any(|p| p.port == 22 && p.risk == ExposureRisk::Critical);
+            && r.sources
+                .iter()
+                .any(|s| s == "any" || s == "0.0.0.0/0" || s == "Anywhere")
+    }) || ports
+        .iter()
+        .any(|p| p.port == 22 && p.risk == ExposureRisk::Critical);
     if ssh_public {
         score -= 8;
         breakdown.push(ScoreBreakdownItem {
@@ -73,9 +77,9 @@ pub fn compute_firewall_score(
         });
     }
 
-    let db_public = ports.iter().any(|p| {
-        matches!(p.port, 3306 | 5432 | 6379 | 27017) && p.risk == ExposureRisk::Critical
-    });
+    let db_public = ports
+        .iter()
+        .any(|p| matches!(p.port, 3306 | 5432 | 6379 | 27017) && p.risk == ExposureRisk::Critical);
     if db_public {
         score -= 20;
         breakdown.push(ScoreBreakdownItem {
@@ -91,7 +95,10 @@ pub fn compute_firewall_score(
         });
     }
 
-    let critical_ports = ports.iter().filter(|p| p.risk == ExposureRisk::Critical).count();
+    let critical_ports = ports
+        .iter()
+        .filter(|p| p.risk == ExposureRisk::Critical)
+        .count();
     if critical_ports > 0 && !db_public {
         score -= (critical_ports as i32) * 5;
         breakdown.push(ScoreBreakdownItem {

@@ -96,7 +96,9 @@ pub async fn list_availability_zones(
     Ok(out)
 }
 
-pub async fn list_hypervisors(cfg: &OpenStackConfig) -> Result<Vec<OpenStackHypervisor>, LibvirtError> {
+pub async fn list_hypervisors(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackHypervisor>, LibvirtError> {
     let session = connect_session(cfg).await?;
     #[derive(Deserialize)]
     struct Resp {
@@ -222,7 +224,9 @@ pub async fn list_compute_services(
     Ok(out)
 }
 
-pub async fn list_neutron_agents(cfg: &OpenStackConfig) -> Result<Vec<OpenStackNeutronAgent>, LibvirtError> {
+pub async fn list_neutron_agents(
+    cfg: &OpenStackConfig,
+) -> Result<Vec<OpenStackNeutronAgent>, LibvirtError> {
     let session = connect_session(cfg).await?;
     #[derive(Deserialize)]
     struct Resp {
@@ -452,7 +456,9 @@ pub async fn update_host_aggregate(
         aggregate.insert("availability_zone".into(), serde_json::json!(t));
     }
     if aggregate.is_empty() {
-        return Err(LibvirtError::Invalid("name or availability_zone required".into()));
+        return Err(LibvirtError::Invalid(
+            "name or availability_zone required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     #[derive(Deserialize)]
@@ -526,7 +532,9 @@ pub async fn add_aggregate_host(
     let id = aggregate_id.trim();
     let h = host.trim();
     if id.is_empty() || h.is_empty() {
-        return Err(LibvirtError::Invalid("aggregate id and host are required".into()));
+        return Err(LibvirtError::Invalid(
+            "aggregate id and host are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     aggregate_action(&session, id, "add_host", h).await
@@ -540,7 +548,9 @@ pub async fn remove_aggregate_host(
     let id = aggregate_id.trim();
     let h = host.trim();
     if id.is_empty() || h.is_empty() {
-        return Err(LibvirtError::Invalid("aggregate id and host are required".into()));
+        return Err(LibvirtError::Invalid(
+            "aggregate id and host are required".into(),
+        ));
     }
     let session = connect_session(cfg).await?;
     aggregate_action(&session, id, "remove_host", h).await

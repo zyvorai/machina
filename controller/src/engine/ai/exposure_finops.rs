@@ -2,7 +2,7 @@
 // Security waste + SRE×FinOps joint remediate items (Phase 22).
 
 use serde::Serialize;
-use sqlx::PgPool;
+use sqlx::SqlitePool;
 
 use crate::config::ControllerConfig;
 
@@ -24,13 +24,17 @@ pub struct ExposureWasteProposal {
 }
 
 pub async fn propose_waste(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<ExposureWasteProposal> {
     let report = crate::engine::zeus_firewall::finops::exposure_rollup(pool, cfg).await?;
     let mut items = Vec::new();
 
-    for t in report.targets.iter().filter(|t| t.exposure_monthly_usd > 20.0) {
+    for t in report
+        .targets
+        .iter()
+        .filter(|t| t.exposure_monthly_usd > 20.0)
+    {
         items.push(ExposureWasteItem {
             id: format!("finops-waste-{}", t.target_id),
             label: format!(
@@ -55,10 +59,7 @@ pub async fn propose_waste(
     for v in report.vm_idle_ranking.iter().take(3) {
         items.push(ExposureWasteItem {
             id: format!("finops-vm-idle-{}", v.vm_id),
-            label: format!(
-                "VM {} — ${:.0}/mo idle port waste",
-                v.vm_name, v.waste_usd
-            ),
+            label: format!("VM {} — ${:.0}/mo idle port waste", v.vm_name, v.waste_usd),
             review: format!(
                 "{} public idle port(s) on team:{} — close or move behind LB",
                 v.idle_ports, v.team
@@ -106,7 +107,7 @@ pub async fn propose_waste(
 }
 
 pub async fn joint_sre_finops(
-    pool: &PgPool,
+    pool: &SqlitePool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<Vec<ExposureWasteItem>> {
     let waste = propose_waste(pool, cfg).await?;

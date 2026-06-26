@@ -8,7 +8,7 @@ use virt::connect::Connect;
 
 use super::domain;
 use super::guest_agent::{self, GuestInfo};
-use super::guest_agent_diag::{GuestAgentDiagnostics, probe_guest_agent};
+use super::guest_agent_diag::{probe_guest_agent, GuestAgentDiagnostics};
 use super::metrics;
 use crate::state::VmMetrics;
 use crate::LibvirtError;
@@ -65,19 +65,19 @@ pub fn gather_guest_health(conn: &Connect, name: &str) -> Result<GuestHealthRepo
     let mut issues = Vec::new();
     if running && !agent_reachable {
         let xml = domain::lookup_domain(conn, name)
-            .and_then(|d| d.get_xml_desc(0).map_err(LibvirtError::map_op("get_xml_desc")))
+            .and_then(|d| {
+                d.get_xml_desc(0)
+                    .map_err(LibvirtError::map_op("get_xml_desc"))
+            })
             .unwrap_or_default();
         let channel_attached = xml.contains("org.qemu.guest_agent.0");
-        let channel_disconnected = xml.contains("state='disconnected'")
-            || xml.contains("state=\"disconnected\"");
+        let channel_disconnected =
+            xml.contains("state='disconnected'") || xml.contains("state=\"disconnected\"");
         if channel_attached && channel_disconnected {
             issues.push(
                 "Guest agent channel attached but guestkit-agent is not running in the VM".into(),
             );
-        } else if guest
-            .as_ref()
-            .is_some_and(|g| g.ip_addresses.is_empty())
-        {
+        } else if guest.as_ref().is_some_and(|g| g.ip_addresses.is_empty()) {
             issues.push(
                 "No guest IPv4 from DHCP lease, ARP, or guest agent — check the VM network (VNC) or install guestkit-agent".into(),
             );
@@ -108,7 +108,10 @@ pub fn gather_guest_health(conn: &Connect, name: &str) -> Result<GuestHealthRepo
             if fs.total_bytes > 0 {
                 let pct = (fs.used_bytes as f64 / fs.total_bytes as f64) * 100.0;
                 if pct >= 90.0 {
-                    issues.push(format!("guest filesystem {} {:.0}% full", fs.mountpoint, pct));
+                    issues.push(format!(
+                        "guest filesystem {} {:.0}% full",
+                        fs.mountpoint, pct
+                    ));
                 }
             }
         }

@@ -39,6 +39,29 @@ UPN login (`user@domain`) uses direct AD bind when no service account is configu
 
 See also: [LDAP / Active Directory login](../ldap-auth.md).
 
+## E2E and deploy (auth mode)
+
+When LDAP is enabled on the daemon, PAM login for the SSH user (`sus`) no longer works on `:5092`. Pass **`--auth ldap`** (or set `E2E_AUTH_MODE=ldap`) and LDAP credentials:
+
+```bash
+export E2E_AUTH_MODE=ldap
+export E2E_LDAP_USER='sshant@zyvorai.local'
+export E2E_LDAP_PASS='…'
+VSPASS=max ./scripts/e2e-full-test-remote.sh sus 212.8.252.194 --auth ldap
+
+# Deploy + post-deploy E2E
+VSPASS=max ./scripts/deploy-remote.sh sus 212.8.252.194 --quick --platform --e2e --e2e-auth ldap
+```
+
+| Mode | Flag / env | Credentials |
+|------|------------|-------------|
+| PAM (default when LDAP off) | `--auth pam` | `E2E_USER` / `VSPASS` |
+| LDAP / AD | `--auth ldap` | `E2E_LDAP_USER` / `E2E_LDAP_PASS` (UPN) |
+| OIDC / SSO | `--auth oidc` | Browser SSO only (password E2E skipped) |
+| Auto | `--auth auto` (default) | Detect from `/api/v1/auth/providers`; prefers LDAP when enabled and UPN creds are set |
+
+Playwright live tests use the same env: `PLAYWRIGHT_LIVE_AUTH`, `PLAYWRIGHT_LIVE_LDAP_USER`, `PLAYWRIGHT_LIVE_LDAP_PASS`.
+
 ## Zeus OS (v9s)
 
 Set on the Zeus OS API deployment:

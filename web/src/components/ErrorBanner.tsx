@@ -93,8 +93,8 @@ export default function ErrorBanner({
         <div className="pl-7 space-y-1.5">
           <p className={`text-xs font-medium ${statusToneClass(s.semantic)}`}>What usually fixes it</p>
           <ul className={`text-xs list-disc pl-4 space-y-1 ${s.text}`}>
-            {hints.map((h, i) => (
-              <li key={i}>{h}</li>
+            {hints.map((h) => (
+              <li key={h}>{h}</li>
             ))}
           </ul>
         </div>
