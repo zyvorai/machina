@@ -114,6 +114,20 @@ async fn main() -> anyhow::Result<()> {
 
     let manager = LibvirtManager::new(&config.libvirt).map_err(|e| anyhow::anyhow!("{e}"))?;
 
+    // Provision a stable read-only service token for the backup script. backup.sh calls
+    // the daemon's read APIs (/vms, /networks, /storage/pools, …) which require auth;
+    // without a credential every backup fails "VM not found" (scheduled timer + on-demand).
+    // The token lands in api-tokens.json, which backup.sh (root) reads to authenticate.
+    match machina_core::libvirt::automation::ensure_named_token(
+        "machina-backup",
+        "machina-backup",
+        machina_core::libvirt::automation::Role::ReadOnly,
+        Vec::new(),
+    ) {
+        Ok(_) => info!("backup service token ready (name=machina-backup, role=read-only)"),
+        Err(e) => tracing::warn!("could not provision backup service token: {e}"),
+    }
+
     info!("Connected to libvirt ({})", manager.primary_uri_display());
     match manager
         .with_conn(|conn| Ok(machina_core::libvirt::network::bootstrap_autostart_networks(conn)))

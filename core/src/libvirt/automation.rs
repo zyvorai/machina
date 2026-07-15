@@ -221,6 +221,22 @@ pub fn create_api_token_scoped(
     })
 }
 
+/// Get-or-create a service token identified by `name`. Returns the existing token if
+/// one already exists with this name, otherwise mints a new one. Used to provision a
+/// stable machine credential (e.g. for the backup script, which must authenticate to
+/// the daemon's read APIs) without minting a fresh token on every startup.
+pub fn ensure_named_token(
+    name: &str,
+    username: &str,
+    role: Role,
+    scopes: Vec<String>,
+) -> Result<ApiToken, LibvirtError> {
+    if let Some(existing) = load_tokens().into_values().find(|t| t.name == name) {
+        return Ok(existing);
+    }
+    create_api_token_scoped(name, username, role, scopes)
+}
+
 pub fn validate_api_token(token: &str) -> Option<ApiToken> {
     let tokens = load_tokens();
     tokens

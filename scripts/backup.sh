@@ -263,6 +263,30 @@ elif [ -n "$CONFIG_FILE" ] && [ "$CONFIG_FILE" != "__next__" ]; then
     load_config "$CONFIG_FILE"
 fi
 
+# API auth: the daemon's read APIs (/vms, /networks, /storage/pools, …) require a
+# bearer token. Prefer MACHINA_API_TOKEN (env) or api_token (config); otherwise read
+# the daemon-provisioned "machina-backup" service token from api-tokens.json (root).
+# Without this every backup fails "VM not found" because the unauthenticated GET 401s.
+API_TOKEN="${MACHINA_API_TOKEN:-${api_token:-}}"
+if [ -z "$API_TOKEN" ] && [ -r /var/lib/machina/api-tokens.json ]; then
+    API_TOKEN=$(python3 - <<'PY' 2>/dev/null
+import json
+try:
+    d = json.load(open("/var/lib/machina/api-tokens.json"))
+    print(next((t.get("token","") for t in d.values() if t.get("name") == "machina-backup"), ""))
+except Exception:
+    pass
+PY
+)
+fi
+# curl wrapper that attaches the bearer header when a token is available. Use an
+# array so the header value (which contains spaces) stays a single argument.
+mcurl() {
+    local -a auth=()
+    [ -n "$API_TOKEN" ] && auth=(-H "Authorization: Bearer $API_TOKEN")
+    curl -sfk "${auth[@]}" "$@"
+}
+
 # Second pass: CLI args override config
 PREV_ARG=""
 for arg in "$@"; do
@@ -464,21 +488,21 @@ fi
 
 # ── Check daemon ─────────────────────────────────────────────────────
 
-curl -sfk "$API/health" > /dev/null 2>&1 || fail "Daemon not reachable at $API"
+mcurl "$API/health" > /dev/null 2>&1 || fail "Daemon not reachable at $API"
 
 # ── Gather data ──────────────────────────────────────────────────────
 
 if [ -n "$VM_FILTER" ]; then
-    VM_DETAIL=$(curl -sfk "$API/vms/$VM_FILTER" 2>/dev/null) || fail "VM '$VM_FILTER' not found"
+    VM_DETAIL=$(mcurl "$API/vms/$VM_FILTER" 2>/dev/null) || fail "VM '$VM_FILTER' not found"
     VM_NAMES="$VM_FILTER"
     VM_COUNT=1
     NET_NAMES=""
     NET_COUNT=0
     POOLS=""
 else
-    VMS=$(curl -sfk "$API/vms" 2>/dev/null) || fail "Failed to fetch VM list from API"
-    NETS=$(curl -sfk "$API/networks" 2>/dev/null) || fail "Failed to fetch network list from API"
-    POOLS=$(curl -sfk "$API/storage/pools" 2>/dev/null) || fail "Failed to fetch storage pool list from API"
+    VMS=$(mcurl "$API/vms" 2>/dev/null) || fail "Failed to fetch VM list from API"
+    NETS=$(mcurl "$API/networks" 2>/dev/null) || fail "Failed to fetch network list from API"
+    POOLS=$(mcurl "$API/storage/pools" 2>/dev/null) || fail "Failed to fetch storage pool list from API"
 
     # Validate JSON responses before parsing
     echo "$VMS" | python3 -c "import json,sys; json.load(sys.stdin)" 2>/dev/null || fail "API returned invalid JSON for VMs"
@@ -511,7 +535,7 @@ if $LIST_ONLY; then
         [ -z "$name" ] && continue
         echo "    $name"
         if $WITH_DISKS; then
-            DETAILS=$(curl -sfk "$API/vms/$name" 2>/dev/null)
+            DETAILS=$(mcurl "$API/vms/$name" 2>/dev/null)
             echo "$DETAILS" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
@@ -556,7 +580,7 @@ write_status "running" "Starting backup" "0"
 info "Backing up $VM_COUNT VM configs..."
 while IFS= read -r name; do
     [ -z "$name" ] && continue
-    XML=$(curl -sfk "$API/vms/$name/xml" 2>/dev/null)
+    XML=$(mcurl "$API/vms/$name/xml" 2>/dev/null)
     if [ -n "$XML" ]; then
         printf '%s\n' "$XML" > "$BACKUP_PATH/vms/$name.xml"
         echo "  $name"
@@ -572,7 +596,7 @@ if [ -z "$VM_FILTER" ]; then
     info "Backing up $NET_COUNT network configs..."
     while IFS= read -r name; do
         [ -z "$name" ] && continue
-        XML=$(curl -sfk "$API/networks/$name/xml" 2>/dev/null)
+        XML=$(mcurl "$API/networks/$name/xml" 2>/dev/null)
         if [ -n "$XML" ]; then
             printf '%s\n' "$XML" > "$BACKUP_PATH/networks/$name.xml"
             echo "  $name"
@@ -585,7 +609,7 @@ if [ -z "$VM_FILTER" ]; then
     info "Backing up storage pool configs..."
     while IFS= read -r name; do
         [ -z "$name" ] && continue
-        XML=$(curl -sfk "$API/storage/pools/$name/xml" 2>/dev/null)
+        XML=$(mcurl "$API/storage/pools/$name/xml" 2>/dev/null)
         if [ -n "$XML" ]; then
             printf '%s\n' "$XML" > "$BACKUP_PATH/pools/$name.xml"
             echo "  $name"
@@ -600,7 +624,7 @@ if [ -z "$VM_FILTER" ]; then
     echo "$POOLS" | python3 -m json.tool > "$BACKUP_PATH/pools.json" 2>/dev/null
 
     # Save node info
-    curl -sfk "$API/node" | python3 -m json.tool > "$BACKUP_PATH/node.json" 2>/dev/null
+    mcurl "$API/node" | python3 -m json.tool > "$BACKUP_PATH/node.json" 2>/dev/null
 else
     echo "$VM_DETAIL" | python3 -m json.tool > "$BACKUP_PATH/vm-detail.json" 2>/dev/null
 fi
@@ -627,7 +651,7 @@ if $WITH_DISKS; then
     DISK_LIST=""
     while IFS= read -r name; do
         [ -z "$name" ] && continue
-        DETAILS=$(curl -sfk "$API/vms/$name" 2>/dev/null) || continue
+        DETAILS=$(mcurl "$API/vms/$name" 2>/dev/null) || continue
         PATHS=$(echo "$DETAILS" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)

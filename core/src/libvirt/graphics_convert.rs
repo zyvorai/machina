@@ -112,7 +112,12 @@ pub fn virt_xml_add_graphics(
     let graphics_type = graphics_type.trim().to_ascii_lowercase();
     crate::validate::validate_graphics_kind(&graphics_type)?;
     crate::validate::validate_graphics_listen(listen)?;
-    let spec = format!("type={graphics_type},listen={listen},autoport=yes,port=-1");
+    // `port=-1` already makes libvirt allocate a port automatically (autoport='yes' in
+    // the resulting XML). Do NOT also pass `autoport=yes`: it is not a valid --graphics
+    // suboption in virt-install/virt-xml 4.x (accepts type/listen/port/tlsPort/address.*)
+    // and makes the whole command fail with "Unknown --graphics options: ['autoport']",
+    // which breaks VM create whenever a second graphics device is added.
+    let spec = format!("type={graphics_type},listen={listen},port=-1");
     run_virt_xml(
         libvirt_uri,
         vm_name,
@@ -170,7 +175,7 @@ mod tests {
             &[
                 "--add-device",
                 "--graphics",
-                "type=spice,listen=127.0.0.1,autoport=yes,port=-1",
+                "type=spice,listen=127.0.0.1,port=-1",
             ],
         );
         assert!(!argv.contains(&"--edit".to_string()));
