@@ -1,18 +1,18 @@
 {
-  "generated_at": "2026-06-15T15:20:38.864Z",
-  "controller_total": 474,
-  "daemon_total": 442,
-  "websocket_total": 11,
-  "total_routes": 927,
+  "generated_at": "2026-07-15T16:52:02.295Z",
+  "controller_total": 517,
+  "daemon_total": 443,
+  "websocket_total": 12,
+  "total_routes": 972,
   "counts": {
-    "page": 461,
-    "console": 447,
-    "documented": 19
+    "page": 476,
+    "console": 476,
+    "documented": 20
   },
   "by_source": {
-    "controller": 474,
-    "daemon": 442,
-    "websocket": 11
+    "controller": 517,
+    "daemon": 443,
+    "websocket": 12
   },
   "unmapped_count": 0,
   "routes": [
@@ -841,6 +841,22 @@
       "surface": "page"
     },
     {
+      "path": "/api/v1/alert-rules",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
+      "path": "/api/v1/alert-rules/{id}",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
       "path": "/api/v1/api-keys",
       "methods": [
         "GET"
@@ -852,6 +868,14 @@
       "path": "/api/v1/api-keys/{id}",
       "methods": [
         "DELETE"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
+      "path": "/api/v1/api-keys/{id}/rotate",
+      "methods": [
+        "POST"
       ],
       "source": "controller",
       "surface": "page"
@@ -879,6 +903,190 @@
       ],
       "source": "controller",
       "surface": "page"
+    },
+    {
+      "path": "/api/v1/atlas/backends",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/backups",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/backups/{id}",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/buckets",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/clusters",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/jobs",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/jobs/{id}",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/metrics/summary",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/policies",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/pools",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/restore-jobs",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/snapshots",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/snapshots/{id}",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/snapshots/{id}/clone",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/snapshots/{id}/restore",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/status",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/vms/{id}/backup",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/vms/{id}/snapshot",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/vms/{id}/volumes",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/volumes",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/volumes/{id}",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/volumes/{id}/expand",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/atlas/volumes/{id}/snapshots",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "console"
     },
     {
       "path": "/api/v1/audit",
@@ -921,9 +1129,33 @@
       "surface": "console"
     },
     {
+      "path": "/api/v1/backup-schedules",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
+      "path": "/api/v1/backup-schedules/{id}",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
       "path": "/api/v1/backup-targets",
       "methods": [
         "GET"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
+      "path": "/api/v1/backup-targets/{id}",
+      "methods": [
+        "DELETE"
       ],
       "source": "controller",
       "surface": "page"
@@ -979,7 +1211,7 @@
     {
       "path": "/api/v1/blueprints/{id}",
       "methods": [
-        "DELETE"
+        "GET"
       ],
       "source": "controller",
       "surface": "page"
@@ -991,6 +1223,14 @@
       ],
       "source": "controller",
       "surface": "page"
+    },
+    {
+      "path": "/api/v1/cert-status",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
     },
     {
       "path": "/api/v1/cloud-init/validate",
@@ -1481,6 +1721,14 @@
       "surface": "page"
     },
     {
+      "path": "/api/v1/hosts/{id}/cordon",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
       "path": "/api/v1/hosts/{id}/detail",
       "methods": [
         "GET"
@@ -1667,7 +1915,7 @@
     {
       "path": "/api/v1/maintenance/schedules/{id}",
       "methods": [
-        "DELETE"
+        "GET"
       ],
       "source": "controller",
       "surface": "page"
@@ -1804,7 +2052,7 @@
     {
       "path": "/api/v1/networks/{id}",
       "methods": [
-        "PATCH"
+        "GET"
       ],
       "source": "controller",
       "surface": "page"
@@ -1837,6 +2085,30 @@
       "path": "/api/v1/networks/live",
       "methods": [
         "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/notification-channels",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/notification-channels/{id}",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "controller",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/notification-channels/{id}/test",
+      "methods": [
+        "POST"
       ],
       "source": "controller",
       "surface": "console"
@@ -1989,6 +2261,22 @@
       "path": "/api/v1/reports/finops",
       "methods": [
         "GET"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
+      "path": "/api/v1/scheduled-jobs",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
+      "path": "/api/v1/scheduled-jobs/{id}",
+      "methods": [
+        "DELETE"
       ],
       "source": "controller",
       "surface": "page"
@@ -2164,7 +2452,7 @@
     {
       "path": "/api/v1/storage/pools/{id}",
       "methods": [
-        "PATCH"
+        "GET"
       ],
       "source": "controller",
       "surface": "page"
@@ -2554,6 +2842,14 @@
       "surface": "page"
     },
     {
+      "path": "/api/v1/vms/{id}/domain-caps",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
       "path": "/api/v1/vms/{id}/domain-xml",
       "methods": [
         "GET"
@@ -2890,6 +3186,22 @@
       "surface": "page"
     },
     {
+      "path": "/api/v1/vms/{id}/schedules",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
+      "path": "/api/v1/vms/{id}/schedules/{schedule_id}",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
       "path": "/api/v1/vms/{id}/shutdown",
       "methods": [
         "POST"
@@ -2984,6 +3296,14 @@
       ],
       "source": "controller",
       "surface": "page"
+    },
+    {
+      "path": "/api/v1/vms/{id}/watchdog",
+      "methods": [
+        "GET"
+      ],
+      "source": "controller",
+      "surface": "console"
     },
     {
       "path": "/api/v1/vms/{id}/ws-token",
@@ -3215,7 +3535,7 @@
         "GET"
       ],
       "source": "controller",
-      "surface": "console"
+      "surface": "page"
     },
     {
       "path": "/api/v1/zeus-firewall/k8s/apply",
@@ -3554,6 +3874,22 @@
       "surface": "page"
     },
     {
+      "path": "/api/v1/zeus-security/enforcement/attach",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
+      "path": "/api/v1/zeus-security/enforcement/detach",
+      "methods": [
+        "POST"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
       "path": "/api/v1/zeus-security/enforcement/policies",
       "methods": [
         "GET"
@@ -3589,6 +3925,14 @@
       "path": "/api/v1/zeus-security/enforcement/status",
       "methods": [
         "GET"
+      ],
+      "source": "controller",
+      "surface": "page"
+    },
+    {
+      "path": "/api/v1/zeus-security/enforcement/sync",
+      "methods": [
+        "POST"
       ],
       "source": "controller",
       "surface": "page"
@@ -3815,7 +4159,7 @@
         "GET"
       ],
       "source": "daemon",
-      "surface": "console"
+      "surface": "page"
     },
     {
       "path": "/api/v1/alerts",
@@ -4317,6 +4661,14 @@
       "path": "/api/v1/host/cockpit/actions",
       "methods": [
         "POST"
+      ],
+      "source": "daemon",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/host/devices/{addr}/vfio-status",
+      "methods": [
+        "GET"
       ],
       "source": "daemon",
       "surface": "console"
@@ -4907,6 +5259,14 @@
     },
     {
       "path": "/api/v1/k8s/kubevirt/virtualmachines/{namespace}/{name}/lifecycle",
+      "methods": [
+        "POST"
+      ],
+      "source": "daemon",
+      "surface": "console"
+    },
+    {
+      "path": "/api/v1/k8s/kubevirt/virtualmachines/{namespace}/{name}/spec",
       "methods": [
         "POST"
       ],
@@ -6301,6 +6661,14 @@
       "surface": "console"
     },
     {
+      "path": "/api/v1/platform/spice/{vm_id}",
+      "methods": [
+        "GET"
+      ],
+      "source": "daemon",
+      "surface": "console"
+    },
+    {
       "path": "/api/v1/platform/vnc/{vm_id}",
       "methods": [
         "GET"
@@ -6858,28 +7226,12 @@
       "surface": "console"
     },
     {
-      "path": "/api/v1/vms/{name}/graphics/add",
-      "methods": [
-        "POST"
-      ],
-      "source": "daemon",
-      "surface": "page"
-    },
-    {
       "path": "/api/v1/vms/{name}/graphics/convert-to-vnc",
       "methods": [
         "POST"
       ],
       "source": "daemon",
       "surface": "console"
-    },
-    {
-      "path": "/api/v1/vms/{name}/graphics/remove",
-      "methods": [
-        "POST"
-      ],
-      "source": "daemon",
-      "surface": "page"
     },
     {
       "path": "/api/v1/vms/{name}/guacamole-auth",
@@ -7453,6 +7805,14 @@
     },
     {
       "path": "/ws/v1/platform/serial/{vm_id}",
+      "methods": [
+        "GET"
+      ],
+      "source": "websocket",
+      "surface": "documented"
+    },
+    {
+      "path": "/ws/v1/platform/spice/{vm_id}",
       "methods": [
         "GET"
       ],

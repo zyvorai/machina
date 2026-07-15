@@ -2636,6 +2636,54 @@
         }
       }
     },
+    "/api/v1/alert-rules": {
+      "get": {
+        "summary": "GET /api/v1/alert-rules",
+        "tags": [
+          "alert-rules"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/alert-rules/{id}": {
+      "delete": {
+        "summary": "DELETE /api/v1/alert-rules/{id}",
+        "tags": [
+          "alert-rules"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/api-keys": {
       "get": {
         "summary": "GET /api/v1/api-keys",
@@ -2682,6 +2730,45 @@
             }
           }
         ]
+      }
+    },
+    "/api/v1/api-keys/{id}/rotate": {
+      "post": {
+        "summary": "POST /api/v1/api-keys/{id}/rotate",
+        "tags": [
+          "api-keys"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/applications": {
@@ -2737,6 +2824,623 @@
         "summary": "POST /api/v1/applications/{id}/actions",
         "tags": [
           "applications"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/backends": {
+      "get": {
+        "summary": "GET /api/v1/atlas/backends",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/backups": {
+      "get": {
+        "summary": "GET /api/v1/atlas/backups",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/backups/{id}": {
+      "delete": {
+        "summary": "DELETE /api/v1/atlas/backups/{id}",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/atlas/buckets": {
+      "get": {
+        "summary": "GET /api/v1/atlas/buckets",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/clusters": {
+      "get": {
+        "summary": "GET /api/v1/atlas/clusters",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/jobs": {
+      "get": {
+        "summary": "GET /api/v1/atlas/jobs",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/jobs/{id}": {
+      "get": {
+        "summary": "GET /api/v1/atlas/jobs/{id}",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/atlas/metrics/summary": {
+      "get": {
+        "summary": "GET /api/v1/atlas/metrics/summary",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/policies": {
+      "get": {
+        "summary": "GET /api/v1/atlas/policies",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/pools": {
+      "get": {
+        "summary": "GET /api/v1/atlas/pools",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/restore-jobs": {
+      "post": {
+        "summary": "POST /api/v1/atlas/restore-jobs",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/snapshots": {
+      "get": {
+        "summary": "GET /api/v1/atlas/snapshots",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/snapshots/{id}": {
+      "delete": {
+        "summary": "DELETE /api/v1/atlas/snapshots/{id}",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/atlas/snapshots/{id}/clone": {
+      "post": {
+        "summary": "POST /api/v1/atlas/snapshots/{id}/clone",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/snapshots/{id}/restore": {
+      "post": {
+        "summary": "POST /api/v1/atlas/snapshots/{id}/restore",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/status": {
+      "get": {
+        "summary": "GET /api/v1/atlas/status",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/vms/{id}/backup": {
+      "post": {
+        "summary": "POST /api/v1/atlas/vms/{id}/backup",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/vms/{id}/snapshot": {
+      "post": {
+        "summary": "POST /api/v1/atlas/vms/{id}/snapshot",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/vms/{id}/volumes": {
+      "get": {
+        "summary": "GET /api/v1/atlas/vms/{id}/volumes",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/atlas/volumes": {
+      "get": {
+        "summary": "GET /api/v1/atlas/volumes",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/volumes/{id}": {
+      "get": {
+        "summary": "GET /api/v1/atlas/volumes/{id}",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/atlas/volumes/{id}/expand": {
+      "post": {
+        "summary": "POST /api/v1/atlas/volumes/{id}/expand",
+        "tags": [
+          "atlas"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/atlas/volumes/{id}/snapshots": {
+      "post": {
+        "summary": "POST /api/v1/atlas/volumes/{id}/snapshots",
+        "tags": [
+          "atlas"
         ],
         "responses": {
           "200": {
@@ -2866,6 +3570,54 @@
         }
       }
     },
+    "/api/v1/backup-schedules": {
+      "get": {
+        "summary": "GET /api/v1/backup-schedules",
+        "tags": [
+          "backup-schedules"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/backup-schedules/{id}": {
+      "delete": {
+        "summary": "DELETE /api/v1/backup-schedules/{id}",
+        "tags": [
+          "backup-schedules"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/backup-targets": {
       "get": {
         "summary": "GET /api/v1/backup-targets",
@@ -2883,6 +3635,35 @@
             "description": "Server error"
           }
         }
+      }
+    },
+    "/api/v1/backup-targets/{id}": {
+      "delete": {
+        "summary": "DELETE /api/v1/backup-targets/{id}",
+        "tags": [
+          "backup-targets"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/api/v1/backups/timeline": {
@@ -3040,8 +3821,8 @@
       }
     },
     "/api/v1/blueprints/{id}": {
-      "delete": {
-        "summary": "DELETE /api/v1/blueprints/{id}",
+      "get": {
+        "summary": "GET /api/v1/blueprints/{id}",
         "tags": [
           "blueprints"
         ],
@@ -3103,6 +3884,25 @@
                 "additionalProperties": true
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/cert-status": {
+      "get": {
+        "summary": "GET /api/v1/cert-status",
+        "tags": [
+          "cert-status"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
           }
         }
       }
@@ -4642,6 +5442,45 @@
         }
       }
     },
+    "/api/v1/hosts/{id}/cordon": {
+      "post": {
+        "summary": "POST /api/v1/hosts/{id}/cordon",
+        "tags": [
+          "hosts"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/hosts/{id}/detail": {
       "get": {
         "summary": "GET /api/v1/hosts/{id}/detail",
@@ -5380,8 +6219,8 @@
       }
     },
     "/api/v1/maintenance/schedules/{id}": {
-      "delete": {
-        "summary": "DELETE /api/v1/maintenance/schedules/{id}",
+      "get": {
+        "summary": "GET /api/v1/maintenance/schedules/{id}",
         "tags": [
           "maintenance"
         ],
@@ -5878,8 +6717,8 @@
       }
     },
     "/api/v1/networks/{id}": {
-      "patch": {
-        "summary": "PATCH /api/v1/networks/{id}",
+      "get": {
+        "summary": "GET /api/v1/networks/{id}",
         "tags": [
           "networks"
         ],
@@ -5903,17 +6742,7 @@
               "type": "string"
             }
           }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
-          }
-        }
+        ]
       }
     },
     "/api/v1/networks/{id}/activate": {
@@ -6038,6 +6867,93 @@
           },
           "500": {
             "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/notification-channels": {
+      "get": {
+        "summary": "GET /api/v1/notification-channels",
+        "tags": [
+          "notification-channels"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/notification-channels/{id}": {
+      "delete": {
+        "summary": "DELETE /api/v1/notification-channels/{id}",
+        "tags": [
+          "notification-channels"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/notification-channels/{id}/test": {
+      "post": {
+        "summary": "POST /api/v1/notification-channels/{id}/test",
+        "tags": [
+          "notification-channels"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
           }
         }
       }
@@ -6461,6 +7377,54 @@
             "description": "Server error"
           }
         }
+      }
+    },
+    "/api/v1/scheduled-jobs": {
+      "get": {
+        "summary": "GET /api/v1/scheduled-jobs",
+        "tags": [
+          "scheduled-jobs"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/scheduled-jobs/{id}": {
+      "delete": {
+        "summary": "DELETE /api/v1/scheduled-jobs/{id}",
+        "tags": [
+          "scheduled-jobs"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
       }
     },
     "/api/v1/soc/alerts": {
@@ -6993,8 +7957,8 @@
       }
     },
     "/api/v1/storage/pools/{id}": {
-      "patch": {
-        "summary": "PATCH /api/v1/storage/pools/{id}",
+      "get": {
+        "summary": "GET /api/v1/storage/pools/{id}",
         "tags": [
           "storage"
         ],
@@ -7018,17 +7982,7 @@
               "type": "string"
             }
           }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
-          }
-        }
+        ]
       }
     },
     "/api/v1/storage/pools/{id}/activate": {
@@ -8771,6 +9725,35 @@
         ]
       }
     },
+    "/api/v1/vms/{id}/domain-caps": {
+      "get": {
+        "summary": "GET /api/v1/vms/{id}/domain-caps",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/vms/{id}/domain-xml": {
       "get": {
         "summary": "GET /api/v1/vms/{id}/domain-xml",
@@ -9250,6 +10233,64 @@
     "/api/v1/vms/{id}/ha": {
       "get": {
         "summary": "GET /api/v1/vms/{id}/ha",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/vms/{id}/hardware-compat": {
+      "get": {
+        "summary": "GET /api/v1/vms/{id}/hardware-compat",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/vms/{id}/hardware-summary": {
+      "get": {
+        "summary": "GET /api/v1/vms/{id}/hardware-summary",
         "tags": [
           "vms"
         ],
@@ -10179,6 +11220,72 @@
         }
       }
     },
+    "/api/v1/vms/{id}/schedules": {
+      "get": {
+        "summary": "GET /api/v1/vms/{id}/schedules",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/vms/{id}/schedules/{schedule_id}": {
+      "delete": {
+        "summary": "DELETE /api/v1/vms/{id}/schedules/{schedule_id}",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "schedule_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/vms/{id}/shutdown": {
       "post": {
         "summary": "POST /api/v1/vms/{id}/shutdown",
@@ -10585,6 +11692,35 @@
     "/api/v1/vms/{id}/viewer.vv": {
       "get": {
         "summary": "GET /api/v1/vms/{id}/viewer.vv",
+        "tags": [
+          "vms"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/api/v1/vms/{id}/watchdog": {
+      "get": {
+        "summary": "GET /api/v1/vms/{id}/watchdog",
         "tags": [
           "vms"
         ],
@@ -12540,6 +13676,64 @@
         }
       }
     },
+    "/api/v1/zeus-security/enforcement/attach": {
+      "post": {
+        "summary": "POST /api/v1/zeus-security/enforcement/attach",
+        "tags": [
+          "zeus-security"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/zeus-security/enforcement/detach": {
+      "post": {
+        "summary": "POST /api/v1/zeus-security/enforcement/detach",
+        "tags": [
+          "zeus-security"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/zeus-security/enforcement/policies": {
       "get": {
         "summary": "GET /api/v1/zeus-security/enforcement/policies",
@@ -12681,6 +13875,35 @@
           },
           "500": {
             "description": "Server error"
+          }
+        }
+      }
+    },
+    "/api/v1/zeus-security/enforcement/sync": {
+      "post": {
+        "summary": "POST /api/v1/zeus-security/enforcement/sync",
+        "tags": [
+          "zeus-security"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
           }
         }
       }
@@ -14129,6 +15352,31 @@
     "/ws/v1/platform/serial/{vm_id}": {
       "get": {
         "summary": "WebSocket /ws/v1/platform/serial/{vm_id}",
+        "tags": [
+          "platform"
+        ],
+        "description": "WebSocket endpoint — use wscat or a WebSocket client. Obtain a token via POST /api/v1/ws-token first.",
+        "x-machina-transport": "websocket",
+        "responses": {
+          "101": {
+            "description": "Switching Protocols"
+          }
+        },
+        "parameters": [
+          {
+            "name": "vm_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
+    "/ws/v1/platform/spice/{vm_id}": {
+      "get": {
+        "summary": "WebSocket /ws/v1/platform/spice/{vm_id}",
         "tags": [
           "platform"
         ],

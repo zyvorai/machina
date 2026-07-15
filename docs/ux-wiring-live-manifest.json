@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "generated_at": "2026-06-10T18:35:05.220Z",
+  "generated_at": "2026-07-15T16:52:02.362Z",
   "entries": [
     {
       "id": "classic:/",
@@ -672,6 +672,26 @@
       "resolve": null
     },
     {
+      "id": "platform:/platform/ai-providers",
+      "shell": "platform",
+      "path": "/platform/ai-providers",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/alert-rules",
+      "shell": "platform",
+      "path": "/platform/alert-rules",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
       "id": "platform:/platform/api-keys",
       "shell": "platform",
       "path": "/platform/api-keys",
@@ -727,6 +747,16 @@
           "label": "Destinations"
         }
       ],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/baremetal",
+      "shell": "platform",
+      "path": "/platform/baremetal",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
       "resolve": null
     },
     {
@@ -812,6 +842,21 @@
       "headingPattern": ".+",
       "requires": null,
       "actions": [],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/create-advanced",
+      "shell": "platform",
+      "path": "/platform/create-advanced",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [
+        {
+          "kind": "tab",
+          "label": "Default network (DHCP)"
+        }
+      ],
       "resolve": null
     },
     {
@@ -1017,6 +1062,16 @@
       "resolve": null
     },
     {
+      "id": "platform:/platform/ha",
+      "shell": "platform",
+      "path": "/platform/ha",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
       "id": "platform:/platform/hosts",
       "shell": "platform",
       "path": "/platform/hosts",
@@ -1067,6 +1122,36 @@
       "resolve": null
     },
     {
+      "id": "platform:/platform/launchpad",
+      "shell": "platform",
+      "path": "/platform/launchpad",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/launchpad/apps/:id",
+      "shell": "platform",
+      "path": "/platform/launchpad/apps/:id",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/launchpad/spaces/:spaceId",
+      "shell": "platform",
+      "path": "/platform/launchpad/spaces/:spaceId",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
       "id": "platform:/platform/maintenance",
       "shell": "platform",
       "path": "/platform/maintenance",
@@ -1082,6 +1167,16 @@
       "path": "/platform/maintenance?tab=mission",
       "tier": "power",
       "headingPattern": "Maintenance|Mission",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/marketplace",
+      "shell": "platform",
+      "path": "/platform/marketplace",
+      "tier": "normal",
+      "headingPattern": ".+",
       "requires": null,
       "actions": [],
       "resolve": null
@@ -1166,6 +1261,16 @@
       "shell": "platform",
       "path": "/platform/migration?tab=vmdk",
       "tier": "power",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/mission-control/live",
+      "shell": "platform",
+      "path": "/platform/mission-control/live",
+      "tier": "normal",
       "headingPattern": ".+",
       "requires": null,
       "actions": [],
@@ -1292,6 +1397,16 @@
       "resolve": null
     },
     {
+      "id": "platform:/platform/scheduled-jobs",
+      "shell": "platform",
+      "path": "/platform/scheduled-jobs",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
       "id": "platform:/platform/settings",
       "shell": "platform",
       "path": "/platform/settings",
@@ -1302,6 +1417,10 @@
         {
           "kind": "tab",
           "label": "General"
+        },
+        {
+          "kind": "tab",
+          "label": "Identity & SSO"
         },
         {
           "kind": "tab",
@@ -1374,6 +1493,10 @@
         {
           "kind": "settingsSection",
           "label": "General"
+        },
+        {
+          "kind": "settingsSection",
+          "label": "Identity & SSO"
         },
         {
           "kind": "settingsSection",
@@ -1657,6 +1780,16 @@
       "resolve": null
     },
     {
+      "id": "platform:/platform/settings?tab=identity",
+      "shell": "platform",
+      "path": "/platform/settings?tab=identity",
+      "tier": "normal",
+      "headingPattern": "Settings|General",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
       "id": "platform:/platform/settings?tab=integrations",
       "shell": "platform",
       "path": "/platform/settings?tab=integrations",
@@ -1909,6 +2042,26 @@
       "resolve": null
     },
     {
+      "id": "platform:/platform/storage-atlas",
+      "shell": "platform",
+      "path": "/platform/storage-atlas",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/storage-tiers",
+      "shell": "platform",
+      "path": "/platform/storage-tiers",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
       "id": "platform:/platform/storage?tab=pools",
       "shell": "platform",
       "path": "/platform/storage?tab=pools",
@@ -2046,6 +2199,16 @@
       "resolve": null
     },
     {
+      "id": "platform:/platform/upgrade",
+      "shell": "platform",
+      "path": "/platform/upgrade",
+      "tier": "normal",
+      "headingPattern": ".+",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
       "id": "platform:/platform/users",
       "shell": "platform",
       "path": "/platform/users",
@@ -2140,12 +2303,10 @@
       "shell": "platform",
       "path": "/platform/vms/:id",
       "tier": "normal",
-      "headingPattern": "Daily access|Laptop access|Overview",
+      "headingPattern": ".+",
       "requires": null,
-      "actions": [
-        { "kind": "tab", "label": "Network" }
-      ],
-      "resolve": "platformResource"
+      "actions": [],
+      "resolve": null
     },
     {
       "id": "platform:/platform/vms/:id/console",
@@ -2155,30 +2316,17 @@
       "headingPattern": ".+",
       "requires": null,
       "actions": [],
-      "resolve": "platformResource"
+      "resolve": null
     },
     {
       "id": "platform:/platform/vms/:id/consolehub",
       "shell": "platform",
       "path": "/platform/vms/:id/consolehub",
       "tier": "normal",
-      "headingPattern": "Laptop access|Command Center|Display|Shell",
-      "requires": null,
-      "actions": [
-        { "kind": "click", "role": "button", "name": "Serial" },
-        { "kind": "click", "role": "button", "name": "Command Center" }
-      ],
-      "resolve": "platformResource"
-    },
-    {
-      "id": "platform:/platform/vms/:id?tab=network",
-      "shell": "platform",
-      "path": "/platform/vms/:id?tab=network",
-      "tier": "normal",
-      "headingPattern": "Hypervisor NAT|port forward|Network",
+      "headingPattern": ".+",
       "requires": null,
       "actions": [],
-      "resolve": "platformResource"
+      "resolve": null
     },
     {
       "id": "platform:/platform/webhooks",
@@ -2315,6 +2463,16 @@
       "path": "/platform/zeus/approvals?tab=pending",
       "tier": "normal",
       "headingPattern": "Approval",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/zeus/configure",
+      "shell": "platform",
+      "path": "/platform/zeus/configure",
+      "tier": "normal",
+      "headingPattern": ".+",
       "requires": null,
       "actions": [],
       "resolve": null
@@ -2585,6 +2743,10 @@
         {
           "kind": "tab",
           "label": "Deny K8s namespace"
+        },
+        {
+          "kind": "tab",
+          "label": "TC egress allow"
         }
       ],
       "resolve": null
@@ -2655,6 +2817,16 @@
       "path": "/platform/zeus/security/enforcement?tab=rules",
       "tier": "normal",
       "headingPattern": "Enforcement|Runtime",
+      "requires": null,
+      "actions": [],
+      "resolve": null
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement?tab=tc_allow",
+      "shell": "platform",
+      "path": "/platform/zeus/security/enforcement?tab=tc_allow",
+      "tier": "normal",
+      "headingPattern": ".+",
       "requires": null,
       "actions": [],
       "resolve": null
@@ -2955,11 +3127,9 @@
       "shell": "classic",
       "path": "/vms/:name/consolehub",
       "tier": "normal",
-      "headingPattern": "Console|ConsoleHub|Display|Shell",
+      "headingPattern": "Console|ConsoleHub",
       "requires": null,
-      "actions": [
-        { "kind": "click", "role": "button", "name": "Serial" }
-      ],
+      "actions": [],
       "resolve": "classicVm"
     }
   ]

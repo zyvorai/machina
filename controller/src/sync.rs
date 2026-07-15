@@ -41,13 +41,20 @@ async fn sync_all_hosts(state: &AppState) -> anyhow::Result<()> {
         .await?;
 
     for host_id in host_ids {
-        // Skip if a host.inventory for this host is already pending/running. Every
-        // tick mints a NEW task_id, so the per-id NATS-echo dedup doesn't apply
+        // Skip if a RECENT host.inventory for this host is already pending/running.
+        // Every tick mints a NEW task_id, so the per-id NATS-echo dedup doesn't apply
         // across ticks; without this guard, a worker that can't drain 200 hosts
         // within the interval (each dead host costs up to the connect timeout)
         // accumulates an ever-growing backlog in the task table + channel.
+        //
+        // The `-5 minutes` bound is essential: host.inventory is a bounded read RPC
+        // (~seconds), so anything still 'pending'/'running' after 5 min is orphaned
+        // (e.g. dropped by an in-memory-bus restart) — without the bound one such row
+        // would block this host's sync FOREVER, so its heartbeat never refreshes and
+        // it falls offline, breaking VM placement.
         let inflight: i64 = sqlx::query_scalar(
-            "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'host.inventory' AND status IN ('pending', 'running')",
+            "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'host.inventory' \
+             AND status IN ('pending', 'running') AND created_at > datetime('now', '-5 minutes')",
         )
         .bind(host_id)
         .fetch_one(&state.pool)
@@ -80,10 +87,11 @@ async fn sync_kubevirt_inventory(state: &AppState) -> anyhow::Result<()> {
     let Some(cluster_id) = cluster_id else {
         return Ok(());
     };
-    // Same anti-backlog guard as host.inventory: don't stack a fresh
-    // kubevirt.inventory when one is already pending/running.
+    // Same anti-backlog guard as host.inventory, with the same staleness bound so an
+    // orphaned pending row can't wedge kubevirt sync forever.
     let inflight: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'kubevirt.inventory' AND status IN ('pending', 'running')",
+        "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'kubevirt.inventory' \
+         AND status IN ('pending', 'running') AND created_at > datetime('now', '-5 minutes')",
     )
     .bind(cluster_id)
     .fetch_one(&state.pool)

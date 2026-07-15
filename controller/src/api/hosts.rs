@@ -1,6 +1,6 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Extension;
 use axum::Json;
 use serde::{Deserialize, Serialize};
@@ -688,10 +688,20 @@ pub async fn patch_host(
     fetch_host_detail_row(&state, id).await.map(Json)
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub struct DeleteHostQuery {
+    /// Evict a decommissioned/unreachable host even though it still has VM
+    /// records assigned, pruning those orphaned records. Guarded so it can never
+    /// be used on a host that is still live (see below).
+    #[serde(default)]
+    pub force: bool,
+}
+
 pub async fn delete_host(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
+    Query(q): Query<DeleteHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
     let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE host_id = ?")
@@ -699,22 +709,100 @@ pub async fn delete_host(
         .fetch_one(&state.pool)
         .await?;
     if vm_count > 0 {
-        return Err(ApiError::bad_request("host still has VMs assigned"));
-    }
-    sqlx::query("DELETE FROM hosts WHERE id = ?")
+        if !q.force {
+            return Err(ApiError::conflict(
+                format!("host still has {vm_count} VM record(s) assigned"),
+                "Migrate or delete the VMs first. For a decommissioned or unreachable host, \
+                 pass ?force=true to evict it and prune its orphaned VM records.",
+            )
+            .with_code("host_has_vms"));
+        }
+        // Never force-evict a host that is still live — that would strip real,
+        // running VMs of their controller records. Only permit force when the host
+        // is offline or its heartbeat is stale (>2m), matching the staleness rule
+        // used to render host status elsewhere in this file.
+        let row = sqlx::query_as::<_, (String, Option<chrono::DateTime<chrono::Utc>>)>(
+            "SELECT COALESCE(state, 'unknown'), last_heartbeat_at FROM hosts WHERE id = ?",
+        )
         .bind(id)
-        .execute(&state.pool)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("host not found"))?;
+        let live = row.0 == "online"
+            && row
+                .1
+                .map(|hb| {
+                    chrono::Utc::now().signed_duration_since(hb) <= chrono::Duration::minutes(2)
+                })
+                .unwrap_or(false);
+        if live {
+            return Err(ApiError::conflict(
+                "refusing to force-delete a host that is currently online",
+                "Put the host in maintenance and migrate or delete its VMs, or wait for it to \
+                 go offline before forcing eviction.",
+            )
+            .with_code("host_is_live"));
+        }
+    }
+    let mut tx = state.pool.begin().await?;
+    // Clear child rows whose FKs to hosts/vms are NOT ON DELETE CASCADE, in dependency
+    // order, so the host (and any assigned VM records) can be removed without tripping
+    // a FOREIGN KEY constraint. VM-owned rows with ON DELETE CASCADE (snapshots, tags,
+    // port-forwards, …) are removed automatically when their vms row goes.
+    sqlx::query(
+        "DELETE FROM migration_jobs
+         WHERE source_host_id = ? OR dest_host_id = ?
+            OR vm_id IN (SELECT id FROM vms WHERE host_id = ?)",
+    )
+    .bind(id)
+    .bind(id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM placement_recommendations WHERE from_host_id = ? OR to_host_id = ?")
+        .bind(id)
+        .bind(id)
+        .execute(&mut *tx)
         .await?;
+    for stmt in [
+        "DELETE FROM fence_events WHERE host_id = ?",
+        "DELETE FROM maintenance_windows WHERE host_id = ?",
+        "DELETE FROM tasks WHERE host_id = ?",
+    ] {
+        sqlx::query(stmt).bind(id).execute(&mut *tx).await?;
+    }
+    let pruned = sqlx::query("DELETE FROM vms WHERE host_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    let deleted = sqlx::query("DELETE FROM hosts WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await?
+        .rows_affected();
+    if deleted == 0 {
+        // Roll back the (already-issued) VM delete if the host row was gone.
+        tx.rollback().await?;
+        return Err(ApiError::not_found("host not found"));
+    }
+    tx.commit().await?;
     write_audit(
         &state,
         &actor.username,
         "host.delete",
         "host",
         Some(id),
-        serde_json::json!({}),
+        serde_json::json!({ "force": q.force, "vms_pruned": pruned }),
     )
     .await?;
-    Ok(Json(serde_json::json!({ "deleted": true })))
+    if pruned > 0 {
+        state.emit_event(
+            "host.evicted",
+            format!("Evicted host and pruned {pruned} orphaned VM record(s) from inventory"),
+        );
+    }
+    Ok(Json(serde_json::json!({ "deleted": true, "vms_pruned": pruned })))
 }
 
 pub async fn host_lldp(

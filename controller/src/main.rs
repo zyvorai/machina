@@ -81,6 +81,28 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("PacketWolf local fabric hydrate: {e:#}");
     }
 
+    // Reap orphaned in-flight tasks left by a previous run. The in-memory task bus
+    // starts empty on every launch, so any task still 'pending'/'running' in the DB
+    // will never be picked up — it is orphaned. Left alone these rows also trip the
+    // per-host anti-backlog guard in sync.rs, which then never enqueues a fresh
+    // host.inventory: hosts go stale → show offline → VM placement fails with
+    // "no online hosts available". Fail them so sync (and operators) see the truth.
+    match sqlx::query(
+        "UPDATE tasks SET status = 'failed', \
+         message = COALESCE(NULLIF(message,''),'') || ' [orphaned by controller restart]', \
+         updated_at = datetime('now') \
+         WHERE status IN ('pending', 'running')",
+    )
+    .execute(&pool)
+    .await
+    {
+        Ok(r) if r.rows_affected() > 0 => {
+            info!("reaped {} orphaned in-flight task(s) at startup", r.rows_affected());
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!("orphan task reap at startup failed: {e:#}"),
+    }
+
     let (local_bus, rx) = InMemoryTaskBus::new();
     let local_tx = local_bus.sender();
     let nats_bus = if let Some(url) = &config.nats_url {

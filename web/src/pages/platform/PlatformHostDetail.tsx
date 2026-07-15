@@ -148,6 +148,7 @@ export default function PlatformHostDetailPage() {
   const [cordonBusy, setCordonBusy] = useState(false)
   const [showFenceConfirm, setShowFenceConfirm] = useState(false)
   const [confirmRemoveHost, setConfirmRemoveHost] = useState(false)
+  const [confirmForceEvict, setConfirmForceEvict] = useState(false)
   const [confirmApplyUpgrade, setConfirmApplyUpgrade] = useState(false)
   const [confirmRebootHost, setConfirmRebootHost] = useState(false)
 
@@ -880,6 +881,36 @@ export default function PlatformHostDetailPage() {
         setOpsBusy(true)
         void deleteHost(id!)
           .then(() => { toast.success('Host removed'); navigate('/platform/hosts') })
+          .catch((e: unknown) => {
+            // Offline/decommissioned host that still owns orphaned VM records: offer
+            // a force eviction instead of dead-ending the operator (the API guards
+            // against forcing a live host).
+            if ((e as { error_code?: string }).error_code === 'host_has_vms') {
+              setConfirmForceEvict(true)
+            } else {
+              toast.error(formatUserError(e))
+            }
+          })
+          .finally(() => setOpsBusy(false))
+      }}
+    />
+    <ConfirmDialog
+      open={confirmForceEvict}
+      title="Force-evict Host"
+      message={`Host "${host?.hostname}" still has VM records assigned but is unreachable. `
+        + 'Force-evict it and prune those orphaned VM records from inventory? '
+        + 'This only removes controller records — it does not touch any running guests.'}
+      confirmLabel="Force evict"
+      variant="danger"
+      onCancel={() => setConfirmForceEvict(false)}
+      onConfirm={() => {
+        setConfirmForceEvict(false)
+        setOpsBusy(true)
+        void deleteHost(id!, true)
+          .then((r) => {
+            toast.success(`Host evicted${r.vms_pruned ? ` (${r.vms_pruned} VM record(s) pruned)` : ''}`)
+            navigate('/platform/hosts')
+          })
           .catch((e: unknown) => toast.error(formatUserError(e)))
           .finally(() => setOpsBusy(false))
       }}

@@ -515,7 +515,11 @@ export const createPlatformHost = (body: { hostname: string; address?: string; a
 export const getPlatformHost = (id: string) => platformFetch<PlatformHost>(`/api/v1/hosts/${id}`)
 export const getPlatformHostDetail = (id: string) => platformFetch<PlatformHostDetail>(`/api/v1/hosts/${id}/detail`)
 export const syncAllHosts = () => platformFetch<{ task_id: string }[]>('/api/v1/hosts/sync-all', { method: 'POST' })
-export const deleteHost = (id: string) => platformFetch<{ deleted: boolean }>(`/api/v1/hosts/${id}`, { method: 'DELETE' })
+export const deleteHost = (id: string, force = false) =>
+  platformFetch<{ deleted: boolean; vms_pruned?: number }>(
+    `/api/v1/hosts/${id}${force ? '?force=true' : ''}`,
+    { method: 'DELETE' },
+  )
 export const listPlatformVms = (params?: {
   project?: string
   host_id?: string

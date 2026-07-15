@@ -19,7 +19,7 @@ pub async fn host_linux_observability(
     host_os::linux_observability(&state.pool, &state.config, id)
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn host_network_diagnostics(
@@ -31,7 +31,7 @@ pub async fn host_network_diagnostics(
     host_os::network_diagnostics(&state.pool, &state.config, id)
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn host_linux_audit(
@@ -43,7 +43,7 @@ pub async fn host_linux_audit(
     host_os::linux_audit(&state.pool, &state.config, id)
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn host_linux_package_updates(
@@ -55,7 +55,7 @@ pub async fn host_linux_package_updates(
     host_os::linux_package_updates(&state.pool, &state.config, id)
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -73,7 +73,7 @@ pub async fn host_linux_filesystems(
     host_os::linux_filesystems(&state.pool, &state.config, id)
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn host_linux_processes(
@@ -92,7 +92,7 @@ pub async fn host_linux_processes(
     )
     .await
     .map(Json)
-    .map_err(|e| ApiError::internal(e.to_string()))
+    .map_err(ApiError::from_upstream)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -113,7 +113,7 @@ pub async fn host_linux_package_upgrade(
     if body.dry_run {
         let result = host_os::apply_linux_package_upgrade(&state.pool, &state.config, id, true)
             .await
-            .map_err(|e| ApiError::internal(e.to_string()))?;
+            .map_err(ApiError::from_upstream)?;
         return Ok(Json(serde_json::json!({
             "dry_run": true,
             "result": result,
@@ -173,7 +173,7 @@ pub async fn vm_guest_health(
     host_os::vm_guest_health(&state.pool, &state.config, id)
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn vm_guest_observability(
@@ -185,7 +185,7 @@ pub async fn vm_guest_observability(
     host_os::vm_guest_observability(&state.pool, &state.config, id)
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn vm_guest_services(
@@ -197,7 +197,7 @@ pub async fn vm_guest_services(
     host_os::vm_guest_services(&state.pool, &state.config, id)
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn vm_guest_sync_time(
@@ -209,7 +209,7 @@ pub async fn vm_guest_sync_time(
     host_os::vm_guest_agent_action(&state.pool, &state.config, id, "sync_time")
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn vm_guest_fstrim(
@@ -221,7 +221,7 @@ pub async fn vm_guest_fstrim(
     host_os::vm_guest_agent_action(&state.pool, &state.config, id, "fstrim")
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn vm_guest_fs_freeze_status(
@@ -233,7 +233,7 @@ pub async fn vm_guest_fs_freeze_status(
     host_os::vm_guest_agent_action(&state.pool, &state.config, id, "fs_freeze_status")
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -259,7 +259,7 @@ pub async fn vm_guest_ai_insights(
     )
     .await
     .map(Json)
-    .map_err(|e| ApiError::internal(e.to_string()))
+    .map_err(ApiError::from_upstream)
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -277,7 +277,7 @@ pub async fn diagnose_host(
     host_os::diagnose_host(&state.pool, &state.config, id, body.query.as_deref())
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }
 
 pub async fn diagnose_vm(
@@ -290,5 +290,5 @@ pub async fn diagnose_vm(
     host_os::diagnose_vm(&state.pool, &state.config, id, body.query.as_deref())
         .await
         .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
+        .map_err(ApiError::from_upstream)
 }

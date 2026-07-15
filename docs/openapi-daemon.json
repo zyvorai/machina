@@ -1394,6 +1394,35 @@
         }
       }
     },
+    "/api/v1/host/devices/{addr}/vfio-status": {
+      "get": {
+        "summary": "GET /api/v1/host/devices/{addr}/vfio-status",
+        "tags": [
+          "host"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "addr",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/host/filesystems": {
       "get": {
         "summary": "GET /api/v1/host/filesystems",
@@ -3128,6 +3157,53 @@
     "/api/v1/k8s/kubevirt/virtualmachines/{namespace}/{name}/lifecycle": {
       "post": {
         "summary": "POST /api/v1/k8s/kubevirt/virtualmachines/{namespace}/{name}/lifecycle",
+        "tags": [
+          "k8s"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "namespace",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/k8s/kubevirt/virtualmachines/{namespace}/{name}/spec": {
+      "post": {
+        "summary": "POST /api/v1/k8s/kubevirt/virtualmachines/{namespace}/{name}/spec",
         "tags": [
           "k8s"
         ],
@@ -8459,6 +8535,35 @@
         ]
       }
     },
+    "/api/v1/platform/spice/{vm_id}": {
+      "get": {
+        "summary": "GET /api/v1/platform/spice/{vm_id}",
+        "tags": [
+          "platform"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        },
+        "parameters": [
+          {
+            "name": "vm_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ]
+      }
+    },
     "/api/v1/platform/vnc/{vm_id}": {
       "get": {
         "summary": "GET /api/v1/platform/vnc/{vm_id}",
@@ -10735,87 +10840,9 @@
         }
       }
     },
-    "/api/v1/vms/{name}/graphics/add": {
-      "post": {
-        "summary": "POST /api/v1/vms/{name}/graphics/add",
-        "tags": [
-          "vms"
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "500": {
-            "description": "Server error"
-          }
-        },
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/v1/vms/{name}/graphics/convert-to-vnc": {
       "post": {
         "summary": "POST /api/v1/vms/{name}/graphics/convert-to-vnc",
-        "tags": [
-          "vms"
-        ],
-        "responses": {
-          "200": {
-            "description": "Success"
-          },
-          "401": {
-            "description": "Authentication required"
-          },
-          "500": {
-            "description": "Server error"
-          }
-        },
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/vms/{name}/graphics/remove": {
-      "post": {
-        "summary": "POST /api/v1/vms/{name}/graphics/remove",
         "tags": [
           "vms"
         ],

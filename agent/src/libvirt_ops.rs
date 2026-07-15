@@ -1,6 +1,6 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Command;
 
 use machina_core::config::VmCreateBackend;
@@ -197,21 +197,17 @@ impl LibvirtCtx {
             .map_err(|e| LibvirtError::Invalid(e.to_string()))?;
         if !Path::new(disk_path).exists() {
             if let Some(src) = template_source.filter(|s| !s.is_empty()) {
-                create_linked_clone(src, disk_path)?;
+                create_disk_from_template(src, disk_path)?;
             } else {
                 let size_gib = vm
                     .root_disk_gib()
                     .map_err(|e| LibvirtError::Invalid(e.to_string()))?;
                 create_qcow2(disk_path, size_gib)?;
             }
-        } else if let Some(src) = template_source.filter(|s| !s.is_empty()) {
-            if disk_backing_mismatch(disk_path, src)? {
-                std::fs::remove_file(disk_path).map_err(|e| {
-                    LibvirtError::Operation(format!("remove stale disk {disk_path}: {e}"))
-                })?;
-                create_linked_clone(src, disk_path)?;
-            }
         }
+        // An existing disk is the VM's real, self-contained disk — reuse it as-is.
+        // Template disks are full copies (see create_disk_from_template), so there is
+        // no backing chain to reconcile here; rebuilding would destroy guest data.
 
         let cloud_iso = maybe_cloud_init_iso(vm, cloud, images_dir)?;
 
@@ -1122,44 +1118,29 @@ fn maybe_cloud_init_iso(
     ))
 }
 
-fn disk_backing_mismatch(disk_path: &str, expected_backing: &str) -> Result<bool, LibvirtError> {
-    let out = Command::new("qemu-img")
-        .args(["info", "--output=json", disk_path])
-        .output()
-        .map_err(|e| LibvirtError::Operation(format!("qemu-img info: {e}")))?;
-    if !out.status.success() {
-        return Ok(true);
+/// Provision a VM root disk from a template as a **full, self-contained copy**
+/// (`qemu-img convert`), not a copy-on-write overlay backed by the shared template
+/// image. A COW linked clone produces a multi-level backing chain once the VM is
+/// snapshotted (overlay → vm-disk → template-base); libvirt only records the
+/// backing chain one level deep, so virt-aa-helper omits the template base from the
+/// VM's AppArmor profile and qemu is denied reading it on restart ("Could not open
+/// <base>.qcow2: Permission denied"). A full copy has no external backing, so the
+/// snapshot chain is at most overlay → vm-disk and always fully authorized.
+/// Trade-off: each VM consumes the base's full allocated size and creation copies
+/// the base rather than linking it.
+fn create_disk_from_template(template: &str, path: &str) -> Result<(), LibvirtError> {
+    if !Path::new(template).exists() {
+        return Err(LibvirtError::NotFound(format!("template disk: {template}")));
     }
-    let json: serde_json::Value = serde_json::from_slice(&out.stdout).map_err(|e| {
-        LibvirtError::Operation(format!("parse qemu-img info for {disk_path}: {e}"))
-    })?;
-    let actual = json
-        .get("backing-filename")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
-    if actual.is_empty() {
-        return Ok(true);
-    }
-    let expected = Path::new(expected_backing)
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(expected_backing));
-    let actual_path = Path::new(actual)
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(actual));
-    Ok(expected != actual_path)
-}
-
-fn create_linked_clone(backing: &str, path: &str) -> Result<(), LibvirtError> {
-    if !Path::new(backing).exists() {
-        return Err(LibvirtError::NotFound(format!("template disk: {backing}")));
-    }
+    // -c compresses the copied base clusters, cutting the on-disk cost of a full
+    // per-VM copy (guest writes land uncompressed). Matches the daemon template path.
     let status = Command::new("qemu-img")
-        .args(["create", "-f", "qcow2", "-b", backing, "-F", "qcow2", path])
+        .args(["convert", "-O", "qcow2", "-c", template, path])
         .status()
         .map_err(|e| LibvirtError::Operation(format!("qemu-img: {e}")))?;
     if !status.success() {
         return Err(LibvirtError::Operation(
-            "qemu-img linked clone failed".into(),
+            "qemu-img convert from template failed".into(),
         ));
     }
     Ok(())

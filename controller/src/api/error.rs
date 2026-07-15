@@ -138,6 +138,46 @@ impl ApiError {
             object_ref: None,
         }
     }
+
+    pub fn service_unavailable(msg: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::SERVICE_UNAVAILABLE,
+            message: msg.into(),
+            error_code: Some("host_unavailable".into()),
+            remediation: Some(
+                "The target host or its agent is offline or unreachable. Check the host's \
+                 connection status and that machina-agent is running, then retry."
+                    .into(),
+            ),
+            object_ref: None,
+        }
+    }
+
+    /// Classify an error from a call that proxies to a per-host agent over gRPC.
+    /// A host that is offline, unreachable, or whose agent rejects the token surfaces
+    /// as a transport/connection/auth failure — an upstream availability problem (503),
+    /// not a controller bug (500). Everything else keeps the 500 default.
+    pub fn from_upstream(e: impl std::fmt::Display) -> Self {
+        let msg = e.to_string();
+        let m = msg.to_ascii_lowercase();
+        let unavailable = m.contains("transport error")
+            || m.contains("error trying to connect")
+            || m.contains("connection refused")
+            || m.contains("deadline exceeded")
+            || m.contains("timed out")
+            || m.contains("unavailable")
+            || m.contains("agent token")
+            || m.contains("unauthenticated")
+            || m.contains("offline")
+            || m.contains("not reachable")
+            || m.contains("unreachable")
+            || m.contains("no agent");
+        if unavailable {
+            Self::service_unavailable(msg)
+        } else {
+            Self::internal(msg)
+        }
+    }
 }
 
 impl From<anyhow::Error> for ApiError {
@@ -160,6 +200,33 @@ impl From<sqlx::Error> for ApiError {
             }
         }
         Self::internal(e.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn offline_host_transport_error_maps_to_503() {
+        let e = ApiError::from_upstream("status: Unavailable, message: \"transport error\"");
+        assert_eq!(e.status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(e.error_code.as_deref(), Some("host_unavailable"));
+    }
+
+    #[test]
+    fn agent_token_rejected_maps_to_503() {
+        let e = ApiError::from_upstream(
+            "status: Unauthenticated, message: \"invalid or missing agent token\"",
+        );
+        assert_eq!(e.status, StatusCode::SERVICE_UNAVAILABLE);
+    }
+
+    #[test]
+    fn genuine_internal_error_stays_500() {
+        let e = ApiError::from_upstream("failed to parse json column in row");
+        assert_eq!(e.status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(e.error_code.as_deref(), Some("internal_error"));
     }
 }
 

@@ -65,15 +65,22 @@ pub fn apply_saved_template(conn: &Connect, req: &mut CreateVmRequest) -> Result
 }
 
 fn effective_disk_mode(req: &CreateVmRequest, tmpl: &VmTemplate) -> &'static str {
+    // Default to a full copy ("copy"): a COW linked clone ("backing") shares the
+    // template base as a backing file, which produces a multi-level backing chain
+    // once the VM is snapshotted — libvirt records the chain only one level deep, so
+    // the template base is omitted from the VM's AppArmor profile and qemu is denied
+    // reading it on restart. A full copy avoids that. "backing" stays available as an
+    // explicit opt-in for callers that want thin/instant provisioning and won't rely
+    // on snapshot+restart.
     let m = req.template_disk_mode.trim();
     if m == "copy" || m == "backing" {
         return if m == "copy" { "copy" } else { "backing" };
     }
     let m2 = tmpl.template_disk_mode.trim();
-    if m2 == "copy" {
-        "copy"
-    } else {
+    if m2 == "backing" {
         "backing"
+    } else {
+        "copy"
     }
 }
 
