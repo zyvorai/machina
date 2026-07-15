@@ -17,10 +17,14 @@ const GUESTKIT_UNIT: &str = r#"[Unit]
 Description=GuestKit Agent (QGA-compatible virtio channel)
 After=network.target
 ConditionPathExists=/dev/virtio-ports/org.qemu.guest_agent.0
+# Keep retrying rather than giving up after a burst of early-boot failures (e.g. the
+# binary install from the seed racing service start).
+StartLimitIntervalSec=0
 
 [Service]
 ExecStart=/usr/local/bin/guestkit agent --channel virtio
 Restart=on-failure
+RestartSec=5
 User=root
 StandardOutput=journal
 StandardError=journal
@@ -106,14 +110,29 @@ pub fn append_guestkit_cloud_config(user_data: &mut String, binary_on_seed: bool
     }
     if binary_on_seed {
         user_data.push_str("runcmd:\n");
+        // Explicitly mount the NoCloud seed by its 'cidata' label and install the
+        // guestkit binary from it. cloud-init does NOT leave the seed mounted at a
+        // fixed path, so the fallback checks below (/mnt/cidata, /mnt/cdrom, …) miss
+        // it — the unit then gets enabled but its ExecStart binary is absent, so the
+        // agent never starts. Mounting by label is reliable: the seed ISO is labeled
+        // 'cidata'. Do this BEFORE `systemctl enable --now` so the binary exists.
+        user_data.push_str("  - mkdir -p /run/guestkit-seed\n");
         user_data.push_str(
-            "  - test -f /mnt/cdrom/guestkit && install -m755 /mnt/cdrom/guestkit /usr/local/bin/guestkit || true\n",
+            "  - mount -L cidata /run/guestkit-seed 2>/dev/null || mount /dev/sr0 /run/guestkit-seed 2>/dev/null || mount /dev/cdrom /run/guestkit-seed 2>/dev/null || true\n",
         );
         user_data.push_str(
-            "  - test -f /mnt/cidata/guestkit && install -m755 /mnt/cidata/guestkit /usr/local/bin/guestkit || true\n",
+            "  - test -f /run/guestkit-seed/guestkit && install -m755 /run/guestkit-seed/guestkit /usr/local/bin/guestkit || true\n",
+        );
+        user_data.push_str("  - umount /run/guestkit-seed 2>/dev/null || true\n");
+        // Fallbacks for guests where the seed is already mounted somewhere findable.
+        user_data.push_str(
+            "  - test -x /usr/local/bin/guestkit || (test -f /mnt/cdrom/guestkit && install -m755 /mnt/cdrom/guestkit /usr/local/bin/guestkit) || true\n",
         );
         user_data.push_str(
-            "  - for m in /run/media/*/guestkit /media/*/guestkit; do [ -f \"$m\" ] && install -m755 \"$m\" /usr/local/bin/guestkit && break; done\n",
+            "  - test -x /usr/local/bin/guestkit || (test -f /mnt/cidata/guestkit && install -m755 /mnt/cidata/guestkit /usr/local/bin/guestkit) || true\n",
+        );
+        user_data.push_str(
+            "  - test -x /usr/local/bin/guestkit || for m in /run/media/*/guestkit /media/*/guestkit; do [ -f \"$m\" ] && install -m755 \"$m\" /usr/local/bin/guestkit && break; done\n",
         );
     }
     user_data.push_str("  - systemctl daemon-reload\n");
