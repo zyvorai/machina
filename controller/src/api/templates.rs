@@ -342,21 +342,25 @@ pub async fn sync_git_templates(
 /// GitHub/GitLab push webhook — optional `X-Machina-Template-Sync-Token` when `MACHINA_TEMPLATES_SYNC_TOKEN` is set.
 pub async fn sync_git_templates_webhook(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     headers: HeaderMap,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    if let Ok(expected) = std::env::var("MACHINA_TEMPLATES_SYNC_TOKEN") {
-        if !expected.is_empty() {
+    // Accept EITHER a valid webhook token (external git-server caller) OR an operator.
+    // Previously, when MACHINA_TEMPLATES_SYNC_TOKEN was unset the token branch was skipped
+    // entirely, leaving this state-mutating git pull triggerable by any authenticated
+    // viewer.
+    let token_ok = match std::env::var("MACHINA_TEMPLATES_SYNC_TOKEN") {
+        Ok(expected) if !expected.is_empty() => {
             let token = headers
                 .get("x-machina-template-sync-token")
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or("");
-            if token != expected {
-                return Err(ApiError::policy_violation(
-                    "invalid template sync token",
-                    "Set X-Machina-Template-Sync-Token to match MACHINA_TEMPLATES_SYNC_TOKEN",
-                ));
-            }
+            token == expected
         }
+        _ => false,
+    };
+    if !token_ok {
+        require_operator(&actor)?;
     }
     let synced = run_git_template_sync(&state.pool).await?;
     Ok(Json(

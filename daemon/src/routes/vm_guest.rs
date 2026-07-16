@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use machina_core::libvirt::{device_tune, domain, extra_devices, firmware, guest_input, vnc};
 use machina_core::{LibvirtError, LibvirtManager};
 
-use crate::auth::RequestActor;
+use crate::auth::{require_write, RequestActor};
 use crate::conn_query::{spawn_libvirt_actor, ConnQuery};
 use crate::error::AppError;
 use machina_core::xml::{extract_attr, split_blocks};
@@ -39,6 +39,7 @@ async fn send_key_handler(
     Path(name): Path<String>,
     Json(req): Json<SendKeyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let codes: Vec<u32> = match (&req.preset, &req.keycodes) {
         (Some(p), _) if p.eq_ignore_ascii_case("ctrl_alt_del") => vec![
             guest_input::KEY_LEFTCTRL,
@@ -97,6 +98,7 @@ async fn set_firmware_handler(
     Path(name): Path<String>,
     Json(req): Json<FirmwareRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let uefi = req.uefi;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -114,6 +116,7 @@ async fn attach_tpm_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         extra_devices::attach_tpm_emulator(conn, &name2)
@@ -130,6 +133,7 @@ async fn detach_tpm_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         extra_devices::detach_tpm(conn, &name2)
@@ -153,6 +157,7 @@ async fn attach_watchdog_handler(
     Path(name): Path<String>,
     Json(req): Json<WatchdogRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let model = req.model.clone();
     let action = req.action.clone();
@@ -175,6 +180,7 @@ async fn attach_sound_handler(
     Path(name): Path<String>,
     Json(req): Json<SoundRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let model = req.model.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -196,6 +202,7 @@ async fn attach_serial_handler(
     Path(name): Path<String>,
     Json(req): Json<SerialPortRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let port = req.port;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -219,6 +226,7 @@ async fn set_video_model_handler(
     Path(name): Path<String>,
     Json(req): Json<VideoModelRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let model = req.model.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -237,6 +245,7 @@ async fn disk_tune_handler(
     Path(name): Path<String>,
     Json(req): Json<device_tune::DiskTuneRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let tune = req.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -253,6 +262,7 @@ async fn nic_tune_handler(
     Path(name): Path<String>,
     Json(req): Json<device_tune::NicTuneRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let tune = req.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {

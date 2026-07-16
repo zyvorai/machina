@@ -9,7 +9,7 @@ use axum::{Json, Router};
 use machina_core::libvirt::storage;
 use machina_core::{CreateVolumeRequest, LibvirtManager, StoragePoolInfo, StorageVolumeInfo};
 
-use crate::auth::RequestActor;
+use crate::auth::{require_write, RequestActor};
 use crate::conn_query::{spawn_libvirt_actor, ConnQuery};
 use crate::error::{ok_json, AppError};
 
@@ -43,6 +43,7 @@ async fn start_pool(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
+    require_write(&actor, "storage:write")?;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         storage::start_pool(conn, &name2)
     })
@@ -57,6 +58,7 @@ async fn stop_pool(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
+    require_write(&actor, "storage:write")?;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         storage::stop_pool(conn, &name2)
     })
@@ -71,6 +73,7 @@ async fn refresh_pool(
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
+    require_write(&actor, "storage:write")?;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         storage::refresh_pool(conn, &name2)
     })
@@ -85,6 +88,7 @@ async fn set_pool_autostart(
     Path((name, enabled)): Path<(String, bool)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let name2 = name.clone();
+    require_write(&actor, "storage:write")?;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         storage::set_pool_autostart(conn, &name2, enabled)
     })
@@ -101,6 +105,7 @@ async fn delete_volume(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let pool2 = pool_name.clone();
     let vol2 = vol_name.clone();
+    require_write(&actor, "storage:write")?;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         storage::delete_volume(conn, &pool2, &vol2)
     })
@@ -120,6 +125,7 @@ async fn create_volume(
     let vol_name = req.name.clone();
     let pool2 = pool_name.clone();
     let req2 = req.clone();
+    require_write(&actor, "storage:write")?;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         storage::create_volume(conn, &pool2, &req2.name, req2.capacity_gb, &req2.format)
     })

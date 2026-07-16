@@ -7,14 +7,15 @@
 use axum::{
     body::Body,
     extract::{Path, Request},
-    http::{header, HeaderMap, HeaderValue, StatusCode},
+    http::{header, HeaderMap, HeaderValue, Method, StatusCode},
     response::Response,
     routing::any,
-    Router,
+    Extension, Router,
 };
 use base64::Engine;
 use machina_core::{LibvirtError, LibvirtManager};
 
+use crate::auth::{require_write, RequestActor};
 use crate::error::AppError;
 
 pub(crate) fn controller_base() -> String {
@@ -52,9 +53,18 @@ fn forward_headers(src: &HeaderMap) -> HeaderMap {
 }
 
 async fn platform_controller_proxy(
+    Extension(actor): Extension<RequestActor>,
     Path(rest): Path<String>,
     req: Request<Body>,
 ) -> Result<Response, AppError> {
+    // This proxy replaces the caller's credential with the platform service account
+    // (see forward_headers when MACHINA_PLATFORM_AUTH is set), so a low-privilege daemon
+    // identity must not drive controller MUTATIONS as that service account. Reads stay
+    // open to any authenticated user (platform dashboards); writes require write role +
+    // the fleet:proxy scope.
+    if !matches!(*req.method(), Method::GET | Method::HEAD | Method::OPTIONS) {
+        require_write(&actor, "fleet:proxy")?;
+    }
     let base = controller_base();
     let query = req
         .uri()

@@ -130,7 +130,9 @@ pub fn default_scopes_for_role(role: &Role) -> Vec<String> {
             "vms:read".into(),
             "vms:write".into(),
             "networks:read".into(),
+            "networks:write".into(),
             "storage:read".into(),
+            "storage:write".into(),
             "fleet:proxy".into(),
         ],
         Role::ReadOnly => vec![

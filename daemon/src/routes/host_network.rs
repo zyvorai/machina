@@ -9,7 +9,7 @@ use machina_core::libvirt::{host_network, host_sysctl};
 use machina_core::{audit, AuditEvent, LibvirtManager};
 use serde::Deserialize;
 
-use crate::auth::{require_browser_session_for_host_insight, RequestActor};
+use crate::auth::{require_browser_session_for_host_insight, require_write, RequestActor};
 use crate::error::AppError;
 
 // ── Host Interfaces ────────────────────────────────────────────────
@@ -85,6 +85,9 @@ async fn post_kernel_route_change(
     Json(req): Json<host_network::KernelRouteChangeRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_browser_session_for_host_insight(&actor).map_err(AppError::from)?;
+    // Adding/removing host kernel routes is a mutation (traffic redirection / DoS risk),
+    // so gate on write role like every sibling handler in this module.
+    require_write(&actor, "vms:write")?;
     host_network::modify_kernel_route(&req).map_err(AppError::from)?;
     log_route_audit(&req, "ok");
     Ok(Json(serde_json::json!({ "status": "ok" })))

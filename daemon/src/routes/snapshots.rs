@@ -9,7 +9,7 @@ use axum::{Json, Router};
 use machina_core::libvirt::snapshot;
 use machina_core::{CreateSnapshotRequest, LibvirtManager, SnapshotInfo};
 
-use crate::auth::RequestActor;
+use crate::auth::{require_write, RequestActor};
 use crate::conn_query::{spawn_libvirt_actor, ConnQuery};
 use crate::error::AppError;
 
@@ -44,6 +44,7 @@ async fn create_snapshot_handler(
     Query(conn_q): Query<ConnQuery>,
     Json(req): Json<CreateSnapshotRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let vm2 = vm_name.clone();
     let snap_name = req.name.clone();
     let req2 = req.clone();
@@ -62,6 +63,7 @@ async fn delete_snapshot_handler(
     Path((vm_name, snap_name)): Path<(String, String)>,
     Query(conn_q): Query<ConnQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let vm2 = vm_name.clone();
     let snap2 = snap_name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -79,6 +81,7 @@ async fn revert_snapshot_handler(
     Path((vm_name, snap_name)): Path<(String, String)>,
     Query(conn_q): Query<ConnQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let vm2 = vm_name.clone();
     let snap2 = snap_name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {

@@ -51,6 +51,10 @@ pub fn attach_disk(
             req.source
         )));
     }
+    // Confine to a configured pool so a caller can't attach an arbitrary host file/block
+    // device into a guest. Check the CANONICAL path (symlinks already resolved).
+    let resolved_str = resolved.to_string_lossy().into_owned();
+    super::storage::assert_backup_source_within_pools(conn, &resolved_str)?;
 
     let bus = req.bus.trim();
     let bus = if bus.is_empty() { "virtio" } else { bus };
@@ -91,7 +95,7 @@ pub fn attach_disk(
 </disk>"#,
         share = share,
         driver_xml = driver_xml,
-        source = crate::xml::escape(&req.source),
+        source = crate::xml::escape(&resolved_str),
         target = crate::xml::escape(&req.target),
         bus = crate::xml::escape(bus),
         ro = ro,

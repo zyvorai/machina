@@ -215,6 +215,10 @@ pub async fn create_vm(
         .project
         .clone()
         .unwrap_or_else(|| "default".into());
+    // NOTE: this quota check runs before the insert transaction, so two concurrent
+    // creates at the project boundary can both pass and exceed the quota by one. Quota is
+    // a soft guardrail (not a security boundary), so this off-by-one is accepted rather
+    // than paid for with a BEGIN IMMEDIATE / DB-constraint refactor.
     if let Err(v) = policy::evaluate_vm_create(
         &state.pool,
         &project,
@@ -1735,8 +1739,10 @@ pub struct VmParitySummaryItem {
 
 pub async fn batch_vm_parity_summary(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<BatchParityBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let mut items = serde_json::Map::new();
     for vm_id in body.vm_ids.iter().take(64) {
         let row: Result<(String, Option<Uuid>, String), sqlx::Error> = sqlx::query_as(
@@ -1826,8 +1832,10 @@ pub struct BatchGuestIpItem {
 
 pub async fn batch_vm_guest_ips(
     State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
     Json(body): Json<BatchGuestIpBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
     let mut items = serde_json::Map::new();
     for vm_id in body.vm_ids.iter().take(64) {
         let row: Result<(String, Option<Uuid>, String), sqlx::Error> = sqlx::query_as(

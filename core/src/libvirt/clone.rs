@@ -96,6 +96,19 @@ fn define_cloned_domain(
     new_name: &str,
     new_disk_path: &str,
 ) -> Result<(), LibvirtError> {
+    // This path copies + repoints only ONE disk. A VM with 2+ file-backed data disks
+    // would keep its extra disks pointing at the SOURCE VM's files (both VMs writing the
+    // same backing → corruption). Refuse rather than silently corrupt.
+    let file_disks = crate::xml::split_blocks(source_xml, "disk")
+        .into_iter()
+        .filter(|b| b.contains("device='disk'") && b.contains("<source file="))
+        .count();
+    if file_disks > 1 {
+        return Err(LibvirtError::Invalid(format!(
+            "clone of a multi-disk VM ({file_disks} file-backed disks) is not supported; \
+             detach the extra disks or clone them separately"
+        )));
+    }
     let new_xml = replace_domain_name(source_xml, new_name)
         .ok_or_else(|| LibvirtError::Operation("failed to replace domain name in XML".into()))?;
     let new_xml = remove_xml_element(&new_xml, "uuid");
@@ -110,15 +123,25 @@ fn replace_disk_path(xml: &str, new_path: &str) -> String {
     let escaped = crate::xml::escape(new_path);
     let mut out = String::new();
     let mut replaced = false;
+    // Track cdrom disk blocks so we repoint the DATA disk's source, not a cdrom / seed
+    // ISO that happens to appear first in the XML (which would leave the root disk shared
+    // with the source VM).
+    let mut in_cdrom = false;
     for line in xml.lines() {
         let t = line.trim();
-        if !replaced && t.starts_with("<source file='") {
+        if t.starts_with("<disk ") {
+            in_cdrom = t.contains("device='cdrom'") || t.contains("device=\"cdrom\"");
+        }
+        if !replaced && !in_cdrom && t.starts_with("<source file='") {
             let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
             out.push_str(&format!("{indent}<source file='{escaped}'/>\n"));
             replaced = true;
         } else {
             out.push_str(line);
             out.push('\n');
+        }
+        if t.starts_with("</disk>") {
+            in_cdrom = false;
         }
     }
     out

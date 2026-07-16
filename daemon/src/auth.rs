@@ -360,9 +360,17 @@ struct PlatformJwtClaims {
     auth: Option<String>,
 }
 
-fn platform_jwt_secret() -> String {
-    std::env::var("MACHINA_JWT_SECRET")
-        .unwrap_or_else(|_| "machina-dev-jwt-secret-change-me".into())
+const DEV_JWT_SECRET: &str = "machina-dev-jwt-secret-change-me";
+
+/// The configured platform JWT secret, or None when it is unset or still the well-known
+/// dev placeholder. Returning None makes actor_from_platform_jwt refuse ALL platform
+/// JWTs, so a token signed with the public dev secret can never mint a session (it maps
+/// role="admin" → Role::Admin, i.e. unauthenticated admin takeover otherwise).
+fn platform_jwt_secret() -> Option<String> {
+    match std::env::var("MACHINA_JWT_SECRET") {
+        Ok(s) if !s.is_empty() && s != DEV_JWT_SECRET => Some(s),
+        _ => None,
+    }
 }
 
 fn skip_auth_enabled() -> bool {
@@ -389,10 +397,7 @@ fn auth_source_from_platform_jwt(auth: Option<&str>) -> AuthSource {
 }
 
 fn actor_from_platform_jwt(token: &str) -> Option<RequestActor> {
-    let secret = platform_jwt_secret();
-    if secret.is_empty() {
-        return None;
-    }
+    let secret = platform_jwt_secret()?;
     let data = decode::<PlatformJwtClaims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
@@ -1180,6 +1185,20 @@ pub fn require_destroy_vm(actor: &RequestActor) -> Result<(), AppError> {
             "Destroying or undefining VMs requires the admin role.".into(),
         )))
     }
+}
+
+/// Gate a mutating handler: the caller must have write role (operator/admin) AND, for
+/// API-token callers, the required scope. Many storage/device/snapshot/migrate handlers
+/// historically authenticated but never authorized, letting a read-only token perform
+/// destructive host/VM operations — this is the single guard they were missing.
+pub fn require_write(actor: &RequestActor, scope: &str) -> Result<(), AppError> {
+    require_api_scope(actor, scope).map_err(AppError::from)?;
+    if !actor.role.can_write() {
+        return Err(AppError::from(LibvirtError::Forbidden(
+            "This operation requires the operator or admin role.".into(),
+        )));
+    }
+    Ok(())
 }
 
 pub fn require_usb_pci(actor: &RequestActor) -> Result<(), AppError> {

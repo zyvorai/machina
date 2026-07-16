@@ -432,7 +432,14 @@ pub fn delete_snapshot(conn: &Connect, vm_name: &str, snap_name: &str) -> Result
         let looks_external =
             xml.contains("snapshot='external'") || xml.contains("snapshot=\"external\"");
         if looks_external {
-            flags |= sys::VIR_DOMAIN_SNAPSHOT_DELETE_METADATA_ONLY;
+            // On a running guest the only option libvirt allows is METADATA_ONLY, which
+            // drops tracking but leaves the overlay qcow2 files unmerged on disk — a
+            // silent space leak and on-disk/reported chain divergence. Refuse and steer
+            // the caller to stop the VM so the delete can actually merge the overlay.
+            return Err(LibvirtError::Invalid(format!(
+                "Cannot delete external snapshot '{snap_name}' while VM '{vm_name}' is \
+                 running (would orphan overlay files). Stop the VM and retry."
+            )));
         }
     }
 

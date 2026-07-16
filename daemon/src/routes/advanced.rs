@@ -16,7 +16,7 @@ use machina_core::libvirt::{
 };
 use machina_core::{LibvirtError, LibvirtManager};
 
-use crate::auth::{require_usb_pci, RequestActor};
+use crate::auth::{require_write, require_usb_pci, RequestActor};
 use crate::conn_query::{spawn_libvirt_actor, ConnQuery};
 use crate::error::{AppError, Xml};
 
@@ -149,6 +149,7 @@ async fn insert_cdrom_handler(
     Path(name): Path<String>,
     Json(req): Json<CdromRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let target = req.target.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -166,6 +167,7 @@ async fn eject_cdrom_handler(
     Query(conn_q): Query<ConnQuery>,
     Path((name, target)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let target2 = target.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -194,6 +196,7 @@ async fn add_share_handler(
     Path(name): Path<String>,
     Json(req): Json<ShareRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let tag = req.mount_tag.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -211,6 +214,7 @@ async fn remove_share_handler(
     Query(conn_q): Query<ConnQuery>,
     Path((name, mount_tag)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let tag2 = mount_tag.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -230,6 +234,7 @@ async fn managed_save_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         save_restore::managed_save(conn, &name2)
@@ -244,6 +249,7 @@ async fn managed_save_remove_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         save_restore::managed_save_remove(conn, &name2)
@@ -298,6 +304,7 @@ async fn set_boot_order_handler(
     Path(name): Path<String>,
     Json(req): Json<BootOrderRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let devices = req.devices.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -340,6 +347,14 @@ async fn migrate_handler(
     Path(name): Path<String>,
     Json(req): Json<MigrateRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
+    // undefine_source destroys the source domain after migrating — that is a
+    // destructive/undefine operation, so require admin (matching VM delete/undefine).
+    // The dest URI itself is scheme-allowlisted + shell-metachar-rejected in
+    // migrate::validate_migrate_uri (called by migrate_vm_uri below).
+    if req.undefine_source {
+        crate::auth::require_destroy_vm(&actor)?;
+    }
     let name2 = name.clone();
     let dest_uri = req.dest_uri.clone();
     let destination = dest_uri.clone();
@@ -398,6 +413,7 @@ async fn migrate_set_max_speed_handler(
     Path(name): Path<String>,
     Json(req): Json<MigrateBandwidthBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let mib = req.mib_per_sec;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -421,6 +437,7 @@ async fn migrate_set_max_downtime_handler(
     Path(name): Path<String>,
     Json(req): Json<MigrateDowntimeBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let ns = req.downtime_ns;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -453,6 +470,7 @@ async fn set_numa_tune_handler(
     Path(name): Path<String>,
     Json(req): Json<numa_tune::SetNumaTuneRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let body = req;
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -474,6 +492,7 @@ async fn pin_emulator_handler(
     Path(name): Path<String>,
     Json(req): Json<EmulatorPinBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     let name2 = name.clone();
     let cpus = req.cpus.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -634,6 +653,7 @@ async fn delete_nwfilter_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "networks:write")?;
     let name2 = name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         nwfilter::delete_nwfilter(conn, &name2)
@@ -655,6 +675,7 @@ async fn define_nwfilter_handler(
     Query(conn_q): Query<ConnQuery>,
     Json(req): Json<DefineNwfilterRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "networks:write")?;
     let xml = req.xml;
     let name = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         nwfilter::define_nwfilter(conn, &xml)
@@ -682,6 +703,7 @@ async fn delete_secret_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(uuid): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "storage:write")?;
     let uuid2 = uuid.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         secret::delete_secret(conn, &uuid2)
@@ -709,6 +731,7 @@ async fn define_secret_handler(
     Query(conn_q): Query<ConnQuery>,
     Json(req): Json<DefineSecretRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "storage:write")?;
     use base64::Engine;
     let value_bytes: Option<Vec<u8>> = if let Some(b64) = &req.value_base64 {
         Some(
@@ -743,6 +766,7 @@ async fn attach_pci_hostdev_handler(
     Path(name): Path<String>,
     Json(req): Json<PciHostdevBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     require_usb_pci(&actor)?;
     let pci = req.pci.clone();
     let pci_for_task = pci.clone();
@@ -763,6 +787,7 @@ async fn detach_pci_hostdev_handler(
     Path(name): Path<String>,
     Json(req): Json<PciHostdevBody>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     require_usb_pci(&actor)?;
     let pci = req.pci.clone();
     let pci_for_task = pci.clone();
@@ -782,6 +807,7 @@ async fn detach_nodedev_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(devname): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     require_usb_pci(&actor)?;
     let dev = devname.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -799,6 +825,7 @@ async fn reattach_nodedev_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(devname): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     require_usb_pci(&actor)?;
     let dev = devname.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
@@ -830,6 +857,7 @@ async fn create_pool_handler(
     Query(conn_q): Query<ConnQuery>,
     Json(req): Json<CreatePoolRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "storage:write")?;
     let req_name = req.name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         storage::create_pool(conn, &req.name, &req.pool_type, &req.target_path)
@@ -846,6 +874,7 @@ async fn delete_pool_handler(
     Query(conn_q): Query<ConnQuery>,
     Path(name): Path<String>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "storage:write")?;
     let name2 = name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         storage::delete_pool(conn, &name2)
@@ -883,6 +912,7 @@ async fn resize_volume_handler(
     Path((pool, vol)): Path<(String, String)>,
     Json(req): Json<ResizeVolumeRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "storage:write")?;
     if req.capacity_gb <= 0.0 || req.capacity_gb > 10_240.0 {
         return Err(machina_core::LibvirtError::Operation(
             "capacity_gb must be between 0 and 10240 (10 TB)".to_string(),
@@ -913,6 +943,7 @@ async fn clone_volume_handler(
     Path((pool, vol)): Path<(String, String)>,
     Json(req): Json<CloneVolumeRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "storage:write")?;
     let pool2 = pool.clone();
     let vol2 = vol.clone();
     let new_name = req.new_name.clone();
@@ -933,6 +964,7 @@ async fn set_memory_balloon_handler(
     Path((name, mb)): Path<(String, u64)>,
     Query(conn_q): Query<ConnQuery>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    require_write(&actor, "vms:write")?;
     machina_core::validate::validate_memory_mb(mb)?;
     let name2 = name.clone();
     spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {

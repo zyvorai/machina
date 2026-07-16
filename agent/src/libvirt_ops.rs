@@ -195,6 +195,12 @@ impl LibvirtCtx {
     ) -> Result<(String, String), LibvirtError> {
         vm.validate()
             .map_err(|e| LibvirtError::Invalid(e.to_string()))?;
+        // Confine the caller-supplied disk_path to a configured storage pool before we
+        // create — or (for a stale leftover) remove — any file at it. Without this a
+        // crafted disk_path could make the agent delete/overwrite an arbitrary root file.
+        machina_core::libvirt::storage::assert_new_disk_output_parent_allowed(
+            &self.conn, disk_path,
+        )?;
         let tmpl = template_source.filter(|s| !s.is_empty());
         if !Path::new(disk_path).exists() {
             if let Some(src) = tmpl {
@@ -809,6 +815,10 @@ impl LibvirtCtx {
         target_dev: &str,
     ) -> Result<(), LibvirtError> {
         use std::process::Command;
+        // Confine the attached source to a configured pool so a caller can't attach an
+        // arbitrary host file/block device (e.g. /dev/sda, /etc/shadow) into a guest and
+        // read it out via the console.
+        machina_core::libvirt::storage::assert_backup_source_within_pools(&self.conn, disk_path)?;
         if !std::path::Path::new(disk_path).exists() {
             return Err(LibvirtError::NotFound(format!(
                 "disk not found: {disk_path}"
