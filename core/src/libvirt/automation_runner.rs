@@ -120,6 +120,9 @@ fn vm_cpu_percent(metrics: &VmMetrics) -> f64 {
     } else {
         0.0
     };
+    // Prune entries for VMs not seen in 10 min so the map stays bounded to live VMs
+    // rather than accumulating a slot for every distinct VM name ever evaluated.
+    map.retain(|_, (t, _)| now.saturating_duration_since(*t) < std::time::Duration::from_secs(600));
     map.insert(metrics.name.clone(), (now, metrics.cpu_time_ns));
     pct
 }

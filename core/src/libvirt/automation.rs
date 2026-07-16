@@ -471,6 +471,13 @@ pub fn fire_webhook(event: &str, payload: &serde_json::Value) {
             let _ = std::process::Command::new("curl")
                 .args([
                     "-sf",
+                    // Bound the request so a hung / slow-loris webhook endpoint can't pin
+                    // this thread + curl child indefinitely; without these a burst of VM
+                    // lifecycle events against a black-hole endpoint piles up threads.
+                    "--connect-timeout",
+                    "5",
+                    "--max-time",
+                    "15",
                     "-X",
                     "POST",
                     "-H",

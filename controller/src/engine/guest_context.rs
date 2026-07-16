@@ -264,6 +264,12 @@ pub async fn snapshot_for_vm(
     let snap = from_health_report(&health, &row.1, &row.2);
 
     let mut cache = SNAPSHOT_CACHE.write().await;
+    // Evict expired entries while we hold the write lock. The read path only *skips*
+    // expired entries (never removes them) and invalidate_vm() has no callers, so
+    // without this the map would retain one snapshot per distinct VM UUID ever queried
+    // — including long-deleted VMs — growing unbounded on a churning fleet. Sweeping
+    // here bounds it to VMs queried within CACHE_TTL.
+    cache.retain(|_, e| e.at.elapsed() < CACHE_TTL);
     cache.insert(
         vm_id,
         CacheEntry {
