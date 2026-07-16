@@ -9,7 +9,7 @@ use virt::domain::Domain;
 
 use super::create::find_disk_path;
 use super::domain::lookup_domain;
-use super::template_apply::{materialize_from_base, primary_disk_path_from_xml};
+use super::template_apply::materialize_from_base;
 use crate::LibvirtError;
 
 /// `linked` — qcow2 backing file; `full` — independent copy; `xml` — legacy shared-disk define (unsafe).
@@ -38,24 +38,63 @@ pub fn clone_vm_with_disk(
         let xml = source
             .get_xml_desc(0)
             .map_err(LibvirtError::map_op("Failed to get XML"))?;
-        let src_disk = primary_disk_path_from_xml(&xml).ok_or_else(|| {
-            LibvirtError::Operation(format!("no disk path found for VM '{source_name}'"))
-        })?;
-        if !src_disk.is_file() {
+        // Clone EVERY file-backed data disk, not just the first. The primary disk keeps
+        // the {new_name}.qcow2 name; secondaries get {new_name}-{target}.qcow2, and each
+        // is repointed in the cloned XML. (Cloning only the first left a multi-disk VM's
+        // other disks sharing the source's backing → corruption.)
+        let disks = file_backed_disks_from_xml(&xml);
+        if disks.is_empty() {
             return Err(LibvirtError::Operation(format!(
-                "source disk not found: {}",
-                src_disk.display()
+                "no disk path found for VM '{source_name}'"
             )));
         }
-        let dest = find_disk_path(conn, new_name)?;
-        if Path::new(&dest).exists() {
-            return Err(LibvirtError::Operation(format!(
-                "Refusing to overwrite existing disk: {dest}"
-            )));
-        }
+        let primary_dest = find_disk_path(conn, new_name)?;
+        let dest_dir = Path::new(&primary_dest)
+            .parent()
+            .map(|p| p.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "/var/lib/libvirt/images".to_string());
         let mat_mode = if mode == "copy" { "copy" } else { "backing" };
-        materialize_from_base(&src_disk, Path::new(&dest), mat_mode)?;
-        define_cloned_domain(conn, &xml, new_name, &dest)?;
+
+        let mut disk_map: Vec<(String, String)> = Vec::new();
+        let mut created: Vec<String> = Vec::new();
+        // Roll back any disks already copied if a later one fails.
+        let cleanup = |created: &[String]| {
+            for c in created {
+                let _ = std::fs::remove_file(c);
+            }
+        };
+        for (i, (target, src)) in disks.iter().enumerate() {
+            if !Path::new(src).is_file() {
+                cleanup(&created);
+                return Err(LibvirtError::Operation(format!("source disk not found: {src}")));
+            }
+            let dest = if i == 0 {
+                primary_dest.clone()
+            } else {
+                let suffix = if target.is_empty() {
+                    format!("disk{i}")
+                } else {
+                    target.clone()
+                };
+                format!("{}/{}-{}.qcow2", dest_dir.trim_end_matches('/'), new_name, suffix)
+            };
+            if Path::new(&dest).exists() {
+                cleanup(&created);
+                return Err(LibvirtError::Operation(format!(
+                    "Refusing to overwrite existing disk: {dest}"
+                )));
+            }
+            if let Err(e) = materialize_from_base(Path::new(src), Path::new(&dest), mat_mode) {
+                cleanup(&created);
+                return Err(e);
+            }
+            created.push(dest.clone());
+            disk_map.push((src.clone(), dest));
+        }
+        if let Err(e) = define_cloned_domain(conn, &xml, new_name, &disk_map) {
+            cleanup(&created);
+            return Err(e);
+        }
     }
 
     let dom = lookup_domain(conn, new_name)?;
@@ -90,58 +129,57 @@ fn clone_vm_xml_only(
     Ok(())
 }
 
+/// All file-backed `device='disk'` disks in a domain XML, as (target_dev, source_path).
+/// cdrom / floppy and non-file disks are skipped so clone only copies real data disks.
+fn file_backed_disks_from_xml(xml: &str) -> Vec<(String, String)> {
+    let mut disks = Vec::new();
+    for block in crate::xml::split_blocks(xml, "disk") {
+        if crate::xml::extract_attr(&block, "disk", "device").as_deref() != Some("disk") {
+            continue;
+        }
+        let src = crate::xml::extract_attr(&block, "source", "file").unwrap_or_default();
+        if src.is_empty() {
+            continue;
+        }
+        let target = crate::xml::extract_attr(&block, "target", "dev").unwrap_or_default();
+        disks.push((target, src));
+    }
+    disks
+}
+
 fn define_cloned_domain(
     conn: &Connect,
     source_xml: &str,
     new_name: &str,
-    new_disk_path: &str,
+    disk_map: &[(String, String)],
 ) -> Result<(), LibvirtError> {
-    // This path copies + repoints only ONE disk. A VM with 2+ file-backed data disks
-    // would keep its extra disks pointing at the SOURCE VM's files (both VMs writing the
-    // same backing → corruption). Refuse rather than silently corrupt.
-    let file_disks = crate::xml::split_blocks(source_xml, "disk")
-        .into_iter()
-        .filter(|b| b.contains("device='disk'") && b.contains("<source file="))
-        .count();
-    if file_disks > 1 {
-        return Err(LibvirtError::Invalid(format!(
-            "clone of a multi-disk VM ({file_disks} file-backed disks) is not supported; \
-             detach the extra disks or clone them separately"
-        )));
-    }
     let new_xml = replace_domain_name(source_xml, new_name)
         .ok_or_else(|| LibvirtError::Operation("failed to replace domain name in XML".into()))?;
     let new_xml = remove_xml_element(&new_xml, "uuid");
     let new_xml = randomize_mac_addresses(&new_xml);
-    let new_xml = replace_disk_path(&new_xml, new_disk_path);
+    let new_xml = repoint_disks(&new_xml, disk_map);
     Domain::define_xml(conn, &new_xml)
         .map_err(|e| LibvirtError::Operation(format!("define cloned VM: {e}")))?;
     Ok(())
 }
 
-fn replace_disk_path(xml: &str, new_path: &str) -> String {
-    let escaped = crate::xml::escape(new_path);
+/// Repoint each `<source file='OLD'/>` to its cloned copy per `disk_map` (old → new).
+/// Only exact source-path matches are rewritten, so a cdrom/seed source (never in the
+/// map) is left untouched.
+fn repoint_disks(xml: &str, disk_map: &[(String, String)]) -> String {
     let mut out = String::new();
-    let mut replaced = false;
-    // Track cdrom disk blocks so we repoint the DATA disk's source, not a cdrom / seed
-    // ISO that happens to appear first in the XML (which would leave the root disk shared
-    // with the source VM).
-    let mut in_cdrom = false;
     for line in xml.lines() {
         let t = line.trim();
-        if t.starts_with("<disk ") {
-            in_cdrom = t.contains("device='cdrom'") || t.contains("device=\"cdrom\"");
-        }
-        if !replaced && !in_cdrom && t.starts_with("<source file='") {
+        let mapped = t
+            .strip_prefix("<source file='")
+            .and_then(|s| s.split('\'').next())
+            .and_then(|old| disk_map.iter().find(|(o, _)| o == old));
+        if let Some((_, new)) = mapped {
             let indent: String = line.chars().take_while(|c| c.is_whitespace()).collect();
-            out.push_str(&format!("{indent}<source file='{escaped}'/>\n"));
-            replaced = true;
+            out.push_str(&format!("{indent}<source file='{}'/>\n", crate::xml::escape(new)));
         } else {
             out.push_str(line);
             out.push('\n');
-        }
-        if t.starts_with("</disk>") {
-            in_cdrom = false;
         }
     }
     out
