@@ -728,13 +728,17 @@ pub async fn delete_host(
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(|| ApiError::not_found("host not found"))?;
+        // A host with state='online' but NO heartbeat yet (e.g. the bootstrap default,
+        // or one that has never reported) is still RENDERED as online elsewhere, so treat
+        // it as live here too — otherwise force-eviction could nuke a host the UI shows as
+        // up. Only a present-and-stale (>2m) heartbeat downgrades it to evictable.
         let live = row.0 == "online"
             && row
                 .1
                 .map(|hb| {
                     chrono::Utc::now().signed_duration_since(hb) <= chrono::Duration::minutes(2)
                 })
-                .unwrap_or(false);
+                .unwrap_or(true);
         if live {
             return Err(ApiError::conflict(
                 "refusing to force-delete a host that is currently online",

@@ -277,7 +277,7 @@ try:
 except Exception:
     pass
 PY
-)
+) || API_TOKEN=""
 fi
 # curl wrapper that attaches the bearer header when a token is available. Use an
 # array so the header value (which contains spaces) stays a single argument.
@@ -535,7 +535,7 @@ if $LIST_ONLY; then
         [ -z "$name" ] && continue
         echo "    $name"
         if $WITH_DISKS; then
-            DETAILS=$(mcurl "$API/vms/$name" 2>/dev/null)
+            DETAILS=$(mcurl "$API/vms/$name" 2>/dev/null) || DETAILS=""
             echo "$DETAILS" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
@@ -580,7 +580,7 @@ write_status "running" "Starting backup" "0"
 info "Backing up $VM_COUNT VM configs..."
 while IFS= read -r name; do
     [ -z "$name" ] && continue
-    XML=$(mcurl "$API/vms/$name/xml" 2>/dev/null)
+    XML=$(mcurl "$API/vms/$name/xml" 2>/dev/null) || XML=""
     if [ -n "$XML" ]; then
         printf '%s\n' "$XML" > "$BACKUP_PATH/vms/$name.xml"
         echo "  $name"
@@ -596,7 +596,7 @@ if [ -z "$VM_FILTER" ]; then
     info "Backing up $NET_COUNT network configs..."
     while IFS= read -r name; do
         [ -z "$name" ] && continue
-        XML=$(mcurl "$API/networks/$name/xml" 2>/dev/null)
+        XML=$(mcurl "$API/networks/$name/xml" 2>/dev/null) || XML=""
         if [ -n "$XML" ]; then
             printf '%s\n' "$XML" > "$BACKUP_PATH/networks/$name.xml"
             echo "  $name"
@@ -609,7 +609,7 @@ if [ -z "$VM_FILTER" ]; then
     info "Backing up storage pool configs..."
     while IFS= read -r name; do
         [ -z "$name" ] && continue
-        XML=$(mcurl "$API/storage/pools/$name/xml" 2>/dev/null)
+        XML=$(mcurl "$API/storage/pools/$name/xml" 2>/dev/null) || XML=""
         if [ -n "$XML" ]; then
             printf '%s\n' "$XML" > "$BACKUP_PATH/pools/$name.xml"
             echo "  $name"
@@ -624,7 +624,7 @@ if [ -z "$VM_FILTER" ]; then
     echo "$POOLS" | python3 -m json.tool > "$BACKUP_PATH/pools.json" 2>/dev/null
 
     # Save node info
-    mcurl "$API/node" | python3 -m json.tool > "$BACKUP_PATH/node.json" 2>/dev/null
+    mcurl "$API/node" 2>/dev/null | python3 -m json.tool > "$BACKUP_PATH/node.json" 2>/dev/null || true
 else
     echo "$VM_DETAIL" | python3 -m json.tool > "$BACKUP_PATH/vm-detail.json" 2>/dev/null
 fi

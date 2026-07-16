@@ -160,18 +160,19 @@ impl ApiError {
     pub fn from_upstream(e: impl std::fmt::Display) -> Self {
         let msg = e.to_string();
         let m = msg.to_ascii_lowercase();
+        // Match ONLY gRPC transport/auth signatures, never bare English words. Endpoints
+        // wrapped by from_upstream run host tooling (apt, journald, ss…) whose OUTPUT
+        // routinely contains words like "unavailable", "timed out", "unreachable",
+        // "connection refused" (e.g. an apt repo being down). Matching those bare words
+        // would mislabel a genuine command/internal failure as 503 "host offline" with a
+        // misleading remediation. `status: unavailable` is tonic's Code::Unavailable
+        // Display form and does not appear in ordinary tool output.
         let unavailable = m.contains("transport error")
             || m.contains("error trying to connect")
-            || m.contains("connection refused")
             || m.contains("deadline exceeded")
-            || m.contains("timed out")
-            || m.contains("unavailable")
+            || m.contains("status: unavailable")
             || m.contains("agent token")
-            || m.contains("unauthenticated")
-            || m.contains("offline")
-            || m.contains("not reachable")
-            || m.contains("unreachable")
-            || m.contains("no agent");
+            || m.contains("unauthenticated");
         if unavailable {
             Self::service_unavailable(msg)
         } else {

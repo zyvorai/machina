@@ -81,26 +81,32 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("PacketWolf local fabric hydrate: {e:#}");
     }
 
-    // Reap orphaned in-flight tasks left by a previous run. The in-memory task bus
-    // starts empty on every launch, so any task still 'pending'/'running' in the DB
-    // will never be picked up — it is orphaned. Left alone these rows also trip the
-    // per-host anti-backlog guard in sync.rs, which then never enqueues a fresh
-    // host.inventory: hosts go stale → show offline → VM placement fails with
-    // "no online hosts available". Fail them so sync (and operators) see the truth.
-    match sqlx::query(
-        "UPDATE tasks SET status = 'failed', \
-         message = COALESCE(NULLIF(message,''),'') || ' [orphaned by controller restart]', \
-         updated_at = datetime('now') \
-         WHERE status IN ('pending', 'running')",
-    )
-    .execute(&pool)
-    .await
-    {
-        Ok(r) if r.rows_affected() > 0 => {
-            info!("reaped {} orphaned in-flight task(s) at startup", r.rows_affected());
+    // Reap orphaned in-flight tasks left by a previous run — ONLY for the in-memory
+    // task bus (no NATS). There, a restart drops the in-memory queue, so any task still
+    // 'pending'/'running' in the DB will never be picked up; left alone these rows also
+    // trip the per-host anti-backlog guard in sync.rs, wedging host.inventory so hosts
+    // go stale → offline → VM placement fails "no online hosts available".
+    //
+    // With NATS configured (the multi-controller / HA topology) we must NOT do this: the
+    // broker redelivers in-flight work, and a peer controller may own or be about to
+    // claim these rows — blindly failing them would kill a peer's live task. In that
+    // topology, ensure_bootstrap already performs a controller-scoped 'running' reap.
+    if config.nats_url.is_none() {
+        match sqlx::query(
+            "UPDATE tasks SET status = 'failed', \
+             message = COALESCE(NULLIF(message,''),'') || ' [orphaned by controller restart]', \
+             updated_at = datetime('now') \
+             WHERE status IN ('pending', 'running')",
+        )
+        .execute(&pool)
+        .await
+        {
+            Ok(r) if r.rows_affected() > 0 => {
+                info!("reaped {} orphaned in-flight task(s) at startup", r.rows_affected());
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("orphan task reap at startup failed: {e:#}"),
         }
-        Ok(_) => {}
-        Err(e) => tracing::warn!("orphan task reap at startup failed: {e:#}"),
     }
 
     let (local_bus, rx) = InMemoryTaskBus::new();

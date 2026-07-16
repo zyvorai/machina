@@ -17,9 +17,11 @@ const GUESTKIT_UNIT: &str = r#"[Unit]
 Description=GuestKit Agent (QGA-compatible virtio channel)
 After=network.target
 ConditionPathExists=/dev/virtio-ports/org.qemu.guest_agent.0
-# Keep retrying rather than giving up after a burst of early-boot failures (e.g. the
-# binary install from the seed racing service start).
-StartLimitIntervalSec=0
+# Tolerate a burst of early-boot failures (e.g. the binary install from the seed racing
+# service start) — 30 tries over 5 min — but still give up eventually so a genuinely
+# absent binary doesn't restart-loop and spam the journal forever.
+StartLimitIntervalSec=300
+StartLimitBurst=30
 
 [Service]
 ExecStart=/usr/local/bin/guestkit agent --channel virtio

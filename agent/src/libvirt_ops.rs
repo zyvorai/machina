@@ -195,8 +195,9 @@ impl LibvirtCtx {
     ) -> Result<(String, String), LibvirtError> {
         vm.validate()
             .map_err(|e| LibvirtError::Invalid(e.to_string()))?;
+        let tmpl = template_source.filter(|s| !s.is_empty());
         if !Path::new(disk_path).exists() {
-            if let Some(src) = template_source.filter(|s| !s.is_empty()) {
+            if let Some(src) = tmpl {
                 create_disk_from_template(src, disk_path)?;
             } else {
                 let size_gib = vm
@@ -204,10 +205,23 @@ impl LibvirtCtx {
                     .map_err(|e| LibvirtError::Invalid(e.to_string()))?;
                 create_qcow2(disk_path, size_gib)?;
             }
+        } else if let Some(src) = tmpl {
+            // A disk already exists at this path AND a template was requested. The disk
+            // path is keyed on VM name, and VM deletion keeps disks by default, so when
+            // NO domain by this name exists the file is a stale leftover from a prior,
+            // deleted VM — reusing it would boot another VM's OS and data (cross-VM
+            // leak). Rebuild it from the requested template. When the domain DOES exist
+            // this is a reconcile of a live VM: never touch the disk (would wipe data).
+            if Domain::lookup_by_name(&self.conn, &vm.metadata.name).is_err() {
+                std::fs::remove_file(disk_path).map_err(|e| {
+                    LibvirtError::Operation(format!("remove stale disk {disk_path}: {e}"))
+                })?;
+                create_disk_from_template(src, disk_path)?;
+            }
         }
-        // An existing disk is the VM's real, self-contained disk — reuse it as-is.
-        // Template disks are full copies (see create_disk_from_template), so there is
-        // no backing chain to reconcile here; rebuilding would destroy guest data.
+        // An existing disk of a live (already-defined) VM is its real, self-contained
+        // disk — reused as-is above. Template disks are full copies (see
+        // create_disk_from_template), so there is no backing chain to reconcile.
 
         let cloud_iso = maybe_cloud_init_iso(vm, cloud, images_dir)?;
 
