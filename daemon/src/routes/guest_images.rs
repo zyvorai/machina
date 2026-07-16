@@ -47,8 +47,21 @@ async fn os_list_handler() -> Result<Json<serde_json::Value>, AppError> {
     .await
     .map_err(|e| AppError::from(LibvirtError::Internal(e.to_string())))?;
 
-    let out =
-        join.map_err(|e| AppError::from(LibvirtError::Operation(format!("osinfo-query: {e}"))))?;
+    // Degrade gracefully when osinfo-query can't even be spawned (libosinfo not
+    // installed → io::ErrorKind::NotFound). Previously this mapped to a 500, which made
+    // the Create VM page's OS dropdown fail to load. Return the same empty-list + hint
+    // fallback used below for a non-zero exit, so the page still works.
+    let out = match join {
+        Ok(o) => o,
+        Err(e) => {
+            warn!("osinfo-query unavailable ({e}); returning empty OS list");
+            let empty: Vec<serde_json::Value> = Vec::new();
+            return Ok(Json(json!({
+                "oses": empty,
+                "hint": "Install libosinfo (`osinfo-db` / `libosinfo`) for a full OS list."
+            })));
+        }
+    };
     if !out.status.success() {
         warn!(
             "osinfo-query failed: {}",

@@ -1,8 +1,8 @@
 {
-  "host": "212.8.248.187",
-  "generated_at": "2026-07-15T13:03:00.702Z",
-  "passed": 117,
-  "failed": 9,
+  "host": "175.110.122.71",
+  "generated_at": "2026-07-16T03:22:10.920Z",
+  "passed": 217,
+  "failed": 4,
   "skipped": 40,
   "results": [
     {
@@ -48,7 +48,7 @@
       "reason": "HTTP 5xx",
       "apiFailures": [
         {
-          "url": "https://212.8.248.187:5092/api/v1/guest-images/os-list",
+          "url": "https://175.110.122.71:5092/api/v1/guest-images/os-list",
           "status": 500,
           "reason": "HTTP 5xx"
         }
@@ -625,17 +625,17 @@
       "reason": "HTTP 5xx",
       "apiFailures": [
         {
-          "url": "https://212.8.248.187:5092/api/v1/platform/controller/api/v1/launchpad/health/apps",
+          "url": "https://175.110.122.71:5092/api/v1/platform/controller/api/v1/launchpad/favorites",
           "status": 503,
           "reason": "HTTP 5xx"
         },
         {
-          "url": "https://212.8.248.187:5092/api/v1/platform/controller/api/v1/launchpad/catalog",
+          "url": "https://175.110.122.71:5092/api/v1/platform/controller/api/v1/launchpad/health/apps",
           "status": 503,
           "reason": "HTTP 5xx"
         },
         {
-          "url": "https://212.8.248.187:5092/api/v1/platform/controller/api/v1/launchpad/favorites",
+          "url": "https://175.110.122.71:5092/api/v1/platform/controller/api/v1/launchpad/catalog",
           "status": 503,
           "reason": "HTTP 5xx"
         }
@@ -648,7 +648,12 @@
       "reason": "HTTP 5xx",
       "apiFailures": [
         {
-          "url": "https://212.8.248.187:5092/api/v1/platform/controller/api/v1/launchpad/apps/%3Aid",
+          "url": "https://175.110.122.71:5092/api/v1/platform/controller/api/v1/launchpad/apps/%3Aid",
+          "status": 503,
+          "reason": "HTTP 5xx"
+        },
+        {
+          "url": "https://175.110.122.71:5092/api/v1/platform/controller/api/v1/launchpad/catalog",
           "status": 503,
           "reason": "HTTP 5xx"
         }
@@ -661,7 +666,7 @@
       "reason": "HTTP 5xx",
       "apiFailures": [
         {
-          "url": "https://212.8.248.187:5092/api/v1/platform/controller/api/v1/launchpad/catalog",
+          "url": "https://175.110.122.71:5092/api/v1/platform/controller/api/v1/launchpad/catalog",
           "status": 503,
           "reason": "HTTP 5xx"
         }
@@ -694,67 +699,32 @@
     {
       "id": "platform:/platform/migration?tab=cloud",
       "path": "/platform/migration?tab=cloud",
-      "status": "failed",
-      "reason": "HTTP 5xx",
-      "apiFailures": [
-        {
-          "url": "https://212.8.248.187:5092/api/v1/hypersdk/providers/vms?provider=vmware",
-          "status": 500,
-          "reason": "HTTP 5xx"
-        }
-      ]
+      "status": "passed",
+      "warnings": 0
     },
     {
       "id": "platform:/platform/migration?tab=esxi",
       "path": "/platform/migration?tab=esxi",
-      "status": "failed",
-      "reason": "HTTP 5xx",
-      "apiFailures": [
-        {
-          "url": "https://212.8.248.187:5092/api/v1/hypersdk/providers/vms?provider=vmware",
-          "status": 500,
-          "reason": "HTTP 5xx"
-        }
-      ]
+      "status": "passed",
+      "warnings": 0
     },
     {
       "id": "platform:/platform/migration?tab=openstack",
       "path": "/platform/migration?tab=openstack",
-      "status": "failed",
-      "reason": "HTTP 5xx",
-      "apiFailures": [
-        {
-          "url": "https://212.8.248.187:5092/api/v1/hypersdk/providers/vms?provider=vmware",
-          "status": 500,
-          "reason": "HTTP 5xx"
-        }
-      ]
+      "status": "passed",
+      "warnings": 0
     },
     {
       "id": "platform:/platform/migration?tab=ova",
       "path": "/platform/migration?tab=ova",
-      "status": "failed",
-      "reason": "HTTP 5xx",
-      "apiFailures": [
-        {
-          "url": "https://212.8.248.187:5092/api/v1/hypersdk/providers/vms?provider=vmware",
-          "status": 500,
-          "reason": "HTTP 5xx"
-        }
-      ]
+      "status": "passed",
+      "warnings": 0
     },
     {
       "id": "platform:/platform/migration?tab=vmdk",
       "path": "/platform/migration?tab=vmdk",
-      "status": "failed",
-      "reason": "HTTP 5xx",
-      "apiFailures": [
-        {
-          "url": "https://212.8.248.187:5092/api/v1/hypersdk/providers/vms?provider=vmware",
-          "status": 500,
-          "reason": "HTTP 5xx"
-        }
-      ]
+      "status": "passed",
+      "warnings": 0
     },
     {
       "id": "platform:/platform/mission-control/live",
@@ -1071,6 +1041,576 @@
     {
       "id": "platform:/platform/soc?tab=asm",
       "path": "/platform/soc?tab=asm",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/soc?tab=detections",
+      "path": "/platform/soc?tab=detections",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/soc?tab=integrations",
+      "path": "/platform/soc?tab=integrations",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/soc?tab=playbooks",
+      "path": "/platform/soc?tab=playbooks",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/soc?tab=siem",
+      "path": "/platform/soc?tab=siem",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/storage",
+      "path": "/platform/storage",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/storage-atlas",
+      "path": "/platform/storage-atlas",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/storage-tiers",
+      "path": "/platform/storage-tiers",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/storage?tab=pools",
+      "path": "/platform/storage?tab=pools",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/storage?tab=sla",
+      "path": "/platform/storage?tab=sla",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/storage?tab=tiers",
+      "path": "/platform/storage?tab=tiers",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/support",
+      "path": "/platform/support",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/tasks",
+      "path": "/platform/tasks",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/tasks?tab=completed",
+      "path": "/platform/tasks?tab=completed",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/tasks?tab=failed",
+      "path": "/platform/tasks?tab=failed",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/tasks?tab=running",
+      "path": "/platform/tasks?tab=running",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/templates",
+      "path": "/platform/templates",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/topology",
+      "path": "/platform/topology",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/upgrade",
+      "path": "/platform/upgrade",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/users",
+      "path": "/platform/users",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vm-builder",
+      "path": "/platform/vm-builder",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vm-builder?tab=compose",
+      "path": "/platform/vm-builder?tab=compose",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vms",
+      "path": "/platform/vms",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vms?lens=heatmap",
+      "path": "/platform/vms?lens=heatmap",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vms?lens=migration",
+      "path": "/platform/vms?lens=migration",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vms?lens=table",
+      "path": "/platform/vms?lens=table",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vms?lens=timeline",
+      "path": "/platform/vms?lens=timeline",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vms?lens=topology",
+      "path": "/platform/vms?lens=topology",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vms/:id",
+      "path": "/platform/vms/:id",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vms/:id/console",
+      "path": "/platform/vms/:id/console",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/vms/:id/consolehub",
+      "path": "/platform/vms/:id/consolehub",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/webhooks",
+      "path": "/platform/webhooks",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/workloads",
+      "path": "/platform/workloads",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus",
+      "path": "/platform/zeus",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus?tab=baremetal",
+      "path": "/platform/zeus?tab=baremetal",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus?tab=brain",
+      "path": "/platform/zeus?tab=brain",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus?tab=knowledge",
+      "path": "/platform/zeus?tab=knowledge",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus?tab=memory",
+      "path": "/platform/zeus?tab=memory",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus?tab=security",
+      "path": "/platform/zeus?tab=security",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus?tab=services",
+      "path": "/platform/zeus?tab=services",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/approvals",
+      "path": "/platform/zeus/approvals",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/approvals?tab=pending",
+      "path": "/platform/zeus/approvals?tab=pending",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/configure",
+      "path": "/platform/zeus/configure",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/incidents",
+      "path": "/platform/zeus/incidents",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/incidents?tab=active",
+      "path": "/platform/zeus/incidents?tab=active",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId",
+      "path": "/platform/zeus/machines/:hostId",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId?tab=connections",
+      "path": "/platform/zeus/machines/:hostId?tab=connections",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId?tab=containers",
+      "path": "/platform/zeus/machines/:hostId?tab=containers",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId?tab=dns",
+      "path": "/platform/zeus/machines/:hostId?tab=dns",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId?tab=enforcement",
+      "path": "/platform/zeus/machines/:hostId?tab=enforcement",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId?tab=events",
+      "path": "/platform/zeus/machines/:hostId?tab=events",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId?tab=files",
+      "path": "/platform/zeus/machines/:hostId?tab=files",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId?tab=graph",
+      "path": "/platform/zeus/machines/:hostId?tab=graph",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId?tab=ports",
+      "path": "/platform/zeus/machines/:hostId?tab=ports",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/machines/:hostId?tab=users",
+      "path": "/platform/zeus/machines/:hostId?tab=users",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/rightsizing",
+      "path": "/platform/zeus/rightsizing",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/rightsizing?tab=candidates",
+      "path": "/platform/zeus/rightsizing?tab=candidates",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security",
+      "path": "/platform/zeus/security",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/activity",
+      "path": "/platform/zeus/security/activity",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/cloud",
+      "path": "/platform/zeus/security/cloud",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/compliance",
+      "path": "/platform/zeus/security/compliance",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/connectivity",
+      "path": "/platform/zeus/security/connectivity",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement",
+      "path": "/platform/zeus/security/enforcement",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement?tab=deny_cap",
+      "path": "/platform/zeus/security/enforcement?tab=deny_cap",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement?tab=deny_dns",
+      "path": "/platform/zeus/security/enforcement?tab=deny_dns",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement?tab=deny_file",
+      "path": "/platform/zeus/security/enforcement?tab=deny_file",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement?tab=deny_ip",
+      "path": "/platform/zeus/security/enforcement?tab=deny_ip",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement?tab=deny_namespace",
+      "path": "/platform/zeus/security/enforcement?tab=deny_namespace",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement?tab=deny_port",
+      "path": "/platform/zeus/security/enforcement?tab=deny_port",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement?tab=rules",
+      "path": "/platform/zeus/security/enforcement?tab=rules",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/enforcement?tab=tc_allow",
+      "path": "/platform/zeus/security/enforcement?tab=tc_allow",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/firewall",
+      "path": "/platform/zeus/security/firewall",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/firewall?tab=bare_metal",
+      "path": "/platform/zeus/security/firewall?tab=bare_metal",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/firewall?tab=host",
+      "path": "/platform/zeus/security/firewall?tab=host",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/firewall/:id",
+      "path": "/platform/zeus/security/firewall/:id",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/firewall/:id?tab=advanced",
+      "path": "/platform/zeus/security/firewall/:id?tab=advanced",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/firewall/:id?tab=connections",
+      "path": "/platform/zeus/security/firewall/:id?tab=connections",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/hunt",
+      "path": "/platform/zeus/security/hunt",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/hunt?tab=queries",
+      "path": "/platform/zeus/security/hunt?tab=queries",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/k8s",
+      "path": "/platform/zeus/security/k8s",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/policies",
+      "path": "/platform/zeus/security/policies",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/ports",
+      "path": "/platform/zeus/security/ports",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/ports?tab=critical",
+      "path": "/platform/zeus/security/ports?tab=critical",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/ports?tab=warning",
+      "path": "/platform/zeus/security/ports?tab=warning",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "platform:/platform/zeus/security/services",
+      "path": "/platform/zeus/security/services",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/secrets",
+      "path": "/secrets",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/services",
+      "path": "/services",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/settings",
+      "path": "/settings",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/snapshots",
+      "path": "/snapshots",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/ssh",
+      "path": "/ssh",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/storage",
+      "path": "/storage",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/storage/:pool",
+      "path": "/storage/:pool",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/system-check",
+      "path": "/system-check",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/vms",
+      "path": "/vms",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/vms/:name",
+      "path": "/vms/:name",
+      "status": "passed",
+      "warnings": 0
+    },
+    {
+      "id": "classic:/vms/:name/consolehub",
+      "path": "/vms/:name/consolehub",
       "status": "passed",
       "warnings": 0
     }
