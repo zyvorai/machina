@@ -1,6 +1,6 @@
 # API ↔ UX coverage
 
-Generated: 2026-07-15T16:52:02.295Z
+Generated: 2026-07-16T02:41:43.514Z
 
 | Metric | Count |
 |--------|-------|
