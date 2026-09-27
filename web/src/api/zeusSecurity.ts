@@ -256,6 +256,8 @@ export interface EnforcementStatus {
   summary?: string
   attached?: boolean
   default_deny?: boolean
+  // Netra-backed status (api_mode: 'netra') only — whether netrad answered at all.
+  reachable?: boolean
   api_mode?: string
   // attach/sync/detach return this instead of a normalized status when the call didn't actually
   // apply — e.g. not in production PacketWolf mode, or the fabric itself is unreachable. The
@@ -304,13 +306,28 @@ export const patchEnforcementPolicy = (
   policyId: string,
   body: { enabled?: boolean; match?: string; description?: string },
 ) =>
-  platformFetch<{ summary: string; task_ids?: string[]; packetwolf?: Record<string, unknown> }>(
-    `/api/v1/zeus-security/enforcement/policies/${encodeURIComponent(policyId)}`,
-    { method: 'PATCH', body: JSON.stringify(body) },
-  )
+  // A Netra-backed deny_ip toggle that Netra itself rejects (unreachable, bad
+  // match value, etc.) comes back as a 200 + {ok: false, error}, not an HTTP
+  // error — the stored `enabled` flag only ever reflects what's actually
+  // live, so callers must check `ok` explicitly rather than assuming success.
+  platformFetch<{
+    summary?: string
+    task_ids?: string[]
+    packetwolf?: Record<string, unknown>
+    ok?: boolean
+    error?: string
+    policy?: EnforcementPolicy
+  }>(`/api/v1/zeus-security/enforcement/policies/${encodeURIComponent(policyId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(body),
+  })
 
 export const deleteEnforcementPolicy = (policyId: string) =>
-  platformFetch<{ summary: string; task_ids?: string[] }>(
+  // A Netra-backed deny_ip delete that Netra rejects (unreachable, etc.) comes
+  // back as 200 + {ok: false} — the local record is deliberately kept in that
+  // case so the UI doesn't show a rule as gone while it's still live in the
+  // kernel — so callers must check `ok`, not just assume a 200 means removed.
+  platformFetch<{ summary?: string; task_ids?: string[]; ok?: boolean; error?: string }>(
     `/api/v1/zeus-security/enforcement/policies/${encodeURIComponent(policyId)}`,
     { method: 'DELETE' },
   )

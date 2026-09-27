@@ -293,5 +293,12 @@ Frontend polls `/api/v1/tasks/{task_id}`.
 - `ATLAS_BACKUP_BUCKET_ID` — default bound RGW bucket for VM backups
 - `ATLAS_RBD_MON_HOSTS` (comma `host:port`), `ATLAS_RBD_AUTH_USER`, `ATLAS_RBD_SECRET_UUID` — Ceph connection params used to attach an Atlas RBD volume as a libvirt network disk. Atlas supplies the per-volume `pool/image`; these supply the monitors + cephx secret (a libvirt `ceph` secret). Empty = rely on the hypervisor's `ceph.conf`/keyring. Create a VM on Atlas storage by passing `atlas_root_disk: true` (+ optional `atlas_policy`) to `POST /api/v1/vms`.
 
+**Netra integration** (controller ↔ `../netra` standalone eBPF network enforcement; real kernel-level IP/CIDR deny rules and a leased enforce/observe kill-switch, via netrad's own REST API — Netra and PacketWolf are separate products with no shared API, see `packetwolf_enforcement.rs`):
+- `NETRA_ENABLED=1` — enable the Netra integration (default off). Backs the `deny_ip` runtime-enforcement policy kind (`/api/v1/zeus-security/enforcement/*`) with real live rules instead of the Tetragon-simulated local store.
+- `NETRA_BASE_URL` — netrad base URL (default `http://127.0.0.1:30870`)
+- `NETRA_API_KEY` — bearer token for netrad (matches `NETRA_API_KEY` on the netrad/netra-agent side; see `~/.netra/env` from a `netractl install`/standalone deploy)
+- `NETRA_INSECURE_TLS=1` — accept a self-signed netrad cert
+- `NETRA_ENFORCE_LEASE` (default `15m`) — lease duration requested when a `deny_ip` policy is applied (`PUT /api/v1/ebpf/mode?lease=`); Netra clamps to [1m, 24h] and auto-reverts to `observe` (fail-open) when the lease expires, regardless of controller state.
+
 **Web (Vite)**:
 - `VITE_MACHINA_CONTROLLER_URL` — point the web UI directly at the controller (bypasses daemon proxy; useful for standalone web dev)

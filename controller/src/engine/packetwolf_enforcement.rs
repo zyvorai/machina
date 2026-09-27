@@ -1,10 +1,14 @@
 // Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
 // Runtime enforcement bridge — dev fabric (Tetragon) vs production PacketWolf TC allowlist.
+// `deny_ip` policies additionally route to a real backend, Netra (see
+// netra_client.rs), independent of the PacketWolf dev/production split above:
+// Netra is a separate real product, not a PacketWolf fabric implementation.
 
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
+use crate::engine::netra_client;
 use crate::engine::packetwolf_bridge::{
     dev_fabric_available, fabric_delete, fabric_get, fabric_patch, fabric_post,
     fabric_put, production_network_available,
@@ -13,6 +17,18 @@ use crate::engine::packetwolf_local;
 
 async fn production_enforcement_mode(cfg: &ControllerConfig) -> bool {
     production_network_available(cfg).await && !dev_fabric_available(cfg).await
+}
+
+/// Parses a `deny_ip` policy's match value as either an exact address or a
+/// CIDR (distinguished by the presence of `/`) — returns `(value, is_cidr)`,
+/// or `None` for an empty match, which is always a fail-closed rejection
+/// (never silently a no-op rule).
+fn parse_ip_or_cidr(match_str: &str) -> Option<(String, bool)> {
+    let s = match_str.trim();
+    if s.is_empty() {
+        return None;
+    }
+    Some((s.to_string(), s.contains('/')))
 }
 
 fn tc_rule_to_policy(rule: &Value) -> Value {
@@ -135,6 +151,36 @@ fn machina_policy_to_tc_rule(id: &str, kind: &str, match_str: &str, name: &str) 
 }
 
 pub async fn enforcement_status(cfg: &ControllerConfig) -> Value {
+    if cfg.netra_enabled {
+        let netra_status = netra_client::status(cfg).await;
+        let reachable = netra_status.get("ok").and_then(|v| v.as_bool()) == Some(true);
+        let mode = netra_status
+            .get("fastPath")
+            .and_then(|f| f.get("mode"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown")
+            .to_string();
+        let agents = netra_status.get("agents").and_then(|v| v.as_u64()).unwrap_or(0);
+        let deny_policies = packetwolf_local::list_enforcement_policies();
+        let deny_ip_count = deny_policies
+            .iter()
+            .filter(|p| p.get("kind").and_then(|v| v.as_str()) == Some("deny_ip"))
+            .count();
+        return json!({
+            "mode": mode,
+            "policies_total": deny_ip_count,
+            "policies_enabled": deny_ip_count,
+            "applied_hosts": [],
+            "reachable": reachable,
+            "api_mode": "netra",
+            "netra": netra_status,
+            "summary": if reachable {
+                format!("Netra connected — real eBPF enforcement · mode={mode} · {agents} agent(s) reporting")
+            } else {
+                "Netra configured but unreachable — check netrad/NETRA_BASE_URL".to_string()
+            },
+        });
+    }
     if production_enforcement_mode(cfg).await {
         let raw = fabric_get(cfg, "/api/v1/runtime/enforcement/status").await;
         return normalize_production_status(&raw);
@@ -162,9 +208,6 @@ pub async fn enforcement_policies(cfg: &ControllerConfig) -> Value {
 }
 
 pub async fn create_enforcement_policy(cfg: &ControllerConfig, body: Value) -> Value {
-    if !production_enforcement_mode(cfg).await {
-        return fabric_post(cfg, "/api/v1/enforcement/policies", body).await;
-    }
     let name = body
         .get("name")
         .and_then(|v| v.as_str())
@@ -184,6 +227,60 @@ pub async fn create_enforcement_policy(cfg: &ControllerConfig, body: Value) -> V
         .get("enabled")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
+
+    // Netra-backed `deny_ip` policies are handled independently of the
+    // PacketWolf dev/production split below — Netra is a real, separate
+    // backend that's either configured (NETRA_ENABLED=1) or it isn't.
+    if cfg.netra_enabled && kind == "deny_ip" {
+        let Some((value, is_cidr)) = parse_ip_or_cidr(&match_str) else {
+            return json!({
+                "ok": false,
+                "error": "deny_ip requires a match value: an IPv4/IPv6 address or CIDR",
+                "api_mode": "netra",
+            });
+        };
+        let netra_result = if is_cidr {
+            netra_client::cidr_add(cfg, &value, "egress").await
+        } else {
+            netra_client::deny_add(cfg, &value, "egress").await
+        };
+        if netra_result.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+            return json!({
+                "ok": false,
+                "error": netra_result
+                    .get("error")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("Netra rejected the deny rule"),
+                "netra": netra_result,
+                "api_mode": "netra",
+            });
+        }
+        let id = Uuid::new_v4().to_string();
+        let description = body
+            .get("description")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let policy = packetwolf_local::upsert_enforcement_policy(
+            &id,
+            &name,
+            &kind,
+            &match_str,
+            enabled,
+            "fleet",
+            &description,
+        );
+        return json!({
+            "policy": policy,
+            "netra": netra_result,
+            "api_mode": "netra",
+            "note": "Live Netra eBPF deny rule staged — call apply to switch Netra into enforce mode",
+        });
+    }
+
+    if !production_enforcement_mode(cfg).await {
+        return fabric_post(cfg, "/api/v1/enforcement/policies", body).await;
+    }
     let scope = body
         .get("scope")
         .and_then(|v| v.as_str())
@@ -253,6 +350,34 @@ pub async fn apply_enforcement_policy(
     policy_id: &str,
     host_ids: &[String],
 ) -> Value {
+    if cfg.netra_enabled {
+        if let Some(policy) = packetwolf_local::get_enforcement_policy(policy_id) {
+            if policy.get("kind").and_then(|v| v.as_str()) == Some("deny_ip") {
+                let netra_result =
+                    netra_client::set_mode(cfg, "enforce", Some(&cfg.netra_enforce_lease)).await;
+                let synced = netra_result.get("ok").and_then(|v| v.as_bool()) == Some(true);
+                if synced {
+                    packetwolf_local::mark_policy_applied(policy_id, host_ids);
+                }
+                return json!({
+                    "ok": synced,
+                    "api_mode": "netra",
+                    "host_ids": host_ids,
+                    "netra": netra_result,
+                    "summary": if synced {
+                        format!(
+                            "Netra enforcement lease active ({}) — deny rules are live",
+                            cfg.netra_enforce_lease
+                        )
+                    } else {
+                        "Netra enforcement lease failed — deny rules remain staged, not live"
+                            .to_string()
+                    },
+                });
+            }
+        }
+    }
+
     if !production_enforcement_mode(cfg).await {
         let body = json!({ "host_ids": host_ids });
         return fabric_post(
@@ -306,6 +431,57 @@ pub async fn patch_enforcement_policy(
     policy_id: &str,
     body: Value,
 ) -> Value {
+    if cfg.netra_enabled {
+        if let Some(existing) = packetwolf_local::get_enforcement_policy(policy_id) {
+            if existing.get("kind").and_then(|v| v.as_str()) == Some("deny_ip") {
+                let was_enabled = existing.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+                let wants_enabled = body.get("enabled").and_then(|v| v.as_bool());
+                let match_value = existing
+                    .get("match")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let mut netra_result = None;
+                if let (Some(wants), Some((value, is_cidr))) =
+                    (wants_enabled, parse_ip_or_cidr(&match_value))
+                {
+                    if wants && !was_enabled {
+                        netra_result = Some(if is_cidr {
+                            netra_client::cidr_add(cfg, &value, "egress").await
+                        } else {
+                            netra_client::deny_add(cfg, &value, "egress").await
+                        });
+                    } else if !wants && was_enabled {
+                        netra_result = Some(if is_cidr {
+                            netra_client::cidr_delete(cfg, &value, "egress").await
+                        } else {
+                            netra_client::deny_delete(cfg, &value).await
+                        });
+                    }
+                }
+                // If the live Netra call failed, don't record the toggle as having
+                // taken effect — the stored `enabled` flag must reflect what's
+                // actually enforced, not what was merely requested.
+                if let Some(r) = &netra_result {
+                    if r.get("ok").and_then(|v| v.as_bool()) != Some(true) {
+                        return json!({
+                            "ok": false,
+                            "error": r.get("error").and_then(|v| v.as_str()).unwrap_or("Netra rejected the change"),
+                            "netra": r,
+                            "api_mode": "netra",
+                        });
+                    }
+                }
+                let updated = packetwolf_local::patch_enforcement_policy(policy_id, &body);
+                return json!({
+                    "policy": updated,
+                    "api_mode": "netra",
+                    "netra": netra_result,
+                });
+            }
+        }
+    }
+
     if !production_enforcement_mode(cfg).await {
         return fabric_patch(
             cfg,
@@ -339,6 +515,42 @@ pub async fn patch_enforcement_policy(
 }
 
 pub async fn delete_enforcement_policy(cfg: &ControllerConfig, policy_id: &str) -> Value {
+    if cfg.netra_enabled {
+        if let Some(policy) = packetwolf_local::get_enforcement_policy(policy_id) {
+            if policy.get("kind").and_then(|v| v.as_str()) == Some("deny_ip") {
+                let match_value = policy
+                    .get("match")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let Some((value, is_cidr)) = parse_ip_or_cidr(&match_value) else {
+                    return json!({
+                        "ok": false,
+                        "error": "stored policy has no match value to remove from Netra",
+                        "api_mode": "netra",
+                    });
+                };
+                let netra_result = if is_cidr {
+                    netra_client::cidr_delete(cfg, &value, "egress").await
+                } else {
+                    netra_client::deny_delete(cfg, &value).await
+                };
+                let removed = netra_result.get("ok").and_then(|v| v.as_bool()) == Some(true);
+                // Only drop the local record once Netra confirms the live rule is
+                // gone — otherwise a dead/unreachable Netra would leave a kernel
+                // deny rule active while Machina's UI shows it deleted.
+                if removed {
+                    packetwolf_local::delete_enforcement_policy(policy_id);
+                }
+                return json!({
+                    "ok": removed,
+                    "api_mode": "netra",
+                    "netra": netra_result,
+                });
+            }
+        }
+    }
+
     if !production_enforcement_mode(cfg).await {
         return fabric_delete(cfg, &format!("/api/v1/enforcement/policies/{policy_id}")).await;
     }
@@ -409,6 +621,23 @@ pub async fn enforcement_policy_tetragon(cfg: &ControllerConfig, policy_id: &str
 }
 
 pub async fn attach_enforcement(cfg: &ControllerConfig) -> Value {
+    if cfg.netra_enabled {
+        let netra_result =
+            netra_client::set_mode(cfg, "enforce", Some(&cfg.netra_enforce_lease)).await;
+        let ok = netra_result.get("ok").and_then(|v| v.as_bool()) == Some(true);
+        return json!({
+            "ok": ok,
+            "attached": ok,
+            "api_mode": "netra",
+            "netra": netra_result,
+            "note": if ok {
+                format!("Netra enforce lease active ({})", cfg.netra_enforce_lease)
+            } else {
+                netra_result.get("error").and_then(|v| v.as_str())
+                    .unwrap_or("Netra rejected the enforce request").to_string()
+            },
+        });
+    }
     if production_enforcement_mode(cfg).await {
         let raw = fabric_post(cfg, "/api/v1/runtime/enforcement/attach", json!({})).await;
         return normalize_production_status(&raw);
@@ -417,6 +646,21 @@ pub async fn attach_enforcement(cfg: &ControllerConfig) -> Value {
 }
 
 pub async fn sync_enforcement(cfg: &ControllerConfig) -> Value {
+    if cfg.netra_enabled {
+        let netra_result = netra_client::config_snapshot(cfg).await;
+        let ok = netra_result.get("ok").and_then(|v| v.as_bool()) == Some(true);
+        return json!({
+            "ok": ok,
+            "api_mode": "netra",
+            "netra": netra_result,
+            "note": if ok {
+                "Netra config snapshot refreshed".to_string()
+            } else {
+                netra_result.get("error").and_then(|v| v.as_str())
+                    .unwrap_or("Netra unreachable").to_string()
+            },
+        });
+    }
     if production_enforcement_mode(cfg).await {
         let raw = fabric_post(cfg, "/api/v1/runtime/enforcement/sync", json!({})).await;
         return normalize_production_status(&raw);
@@ -424,7 +668,26 @@ pub async fn sync_enforcement(cfg: &ControllerConfig) -> Value {
     json!({"ok": false, "note": "sync only available in production PacketWolf mode"})
 }
 
+/// Reverts Netra to `observe` (fail-open) immediately — Netra already does
+/// this itself once an enforce lease expires, but detach is the operator's
+/// "stop enforcing now" button, so it shouldn't have to wait for the lease.
 pub async fn detach_enforcement(cfg: &ControllerConfig) -> Value {
+    if cfg.netra_enabled {
+        let netra_result = netra_client::set_mode(cfg, "observe", None).await;
+        let ok = netra_result.get("ok").and_then(|v| v.as_bool()) == Some(true);
+        return json!({
+            "ok": ok,
+            "attached": false,
+            "api_mode": "netra",
+            "netra": netra_result,
+            "note": if ok {
+                "Netra reverted to observe (fail-open)".to_string()
+            } else {
+                netra_result.get("error").and_then(|v| v.as_str())
+                    .unwrap_or("Netra rejected the detach request").to_string()
+            },
+        });
+    }
     if production_enforcement_mode(cfg).await {
         let raw = fabric_post(cfg, "/api/v1/runtime/enforcement/detach", json!({})).await;
         return normalize_production_status(&raw);

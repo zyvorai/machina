@@ -142,6 +142,13 @@ export default function PlatformRuntimeEnforcement() {
     if (!p.id) return
     void patchEnforcementPolicy(p.id, { enabled: p.enabled === false })
       .then((r) => {
+        // A Netra-backed deny_ip toggle Netra itself rejects (unreachable, etc.)
+        // comes back as 200 + {ok: false, error} — the live rule state didn't
+        // actually change, so this must not show a success toast.
+        if (r.ok === false) {
+          toast.error(r.error ?? 'Policy was not updated')
+          return
+        }
         notifyTasks(r.summary ?? (p.enabled === false ? 'Policy enabled' : 'Policy disabled'), r.task_ids)
         void load()
       })
@@ -156,7 +163,11 @@ export default function PlatformRuntimeEnforcement() {
     setConfirmDeletePolicyId(null)
     void deleteEnforcementPolicy(policyId)
       .then((r) => {
-        notifyTasks(r.summary, r.task_ids)
+        if (r.ok === false) {
+          toast.error(r.error ?? 'Policy was not deleted — it may still be live')
+          return
+        }
+        notifyTasks(r.summary ?? 'Policy deleted', r.task_ids)
         void load()
       })
       .catch((e: unknown) => toast.error(formatUserError(e)))
@@ -286,6 +297,49 @@ export default function PlatformRuntimeEnforcement() {
                 {status.default_deny ? ' · defaultDeny' : ''}
               </span>
             )}
+          </div>
+        </MacGlassPanel>
+      )}
+
+      {status?.api_mode === 'netra' && (
+        <MacGlassPanel title="Netra eBPF enforcement" subtitle={status.summary}>
+          <div className="p-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => void syncEnforcement().then((r) => {
+                if (r.ok === false) { toast.error(r.note ?? 'Netra sync did not apply'); return }
+                toast.success(r.note ?? 'Netra config refreshed')
+                void load()
+              }).catch((e: unknown) => toast.error(formatUserError(e)))}
+            >
+              Sync
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => void attachEnforcement().then((r) => {
+                if (r.ok === false || r.attached === false) { toast.error(r.note ?? 'Netra did not switch to enforce'); return }
+                toast.success(r.note ?? 'Netra enforce lease active')
+                void load()
+              }).catch((e: unknown) => toast.error(formatUserError(e)))}
+            >
+              Enforce
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              onClick={() => void detachEnforcement().then((r) => {
+                if (r.ok === false) { toast.error(r.note ?? 'Netra did not revert to observe'); return }
+                toast.success(r.note ?? 'Netra reverted to observe')
+                void load()
+              }).catch((e: unknown) => toast.error(formatUserError(e)))}
+            >
+              Observe (fail-open)
+            </button>
+            <span className="text-xs text-[var(--text-muted)] self-center">
+              {status.reachable ? 'netrad reachable' : 'netrad unreachable'}
+            </span>
           </div>
         </MacGlassPanel>
       )}

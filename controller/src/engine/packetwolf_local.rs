@@ -246,6 +246,16 @@ pub fn agent_bundle(host_id: &str) -> Value {
 }
 
 fn policy_to_json(policy: &LocalEnforcementPolicy) -> Value {
+    // `deny_ip` only ever lands in this store via the Netra-backed path in
+    // packetwolf_enforcement.rs (create/patch call netrad's real deny/cidr
+    // API before storing the record here) — every other kind is the
+    // Tetragon-simulated fallback. Labeling both "machina-tetragon" would
+    // misrepresent a genuinely live eBPF rule as a stored-but-unenforced one.
+    let backend = if policy.kind == "deny_ip" {
+        "netra"
+    } else {
+        "machina-tetragon"
+    };
     json!({
         "id": policy.id,
         "name": policy.name,
@@ -255,7 +265,7 @@ fn policy_to_json(policy: &LocalEnforcementPolicy) -> Value {
         "scope": policy.scope,
         "description": policy.description,
         "applied_hosts": policy.applied_hosts,
-        "backend": "machina-tetragon",
+        "backend": backend,
     })
 }
 

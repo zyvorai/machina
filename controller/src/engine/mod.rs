@@ -42,6 +42,7 @@ pub mod host_validate;
 pub mod kubevirt_inventory;
 pub mod kubevirt_ssh;
 pub mod migrate_precheck;
+pub mod netra_client;
 pub mod network_overlay;
 pub mod network_sync;
 pub mod observability;
