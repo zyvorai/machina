@@ -73,7 +73,6 @@ pub(crate) mod test_support;
 pub mod template_git;
 pub mod template_image_fetch;
 pub mod template_readiness;
-pub mod vault_sync_scheduler;
 pub mod vm_health;
 pub mod vm_inventory;
 pub mod vm_lifecycle;

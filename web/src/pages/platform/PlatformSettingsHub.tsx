@@ -24,7 +24,7 @@ import {
   MacToggle,
   MacListRow,
 } from '../../components/platform/mac/PlatformMacUi'
-import { getClusterSettings, patchClusterSettings, getEnterpriseSecurityOverview, getFleetNetwork, listVaultProviders, listMfaPolicies, upsertMfaPolicy, listAirGapBundles, createAirGapBundle, getAirGapBundle, listPolicyRules, type EnterpriseSecurityOverview, type FleetNetworkOverview, type VaultProvider, type MfaPolicy, type AirGapBundle, type PolicyRule } from '../../api/platform'
+import { getClusterSettings, patchClusterSettings, getEnterpriseSecurityOverview, getFleetNetwork, listAirGapBundles, createAirGapBundle, getAirGapBundle, listPolicyRules, type EnterpriseSecurityOverview, type FleetNetworkOverview, type AirGapBundle, type PolicyRule } from '../../api/platform'
 import JsonInspector, { asArray, asRecord } from '../../components/platform/JsonInspector'
 import { getAiPolicyExport } from '../../api/ai'
 import { getFirewallOverview, type FirewallOverview } from '../../api/zeusFirewall'
@@ -141,8 +141,6 @@ export default function PlatformSettingsHub() {
   const [policyYaml, setPolicyYaml] = useState<string | null>(null)
   const [firewallOverview, setFirewallOverview] = useState<FirewallOverview | null>(null)
   const [enterprise, setEnterprise] = useState<EnterpriseSecurityOverview | null>(null)
-  const [vaultProviders, setVaultProviders] = useState<VaultProvider[]>([])
-  const [mfaPolicies, setMfaPolicies] = useState<MfaPolicy[]>([])
   const [airGapBundles, setAirGapBundles] = useState<AirGapBundle[]>([])
   const [bundleName, setBundleName] = useState('sovereign-export')
   const [bundleCreating, setBundleCreating] = useState(false)
@@ -160,8 +158,6 @@ export default function PlatformSettingsHub() {
       getFirewallOverview(),
       Promise.all([
         getEnterpriseSecurityOverview(),
-        listVaultProviders(),
-        listMfaPolicies(),
         listAirGapBundles(),
         listPolicyRules().catch(() => []),
       ]),
@@ -174,10 +170,8 @@ export default function PlatformSettingsHub() {
     }
     if (fwRes.status === 'fulfilled') setFirewallOverview(fwRes.value)
     if (enterpriseRes.status === 'fulfilled') {
-      const [ov, vaults, mfa, bundles, policy] = enterpriseRes.value
+      const [ov, bundles, policy] = enterpriseRes.value
       setEnterprise(ov)
-      setVaultProviders(vaults)
-      setMfaPolicies(mfa)
       setAirGapBundles(bundles)
       setPolicyRules(policy)
     }
@@ -242,21 +236,6 @@ export default function PlatformSettingsHub() {
     }
   }
 
-  const toggleAdminMfa = async (checked: boolean) => {
-    setSaving(true)
-    try {
-      await upsertMfaPolicy('admin', { method: 'webauthn', required: checked, grace_days: 7 })
-      setMfaPolicies((prev) =>
-        prev.map((p) => (p.role_name === 'admin' ? { ...p, required: checked } : p)),
-      )
-      toast.success(checked ? 'Admin MFA policy enabled (stub)' : 'Admin MFA policy disabled')
-    } catch (e: unknown) {
-      toast.error(formatUserError(e))
-    } finally {
-      setSaving(false)
-    }
-  }
-
   const exportAirGapBundle = async () => {
     setBundleCreating(true)
     try {
@@ -269,8 +248,6 @@ export default function PlatformSettingsHub() {
       setBundleCreating(false)
     }
   }
-
-  const adminMfaRequired = mfaPolicies.find((p) => p.role_name === 'admin')?.required ?? false
 
   return (
     <PlatformPageChrome
@@ -324,13 +301,6 @@ export default function PlatformSettingsHub() {
               disabled={saving}
               onChange={(v) => void toggleDeleteApproval(v)}
             />
-            <MacToggle
-              label="Require MFA for admins"
-              description="Policy stub — WebAuthn/TOTP enrollment inventory only (no live IdP)."
-              checked={adminMfaRequired}
-              disabled={saving}
-              onChange={(v) => void toggleAdminMfa(v)}
-            />
             <MacSettingsGroupBody className="pt-0">
               <p className="text-xs text-[var(--text-muted)]">Audit logging is always enabled for platform operations.</p>
             </MacSettingsGroupBody>
@@ -338,7 +308,7 @@ export default function PlatformSettingsHub() {
 
           {enterprise && (
             <MacSettingsGroup title="Keychain">
-              <p className="text-xs text-[var(--text-muted)] mb-2">Fleet secrets inventory — vault, MFA, API keys, air-gap bundles.</p>
+              <p className="text-xs text-[var(--text-muted)] mb-2">Fleet secrets inventory — API keys, air-gap bundles.</p>
               <Link to="/platform/enterprise?tab=keychain" className={`text-sm ${hubLinkClasses()}`}>Open Keychain →</Link>
             </MacSettingsGroup>
           )}
@@ -346,16 +316,10 @@ export default function PlatformSettingsHub() {
           {enterprise && (
             <MacSettingsGroup title="Enterprise security">
               <p className="text-xs text-[var(--text-muted)] mb-2">{enterprise.summary}</p>
-              <div className="grid gap-3 sm:grid-cols-3 text-sm mb-3">
+              <div className="grid gap-3 sm:grid-cols-2 text-sm mb-3">
                 <div className="tahoe-glass-card p-3">
-                  <p className="text-[10px] uppercase text-[var(--text-muted)]">Vault</p>
-                  <p className="text-lg font-semibold text-[var(--text-primary)]">{enterprise.vault_connected}/{enterprise.vault_providers}</p>
-                  <p className="text-[10px] text-[var(--text-muted)]">connected</p>
-                </div>
-                <div className="tahoe-glass-card p-3">
-                  <p className="text-[10px] uppercase text-[var(--text-muted)]">MFA roles</p>
-                  <p className="text-lg font-semibold text-[var(--text-primary)]">{enterprise.mfa_required_roles}/{enterprise.mfa_policies}</p>
-                  <p className="text-[10px] text-[var(--text-muted)]">required</p>
+                  <p className="text-[10px] uppercase text-[var(--text-muted)]">Tenant policies</p>
+                  <p className="text-lg font-semibold text-[var(--text-primary)]">{enterprise.tenant_policies}</p>
                 </div>
                 <div className="tahoe-glass-card p-3">
                   <p className="text-[10px] uppercase text-[var(--text-muted)]">Air-gap</p>
@@ -365,22 +329,6 @@ export default function PlatformSettingsHub() {
               </div>
             </MacSettingsGroup>
           )}
-
-          <MacSettingsGroup title="Vault providers">
-            {vaultProviders.length === 0 ? (
-              <p className="text-sm text-[var(--text-muted)]">No vault providers — run migration 029.</p>
-            ) : (
-              <div className="space-y-2">
-                {vaultProviders.map((v) => (
-                  <MacListRow
-                    key={v.id}
-                    title={v.name}
-                    subtitle={`${v.provider_type} · ${v.status}${v.address ? ` · ${v.address}` : ''}`}
-                  />
-                ))}
-              </div>
-            )}
-          </MacSettingsGroup>
 
           <MacSettingsGroup title="Air-gap bundles">
             <p className="text-xs text-[var(--text-muted)] mb-2">Simulated sovereign export manifests — no live bundle runner.</p>

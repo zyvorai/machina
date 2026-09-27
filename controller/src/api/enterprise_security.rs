@@ -8,8 +8,7 @@ use uuid::Uuid;
 use crate::api::ApiError;
 use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::engine::enterprise_security::{
-    self, CreateAirGapBundleRequest, RegisterVaultProviderRequest, UpsertMfaPolicyRequest,
-    UpsertTenantPolicyRequest,
+    self, CreateAirGapBundleRequest, UpsertTenantPolicyRequest,
 };
 use crate::state::AppState;
 
@@ -22,53 +21,6 @@ pub async fn overview(
         .await
         .map(Json)
         .map_err(|e| ApiError::internal(e.to_string()))
-}
-
-pub async fn list_vault_providers(
-    State(state): State<AppState>,
-    Extension(actor): Extension<AuthUser>,
-) -> Result<Json<Vec<enterprise_security::VaultProviderRow>>, ApiError> {
-    require_operator(&actor)?;
-    enterprise_security::list_vault_providers(&state.pool)
-        .await
-        .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
-}
-
-pub async fn register_vault_provider(
-    State(state): State<AppState>,
-    Extension(actor): Extension<AuthUser>,
-    Json(body): Json<RegisterVaultProviderRequest>,
-) -> Result<Json<enterprise_security::VaultProviderRow>, ApiError> {
-    require_admin(&actor)?;
-    enterprise_security::register_vault_provider(&state.pool, &body)
-        .await
-        .map(Json)
-        .map_err(|e| ApiError::bad_request(e.to_string()))
-}
-
-pub async fn list_mfa_policies(
-    State(state): State<AppState>,
-    Extension(actor): Extension<AuthUser>,
-) -> Result<Json<Vec<enterprise_security::MfaPolicyRow>>, ApiError> {
-    require_operator(&actor)?;
-    enterprise_security::list_mfa_policies(&state.pool)
-        .await
-        .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
-}
-
-pub async fn upsert_mfa_policy(
-    State(state): State<AppState>,
-    Extension(actor): Extension<AuthUser>,
-    Path(role): Path<String>,
-    Json(body): Json<UpsertMfaPolicyRequest>,
-) -> Result<Json<enterprise_security::MfaPolicyRow>, ApiError> {
-    require_admin(&actor)?;
-    enterprise_security::upsert_mfa_policy(&state.pool, &role, &body)
-        .await
-        .map(Json)
-        .map_err(|e| ApiError::bad_request(e.to_string()))
 }
 
 pub async fn list_air_gap_bundles(
@@ -122,40 +74,6 @@ pub async fn delete_air_gap_bundle(
             }
         })?;
     Ok(Json(serde_json::json!({ "deleted": true, "id": id })))
-}
-
-pub async fn sync_vault_provider(
-    State(state): State<AppState>,
-    Extension(actor): Extension<AuthUser>,
-    Path(id): Path<Uuid>,
-) -> Result<Json<enterprise_security::VaultSyncResult>, ApiError> {
-    require_admin(&actor)?;
-    enterprise_security::sync_vault_provider(&state.pool, id)
-        .await
-        .map(Json)
-        .map_err(|e| ApiError::bad_request(e.to_string()))
-}
-
-pub async fn sync_all_vault_providers(
-    State(state): State<AppState>,
-    Extension(actor): Extension<AuthUser>,
-) -> Result<Json<enterprise_security::VaultSyncAllResult>, ApiError> {
-    require_admin(&actor)?;
-    enterprise_security::sync_all_vault_providers(&state.pool)
-        .await
-        .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
-}
-
-pub async fn mfa_compliance(
-    State(state): State<AppState>,
-    Extension(actor): Extension<AuthUser>,
-) -> Result<Json<enterprise_security::MfaComplianceReport>, ApiError> {
-    require_operator(&actor)?;
-    enterprise_security::mfa_compliance(&state.pool)
-        .await
-        .map(Json)
-        .map_err(|e| ApiError::internal(e.to_string()))
 }
 
 pub async fn fips_matrix(

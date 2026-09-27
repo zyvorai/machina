@@ -787,30 +787,6 @@ pub fn router(state: AppState) -> Router {
             get(enterprise_security::overview),
         )
         .route(
-            "/api/v1/enterprise/vault/providers",
-            get(enterprise_security::list_vault_providers).post(enterprise_security::register_vault_provider),
-        )
-        .route(
-            "/api/v1/enterprise/vault/providers/{id}/sync",
-            post(enterprise_security::sync_vault_provider),
-        )
-        .route(
-            "/api/v1/enterprise/vault/sync-all",
-            post(enterprise_security::sync_all_vault_providers),
-        )
-        .route(
-            "/api/v1/enterprise/mfa/policies",
-            get(enterprise_security::list_mfa_policies),
-        )
-        .route(
-            "/api/v1/enterprise/mfa/compliance",
-            get(enterprise_security::mfa_compliance),
-        )
-        .route(
-            "/api/v1/enterprise/mfa/policies/{role}",
-            post(enterprise_security::upsert_mfa_policy),
-        )
-        .route(
             "/api/v1/enterprise/air-gap/bundles",
             get(enterprise_security::list_air_gap_bundles).post(enterprise_security::create_air_gap_bundle),
         )

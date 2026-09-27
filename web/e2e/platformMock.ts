@@ -106,30 +106,16 @@ const jarvisLanding = {
     { id: 'jarvis-mission-control', label: 'Mission Control', review: 'Infrastructure Earth globe', action: 'navigate', navigate: '/platform?mission=1' },
     { id: 'jarvis-maintenance-mission', label: 'Maintenance Mission', review: 'Patch timeline', action: 'navigate', navigate: '/platform/maintenance?tab=mission' },
     { id: 'jarvis-machine-finder', label: 'Machine Finder', review: 'Geography', action: 'navigate', navigate: '/platform/vms?lens=topology' },
-    { id: 'jarvis-enterprise', label: 'Enterprise Keychain', review: 'Vault and MFA inventory', action: 'navigate', navigate: '/platform/enterprise?tab=keychain' },
+    { id: 'jarvis-enterprise', label: 'Enterprise Keychain', review: 'API keys and air-gap bundle inventory', action: 'navigate', navigate: '/platform/enterprise?tab=keychain' },
   ],
   search_hits: [],
 }
 
 const enterpriseSecurity = {
-  vault_providers: 1,
-  vault_connected: 1,
-  mfa_policies: 1,
-  mfa_required_roles: 1,
   air_gap_bundles: 0,
-  mfa_enrolled_users: 2,
   tenant_policies: 1,
   fips_profiles: 2,
-  summary: '1 vault · 2 MFA enrolled · 1 tenant policy',
-}
-
-const enterpriseVaults = [
-  { id: 'vault-1', name: 'corp-vault', provider_type: 'hashicorp', address: 'https://vault.local', namespace: 'machina', status: 'connected', last_sync_at: null },
-]
-
-const enterpriseMfa = {
-  summary: '1 role requires MFA',
-  users: [{ username: 'admin', role: 'admin', required_method: 'totp', compliant: true }],
+  summary: '1 tenant policy · 2 FIPS profiles · 0 air-gap bundles',
 }
 
 const enterpriseFips = {
@@ -168,16 +154,10 @@ const platformEvents = [
 ]
 
 const fleetKeychain = {
-  summary: '2 credential entries',
-  vault_providers: 1,
-  vault_connected: 1,
-  disconnected_vaults: 0,
-  mfa_policies: 1,
-  mfa_enrolled_users: 2,
+  summary: '1 credential entry',
   api_keys: 1,
   air_gap_bundles: 0,
   entries: [
-    { kind: 'vault', id: 'v1', name: 'corp-vault', summary: 'HashiCorp · connected', status: 'active' },
     { kind: 'api_key', id: 'k1', name: 'automation', summary: 'Platform API key', status: 'active' },
   ],
 }
@@ -1894,17 +1874,6 @@ export async function mockPlatformApi(page: Page, opts?: {
     if (url.includes('/enterprise/security/overview')) {
       return route.fulfill({ json: enterpriseSecurity })
     }
-    if (url.includes('/enterprise/vault/providers') && route.request().method() === 'POST') {
-      return route.fulfill({
-        json: {
-          id: 'vault-new',
-          name: 'staging-vault',
-          provider_type: 'hashicorp',
-          address: 'https://vault.example:8200',
-          status: 'connected',
-        },
-      })
-    }
     if (url.match(/\/enterprise\/tenants\/policies\/[^/]+$/) && route.request().method() === 'POST') {
       return route.fulfill({
         json: {
@@ -1916,15 +1885,6 @@ export async function mockPlatformApi(page: Page, opts?: {
           quota_status: 'ok',
         },
       })
-    }
-    if (url.includes('/enterprise/vault/sync-all') && route.request().method() === 'POST') {
-      return route.fulfill({ status: 500, json: { error: 'vault sync failed' } })
-    }
-    if (url.includes('/enterprise/vault/providers')) {
-      return route.fulfill({ json: enterpriseVaults })
-    }
-    if (url.includes('/enterprise/mfa/compliance')) {
-      return route.fulfill({ json: enterpriseMfa })
     }
     if (url.includes('/enterprise/fips/matrix')) {
       return route.fulfill({ json: enterpriseFips })

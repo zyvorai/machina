@@ -630,33 +630,10 @@ export const listAuditLogs = (params?: { action?: string; actor?: string }) => {
   return platformFetch<AuditLog[]>(`/api/v1/audit${qs ? `?${qs}` : ''}`)
 }
 export type EnterpriseSecurityOverview = {
-  vault_providers: number
-  vault_connected: number
-  mfa_policies: number
-  mfa_required_roles: number
   air_gap_bundles: number
-  mfa_enrolled_users: number
   tenant_policies: number
   fips_profiles: number
   summary: string
-}
-
-export type VaultProvider = {
-  id: string
-  name: string
-  provider_type: string
-  address: string
-  namespace: string
-  status: string
-  last_sync_at?: string | null
-}
-
-export type MfaPolicy = {
-  id: string
-  role_name: string
-  method: string
-  required: boolean
-  grace_days: number
 }
 
 export type AirGapBundle = {
@@ -671,29 +648,6 @@ export type AirGapBundle = {
 export const getEnterpriseSecurityOverview = () =>
   platformFetch<EnterpriseSecurityOverview>('/api/v1/enterprise/security/overview')
 
-export const listVaultProviders = () =>
-  platformFetch<VaultProvider[]>('/api/v1/enterprise/vault/providers')
-
-export const registerVaultProvider = (body: {
-  name: string
-  provider_type?: string
-  address?: string
-  namespace?: string
-}) =>
-  platformFetch<VaultProvider>('/api/v1/enterprise/vault/providers', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-
-export const listMfaPolicies = () =>
-  platformFetch<MfaPolicy[]>('/api/v1/enterprise/mfa/policies')
-
-export const upsertMfaPolicy = (role: string, body: { method: string; required: boolean; grace_days?: number }) =>
-  platformFetch<MfaPolicy>(`/api/v1/enterprise/mfa/policies/${encodeURIComponent(role)}`, {
-    method: 'POST',
-    body: JSON.stringify(body),
-  })
-
 export const listAirGapBundles = () =>
   platformFetch<AirGapBundle[]>('/api/v1/enterprise/air-gap/bundles')
 
@@ -702,28 +656,6 @@ export const createAirGapBundle = (body: { name: string }) =>
     method: 'POST',
     body: JSON.stringify(body),
   })
-
-export type VaultSyncResult = {
-  provider_id: string
-  provider_name: string
-  status: string
-  message: string
-  last_sync_at: string
-}
-
-export type MfaComplianceReport = {
-  required_roles: number
-  compliant_users: number
-  non_compliant_users: number
-  users: Array<{
-    username: string
-    role: string
-    required_method: string
-    enrolled: boolean
-    compliant: boolean
-  }>
-  summary: string
-}
 
 export type FipsMatrix = {
   active_profile: string
@@ -754,18 +686,6 @@ export type TenantIsolationOverview = {
   enforced_count: number
   summary: string
 }
-
-export const syncVaultProvider = (id: string) =>
-  platformFetch<VaultSyncResult>(`/api/v1/enterprise/vault/providers/${id}/sync`, { method: 'POST', body: '{}' })
-
-export const syncAllVaultProviders = () =>
-  platformFetch<{ synced: number; summary: string; results: VaultSyncResult[] }>(
-    '/api/v1/enterprise/vault/sync-all',
-    { method: 'POST', body: '{}' },
-  )
-
-export const getMfaCompliance = () =>
-  platformFetch<MfaComplianceReport>('/api/v1/enterprise/mfa/compliance')
 
 export const getFipsMatrix = () =>
   platformFetch<FipsMatrix>('/api/v1/enterprise/fips/matrix')
@@ -1574,13 +1494,8 @@ export type FleetKeychainEntry = {
 
 export type FleetKeychainOverview = {
   summary: string
-  vault_providers: number
-  vault_connected: number
-  mfa_policies: number
-  mfa_enrolled_users: number
   air_gap_bundles: number
   api_keys: number
-  disconnected_vaults: number
   entries: FleetKeychainEntry[]
 }
 

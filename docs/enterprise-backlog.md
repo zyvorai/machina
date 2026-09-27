@@ -4,8 +4,9 @@ Machina targets single-host and small fleet KVM operations. The items below are 
 
 | Area | Status | Notes |
 |------|--------|-------|
-| HashiCorp Vault (or similar) for secrets | Simulated, not live | `controller/src/engine/enterprise_security.rs`'s Vault sync/probe and air-gap bundle export are labelled "simulated" in their own responses — no real Vault connection or bundle runner yet. libvirt secrets API + config file remain the real mechanism today; see [compliance-hardening.md](compliance-hardening.md) |
-| WebAuthn / MFA / SAML / SCIM | Config-only / simulated | `core/src/config.rs` stores `[auth.saml]` config but the login flow doesn't use it yet (`docs/handbook/admin-configuration.md`); `enterprise_security.rs` ships simulated MFA/WebAuthn stubs. PAM, LDAP, and OIDC browser SSO are the real, live auth paths today |
+| HashiCorp Vault (or similar) for secrets | Not implemented | No Vault integration exists — the previous simulated inventory in `enterprise_security.rs` was removed rather than kept as a stub. libvirt secrets API + config file remain the real mechanism today; see [compliance-hardening.md](compliance-hardening.md) |
+| WebAuthn / MFA / SCIM | Not implemented | No MFA enrollment/policy engine exists — the previous simulated inventory in `enterprise_security.rs` was removed rather than kept as a stub. PAM, LDAP, and OIDC browser SSO are the real, live auth paths today |
+| SAML | Config-only | `core/src/config.rs` stores `[auth.saml]` config but the login flow doesn't use it yet (`docs/handbook/admin-configuration.md`) |
 | FIPS-validated crypto modules | Not planned on `main` | TLS via system/OpenSSL; no FIPS module selection |
 | Fleet automatic leader election / VIP | Not planned on `main` | Manual DNS or load balancer failover — [fleet-ha.md](fleet-ha.md) |
 | Built-in license / entitlement server | Not planned on `main` | Open-source deployment model |

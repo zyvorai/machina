@@ -20,20 +20,13 @@ pub struct FleetKeychainEntry {
 #[derive(Debug, Clone, Serialize)]
 pub struct FleetKeychainOverview {
     pub summary: String,
-    pub vault_providers: usize,
-    pub vault_connected: usize,
-    pub mfa_policies: usize,
-    pub mfa_enrolled_users: usize,
     pub air_gap_bundles: usize,
     pub api_keys: usize,
-    pub disconnected_vaults: usize,
     pub entries: Vec<FleetKeychainEntry>,
 }
 
 pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetKeychainOverview> {
     let sec = enterprise_security::overview(pool).await?;
-    let vaults = enterprise_security::list_vault_providers(pool).await?;
-    let mfa = enterprise_security::list_mfa_policies(pool).await?;
     let bundles = enterprise_security::list_air_gap_bundles(pool).await?;
 
     let api_rows: Vec<(Uuid, String, String, Option<DateTime<Utc>>)> = sqlx::query_as(
@@ -42,37 +35,7 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetKeychainOverview
     .fetch_all(pool)
     .await?;
 
-    let disconnected_vaults = vaults.iter().filter(|v| v.status != "active").count();
     let mut entries = Vec::new();
-
-    for v in &vaults {
-        entries.push(FleetKeychainEntry {
-            kind: "vault".into(),
-            id: v.id.to_string(),
-            name: v.name.clone(),
-            status: v.status.clone(),
-            summary: format!(
-                "{} · {}{}",
-                v.provider_type,
-                v.address,
-                if v.namespace.is_empty() {
-                    String::new()
-                } else {
-                    format!(" · ns {}", v.namespace)
-                }
-            ),
-        });
-    }
-
-    for p in &mfa {
-        entries.push(FleetKeychainEntry {
-            kind: "mfa".into(),
-            id: p.id.to_string(),
-            name: p.role_name.clone(),
-            status: if p.required { "required" } else { "optional" }.into(),
-            summary: format!("{} · {} day grace", p.method, p.grace_days),
-        });
-    }
 
     for b in &bundles {
         entries.push(FleetKeychainEntry {
@@ -111,19 +74,13 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetKeychainOverview
 
     Ok(FleetKeychainOverview {
         summary: format!(
-            "{} credential(s) · {} vault connected · {} MFA enrolled · {} API key(s)",
+            "{} credential(s) · {} air-gap bundle(s) · {} API key(s)",
             entries.len(),
-            sec.vault_connected,
-            sec.mfa_enrolled_users,
+            sec.air_gap_bundles,
             api_rows.len()
         ),
-        vault_providers: sec.vault_providers,
-        vault_connected: sec.vault_connected,
-        mfa_policies: sec.mfa_policies,
-        mfa_enrolled_users: sec.mfa_enrolled_users,
         air_gap_bundles: sec.air_gap_bundles,
         api_keys: api_rows.len(),
-        disconnected_vaults,
         entries,
     })
 }
