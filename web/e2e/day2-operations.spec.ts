@@ -183,3 +183,32 @@ test('Firewall connectivity simulation uses host/profile pickers, shows loading 
   await expect(page.getByText('No allowed paths in this simulation.')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('No blocked paths in this simulation.')).toBeVisible()
 })
+
+test('Host tags round-trip: save, then a reload still shows them (not blanked)', async ({ page }) => {
+  // HostDetailRow never SELECTed the tags column even though PATCH wrote it — the "Placement and
+  // capability tags" field always loaded empty, and looked like a failed save because load() right
+  // after a successful PATCH blanked it again.
+  await mockPlatformApi(page, { tier: 'power' })
+  await page.goto('/platform/hosts/h1')
+  await expect(page.getByRole('heading', { name: 'host-1' })).toBeVisible({ timeout: 15_000 })
+  // Existing tags from the fixture load correctly.
+  await expect(page.getByLabel('Placement and capability tags')).toHaveValue('gpu, edge', { timeout: 10_000 })
+  await page.getByLabel('Placement and capability tags').fill('gpu, edge, new-tag')
+  await page.getByRole('button', { name: 'Save tags' }).click()
+  await expect(page.getByText('Tags saved')).toBeVisible({ timeout: 10_000 })
+  // The bug: this used to go blank right after the toast, because load() re-fetched a response
+  // with no tags field at all.
+  await expect(page.getByLabel('Placement and capability tags')).toHaveValue('gpu, edge, new-tag', { timeout: 10_000 })
+})
+
+test('VM migration history shows real hostnames and dates, not "undefined → undefined · Invalid Date"', async ({ page }) => {
+  // VmMigrationRecord was typed with started_at/finished_at fields the backend never sends (only
+  // created_at), and the query only selected source_host_id/dest_host_id (UUIDs), not resolved
+  // hostnames — every row rendered literally as "undefined → undefined · Invalid Date".
+  await mockPlatformApi(page, { tier: 'power' })
+  await page.goto('/platform/vms/v1?tab=events')
+  await expect(page.getByRole('heading', { name: 'Migration history' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByText('host-1 → host-2')).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText(/undefined/)).toHaveCount(0)
+  await expect(page.getByText(/Invalid Date/)).toHaveCount(0)
+})

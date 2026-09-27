@@ -59,6 +59,10 @@ pub struct HostDetailRow {
     pub notes: String,
     pub validation_status: String,
     pub validation_report: serde_json::Value,
+    // PATCH already writes this (as a JSON-string column, see patch_host below) but the detail
+    // SELECT never read it back — the "Placement and capability tags" field on the host detail
+    // page loaded empty every time and appeared to reset itself right after a successful save.
+    pub tags: serde_json::Value,
     pub last_heartbeat_at: Option<chrono::DateTime<chrono::Utc>>,
     pub site: String,
     pub rack: String,
@@ -86,6 +90,7 @@ const HOST_DETAIL_SQL: &str =
          fenced, COALESCE(notes, '') AS notes,
          COALESCE(validation_status, 'pending') AS validation_status,
          COALESCE(validation_report, '[]') AS validation_report,
+         COALESCE(tags, '[]') AS tags,
          last_heartbeat_at,
          COALESCE(site, '') AS site, COALESCE(rack, '') AS rack, rack_u FROM hosts";
 

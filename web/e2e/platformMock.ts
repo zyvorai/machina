@@ -333,6 +333,7 @@ const sampleHostDetail = {
   cpu_percent: 35,
   memory_used_mib: 4096,
   memory_total_mib: 16384,
+  tags: ['gpu', 'edge'],
 }
 
 const hostGpus = {
@@ -656,7 +657,7 @@ export async function mockPlatformApi(page: Page, opts?: {
 }) {
   const tier = opts?.tier ?? 'normal'
   const hostMaintenanceMode = opts?.hostMaintenanceMode ?? true
-  const hostDetail = { ...sampleHostDetail, maintenance_mode: hostMaintenanceMode }
+  let hostDetail: Record<string, unknown> = { ...sampleHostDetail, maintenance_mode: hostMaintenanceMode }
   const listHost = { ...sampleHost, maintenance_mode: hostMaintenanceMode }
   const maintenanceMission = hostMaintenanceMode
     ? fleetMaintenanceMission
@@ -2918,6 +2919,11 @@ export async function mockPlatformApi(page: Page, opts?: {
     if (url.match(/\/hosts\/[^/]+\/detail/)) {
       return route.fulfill({ json: hostDetail })
     }
+    if (url.match(/\/hosts\/[^/]+$/) && route.request().method() === 'PATCH') {
+      const body = (route.request().postDataJSON() ?? {}) as Record<string, unknown>
+      hostDetail = { ...hostDetail, ...body }
+      return route.fulfill({ json: hostDetail })
+    }
     if (url.match(/\/hosts\/[^/]+\/health-check/) && route.request().method() === 'POST') {
       return route.fulfill({
         json: {
@@ -3421,7 +3427,13 @@ export async function mockPlatformApi(page: Page, opts?: {
       })
     }
     if (url.match(/\/vms\/[^/]+\/migrations/)) {
-      return route.fulfill({ json: [] })
+      return route.fulfill({
+        json: [{
+          id: 'mig-1', vm_id: 'v1', source_host_id: 'h1', dest_host_id: 'h2',
+          source_host: 'host-1', dest_host: 'host-2', live: true, status: 'completed',
+          progress: 100, message: null, created_at: new Date(Date.now() - 3_600_000).toISOString(),
+        }],
+      })
     }
     if (url.match(/\/vms\/[^/]+\/timeline/)) {
       return route.fulfill({ json: [] })

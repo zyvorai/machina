@@ -2219,7 +2219,7 @@ export default function PlatformVmDetail() {
                       <MacListRow
                         key={m.id}
                         title={`${m.source_host} → ${m.dest_host}`}
-                        subtitle={`${m.status} · ${new Date(m.started_at).toLocaleString()}`}
+                        subtitle={`${m.status} · ${new Date(m.created_at).toLocaleString()}`}
                       />
                     ))}
                   </ul>

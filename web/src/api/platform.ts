@@ -2317,11 +2317,15 @@ export const rebootHostLinux = (hostId: string) =>
 export interface VmMigrationRecord {
   id: string
   vm_id: string
+  source_host_id: string
+  dest_host_id: string
   source_host: string
   dest_host: string
+  live: boolean
   status: string
-  started_at: string
-  finished_at?: string | null
+  progress: number
+  message?: string | null
+  created_at: string
 }
 
 export const getVmMigrations = (vmId: string) =>
