@@ -482,8 +482,11 @@ export const createFirewallTemporaryRule = (body: Record<string, unknown>) =>
     body: JSON.stringify(body),
   })
 
+// Same core::firewall::types::FirewallPlanResult as planFirewall/applyFirewall above — this
+// endpoint's response has no `summary` field, so reading one always fell back to a generic string
+// regardless of what actually happened.
 export const applyK8sFirewall = (namespace: string, profile: string, dry_run = false) =>
-  platformFetch<Record<string, unknown>>('/api/v1/zeus-firewall/k8s/apply', {
+  platformFetch<FirewallPlanResult>('/api/v1/zeus-firewall/k8s/apply', {
     method: 'POST',
     body: JSON.stringify({ namespace, profile, dry_run }),
   })

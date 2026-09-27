@@ -175,7 +175,13 @@ export default function PlatformRuntimeEnforcement() {
   const createPolicy = () => {
     if (!name.trim() || !match.trim()) return
     void createEnforcementPolicy({ name: name.trim(), kind, match: match.trim() })
-      .then(() => {
+      .then((r) => {
+        // A malformed tc_allow/allow_port rule (e.g. missing destination IP) is rejected with a
+        // 200 + {ok: false, error}, not an HTTP error — nothing was actually created.
+        if (r.ok === false || !r.policy) {
+          toast.error(r.error ?? 'Policy was not created')
+          return
+        }
         toast.success('Policy created')
         setName('')
         setMatch('')
@@ -242,21 +248,35 @@ export default function PlatformRuntimeEnforcement() {
             <button
               type="button"
               className="btn-secondary text-xs"
-              onClick={() => void syncEnforcement().then(() => { toast.success('BPF map synced'); void load() }).catch((e: unknown) => toast.error(formatUserError(e)))}
+              onClick={() => void syncEnforcement().then((r) => {
+                if (r.ok === false) { toast.error(r.note ?? 'BPF map sync did not apply'); return }
+                toast.success('BPF map synced')
+                void load()
+              }).catch((e: unknown) => toast.error(formatUserError(e)))}
             >
               Sync BPF map
             </button>
             <button
               type="button"
               className="btn-secondary text-xs"
-              onClick={() => void attachEnforcement().then(() => { toast.success('TC enforcement attached'); void load() }).catch((e: unknown) => toast.error(formatUserError(e)))}
+              onClick={() => void attachEnforcement().then((r) => {
+                if (r.ok === false || r.attached === false) { toast.error(r.note ?? 'TC enforcement did not attach'); return }
+                toast.success('TC enforcement attached')
+                void load()
+              }).catch((e: unknown) => toast.error(formatUserError(e)))}
             >
               Attach
             </button>
             <button
               type="button"
               className="btn-secondary text-xs"
-              onClick={() => void detachEnforcement().then(() => { toast.success('TC enforcement detached'); void load() }).catch((e: unknown) => toast.error(formatUserError(e)))}
+              onClick={() => void detachEnforcement().then((r) => {
+                // Unlike attach, a successful detach IS attached:false — only ok:false (mode
+                // gating / unreachable fabric) means the call didn't actually apply.
+                if (r.ok === false) { toast.error(r.note ?? 'TC enforcement did not detach'); return }
+                toast.success('TC enforcement detached')
+                void load()
+              }).catch((e: unknown) => toast.error(formatUserError(e)))}
             >
               Detach
             </button>

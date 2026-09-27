@@ -169,7 +169,8 @@ export default function PlatformFirewallK8s() {
         onConfirm={() => {
           setConfirmApply(false)
           void applyK8sFirewall(namespace, profile, false).then((r) => {
-            toast.success(String(r.summary ?? 'Applied to cluster'))
+            const n = r.operations?.length ?? 0
+            toast.success(n > 0 ? `Applied to cluster · ${n} operation${n === 1 ? '' : 's'}` : 'Applied to cluster')
           }).catch((e: unknown) => toast.error(formatUserError(e)))
         }}
       />
