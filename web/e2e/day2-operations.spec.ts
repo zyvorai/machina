@@ -183,3 +183,31 @@ test('Firewall connectivity simulation uses host/profile pickers, shows loading 
   await expect(page.getByText('No allowed paths in this simulation.')).toBeVisible({ timeout: 10_000 })
   await expect(page.getByText('No blocked paths in this simulation.')).toBeVisible()
 })
+
+test('Runtime enforcement: a rejected policy (200 + {ok:false}) shows an error toast, not "Policy created"', async ({ page }) => {
+  // create_enforcement_policy rejects a malformed tc_allow/allow_port match with a 200 response
+  // body ({ok:false, error}) rather than an HTTP error status (packetwolf_enforcement.rs) — the UI
+  // used to ignore the response entirely and always show "Policy created".
+  await mockPlatformApi(page, { tier: 'power' })
+  await page.route('**/zeus-security/enforcement/policies', async (route) => {
+    if (route.request().method() === 'POST') {
+      return route.fulfill({
+        json: {
+          ok: false,
+          error: 'invalid match: tc_allow/allow_port rules require an explicit destination IP',
+          api_mode: 'production_tc',
+        },
+      })
+    }
+    // route.continue() would go to the real network (no backend here) rather than falling through
+    // to mockPlatformApi's own handler — answer the GET/list directly instead.
+    return route.fulfill({ json: { policies: [] } })
+  })
+  await page.goto('/platform/zyra/security/enforcement')
+  await expect(page.getByRole('heading', { name: 'Runtime enforcement' })).toBeVisible({ timeout: 15_000 })
+  await page.getByLabel('Policy name').fill('bad-rule')
+  await page.getByLabel('Match pattern').fill('*')
+  await page.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(page.getByText(/invalid match/i)).toBeVisible({ timeout: 10_000 })
+  await expect(page.getByText('Policy created')).toHaveCount(0)
+})

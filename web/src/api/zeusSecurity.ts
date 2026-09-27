@@ -257,6 +257,11 @@ export interface EnforcementStatus {
   attached?: boolean
   default_deny?: boolean
   api_mode?: string
+  // attach/sync/detach return this instead of a normalized status when the call didn't actually
+  // apply — e.g. not in production PacketWolf mode, or the fabric itself is unreachable. The
+  // caller always got a 200, so this has to be checked explicitly rather than relying on .catch().
+  ok?: boolean
+  note?: string
 }
 
 export const attachEnforcement = () =>
@@ -280,7 +285,11 @@ export const createEnforcementPolicy = (body: {
   match: string
   description?: string
 }) =>
-  platformFetch<{ policy: EnforcementPolicy }>('/api/v1/zeus-security/enforcement/policies', {
+  // A malformed tc_allow/allow_port match (e.g. no explicit destination IP) is rejected with a 200
+  // + {ok: false, error: "..."} rather than a 4xx — the engine deliberately never redirects that
+  // case to the Tetragon fallback (see packetwolf_enforcement.rs), so callers have to check this
+  // explicitly instead of relying on a thrown/caught HTTP error.
+  platformFetch<{ policy?: EnforcementPolicy; ok?: boolean; error?: string }>('/api/v1/zeus-security/enforcement/policies', {
     method: 'POST',
     body: JSON.stringify(body),
   })
