@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Generate new Machina feature decks (07–10) as PDFs and email stakeholders.
 #
 # HTML source: docs/client-presentations/ (hyper2kvm slide-deck format)

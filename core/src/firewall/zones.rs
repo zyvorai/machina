@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Zone-name → CIDR resolution for firewall profile rule sources.
 //
 // `FirewallProfileRule::sources` carries either literal CIDRs (e.g. `10.0.0.0/8`)

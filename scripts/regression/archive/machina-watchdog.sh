@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 LOG=/tmp/machina-watchdog.log
 echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) watchdog start" >> "$LOG"
 while true; do

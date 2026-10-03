@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Run the sprite test suite (spec + core + daemon, filtered to `sprite`) on a
 # deployed host, as root — the live-boot integration tests in
 # core/src/cloud_hypervisor/sprite.rs (boot_and_teardown_sprite_chv_*) need

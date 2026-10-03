@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /** Title/outro cards for all 5 Firecracker-launch demo videos. */
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';

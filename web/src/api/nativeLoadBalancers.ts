@@ -1,4 +1,5 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Native L4 load balancer (controller::api::load_balancers) — the last piece of the
 // external-cloud-client replacement. One listener (protocol + port) on a chosen host fans out

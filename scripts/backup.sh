@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # machina backup — backup VM configs and optionally disk images
 # Supports local and NFS backup targets with retention policies.
 #

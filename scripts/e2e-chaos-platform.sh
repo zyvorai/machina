@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Chaos smoke tests for platform controller (batch 16)
 # Usage: ./scripts/e2e-chaos-platform.sh USER HOST
 set -euo pipefail

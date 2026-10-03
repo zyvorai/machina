@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /** Title/outro cards for the machinactl + SSH + network egress demo reel. */
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';

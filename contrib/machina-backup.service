@@ -1,6 +1,6 @@
 [Unit]
 Description=Machina VM backup
-Documentation=https://github.com/ssahani/machina
+Documentation=https://github.com/zyvorailabs/machina
 After=libvirtd.service network-online.target machina-daemon.service
 Wants=network-online.target
 

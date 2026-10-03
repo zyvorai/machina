@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /** Record the animated terminal-egress-demo.html as a video. */
 import { chromium } from 'playwright';
 import { fileURLToPath } from 'node:url';

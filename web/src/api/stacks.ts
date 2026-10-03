@@ -1,4 +1,5 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Native declarative stacks (controller::api::stacks) — Phase 4 of the
 // external-cloud-client replacement, the Heat equivalent. Goes through the platform

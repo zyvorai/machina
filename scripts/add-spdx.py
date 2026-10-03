@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Stamp the Zyvor Production License v1.0 header on every tracked source file.
 
 Idempotent: replaces the legacy "Proprietary software" header and any older SPDX

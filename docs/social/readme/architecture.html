@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Machina architecture</title>
+<!-- SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+     1600x600. Rendered by ./build.sh to docs/ux/readme-architecture.jpg. Mirrors the process diagram in CLAUDE.md. -->
+<link rel="stylesheet" href="card.css">
+<style>
+  body { height:600px; }
+  .stack { margin-top:26px; display:grid; grid-template-columns:1fr 1fr 1fr; gap:22px 34px; }
+  .layer { grid-column:1 / -1; display:flex; align-items:center; gap:18px; padding:14px 22px; border-radius:14px; background:#fff; border:2px solid var(--line); }
+  .layer .lane { flex:none; }
+  .layer .items { display:flex; gap:12px; flex-wrap:wrap; }
+  .layer .items span { font-size:20px; font-weight:600; padding:5px 14px; border-radius:18px; background:var(--warm); border:1.5px solid var(--line); }
+  .card .port { float:right; font-family:var(--mono); font-size:16px; font-weight:700; color:var(--c); }
+  .card h3 { font-size:28px; }
+  .metal { grid-column:1 / -1; text-align:center; padding:16px; border-radius:14px; background:var(--ink); color:#f5f5f7; font-family:var(--mono); font-size:22px; letter-spacing:.06em; }
+  .metal b { color:#2997ff; }
+</style></head><body>
+<div class="bar"></div>
+<div class="wrap">
+  <div class="top"><img src="../../../web/public/zyvor-favicon.svg" alt=""><b>Zyvor</b><span>&middot;</span><span>Machina</span><span class="r">How it fits together</span></div>
+  <h1>Three binaries. <em>One private cloud.</em></h1>
+  <div class="stack">
+    <div class="layer" style="--c:var(--ink)"><span class="lane">YOU</span><div class="items"><span>Web UI (React)</span><span>REST + WebSocket</span><span>machinactl</span><span>Terraform</span><span>TypeScript SDK</span></div></div>
+    <div class="card k"><span class="lane">DAEMON</span><span class="port">:5092</span><h3>machina-daemon</h3><p>Single-host API, PAM/OIDC/SAML/LDAP, RBAC, VNC/SPICE/serial/SSH proxies.</p></div>
+    <div class="card m"><span class="lane">CONTROLLER</span><span class="port">:5093</span><h3>machina-controller</h3><p>Fleet, HA, DRS, Fleet Cloud, Zyra AI. Embedded SQLite, optional NATS.</p></div>
+    <div class="card o"><span class="lane">AGENT</span><span class="port">:50051</span><h3>machina-agent</h3><p>gRPC over TLS on every hypervisor. Executes libvirt operations for the fleet.</p></div>
+    <div class="metal"><b>libvirt</b> &middot; QEMU/KVM &middot; your bare-metal Linux hosts</div>
+  </div>
+  <div class="foot"><span><b>Optional:</b> Atlas storage &middot; Netra eBPF &middot; PacketWolf &middot; NATS</span><span class="r">No SQL cluster required</span></div>
+</div>
+</body></html>

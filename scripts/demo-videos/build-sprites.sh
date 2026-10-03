@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Build machina-sprites-wow-reel from the seg-sprites.mjs Playwright recording + title cards.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"

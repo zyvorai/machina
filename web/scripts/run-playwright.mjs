@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Playwright CLI wrapper for Node 26+: set NODE_OPTIONS before Playwright bootstraps (DEP0205).
 
 import '../playwright-node-env.mjs'

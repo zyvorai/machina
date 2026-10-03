@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # scripts/install-platform.sh — machina-controller + machina-agent on a KVM host.
 #
 # Run after machina-daemon install/build (expects target/release binaries in repo root):

@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Runtime enforcement bridge — dev fabric (Tetragon) vs production PacketWolf TC allowlist.
 // `deny_ip` policies additionally route to a real backend, Netra (see
 // netra_client.rs), independent of the PacketWolf dev/production split above:

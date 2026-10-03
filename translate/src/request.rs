@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 use machina_spec::VirtualMachine;
 
 /// Minimal CreateVmRequest-shaped payload for the existing libvirt create path.

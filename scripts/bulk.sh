@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # machina bulk — batch operations on all VMs
 # Usage:
 #   ./scripts/bulk.sh start          # Start all stopped VMs

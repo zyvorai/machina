@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # machina — Automated installer for the Linux hypervisor control plane
 #
 # Supports: Fedora, RHEL/CentOS/AlmaLinux/Rocky, Ubuntu/Debian,
@@ -259,8 +262,11 @@ install_deps_debian() {
 
     # llvm-dev: llvm-config; libclang-dev + clang: libclang.so for pam-sys bindgen
     # libssl-dev: OpenSSL headers required by openssl-sys crate at build time
+    # qemu-kvm is only a virtual package on Ubuntu 26.04+; name the real system emulator.
+    local qemu_pkg=qemu-system-x86
+    [ "$(uname -m)" = "aarch64" ] && qemu_pkg=qemu-system-arm
     local packages=(gcc g++ make pkg-config
-        libvirt-dev libvirt-daemon-system qemu-kvm virtinst podman
+        libvirt-dev libvirt-daemon-system "$qemu_pkg" qemu-utils virtinst podman
         libpam0g-dev libclang-dev clang llvm-dev
         protobuf-compiler libssl-dev
         genisoimage

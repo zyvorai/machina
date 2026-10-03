@@ -1,6 +1,6 @@
 [Unit]
 Description=Machina host agent (libvirt executor)
-Documentation=https://github.com/ssahani/machina
+Documentation=https://github.com/zyvorailabs/machina
 After=network-online.target machina-controller.service
 Wants=network-online.target libvirtd.service
 StartLimitIntervalSec=300

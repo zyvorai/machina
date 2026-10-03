@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
-# Proprietary software — see LICENSE in the repository root.
-# https://zyvor.dev · info@zyvor.dev
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 """Generate a polished demo PDF for machina."""
 
@@ -78,7 +77,7 @@ def make_title_slide():
     # Bottom info
     text_center(draw, 700, "Built with Rust + React + TypeScript", font_body, GRAY)
     text_center(draw, 760, "Secure | Fast | Production-Ready", font_body, LIGHT)
-    text_center(draw, 860, "https://github.com/ssahani/machina", font_small, ACCENT)
+    text_center(draw, 860, "https://github.com/zyvorailabs/machina", font_small, ACCENT)
     return img
 
 def make_section_slide(title, bullets):

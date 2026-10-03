@@ -63,7 +63,7 @@ workspace on macOS.
 
 ```bash
 # On a Linux KVM host, as a user with sudo:
-git clone https://github.com/ssahani/machina.git && cd machina
+git clone https://github.com/zyvorailabs/machina.git && cd machina
 ./machinactl deploy          # deps → build → install → start → verify
 
 # Then open the web UI (sign in with a Linux/PAM account on the host):

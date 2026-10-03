@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /**
  * Record: Windows golden (win10-msedge) → Create VM from golden template.
  * Stops the golden briefly so thin-clone backing can open the qcow2.

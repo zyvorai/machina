@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Copyright (c) 2026 ZyvorAI Labs Private. All rights reserved.
 
 import { useLocation } from 'react-router'

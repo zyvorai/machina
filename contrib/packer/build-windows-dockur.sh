@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Build Windows golden qcow2 via dockur/windows (Podman + KVM).
 # Usage: ./build-windows-dockur.sh {win10|win11|windows-server-2022|windows-server-2025} [workdir]
 # Output: workdir/output-{guest}/{guest}.qcow2 (same layout as build-linux-image.sh)

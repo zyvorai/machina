@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Launchpad — superseded by Blueprints before it shipped. Kept as a real route
 // with a graceful "not available" state instead of falling through to the
 // generic platform 404, matching the Atlas disabled-feature pattern.

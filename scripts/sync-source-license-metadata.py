@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
-# Proprietary software — see LICENSE in the repository root.
-# https://zyvor.dev · info@zyvor.dev
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 """Apply Zyvor proprietary license metadata and source headers across tt/ repos."""
 from __future__ import annotations
@@ -20,7 +19,6 @@ REPOS = [
     "hypersdk-",
     "hypersdk-web",
     "IronWolf",
-    "machina",
     "mkosi-kernel",
     "nightforge",
     "packetwolf",
@@ -33,6 +31,8 @@ REPOS = [
 # Keep upstream OSS license files and metadata (do not proprietary-sync).
 OPEN_SOURCE_REPO_PATHS = {
     "guestkit",
+    "machina",  # Zyvor Production License v1.0 — use machina/scripts/add-spdx.py
+    "netra",
     "tt/cloud-netconfig",
     "tt/hyper2kvm",
     "tt/hypersdk",

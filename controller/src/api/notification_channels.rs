@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //
 // Day-2: CRUD + test for notification channels (Slack/email/webhook). Delivered by
 // engine/channel_worker.rs; fed by engine/webhooks::dispatch_channels.

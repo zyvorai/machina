@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Full-process golden demos: title + entire Playwright recording + outro.
 # (Unlike build-golden.sh highlight cuts — this keeps every step on screen.)
 set -euo pipefail

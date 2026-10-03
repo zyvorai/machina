@@ -253,7 +253,7 @@ The Machina web UI uses a **Liquid Glass** design system inspired by macOS Tahoe
 ### One-Command Deployment (recommended)
 
 ```bash
-git clone https://github.com/ssahani/machina.git
+git clone https://github.com/zyvorailabs/machina.git
 cd machina
 ./machinactl deploy    # Installs deps, builds, installs, starts, and auto-verifies
 ```
@@ -1154,7 +1154,7 @@ python3 demo-screenshots/generate_demo_guide_pdf.py    # demo & scripts guide
 ## Contributing
 
 ```bash
-git clone https://github.com/ssahani/machina.git
+git clone https://github.com/zyvorailabs/machina.git
 cd machina
 make build && make test && make lint && make fmt-check
 ```

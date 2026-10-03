@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Infrastructure DNA — fleet health score 0–100 (Phase 56 v1).
 
 use serde::Serialize;

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Libvirt desktop E2E: reset ubuntu-desktop, GuestKit agent, lifecycle, port-forward SSH, VNC prep.
 #
 # Usage:

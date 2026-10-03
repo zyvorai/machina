@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # feature-test.sh — live API checks for ISO media, CD-ROM, guest-agent and console features.
 #
 # Complements scripts/e2e-test.sh (VM lifecycle) by covering the media/guest-tools

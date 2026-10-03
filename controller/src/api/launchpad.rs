@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Launchpad catalog — a quick-launch app/template shortcut catalog that was
 // superseded by the Blueprints feature (`api/blueprints.rs`) before it shipped.
 // The route is kept as a typed "unavailable" stub, matching the Atlas

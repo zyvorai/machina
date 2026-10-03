@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Edit raw demo webms into publish-ready MP4s (title/end cards + caption overlays + music).
 
 Uses Pillow for text (this Homebrew ffmpeg lacks drawtext/subtitles) and ffmpeg overlay.

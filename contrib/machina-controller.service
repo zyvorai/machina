@@ -1,6 +1,6 @@
 [Unit]
 Description=Machina platform controller (central management API)
-Documentation=https://github.com/ssahani/machina
+Documentation=https://github.com/zyvorailabs/machina
 After=network-online.target
 Wants=network-online.target
 # Disable burst limit — controller will retry on startup failures

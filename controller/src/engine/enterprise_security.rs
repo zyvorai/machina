@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Air-gap bundle export, FIPS crypto profile matrix, and tenant isolation
 // policy stubs (Horizon phase 28). Vault/MFA inventory previously lived here
 // too but was removed — no real Vault or MFA backend exists anywhere in this

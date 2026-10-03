@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Machina share card</title>
+<!--
+  SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+  1200x630 card: GitHub social preview and README hero. The screenshot is a live
+  capture in docs/ux/ (not a mockup). Build: ./docs/social/build-social-card.sh
+-->
+<style>
+  :root { --signal:#2997ff; --violet:#a97bff; --sans:'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif; --mono:'SF Mono',Menlo,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; padding:0; }
+  body { width:1200px; height:630px; overflow:hidden; color:#f5f5f7; font-family:var(--sans); position:relative;
+    background:radial-gradient(900px 520px at 85% 20%, rgba(41,151,255,.35), transparent 60%),
+               radial-gradient(700px 500px at 100% 100%, rgba(169,123,255,.30), transparent 60%),
+               linear-gradient(160deg,#0a0a0c 0%,#111216 55%,#0c0d12 100%); }
+  .grid { position:absolute; inset:0; opacity:.07;
+    background-image:linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px); background-size:40px 40px; }
+  .left { position:absolute; left:64px; top:56px; width:520px; }
+  .brand { display:flex; align-items:center; gap:12px; font-family:var(--mono); font-size:15px; letter-spacing:.16em; text-transform:uppercase; color:#a1a1a6; }
+  .brand img { height:30px; }
+  .word { margin:22px 0 0; font-size:104px; line-height:.95; font-weight:800; letter-spacing:-.05em;
+    background:linear-gradient(90deg,#fff 0%,#cfe6ff 45%,var(--signal) 75%,var(--violet) 100%); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .tag { margin:18px 0 0; font-size:30px; line-height:1.18; font-weight:700; letter-spacing:-.015em; }
+  .lede { margin:12px 0 0; font-size:19px; line-height:1.42; color:#c7c7cc; }
+  .stats { margin-top:26px; display:flex; gap:26px; }
+  .stat b { display:block; font-size:34px; font-weight:800; letter-spacing:-.02em; color:#fff; }
+  .stat span { font-family:var(--mono); font-size:12.5px; letter-spacing:.1em; text-transform:uppercase; color:#8e8e93; }
+  .pill { position:absolute; left:64px; bottom:42px; display:flex; gap:10px; }
+  .pill span { font-family:var(--mono); font-size:13.5px; font-weight:700; padding:6px 12px; border-radius:16px; border:1.5px solid rgba(255,255,255,.22); color:#e5e5ea; }
+  .pill span.b { background:#0071e3; border-color:#0071e3; color:#fff; }
+
+  .shot { position:absolute; left:640px; top:92px; width:760px; border-radius:14px; overflow:hidden;
+    box-shadow:0 40px 90px rgba(0,0,0,.6), 0 0 0 1px rgba(255,255,255,.12);
+    transform:perspective(1600px) rotateY(-14deg) rotateX(4deg); transform-origin:left center; background:#1c1c1e; }
+  .chrome { height:30px; display:flex; align-items:center; gap:7px; padding:0 12px; background:#2c2c2e; }
+  .chrome i { width:11px; height:11px; border-radius:50%; background:#ff5f57; } .chrome i:nth-child(2){background:#febc2e} .chrome i:nth-child(3){background:#28c840}
+  .chrome em { margin-left:14px; font-style:normal; font-family:var(--mono); font-size:12px; color:#8e8e93; }
+  .shot img { display:block; width:100%; }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+<div class="left">
+  <div class="brand"><img src="../../web/public/zyvor-favicon.svg" alt=""><span>Zyvor &middot; Private cloud on KVM</span></div>
+  <div class="word">machina</div>
+  <div class="tag">Your metal. Your cloud.<br>One control plane.</div>
+  <div class="lede">VMs, browser consoles, fleet HA/DRS and Zyra AI operations. Installed with one command, not a six-week OpenStack project.</div>
+  <div class="stats">
+    <div class="stat"><b>3</b><span>Rust binaries</span></div>
+    <div class="stat"><b>900+</b><span>REST routes</span></div>
+    <div class="stat"><b>1</b><span>command install</span></div>
+  </div>
+</div>
+<div class="pill"><span class="b">github.com/zyvorailabs/machina</span><span>Free for non-production</span></div>
+<div class="shot"><div class="chrome"><i></i><i></i><i></i><em>https://machina:5092</em></div><img src="../ux/machina-dashboard.png" alt=""></div>
+</body>
+</html>

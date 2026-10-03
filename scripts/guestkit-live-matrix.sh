@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # scripts/guestkit-live-matrix.sh — GuestKit / QGA live discovery matrix (suites A–F).
 #
 # Discovery-only: prints pass/fail for every case and exits non-zero if any fail.

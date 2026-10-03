@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Build / refresh Ubuntu desktop golden qcow2 on a hypervisor (GNOME + GDM autologin for VNC).
 #
 # Strategy: start from official Ubuntu server cloud image, virt-customize in desktop

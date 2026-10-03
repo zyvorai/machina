@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # 7-day soak helper — run platform E2E in a loop (batch 16)
 # Usage: SOAK_DAYS=7 SOAK_INTERVAL_SEC=300 ./scripts/soak-platform.sh user host
 set -euo pipefail

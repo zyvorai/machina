@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /** Record any terminal-engine.js-based fake-terminal HTML page as video.
  * Usage: node seg-terminal.mjs <html-file> <raw-out-dir>
  */

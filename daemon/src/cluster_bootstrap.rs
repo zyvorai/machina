@@ -1,6 +1,5 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
-// Proprietary software — see LICENSE in the repository root.
-// https://zyvor.dev · info@zyvor.dev
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 //! Host cluster bootstrap (k3s → Cilium → metrics-server → KubeVirt/CDI/virtctl).
 //! Mirrors the former `scripts/install-k3s-cilium.sh`; invoked from `POST /api/v1/k8s/cluster-bootstrap`.
@@ -302,7 +301,7 @@ async fn download_text(client: &reqwest::Client, url: &str) -> Result<String, Li
         .get(url)
         .header(
             "User-Agent",
-            "machina-daemon-cluster-bootstrap/1.0 (compatible; +https://github.com/ssahani/machina)",
+            "machina-daemon-cluster-bootstrap/1.0 (compatible; +https://github.com/zyvorailabs/machina)",
         )
         .timeout(Duration::from_secs(120))
         .send()

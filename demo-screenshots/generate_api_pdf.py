@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
-# Proprietary software — see LICENSE in the repository root.
-# https://zyvor.dev · info@zyvor.dev
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 """Generate a complete API Reference PDF for machina."""
 
@@ -127,7 +126,7 @@ def slide_title():
         d.text((x+16, 665), m, font=fl, fill=WHITE)
         x += 100
     tc(d, 750, "Content-Type: application/json", fc, GRAY)
-    tc(d, 850, "https://github.com/ssahani/machina", fs, ACCENT)
+    tc(d, 850, "https://github.com/zyvorailabs/machina", fs, ACCENT)
     return img
 
 def slide_vm_endpoints():

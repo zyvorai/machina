@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //
 // Day-2: scheduled fleet backups with retention. Backups were manual-trigger only;
 // this mirrors fleet_snapshot_scheduler (which had both scheduling and retention) so

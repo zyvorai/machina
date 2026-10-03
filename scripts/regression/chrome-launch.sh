@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Launch a dedicated Chrome with remote debugging for page-sweep.js
 set -euo pipefail
 PORT="${MACHINA_CDP_PORT:-9222}"

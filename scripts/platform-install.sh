@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Machina platform host enrollment helper (also served at GET /install.sh on the controller).
 set -euo pipefail
 CONTROLLER=""

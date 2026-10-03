@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Render title/caption PNG cards for the Machina "wow reel" — electric blue
 // theme matching the Machina lightning-bolt brand mark.
 import { chromium } from "playwright";

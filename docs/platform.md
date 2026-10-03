@@ -271,7 +271,7 @@ force an outbound request to the OIDC IdP.
 MACHINA_RATE_LIMIT_PER_MIN=600
 MACHINA_RATE_LIMIT_ENABLED=1
 # CI only — E2E scripts send header X-Machina-E2E when this is set:
-MACHINA_E2E_BYPASS_SECRET=e2e-ci-bypass-175
+MACHINA_E2E_BYPASS_SECRET=<openssl rand -hex 16>
 ```
 
 Limits are keyed by **username** (Basic auth) or JWT subject, not the raw `Authorization` header, so E2E and UI traffic for different users do not share one bucket.

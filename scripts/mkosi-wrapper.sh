@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # machina — mkosi CLI wrapper
 # Injects --workspace-directory under /var/tmp when not already set, so the default
 # ~/.cache/mkosi workspace is never used under BuildSources= trees (e.g. /home/user).

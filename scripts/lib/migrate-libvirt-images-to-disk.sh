@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # migrate-libvirt-images-to-disk.sh — move /var/lib/libvirt/images to a large disk (bind mount).
 #
 # Safe default: rsync to TARGET/libvirt/images, bind-mount over the original path

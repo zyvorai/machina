@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # e2e-packetwolf-remote.sh — run PacketWolf Zeus + runtime tiers against a deployed host.
 #
 # When PacketWolf runs in-cluster (no host :9443), tests run on the SSH host against

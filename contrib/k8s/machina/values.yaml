@@ -4,7 +4,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/ssahani/machina-daemon
+  repository: ghcr.io/zyvorailabs/machina-daemon
   # Pin to a specific, immutable release tag in production. Leaving this empty
   # makes the deployment default to the chart's appVersion (see Chart.yaml);
   # avoid "latest" since it makes the running version non-reproducible and

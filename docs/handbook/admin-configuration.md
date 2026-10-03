@@ -14,7 +14,7 @@
 ### A. Single host with `machinactl` (recommended)
 
 ```bash
-git clone https://github.com/ssahani/machina.git && cd machina
+git clone https://github.com/zyvorailabs/machina.git && cd machina
 ./machinactl deploy      # deps → build → install → start → verify
 ./machinactl status      # systemctl status machina-daemon
 ./machinactl health      # deep health check (exit 0 healthy / 1 degraded / 2 critical)
@@ -61,7 +61,7 @@ a ConfigMap. Env: `MACHINA_JWT_SECRET`,
 `MACHINA_DAEMON_SKIP_AUTH`.
 
 > The controller/agent tier is **systemd-only** — there are no k8s manifests for
-> it. The image `ghcr.io/ssahani/machina-daemon` is referenced by the chart but
+> it. The image `ghcr.io/zyvorailabs/machina-daemon` is referenced by the chart but
 > the repo contains no Dockerfile that builds it.
 
 ### E. Package for handoff

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Tail Tetragon pod logs and POST JSON events to PacketWolf ingest."""
 
 from __future__ import annotations

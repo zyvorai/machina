@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Live matrix: Windows dockur goldens → Vessel run + port checks + optional libvirt clone.
 # Usage (on hypervisor as root or sudo):
 #   ./scripts/test-windows-dockur-matrix.sh

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # vm-lifecycle-test.sh — live smoke test of the full VM operation matrix.
 #
 # Creates one throwaway VM with a blank (non-bootable) disk and exercises

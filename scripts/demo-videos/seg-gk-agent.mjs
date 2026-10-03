@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /**
  * Record GuestKit agent live UX: health + TRIM + network apply + service start/stop.
  * Env: MACH_URL MACH_USER MACH_PASS MACH_VM_ID (platform UUID)

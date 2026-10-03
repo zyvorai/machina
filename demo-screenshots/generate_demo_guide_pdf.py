@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
-# Proprietary software — see LICENSE in the repository root.
-# https://zyvor.dev · info@zyvor.dev
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 """Generate Demo & Scripts Guide PDF for machina."""
 
@@ -103,7 +102,7 @@ def slide_title():
     tc(d, 555, "scripts/backup.sh  scripts/bulk.sh", fc, CYAN)
     tc(d, 650, "All scripts use the REST API — no direct libvirt access needed", fb, LIGHT)
     tc(d, 710, "Works locally or against any remote machina instance", fb, LIGHT)
-    tc(d, 850, "https://github.com/ssahani/machina", fs, ACCENT)
+    tc(d, 850, "https://github.com/zyvorailabs/machina", fs, ACCENT)
     return img
 
 def slide_demo_overview():
@@ -441,7 +440,7 @@ def slide_summary():
     ])
 
     tc(d, 870, "machina  —  Linux hypervisor host manager (libvirt/KVM, optional KubeVirt)", fsh, ACCENT)
-    tc(d, 920, "https://github.com/ssahani/machina", fs, ACCENT)
+    tc(d, 920, "https://github.com/zyvorailabs/machina", fs, ACCENT)
     return img
 
 slides = [

@@ -89,6 +89,13 @@ jobs:
         continue-on-error: true
         run: npm run api-ux-coverage:check
 
+  license:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SPDX headers (Zyvor Production License v1.0)
+        run: python3 scripts/add-spdx.py --check
+
   # NOTE: the former `libvirt`/KVM lifecycle job was removed — it required a running
   # hypervisor (/var/run/libvirt/libvirt-sock) that standard GitHub runners don't have, so it
   # failed 100% of the time. Run scripts/ci-kvm-lifecycle.sh on a self-hosted KVM runner if

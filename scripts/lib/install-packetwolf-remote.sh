@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # install-packetwolf-remote.sh — deploy sibling ../packetwolf on the SSH host (sourced by deploy-remote.sh).
 #
 # Requires PACKETWOLF_SRC, REMOTE, HOST, USER, and ssh_r_bash from deploy-remote.sh.

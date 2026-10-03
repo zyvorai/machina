@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 LOG=/tmp/machina-continuous-watchdog.log
 for i in $(seq 1 20); do
   if ! pgrep -f 'continuous-10.js' >/dev/null; then

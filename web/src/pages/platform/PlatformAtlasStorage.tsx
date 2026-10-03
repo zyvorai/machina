@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Atlas — Zyvor storage control plane console. Browse backends/volumes/
 // snapshots/backups provisioned through Atlas and drive the write path.
 

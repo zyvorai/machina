@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Run a Windows guest via dockur/windows in Podman (preferred) or Docker.
 # Usage: ./run-windows-dockur.sh {win10|win11|windows-server-2022|windows-server-2025} [container-name]
 # Optional: MACHINA_DOCKUR_GOLDEN=/var/lib/libvirt/images/win11.qcow2

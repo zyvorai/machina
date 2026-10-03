@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Upload all 5 Firecracker-launch demo videos to YouTube (public) and wire
 # them into ../hypersdk-web. Mirrors publish-hardware-reel.sh's pattern.
 set -euo pipefail

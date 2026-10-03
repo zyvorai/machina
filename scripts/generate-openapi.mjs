@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /**
  * Generate OpenAPI 3 specs from controller + daemon route tables.
  * Usage: node scripts/generate-openapi.mjs [--check]

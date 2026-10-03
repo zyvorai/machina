@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Build separate Linux + Windows golden→VM demo reels from Playwright raw/*.webm
 #
 # Calibrate extract_clip starts after each record (mark() ≠ video-relative).

@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 // Multi-site federated Zeus Firewall (Phase 24).
 
 use machina_core::{gather_cloud_inventory, profile_by_name, simulate_connectivity};

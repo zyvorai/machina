@@ -1,6 +1,5 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
-// Proprietary software — see LICENSE in the repository root.
-// https://zyvor.dev · info@zyvor.dev
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 import { ExternalLink } from 'lucide-react'
 import { ZyvorMark } from './ZyvorMark'
@@ -20,15 +19,15 @@ export type { HelpDocLink }
 export const MACHINA_HELP_LINKS: HelpDocLink[] = [
   {
     label: 'Documentation index',
-    href: 'https://github.com/ssahani/machina/blob/main/docs/README.md',
+    href: 'https://github.com/zyvorailabs/machina/blob/main/docs/README.md',
   },
   {
     label: 'Web UI & API',
-    href: 'https://github.com/ssahani/machina/tree/main/web',
+    href: 'https://github.com/zyvorailabs/machina/tree/main/web',
   },
   {
     label: 'KubeVirt migration guide',
-    href: 'https://github.com/ssahani/machina/blob/main/docs/kubevirt-migration.md',
+    href: 'https://github.com/zyvorailabs/machina/blob/main/docs/kubevirt-migration.md',
   },
   {
     label: 'Zyvor documentation',

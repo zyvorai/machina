@@ -1,4 +1,5 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 // Native ports (controller::api::networking) — VM NIC bindings, the Neutron-port
 // equivalent. Goes through the platform controller proxy.

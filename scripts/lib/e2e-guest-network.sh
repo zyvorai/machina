@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # shellcheck shell=bash
 # Guest network bootstrap via QGA guest-exec — distro / network-manager aware.
 #

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 /**
  * Record: Linux golden image → Create VM from golden (saved template).
  * Output: raw/seg-golden-linux/*.webm

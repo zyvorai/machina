@@ -1,4 +1,6 @@
-// Copyright (c) 2026 ZyvorAI Labs Private Limited. All rights reserved.
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //
 // Covers the wiring-audit fixes: alert-rule / scheduled-job enable-disable (previously no PATCH
 // route existed at all — see controller/src/api/{alerts,scheduled_jobs}.rs), the policy-quota

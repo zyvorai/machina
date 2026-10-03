@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # scripts/install-hyper2kvm.sh — End-user installer for Machina Hyper2KVM Platform
 #
 # Installs machina-daemon + machina-controller + machina-agent, enables the HyperSDK

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Build ubuntu-24.04-desktop golden qcow2 on a remote Machina hypervisor.
 #
 # Usage:

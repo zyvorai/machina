@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # UX-critical platform flow on a live host (API paths used by Create VM wizard + guest tabs).
 # Usage: ./scripts/e2e-platform-ux-flow-remote.sh USER HOST
 set -euo pipefail

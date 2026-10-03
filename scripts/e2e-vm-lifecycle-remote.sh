@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # e2e-vm-lifecycle-remote.sh — platform VM lifecycle + SSH key verification on a remote host.
 #
 # Usage:
