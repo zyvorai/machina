@@ -34,6 +34,7 @@ mod health_check;
 mod host_cockpit;
 mod host_os;
 mod hosts;
+mod ec2;
 mod keypairs;
 mod kubevirt;
 mod launchpad;
@@ -1957,6 +1958,14 @@ pub fn router(state: AppState) -> Router {
             get(cpu_compat::get_cpu_compat_matrix).patch(cpu_compat::patch_cpu_compat_matrix),
         )
         .route(
+            "/api/v1/ec2/access-keys",
+            get(ec2::list_access_keys).post(ec2::create_access_key),
+        )
+        .route(
+            "/api/v1/ec2/access-keys/{id}",
+            delete(ec2::revoke_access_key),
+        )
+        .route(
             "/api/v1/cloud-init/validate",
             post(cloud_init::validate_cloud_init),
         )
@@ -1985,6 +1994,8 @@ pub fn router(state: AppState) -> Router {
     let rate_limited_public = Router::new()
         .route("/api/v1/hosts/join", post(hosts::join_host))
         .route("/api/v1/auth/login", post(crate::auth::login))
+        .route("/ec2", post(ec2::query))
+        .route("/ec2/", post(ec2::query))
         .route("/api/v1/auth/oidc/login", get(oidc::oidc_login))
         .route("/api/v1/auth/oidc/redirect", get(oidc::oidc_login_redirect))
         .route("/api/v1/auth/oidc/callback", get(oidc::oidc_callback))
