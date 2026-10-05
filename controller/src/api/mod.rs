@@ -37,6 +37,7 @@ mod host_cockpit;
 mod host_os;
 mod hosts;
 mod ec2;
+mod elastic_ips;
 mod keypairs;
 pub(crate) mod metric_stats;
 mod kubevirt;
@@ -1983,6 +1984,12 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/cpu-compat",
             get(cpu_compat::get_cpu_compat_matrix).patch(cpu_compat::patch_cpu_compat_matrix),
         )
+        .route("/api/v1/elastic-ip-pools", get(elastic_ips::list_pools).post(elastic_ips::create_pool))
+        .route("/api/v1/elastic-ip-pools/{id}", delete(elastic_ips::delete_pool))
+        .route("/api/v1/elastic-ips", get(elastic_ips::list).post(elastic_ips::allocate))
+        .route("/api/v1/elastic-ips/{id}", delete(elastic_ips::release))
+        .route("/api/v1/elastic-ips/{id}/associate", post(elastic_ips::associate))
+        .route("/api/v1/elastic-ips/{id}/disassociate", post(elastic_ips::disassociate))
         .route("/api/v1/metrics/statistics", get(metric_stats::statistics))
         .route("/api/v1/alarms", get(alarms::list_alarms).post(alarms::create_alarm))
         .route("/api/v1/alarms/{id}", get(alarms::get_alarm).delete(alarms::delete_alarm))

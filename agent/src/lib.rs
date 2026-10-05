@@ -4,6 +4,7 @@
 pub mod backup;
 pub mod bpf_ops;
 pub mod console_ws;
+pub mod eip;
 pub mod epoch;
 pub mod grpc;
 pub mod jwt;

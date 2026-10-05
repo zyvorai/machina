@@ -170,6 +170,7 @@ async fn main() -> anyhow::Result<()> {
     machina_controller::engine::cloud::spawn(state.clone());
     machina_controller::engine::chaos::spawn(state.clone());
     machina_controller::engine::alarms::spawn(state.clone());
+    machina_controller::engine::eip::spawn(state.clone());
     machina_controller::engine::preempt::spawn(state.clone());
     machina_controller::engine::vm_sleep::spawn(state.clone());
     machina_controller::engine::time_travel::spawn(state.clone());
