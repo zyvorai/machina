@@ -857,6 +857,7 @@ async fn create_instance(
         State(state.clone()),
         Extension(actor.clone()),
         Json(CreateVmBody {
+            flavor_id: None,
             vm,
             host_id: None,
             tags: p.tags.clone(),
