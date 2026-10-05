@@ -529,6 +529,9 @@ pub struct CreateFromTemplateBody {
     pub cloud_init_password: Option<String>,
     #[serde(default)]
     pub cloud_init_ssh_pubkey: Option<String>,
+    /// Name of a saved key pair whose public key is injected (EC2 `KeyName`); giving it together with `cloud_init_ssh_pubkey` is an error.
+    #[serde(default)]
+    pub key_name: Option<String>,
     /// Free-form cloud-init user-data (a `#cloud-config` document or script), at most 16 KiB; passed to the guest verbatim.
     #[serde(default)]
     pub cloud_init_user_data: Option<String>,
@@ -599,9 +602,10 @@ pub async fn create_from_template(
         }
     }
     vm.spec.template_ref = Some(template_ref.clone());
+    let ssh_pubkey = resolve_key_name(&state.pool, body.key_name.as_deref(), body.cloud_init_ssh_pubkey.clone()).await?;
     if body.cloud_init_user.is_some()
         || body.cloud_init_password.is_some()
-        || body.cloud_init_ssh_pubkey.is_some()
+        || ssh_pubkey.is_some()
         || body.cloud_init_user_data.is_some()
     {
         vm.spec.cloud_init = Some(CloudInitSpec {
@@ -611,7 +615,7 @@ pub async fn create_from_template(
                 .map(|u| apply(u))
                 .unwrap_or_else(|| "ubuntu".into()),
             password: body.cloud_init_password.as_ref().map(|p| apply(p)),
-            ssh_pubkey: body.cloud_init_ssh_pubkey.as_ref().map(|k| apply(k)),
+            ssh_pubkey: ssh_pubkey.as_ref().map(|k| apply(k)),
             user_data: body.cloud_init_user_data.clone(),
         });
     }
@@ -662,6 +666,9 @@ pub struct CreateFromIsoBody {
     pub cloud_init_password: Option<String>,
     #[serde(default)]
     pub cloud_init_ssh_pubkey: Option<String>,
+    /// Name of a saved key pair whose public key is injected (EC2 `KeyName`); giving it together with `cloud_init_ssh_pubkey` is an error.
+    #[serde(default)]
+    pub key_name: Option<String>,
     /// Free-form cloud-init user-data (a `#cloud-config` document or script), at most 16 KiB; passed to the guest verbatim.
     #[serde(default)]
     pub cloud_init_user_data: Option<String>,
@@ -729,9 +736,10 @@ pub async fn create_from_iso(
         "install_iso".into(),
         iso_path.to_string(),
     )]));
+    let ssh_pubkey = resolve_key_name(&state.pool, body.key_name.as_deref(), body.cloud_init_ssh_pubkey.clone()).await?;
     if body.cloud_init_user.is_some()
         || body.cloud_init_password.is_some()
-        || body.cloud_init_ssh_pubkey.is_some()
+        || ssh_pubkey.is_some()
         || body.cloud_init_user_data.is_some()
     {
         vm.spec.cloud_init = Some(CloudInitSpec {
@@ -740,7 +748,7 @@ pub async fn create_from_iso(
                 .clone()
                 .unwrap_or_else(|| "ubuntu".into()),
             password: body.cloud_init_password.clone(),
-            ssh_pubkey: body.cloud_init_ssh_pubkey.clone(),
+            ssh_pubkey: ssh_pubkey.clone(),
             user_data: body.cloud_init_user_data.clone(),
         });
     }
@@ -811,6 +819,9 @@ pub struct CreateFromVirtInstallBody {
     pub cloud_init_password: Option<String>,
     #[serde(default)]
     pub cloud_init_ssh_pubkey: Option<String>,
+    /// Name of a saved key pair whose public key is injected (EC2 `KeyName`); giving it together with `cloud_init_ssh_pubkey` is an error.
+    #[serde(default)]
+    pub key_name: Option<String>,
     /// Free-form cloud-init user-data (a `#cloud-config` document or script), at most 16 KiB; passed to the guest verbatim.
     #[serde(default)]
     pub cloud_init_user_data: Option<String>,
@@ -967,9 +978,10 @@ pub async fn create_from_virt_install(
         vm.spec.firmware = fw.trim().to_string();
     }
     vm.metadata.labels = Some(labels);
+    let ssh_pubkey = resolve_key_name(&state.pool, body.key_name.as_deref(), body.cloud_init_ssh_pubkey.clone()).await?;
     if body.cloud_init_user.is_some()
         || body.cloud_init_password.is_some()
-        || body.cloud_init_ssh_pubkey.is_some()
+        || ssh_pubkey.is_some()
         || body.cloud_init_user_data.is_some()
     {
         vm.spec.cloud_init = Some(CloudInitSpec {
@@ -978,7 +990,7 @@ pub async fn create_from_virt_install(
                 .clone()
                 .unwrap_or_else(|| "ubuntu".into()),
             password: body.cloud_init_password.clone(),
-            ssh_pubkey: body.cloud_init_ssh_pubkey.clone(),
+            ssh_pubkey: ssh_pubkey.clone(),
             user_data: body.cloud_init_user_data.clone(),
         });
     }
@@ -2734,6 +2746,26 @@ pub struct ChangeTypeBody {
 
 /// Why a type change cannot proceed from these sizes, if it cannot. Same size under a different flavor is allowed (it only
 /// relabels the machine); the identical flavor at the identical size is refused so a click does not cost a restart.
+/// Resolve EC2-style `key_name` to the saved key pair's public key. Both a name and a literal key is ambiguous.
+pub(crate) async fn resolve_key_name(
+    pool: &sqlx::SqlitePool,
+    key_name: Option<&str>,
+    literal: Option<String>,
+) -> Result<Option<String>, ApiError> {
+    let Some(name) = key_name.map(str::trim).filter(|n| !n.is_empty()) else {
+        return Ok(literal);
+    };
+    if literal.as_deref().is_some_and(|k| !k.trim().is_empty()) {
+        return Err(ApiError::bad_request("give either key_name or cloud_init_ssh_pubkey, not both"));
+    }
+    let key: Option<String> = sqlx::query_scalar("SELECT public_key FROM keypairs WHERE name = ? ORDER BY created_at LIMIT 1")
+        .bind(name)
+        .fetch_optional(pool)
+        .await?;
+    key.map(Some)
+        .ok_or_else(|| ApiError::bad_request(format!("no key pair named '{name}'")).with_code("keypair_not_found"))
+}
+
 pub(crate) fn type_change_blocker(
     cur_vcpus: i32,
     cur_memory_mib: i64,
