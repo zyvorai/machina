@@ -143,3 +143,14 @@ libvirt restart or a manual flush heals itself.
 **Limits:** host-local (the instance must be on the host that holds the pool; no failover with the instance), IPv4 only, the
 address must be routed to the host by your network (the agent announces it with a gratuitous ARP when `arping` exists), and
 there is no NAT gateway for private subnets yet. Security groups apply to the instance as before.
+
+## NAT gateway for private subnets
+`PUT /api/v1/cloud/subnets/{id}/nat {"enabled": true}` lets the instances of a ready subnet reach the outside through their
+host: traffic leaving the subnet is masqueraded behind the host's uplink (the interface of its default route), and the
+subnet's traffic and its replies are accepted ahead of libvirt's forward rules. Two iptables chains of our own
+(`MACHINA_NAT`, `MACHINA_NAT_FWD`) are rebuilt every 30 s and on each change; switching the last subnet off clears them.
+The response says whether the host confirmed it (`applied`, `apply_error`).
+
+**Limits:** IPv4, host-local. Cloud subnets are libvirt isolated networks that do not advertise a default gateway, so an
+instance still needs a default route via the subnet's gateway address (the `.1` of the subnet) set by its own configuration
+(cloud-init network config or user-data); the NAT gateway makes that route work, it does not install it.

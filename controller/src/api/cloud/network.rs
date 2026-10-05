@@ -30,10 +30,11 @@ pub(crate) struct Subnet {
     pub cidr: String,
     pub status: String,
     pub last_error: String,
+    pub nat_enabled: bool,
 }
 const VPCS: &str = "SELECT id, project_id, host_id, name, cidr FROM cloud_vpcs";
 const SUBNETS: &str =
-    "SELECT id, vpc_id, network_id, name, cidr, status, last_error FROM cloud_subnets";
+    "SELECT id, vpc_id, network_id, name, cidr, status, last_error, nat_enabled FROM cloud_subnets";
 
 pub(crate) async fn vpc(
     conn: &mut SqliteConnection,
@@ -264,6 +265,35 @@ pub async fn list_subnets(
         .await?,
     ))
 }
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetNat {
+    enabled: bool,
+}
+
+/// `PUT /api/v1/cloud/subnets/{id}/nat {enabled}`: let the instances of a private subnet reach the outside through the host
+/// (masqueraded behind its uplink address). The host confirms in the response (`applied`, `apply_error`).
+pub async fn set_subnet_nat(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<SetNat>,
+) -> Result<Json<Value>, ApiError> {
+    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let (sub, parent) = subnet_vpc(&mut tx, &actor, id, true).await?;
+    if body.enabled && sub.status != "ready" {
+        return Err(conflict("the subnet is not ready yet"));
+    }
+    sqlx::query("UPDATE cloud_subnets SET nat_enabled = ? WHERE id = ?").bind(body.enabled).bind(id).execute(&mut *tx).await?;
+    audit(&mut tx, &actor, if body.enabled { "cloud.subnet.nat.enable" } else { "cloud.subnet.nat.disable" }, id).await?;
+    tx.commit().await?;
+    let (applied, error) = match crate::engine::natgw::push_host(&state.pool, parent.host_id).await {
+        Ok(()) => (true, None),
+        Err(e) => (false, Some(format!("{e:#}"))),
+    };
+    Ok(Json(json!({ "subnet_id": id, "nat_enabled": body.enabled, "applied": applied, "apply_error": error })))
+}
+
 pub async fn retry_subnet(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,

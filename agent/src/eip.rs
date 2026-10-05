@@ -98,7 +98,7 @@ fn run(args: &[String]) -> Result<(), String> {
     }
 }
 
-fn exec(step: &Step) -> Result<(), String> {
+pub fn exec(step: &Step) -> Result<(), String> {
     if step.check_first {
         let mut check = step.args.clone();
         // `-I <hook> 1 -j chain` → `-C <hook> -j chain`

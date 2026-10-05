@@ -26,6 +26,10 @@ pub fn routes() -> Router<AppState> {
             get(network::list_subnets).post(network::create_subnet),
         )
         .route(
+            "/api/v1/cloud/subnets/{id}/nat",
+            axum::routing::put(network::set_subnet_nat),
+        )
+        .route(
             "/api/v1/cloud/subnets/{id}/retry",
             post(network::retry_subnet),
         )

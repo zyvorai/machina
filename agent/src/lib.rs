@@ -9,6 +9,7 @@ pub mod epoch;
 pub mod grpc;
 pub mod jwt;
 pub mod libvirt_invoke;
+pub mod natgw;
 pub mod libvirt_ops;
 pub mod provision_ops;
 pub mod state;
