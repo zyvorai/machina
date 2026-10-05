@@ -12,8 +12,9 @@ API (`/api/v1/...`) and the Fleet Cloud pages.
 
 ## Instance types
 `POST /api/v1/vms/{id}/change-type {flavor_id}` shuts the instance down cleanly, sets vCPUs and memory to the flavor's,
-starts it again, and records `vms.flavor_id`. It is a task with events. Refused: shrinking the disk, a type that would
-exceed the project's vCPU/memory quota, and a VM that is not stopped or running.
+starts it again if it was running, and records `vms.flavor_id`. It is a task with events. The disk size is not changed.
+Refused: a flavor with no usable size, a type the instance already has, an instance managed by an instance group (change
+the launch template instead), and a change that would exceed the project's vCPU/memory quota.
 
 ## User data
 `cloud_init_user_data` (≤ 16 KB) on instance create and launch templates is written verbatim as the NoCloud `user-data`
