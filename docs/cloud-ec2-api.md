@@ -28,8 +28,17 @@ Any other action returns `UnsupportedOperation`. Unknown filter names match noth
   and in plaintext otherwise: set the master key in production.
 - The endpoint sits behind the same rate limit as login.
 
+## More actions
+Volumes (`DescribeVolumes`, `CreateVolume`, `DeleteVolume`, `AttachVolume`, `DetachVolume`; device names are `/dev/vdb`…),
+security groups (`DescribeSecurityGroups`, `CreateSecurityGroup`, `DeleteSecurityGroup`, `Authorize` and `Revoke` for ingress
+and egress, with CIDR or group peers), images (`DescribeImages`), networking (`DescribeVpcs`, `DescribeSubnets`,
+`DescribeNetworkInterfaces`), key pairs (`ImportKeyPair` with base64 public key material, `DeleteKeyPair`), and instances
+(`RebootInstances`, `ModifyInstanceAttribute` for `InstanceType`). Each maps onto the REST handler, so permissions,
+validation and audit are the same. Filters work as for instances (`tag:Key`, `tag-key`, ids, `status`, `group-name`, `name`,
+`is-public`); unknown filter names match nothing.
+
 ## Not yet
-Volumes, security groups, images and the VPC calls; pagination (`NextToken`); the
+Creating VPCs and subnets, snapshots and AMI creation, Elastic IP and NAT calls; pagination (`NextToken`); the
 `describe-instances` fields that have no Machina equivalent (image id, placement, block device mappings) are empty.
 
 ## Run, terminate and tags

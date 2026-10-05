@@ -7,6 +7,7 @@
 //! StopInstances, RunInstances, TerminateInstances, CreateTags, DeleteTags. Everything else answers `UnsupportedOperation`. Access keys are managed under
 //! `/api/v1/ec2/access-keys` (admin).
 
+pub mod more;
 pub mod sigv4;
 
 use std::collections::BTreeMap;
@@ -585,6 +586,26 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
         "StopInstances" => power(state, &actor, &params, false).await?,
         "RunInstances" => run_instances(state, &actor, &params).await?,
         "TerminateInstances" => terminate(state, &actor, &params).await?,
+        "DescribeVolumes" => more::describe_volumes(state, &params).await?,
+        "CreateVolume" => more::create_volume(state, &actor, &params).await?,
+        "DeleteVolume" => more::delete_volume(state, &actor, &params).await?,
+        "AttachVolume" => more::attach_volume(state, &actor, &params).await?,
+        "DetachVolume" => more::detach_volume(state, &actor, &params).await?,
+        "ImportKeyPair" => more::import_key_pair(state, &actor, &params).await?,
+        "DeleteKeyPair" => more::delete_key_pair(state, &actor, &params).await?,
+        "DescribeSecurityGroups" => more::describe_security_groups(state, &params).await?,
+        "CreateSecurityGroup" => more::create_security_group(state, &actor, &params).await?,
+        "DeleteSecurityGroup" => more::delete_security_group(state, &actor, &params).await?,
+        "AuthorizeSecurityGroupIngress" => more::security_group_rules(state, &actor, &params, false, false).await?,
+        "AuthorizeSecurityGroupEgress" => more::security_group_rules(state, &actor, &params, true, false).await?,
+        "RevokeSecurityGroupIngress" => more::security_group_rules(state, &actor, &params, false, true).await?,
+        "RevokeSecurityGroupEgress" => more::security_group_rules(state, &actor, &params, true, true).await?,
+        "DescribeImages" => more::describe_images(state, &params).await?,
+        "DescribeVpcs" => more::describe_vpcs(state, &params).await?,
+        "DescribeSubnets" => more::describe_subnets(state, &params).await?,
+        "DescribeNetworkInterfaces" => more::describe_network_interfaces(state, &params).await?,
+        "RebootInstances" => more::reboot_instances(state, &actor, &params).await?,
+        "ModifyInstanceAttribute" => more::modify_instance_attribute(state, &actor, &params).await?,
         "CreateTags" => tag_resources(state, &actor, &params, false).await?,
         "DeleteTags" => tag_resources(state, &actor, &params, true).await?,
         "" => return Err(Ec2Error::bad("MissingAction", "No action was specified")),
