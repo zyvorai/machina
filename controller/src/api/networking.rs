@@ -304,6 +304,16 @@ pub async fn create_port(
         None => default_project_id(&state.pool).await?,
     };
 
+    let cloud_owner: Option<Uuid> = sqlx::query_scalar("SELECT v.project_id FROM cloud_subnets s JOIN cloud_vpcs v ON v.id=s.vpc_id WHERE s.network_id=?").bind(body.network_id).fetch_optional(&state.pool).await?;
+    if let Some(owner) = cloud_owner {
+        if owner != project_id {
+            return Err(ApiError::forbidden(
+                "port project must match cloud subnet project",
+            ));
+        }
+        let mut conn = state.pool.acquire().await?;
+        crate::api::cloud::access(&mut conn, &actor, owner, true).await?;
+    }
     let id = Uuid::new_v4();
     let mut mac_address: Option<String> = None;
     let mut status = "DOWN";

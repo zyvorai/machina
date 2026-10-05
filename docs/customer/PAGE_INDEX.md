@@ -127,6 +127,7 @@ Regenerate: `node scripts/customer-docs/generate-page-index.mjs`
 | Volumes | `/fleet-cloud/volumes` | Volumes — Machina Fleet Cloud page at `/fleet-cloud/volumes`. | [Open](pages/fleet-cloud/fleet-cloud-volumes.md) |
 | Volume Snapshots | `/fleet-cloud/volume-snapshots` | Volume Snapshots — Machina Fleet Cloud page at `/fleet-cloud/volume-snapshots`. | [Open](pages/fleet-cloud/fleet-cloud-volume-snapshots.md) |
 | Images | `/fleet-cloud/images` | Images — Machina Fleet Cloud page at `/fleet-cloud/images`. | [Open](pages/fleet-cloud/fleet-cloud-images.md) |
+| VPCs & elastic compute | `/fleet-cloud/vpcs` | Isolated subnets and desired-capacity instance groups. | [Open](pages/fleet-cloud/fleet-cloud-vpcs.md) |
 | Networking | `/fleet-cloud/networking` | Networking — Machina Fleet Cloud page at `/fleet-cloud/networking`. | [Open](pages/fleet-cloud/fleet-cloud-networking.md) |
 | Security Groups | `/fleet-cloud/security-groups` | Security Groups — Machina Fleet Cloud page at `/fleet-cloud/security-groups`. | [Open](pages/fleet-cloud/fleet-cloud-security-groups.md) |
 | Floating IPs | `/fleet-cloud/floating-ips` | Floating IPs — Machina Fleet Cloud page at `/fleet-cloud/floating-ips`. | [Open](pages/fleet-cloud/fleet-cloud-floating-ips.md) |

@@ -104,3 +104,5 @@ Part of the [Zyvor stack](https://zyvor.dev):
 
 Machina's native eBPF stack (`machina-bpfd`, `machina-cni`) replaces Cilium, Tetragon, Netra and PacketWolf; it no
 longer integrates with any of them.
+
+- [VPC foundations and elastic compute](cloud-vpc-elastic-compute.md) — project-owned isolated subnets, IPAM, launch templates and instance groups.

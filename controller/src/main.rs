@@ -167,6 +167,7 @@ async fn main() -> anyhow::Result<()> {
     webhook_worker::spawn(state.pool.clone(), leader);
     sync::spawn_periodic(state.clone());
     reconcile::spawn(state.clone());
+    machina_controller::engine::cloud::spawn(state.clone());
     ha::spawn(state.clone());
     drs::spawn(state.clone());
     scheduler::spawn(state.clone());

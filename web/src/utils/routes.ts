@@ -318,6 +318,7 @@ export const navGroups: NavGroup[] = [
       {
         label: 'Networking',
         items: [
+          { to: '/fleet-cloud/vpcs', icon: React.createElement(Cloud, { className: 'w-4 h-4' }), label: 'VPCs & elastic compute' },
           { to: '/fleet-cloud/networking', icon: React.createElement(Network, { className: 'w-4 h-4' }), label: 'Networking' },
           { to: '/fleet-cloud/security-groups', icon: React.createElement(Shield, { className: 'w-4 h-4' }), label: 'Security Groups' },
           { to: '/fleet-cloud/floating-ips', icon: React.createElement(Globe, { className: 'w-4 h-4' }), label: 'Floating IPs' },
@@ -397,6 +398,7 @@ export const routeLabels: Record<string, string> = {
   '/fleet-cloud/volume-snapshots': 'Volume Snapshots',
   '/fleet-cloud/security-groups': 'Security Groups',
   '/fleet-cloud/floating-ips': 'Floating IPs',
+  '/fleet-cloud/vpcs': 'VPCs & elastic compute',
   '/fleet-cloud/networking': 'Networking',
   '/fleet-cloud/load-balancers': 'Load Balancers',
   '/fleet-cloud/topology': 'Network Topology',

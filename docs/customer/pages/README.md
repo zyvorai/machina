@@ -33,6 +33,7 @@ Every route is also listed in the [complete page index](../PAGE_INDEX.md).
 | [Fleet Cloud Instances](fleet-cloud/fleet-cloud-instances.md) | Instances — Machina Fleet Cloud page at `/fleet-cloud/instances`. |
 | [SSH keypairs](fleet-cloud/fleet-cloud-keypairs.md) | Keypairs — Machina Fleet Cloud page at `/fleet-cloud/keypairs`. |
 | [Load Balancers](fleet-cloud/fleet-cloud-load-balancers.md) | Load Balancers — Machina Fleet Cloud page at `/fleet-cloud/load-balancers`. |
+| [VPCs & elastic compute](fleet-cloud/fleet-cloud-vpcs.md) | Project-owned isolated subnets and elastic instance groups. |
 | [Networking](fleet-cloud/fleet-cloud-networking.md) | Networking — Machina Fleet Cloud page at `/fleet-cloud/networking`. |
 | [Security Groups](fleet-cloud/fleet-cloud-security-groups.md) | Security Groups — Machina Fleet Cloud page at `/fleet-cloud/security-groups`. |
 | [Server Groups](fleet-cloud/fleet-cloud-server-groups.md) | Server Groups — Machina Fleet Cloud page at `/fleet-cloud/server-groups`. |

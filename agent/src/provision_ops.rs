@@ -326,3 +326,161 @@ mod tests {
         assert_eq!(d, "machina");
     }
 }
+
+/// Idempotent isolated subnet provisioning. A pre-existing network must have our
+/// exact UUID before it may be started; never overwrite another operator's net.
+pub fn provision_cloud_subnet(id: &str, cidr: &str) -> anyhow::Result<()> {
+    provision_cloud_subnet_with(id, cidr, |args| Command::new("virsh").args(args).output())
+}
+
+fn provision_cloud_subnet_with(
+    id: &str,
+    cidr: &str,
+    mut run: impl FnMut(&[&str]) -> std::io::Result<std::process::Output>,
+) -> anyhow::Result<()> {
+    let xml = machina_spec::cloud_network_xml(id, cidr).map_err(anyhow::Error::msg)?;
+    let name = format!("mc-{id}");
+    let prior = run(&["net-uuid", &name])?;
+    if prior.status.success() {
+        anyhow::ensure!(
+            String::from_utf8_lossy(&prior.stdout).trim() == id,
+            "cloud network ownership conflict"
+        );
+    } else {
+        // Only create on an authoritative missing-network result. Permission or
+        // connection errors are not evidence of absence.
+        let list = run(&["net-list", "--all", "--name"])?;
+        anyhow::ensure!(
+            list.status.success(),
+            "could not enumerate libvirt networks"
+        );
+        anyhow::ensure!(
+            !String::from_utf8_lossy(&list.stdout)
+                .lines()
+                .any(|n| n.trim() == name),
+            "existing network UUID could not be checked"
+        );
+        let path = std::env::temp_dir().join(format!("machina-cloud-{}.xml", uuid::Uuid::new_v4()));
+        let result = (|| -> anyhow::Result<()> {
+            use std::io::Write;
+            let mut file = std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)?;
+            file.write_all(xml.as_bytes())?;
+            let define = run(&["net-define", path.to_string_lossy().as_ref()])?;
+            anyhow::ensure!(
+                define.status.success(),
+                "net-define: {}",
+                String::from_utf8_lossy(&define.stderr)
+            );
+            Ok(())
+        })();
+        let _ = std::fs::remove_file(path);
+        result?;
+    }
+    let active = run(&["net-list", "--name"])?;
+    anyhow::ensure!(active.status.success(), "could not inspect active networks");
+    if !String::from_utf8_lossy(&active.stdout)
+        .lines()
+        .any(|n| n.trim() == name)
+    {
+        let start = run(&["net-start", &name])?;
+        anyhow::ensure!(
+            start.status.success(),
+            "net-start: {}",
+            String::from_utf8_lossy(&start.stderr)
+        );
+    }
+    let auto = run(&["net-autostart", &name])?;
+    anyhow::ensure!(
+        auto.status.success(),
+        "net-autostart: {}",
+        String::from_utf8_lossy(&auto.stderr)
+    );
+    Ok(())
+}
+
+#[cfg(all(test, unix))]
+mod cloud_subnet_tests {
+    use super::*;
+    use std::{
+        os::unix::process::ExitStatusExt,
+        process::{ExitStatus, Output},
+    };
+    const ID: &str = "12345678-1234-1234-1234-123456789abc";
+    fn result(ok: bool, text: &str) -> Output {
+        Output {
+            status: ExitStatus::from_raw(if ok { 0 } else { 256 }),
+            stdout: text.as_bytes().to_vec(),
+            stderr: Vec::new(),
+        }
+    }
+    #[test]
+    fn refuses_foreign_network_and_connection_failure() {
+        let mut calls = 0;
+        let error = provision_cloud_subnet_with(ID, "10.20.1.0/24", |_| {
+            calls += 1;
+            Ok(result(true, "another-uuid"))
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("ownership"));
+        assert_eq!(calls, 1);
+        let mut calls = Vec::new();
+        assert!(provision_cloud_subnet_with(ID, "10.20.1.0/24", |args| {
+            calls.push(args[0].to_string());
+            Ok(result(false, ""))
+        })
+        .is_err());
+        assert_eq!(calls, vec!["net-uuid", "net-list"]);
+    }
+    #[test]
+    fn retry_of_active_owned_network_does_not_redefine_or_restart() {
+        let mut calls = Vec::new();
+        provision_cloud_subnet_with(ID, "10.20.1.0/24", |args| {
+            calls.push(args[0].to_string());
+            Ok(result(
+                true,
+                if args[0] == "net-uuid" {
+                    ID
+                } else if args[0] == "net-list" {
+                    "mc-12345678-1234-1234-1234-123456789abc\n"
+                } else {
+                    ""
+                },
+            ))
+        })
+        .unwrap();
+        assert_eq!(calls, vec!["net-uuid", "net-list", "net-autostart"]);
+    }
+    #[test]
+    fn new_network_defines_validated_xml_and_cleans_temporary_file() {
+        let mut path = String::new();
+        let mut calls = Vec::new();
+        provision_cloud_subnet_with(ID, "10.20.1.0/24", |args| {
+            calls.push(args[0].to_string());
+            if args[0] == "net-define" {
+                path = args[1].into();
+                let xml = std::fs::read_to_string(&path)?;
+                assert_eq!(
+                    xml,
+                    machina_spec::cloud_network_xml(ID, "10.20.1.0/24").unwrap()
+                );
+            }
+            Ok(result(args[0] != "net-uuid", ""))
+        })
+        .unwrap();
+        assert_eq!(
+            calls,
+            vec![
+                "net-uuid",
+                "net-list",
+                "net-define",
+                "net-list",
+                "net-start",
+                "net-autostart"
+            ]
+        );
+        assert!(!std::path::Path::new(&path).exists());
+    }
+}

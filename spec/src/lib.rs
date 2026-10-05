@@ -3,6 +3,7 @@
 
 //! Declarative platform specs (`virt.zyvor.dev/v1`).
 
+mod cloud;
 mod cluster;
 mod error;
 mod ha;
@@ -12,6 +13,7 @@ mod task;
 mod template;
 mod vm;
 
+pub use cloud::*;
 pub use cluster::*;
 pub use error::*;
 pub use ha::*;

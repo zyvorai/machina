@@ -26,6 +26,10 @@
 
 ## What's new
 
+VPC foundations and elastic compute are available as a first host-local backend.
+See [the operator guide](docs/cloud-vpc-elastic-compute.md) for isolation, deployment,
+CPU scaling, and the explicit routing/peering limitations.
+
 | | |
 |---|---|
 | **Boot Doctor** | A VM that won't boot gets diagnosed and repaired offline through GuestKit, with a backup taken first. |

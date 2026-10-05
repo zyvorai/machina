@@ -169,6 +169,7 @@ async fn process_one(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
         "host.agent.upgrade" => host_agent_upgrade(state, msg).await?,
         "storage.pool.provision" => storage_pool_provision(state, msg).await?,
         "network.provision" => network_provision(state, msg).await?,
+        "cloud.subnet.provision" => crate::engine::cloud::provision_subnet(state, msg).await?,
         "ha.recover" => ha_recover(state, msg).await?,
         "vm.snapshot" => vm_snapshot(state, msg).await?,
         "vm.snapshot.delete" => vm_snapshot_delete(state, msg).await?,
@@ -207,6 +208,9 @@ async fn vm_apply(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or_else(|| anyhow::anyhow!("host_id missing"))?;
+    crate::api::cloud::check_vm_host(&state.pool, vm_id, host_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("cloud host placement: {e:?}"))?;
 
     let row: (String, serde_json::Value) =
         sqlx::query_as("SELECT name, spec_json FROM vms WHERE id = ?")
@@ -776,6 +780,9 @@ async fn vm_migrate(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or_else(|| anyhow::anyhow!("dest_host_id missing"))?;
+    crate::api::cloud::check_vm_host(&state.pool, vm_id, dest_host_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("cloud host placement: {e:?}"))?;
     let live = msg.payload["live"].as_bool().unwrap_or(true);
     let bandwidth_mib = msg.payload["bandwidth_mib"].as_u64().unwrap_or(0);
     let postcopy = msg.payload["postcopy"].as_bool().unwrap_or(false);
@@ -1116,6 +1123,9 @@ async fn ha_recover(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or_else(|| anyhow::anyhow!("host_id missing"))?;
+    crate::api::cloud::check_vm_host(&state.pool, vm_id, host_id)
+        .await
+        .map_err(|e| anyhow::anyhow!("cloud host placement: {e:?}"))?;
     let desired = msg.payload["desired_state"].as_str().unwrap_or("running");
 
     let row: (String, serde_json::Value) =

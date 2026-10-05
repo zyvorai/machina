@@ -232,6 +232,21 @@ pub async fn create_vm(
             .map_err(|e| ApiError::bad_request(e.to_string()))?,
     };
 
+    for network in &body.vm.spec.network {
+        let cloud_owned = crate::api::cloud::authorize_attachment(
+            &state,
+            &actor,
+            &network.network,
+            &project,
+            Some(host_id),
+        )
+        .await?;
+        if cloud_owned && body.vm.spec.ha.enabled {
+            return Err(ApiError::bad_request(
+                "host-local cloud subnets do not support cross-host HA",
+            ));
+        }
+    }
     let vm_id = Uuid::new_v4();
     let spec_json =
         serde_json::to_value(&body.vm).map_err(|e| ApiError::internal(e.to_string()))?;
@@ -1309,6 +1324,7 @@ pub async fn migrate_vm(
     Json(body): Json<MigrateVmBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
+    crate::api::cloud::check_vm_host(&state.pool, id, body.dest_host_id).await?;
     let source_host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
@@ -2475,6 +2491,12 @@ pub async fn attach_vm_nic(
     Json(body): Json<AttachNicBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
+    let (project, host): (String, Option<Uuid>) =
+        sqlx::query_as("SELECT COALESCE(project,'default'),host_id FROM vms WHERE id=?")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+    crate::api::cloud::authorize_attachment(&state, &actor, &body.network, &project, host).await?;
     enqueue_vm_host_task(
         &state,
         id,

@@ -989,6 +989,20 @@ impl HostAgent for AgentService {
     ) -> Result<Response<ProvisionNetworkResponse>, Status> {
         let req = request.into_inner();
         match tokio::task::spawn_blocking(move || {
+            if req.backend == "cloud-isolated" {
+                anyhow::ensure!(
+                    req.network_name == format!("mc-{}", req.subnet_uuid),
+                    "cloud network name must match subnet UUID"
+                );
+                return crate::provision_ops::provision_cloud_subnet(
+                    &req.subnet_uuid,
+                    &req.subnet_cidr,
+                );
+            }
+            anyhow::ensure!(
+                req.subnet_cidr.is_empty() && req.subnet_uuid.is_empty(),
+                "cloud fields require cloud-isolated backend"
+            );
             crate::provision_ops::provision_network(
                 &req.network_name,
                 &req.backend,

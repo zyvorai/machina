@@ -531,6 +531,11 @@
       "path": "/api-docs",
       "category": "Platform",
       "legacy": false
+    },
+    {
+      "label": "VPCs & elastic compute",
+      "path": "/fleet-cloud/vpcs",
+      "category": "Fleet Cloud"
     }
   ]
 }

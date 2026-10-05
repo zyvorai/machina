@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 mod ai;
-mod mcp;
 pub mod alerts;
 pub mod apikeys;
 mod applications;
@@ -13,6 +12,7 @@ mod backups;
 mod baremetal;
 mod blueprints;
 pub mod cert;
+pub(crate) mod cloud;
 mod cloud_init;
 mod cluster;
 mod content;
@@ -39,6 +39,7 @@ mod launchpad;
 mod load_balancers;
 mod maintenance;
 mod marketplace;
+mod mcp;
 mod metrics;
 mod migration_jobs;
 mod network_canvas;
@@ -75,7 +76,7 @@ mod vm_libvirt;
 pub(crate) mod vm_network_policies;
 mod vm_row;
 mod vm_schedules;
-mod vms;
+pub(crate) mod vms;
 mod vmware;
 pub(crate) mod volumes;
 pub mod watchdog;
@@ -96,6 +97,7 @@ use crate::state::AppState;
 pub fn router(state: AppState) -> Router {
     let rate_limiter = RateLimiter::from_env(state.config.jwt_secret.clone());
     let protected = Router::new()
+        .merge(cloud::routes())
         .route(
             "/api/v1/enrollment/tokens",
             get(enrollment::list_enrollment_tokens).post(enrollment::create_enrollment_token),

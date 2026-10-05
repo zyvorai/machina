@@ -1,0 +1,208 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
+//! Durable cloud jobs and elastic groups. The existing worker claims tasks and
+//! VM reconciler performs power changes. Scale-in stops and retains disks.
+use crate::{agent_client, auth::AuthUser, state::AppState, tasks::TaskMessage};
+use axum::{extract::State, Extension, Json};
+use machina_spec::{NetworkAttachmentSpec, ScalingPolicy, VirtualMachine};
+use serde_json::Value;
+use std::time::Duration;
+use uuid::Uuid;
+
+pub fn spawn(state: AppState) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(30));
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            if !state.leader.is_leader() {
+                continue;
+            }
+            if let Err(e) = reconcile_once(&state).await {
+                tracing::warn!("cloud reconcile: {e:#}");
+            }
+        }
+    });
+}
+
+pub async fn provision_subnet(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
+    let id: Uuid = serde_json::from_value(msg.payload["subnet_id"].clone())?;
+    let result=async {
+        let row:(String,String)=sqlx::query_as("SELECT s.cidr,h.agent_grpc_addr FROM cloud_subnets s JOIN cloud_vpcs v ON v.id=s.vpc_id JOIN hosts h ON h.id=v.host_id WHERE s.id=? AND h.state='online'").bind(id).fetch_one(&state.pool).await?;
+        let mut client=agent_client::connect(&row.1).await?;
+        agent_client::provision_cloud_subnet(&mut client,id,&row.0).await?;
+        sqlx::query("UPDATE cloud_subnets SET status='ready',last_error='' WHERE id=?").bind(id).execute(&state.pool).await?;
+        Ok::<(),anyhow::Error>(())
+    }.await;
+    if let Err(ref e) = result {
+        sqlx::query("UPDATE cloud_subnets SET status='error',last_error=? WHERE id=?")
+            .bind(format!("{e:#}"))
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
+    }
+    result
+}
+
+pub async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
+    // Publish committed pending rows again after process/bus failure. Worker
+    // claim_task's compare-and-swap makes duplicate deliveries harmless.
+    let jobs:Vec<(Uuid,Value)>=sqlx::query_as("SELECT id,payload FROM tasks WHERE operation='cloud.subnet.provision' AND status='pending' ORDER BY created_at LIMIT 100").fetch_all(&state.pool).await?;
+    for (task_id, payload) in jobs {
+        state
+            .task_bus
+            .publish(
+                "machina.tasks",
+                &TaskMessage {
+                    task_id,
+                    operation: "cloud.subnet.provision".into(),
+                    payload,
+                },
+            )
+            .await?;
+    }
+    // Bootstrap reaps orphaned tasks through the generic worker. Propagate that
+    // failure to the cloud resource so its retry endpoint is usable.
+    sqlx::query("UPDATE cloud_subnets SET status='error',last_error='Provisioning task failed; inspect task history and retry' WHERE status='pending' AND EXISTS(SELECT 1 FROM tasks WHERE resource_id=cloud_subnets.id AND operation='cloud.subnet.provision' AND status='failed') AND NOT EXISTS(SELECT 1 FROM tasks WHERE resource_id=cloud_subnets.id AND operation='cloud.subnet.provision' AND status IN ('pending','running'))").execute(&state.pool).await?;
+    let groups:Vec<Uuid>=sqlx::query_scalar("SELECT g.id FROM cloud_instance_groups g JOIN projects p ON p.id=g.project_id WHERE g.paused=0 AND p.enabled=1 ORDER BY g.id LIMIT 100").fetch_all(&state.pool).await?;
+    for id in groups {
+        if !state.leader.is_leader() {
+            break;
+        }
+        let error = reconcile_group(state, id)
+            .await
+            .err()
+            .map(|e| format!("{e:#}"))
+            .unwrap_or_default();
+        sqlx::query("UPDATE cloud_instance_groups SET last_error=? WHERE id=?")
+            .bind(error)
+            .bind(id)
+            .execute(&state.pool)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Public for focused tests; normal entry is the leader-gated loop.
+pub async fn reconcile_group(state: &AppState, id: Uuid) -> anyhow::Result<()> {
+    type Definition = (Uuid, String, String, Uuid, String, String, bool);
+    let (project_id,project,raw,host,network,template,paused):Definition=sqlx::query_as("SELECT g.project_id,p.name,g.policy_json,v.host_id,n.name,t.spec_json,g.paused FROM cloud_instance_groups g JOIN projects p ON p.id=g.project_id AND p.enabled=1 JOIN cloud_launch_templates t ON t.id=g.template_id AND t.project_id=g.project_id JOIN cloud_subnets s ON s.id=g.subnet_id AND s.status='ready' JOIN cloud_vpcs v ON v.id=s.vpc_id AND v.project_id=g.project_id JOIN networks n ON n.id=s.network_id WHERE g.id=?").bind(id).fetch_one(&state.pool).await?;
+    if paused {
+        return Ok(());
+    }
+    let mut policy: ScalingPolicy = serde_json::from_str(&raw)?;
+    policy.validate().map_err(anyhow::Error::msg)?;
+    // Autoscaling is only allowed on a fully converged group with a fresh
+    // sample from EVERY active member. Averages over a partial set are unsafe.
+    let (count,cpu):(i64,Option<f64>)=sqlx::query_as("SELECT COUNT(*),AVG(m.cpu_percent) FROM cloud_group_members gm JOIN vms v ON v.id=gm.vm_id JOIN vm_metrics m ON m.vm_id=v.id WHERE gm.group_id=? AND gm.slot<? AND v.observed_state='running' AND m.updated_at>datetime('now','-2 minutes')").bind(id).bind(policy.desired).fetch_one(&state.pool).await?;
+    let elapsed:i64=sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)-CAST(strftime('%s',last_scaled_at) AS INTEGER) FROM cloud_instance_groups WHERE id=?").bind(id).fetch_one(&state.pool).await?;
+    let desired = policy.next_desired(
+        if count == i64::from(policy.desired) && count > 0 {
+            cpu
+        } else {
+            None
+        },
+        elapsed,
+    );
+    if desired != policy.desired {
+        policy.desired = desired;
+        let changed=sqlx::query("UPDATE cloud_instance_groups SET policy_json=?,last_scaled_at=CURRENT_TIMESTAMP WHERE id=? AND paused=0 AND policy_json=?").bind(serde_json::to_string(&policy)?).bind(id).bind(&raw).execute(&state.pool).await?.rows_affected();
+        if changed == 0 {
+            return Ok(());
+        }
+        let actor = AuthUser {
+            username: "cloud-reconciler".into(),
+            role: "admin".into(),
+            auth_source: None,
+        };
+        let mut conn = state.pool.acquire().await?;
+        crate::api::cloud::audit(&mut conn, &actor, "cloud.group.autoscale", id)
+            .await
+            .map_err(|e| anyhow::anyhow!("audit: {e:?}"))?;
+    }
+    let expected = serde_json::to_string(&policy)?;
+    for slot in 0..policy.max {
+        // A PATCH/pause that races this tick wins; do not continue with stale
+        // desired counts or resurrect a paused group's stopped VMs.
+        let current: Option<String> = sqlx::query_scalar(
+            "SELECT policy_json FROM cloud_instance_groups WHERE id=? AND paused=0",
+        )
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?;
+        if current.as_deref() != Some(expected.as_str()) {
+            return Ok(());
+        }
+        let existing: Option<Uuid> =
+            sqlx::query_scalar("SELECT vm_id FROM cloud_group_members WHERE group_id=? AND slot=?")
+                .bind(id)
+                .bind(slot)
+                .fetch_optional(&state.pool)
+                .await?
+                .flatten();
+        let target = if slot < policy.desired {
+            "running"
+        } else {
+            "stopped"
+        };
+        if let Some(vm) = existing {
+            // Ordinary VM reconciliation performs the action and its retries.
+            sqlx::query("UPDATE vms SET desired_state=? WHERE id=? AND project=? AND EXISTS(SELECT 1 FROM cloud_instance_groups WHERE id=? AND paused=0 AND policy_json=?)").bind(target).bind(vm).bind(&project).bind(id).bind(&expected).execute(&state.pool).await?;
+            continue;
+        }
+        if slot >= policy.desired {
+            continue;
+        }
+        let mut vm: VirtualMachine = serde_json::from_str(&template)?;
+        vm.metadata.name = format!("asg-{}-{slot}", id.simple());
+        vm.metadata.project = Some(project.clone());
+        vm.spec.network = vec![NetworkAttachmentSpec {
+            network: network.clone(),
+            ip_mode: "dhcp".into(),
+            firewall_profile: None,
+        }];
+        // Deterministic name allows recovery if creation committed but recording
+        // group membership was interrupted. Only adopt the exact stored spec.
+        let prior: Option<(Uuid, Value)> =
+            sqlx::query_as("SELECT id,spec_json FROM vms WHERE name=? AND project=?")
+                .bind(&vm.metadata.name)
+                .bind(&project)
+                .fetch_optional(&state.pool)
+                .await?;
+        let vm_id = if let Some((vid, spec)) = prior {
+            anyhow::ensure!(
+                spec == serde_json::to_value(&vm)?,
+                "instance slot has conflicting spec; refusing adoption"
+            );
+            vid
+        } else {
+            let actor = AuthUser {
+                username: "cloud-reconciler".into(),
+                role: "admin".into(),
+                auth_source: None,
+            };
+            let body = crate::api::vms::CreateVmBody {
+                vm: vm.clone(),
+                host_id: Some(host),
+                tags: vec![format!("cloud.group={id}")],
+                desired_state: "running".into(),
+                atlas_root_disk: false,
+                atlas_policy: None,
+            };
+            let _ = crate::api::vms::create_vm(State(state.clone()), Extension(actor), Json(body))
+                .await
+                .map_err(|e| anyhow::anyhow!("instance create: {e:?}"))?;
+            sqlx::query_scalar("SELECT id FROM vms WHERE name=? AND project=?")
+                .bind(&vm.metadata.name)
+                .bind(&project)
+                .fetch_one(&state.pool)
+                .await?
+        };
+        sqlx::query("INSERT INTO cloud_group_members (group_id,slot,vm_id) VALUES (?,?,?) ON CONFLICT(group_id,slot) DO UPDATE SET vm_id=excluded.vm_id WHERE cloud_group_members.vm_id IS NULL").bind(id).bind(slot).bind(vm_id).execute(&state.pool).await?;
+    }
+    // If max was lowered, stopped retained slots above the new max remain owned.
+    sqlx::query("UPDATE vms SET desired_state='stopped' WHERE id IN (SELECT vm_id FROM cloud_group_members WHERE group_id=? AND slot>=?) AND EXISTS(SELECT 1 FROM cloud_instance_groups WHERE id=? AND paused=0 AND policy_json=?)").bind(id).bind(policy.desired).bind(id).bind(&expected).execute(&state.pool).await?;
+    let _ = project_id;
+    Ok(())
+}

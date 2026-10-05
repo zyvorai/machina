@@ -580,6 +580,8 @@ pub async fn provision_network(
             backend: backend.to_string(),
             vlan_id,
             bridge: bridge.to_string(),
+            subnet_cidr: String::new(),
+            subnet_uuid: String::new(),
         })
         .await?
         .into_inner();
@@ -1364,4 +1366,26 @@ pub async fn list_host_gpus(client: &mut AgentClient) -> anyhow::Result<ListHost
         client.list_host_gpus(ListHostGpusRequest {}),
     )
     .await
+}
+
+/// Cloud subnet requests are additive on the wire; old agents reject the new
+/// backend, so mixed-version fleets cannot report false success.
+pub async fn provision_cloud_subnet(
+    client: &mut AgentClient,
+    id: uuid::Uuid,
+    cidr: &str,
+) -> anyhow::Result<()> {
+    let response = client
+        .provision_network(ProvisionNetworkRequest {
+            network_name: format!("mc-{id}"),
+            backend: "cloud-isolated".into(),
+            vlan_id: 0,
+            bridge: String::new(),
+            subnet_cidr: cidr.into(),
+            subnet_uuid: id.to_string(),
+        })
+        .await?
+        .into_inner();
+    anyhow::ensure!(response.ok, "{}", response.message);
+    Ok(())
 }

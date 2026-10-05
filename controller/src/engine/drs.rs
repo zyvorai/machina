@@ -57,6 +57,12 @@ async fn run_auto_migrate(state: &AppState) -> anyhow::Result<()> {
             continue;
         };
 
+        if crate::api::cloud::check_vm_host(&state.pool, vm_id, dest_id)
+            .await
+            .is_err()
+        {
+            continue;
+        }
         // Skip if a migration for this VM is already pending/running. DRS re-runs
         // every 120s against metrics that don't change until the (slow) live
         // migration completes, so it would otherwise re-select the same VM and

@@ -466,6 +466,9 @@ message ProvisionNetworkRequest {
   string backend = 2;
   int32 vlan_id = 3;
   string bridge = 4;
+  // Only cloud-isolated accepts these fields; legacy bridge callers leave empty.
+  string subnet_cidr = 5;
+  string subnet_uuid = 6;
 }
 
 message ProvisionNetworkResponse {

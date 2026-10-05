@@ -75,6 +75,11 @@ pub async fn create_network(
     Json(body): Json<CreateNetworkBody>,
 ) -> Result<Json<NetworkRow>, ApiError> {
     require_operator(&actor)?;
+    if body.backend == "cloud-isolated" || body.name.starts_with("mc-") {
+        return Err(ApiError::bad_request(
+            "cloud networks must be created through the VPC subnet API",
+        ));
+    }
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_one(&state.pool)
@@ -187,6 +192,7 @@ pub async fn patch_network(
     Json(body): Json<PatchNetworkBody>,
 ) -> Result<Json<NetworkRow>, ApiError> {
     require_operator(&actor)?;
+    crate::api::cloud::protect_network(&state, id).await?;
     if let Some(v) = body.vlan_id {
         sqlx::query("UPDATE networks SET vlan_id = ? WHERE id = ?")
             .bind(v)
@@ -222,6 +228,7 @@ pub async fn delete_network(
     Query(q): Query<NetworkHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
+    crate::api::cloud::protect_network(&state, id).await?;
     let name = network_name(&state.pool, id).await?;
     // Best-effort: still prune the controller-side record even when no host is
     // reachable to run the libvirt delete (e.g. the host is offline). Surface the
@@ -300,6 +307,7 @@ pub async fn activate_network(
     Query(q): Query<NetworkHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
+    crate::api::cloud::protect_network(&state, id).await?;
     let name = network_name(&state.pool, id).await?;
     let host_id = resolve_online_host(&state.pool, q.host_id).await?;
     let result = invoke_network_on_host(&state, host_id, "network.start", &name).await?;
@@ -314,6 +322,7 @@ pub async fn deactivate_network(
     Query(q): Query<NetworkHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
+    crate::api::cloud::protect_network(&state, id).await?;
     let name = network_name(&state.pool, id).await?;
     let host_id = resolve_online_host(&state.pool, q.host_id).await?;
     let result = invoke_network_on_host(&state, host_id, "network.stop", &name).await?;
