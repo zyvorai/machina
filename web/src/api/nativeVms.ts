@@ -65,6 +65,8 @@ interface CreateFromTemplateBody {
   cloud_init_ssh_pubkey?: string
   /** Scale to zero after this many idle minutes; 0 = never, omit = project default. */
   sleep_after_minutes?: number
+  /** Name of a saved key pair (EC2 KeyName); use instead of a pasted key. */
+  key_name?: string
   /** Free-form cloud-init user-data (a #cloud-config document or a script), at most 16 KiB. */
   cloud_init_user_data?: string
 }

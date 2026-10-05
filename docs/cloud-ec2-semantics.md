@@ -48,3 +48,9 @@ Groups are **advisory** (`mode: audit`, the default for every existing group) un
 - `PUT /api/v1/volumes/{id}/iotune {read_iops, write_iops, read_bps, write_bps}`: `0` removes a limit, an omitted field is
   unchanged. On an attached volume the limits are applied to the disk through the agent (`virsh blkdeviotune`, live and
   persistent); the values are stored either way. They are not re-applied on a later attach yet.
+
+## Key pairs by name
+Instance create (from template, ISO or image) accepts `key_name`: the saved key pair's public key is injected through
+cloud-init, like EC2's `KeyName`. Giving both `key_name` and `cloud_init_ssh_pubkey` is rejected, and an unknown name fails
+with `keypair_not_found`. Machina still stores public keys only: there is no create-and-return-the-private-key call, so
+generate keys with `ssh-keygen` and register the public half.

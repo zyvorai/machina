@@ -7,6 +7,7 @@ import { listFlavors, type NativeFlavor } from '../api/flavors'
 import { listTemplates, type NativeTemplate } from '../api/nativeTemplates'
 import { listNetworks, type NativeNetwork } from '../api/nativeNetworks'
 import { createFromTemplate } from '../api/nativeVms'
+import { listKeypairs, type NativeKeypair } from '../api/nativeKeypairs'
 import { useToastContext } from '../contexts/ToastContext'
 import { ChoiceCard, ChoiceCardGrid } from '../components/ChoiceCards'
 import { ArrowLeft, Cloud, Disc, Loader2, Network } from 'lucide-react'
@@ -42,6 +43,11 @@ export default function FleetCloudCreateInstancePage() {
   const [cloudInitSshPubkey, setCloudInitSshPubkey] = useState('')
   const [sleepAfter, setSleepAfter] = useState('inherit')
   const [userData, setUserData] = useState('')
+  const [keyName, setKeyName] = useState('')
+  const [keypairs, setKeypairs] = useState<NativeKeypair[]>([])
+  useEffect(() => {
+    listKeypairs().then(setKeypairs).catch(() => setKeypairs([]))
+  }, [])
 
   const loadCatalogs = useCallback(async () => {
     setLoading(true)
@@ -84,7 +90,8 @@ export default function FleetCloudCreateInstancePage() {
         network: networkId || undefined,
         cloud_init_user: cloudInitUser.trim() || undefined,
         cloud_init_password: cloudInitPassword || undefined,
-        cloud_init_ssh_pubkey: cloudInitSshPubkey.trim() || undefined,
+        key_name: keyName || undefined,
+        cloud_init_ssh_pubkey: keyName ? undefined : cloudInitSshPubkey.trim() || undefined,
         sleep_after_minutes: sleepAfter === 'inherit' ? undefined : Number(sleepAfter),
         cloud_init_user_data: userData.trim() ? userData : undefined,
       })
@@ -242,8 +249,15 @@ export default function FleetCloudCreateInstancePage() {
             placeholder="Password (optional)"
             className="input-field text-sm" />
         </div>
-        <textarea aria-label="SSH public key" value={cloudInitSshPubkey} onChange={(e) => setCloudInitSshPubkey(e.target.value)} rows={2}
-          placeholder="SSH public key (optional) — or pick a saved keypair on the Keys page and paste its key here"
+        <label className="block space-y-1">
+          <span className="text-xs text-[var(--text-secondary)]">Key pair</span>
+          <select aria-label="Key pair" value={keyName} onChange={(e) => setKeyName(e.target.value)} className="input-field text-sm">
+            <option value="">None (paste a key below)</option>
+            {keypairs.map((k) => <option key={k.id} value={k.name}>{k.name}</option>)}
+          </select>
+        </label>
+        <textarea aria-label="SSH public key" disabled={!!keyName} value={cloudInitSshPubkey} onChange={(e) => setCloudInitSshPubkey(e.target.value)} rows={2}
+          placeholder="SSH public key (optional)"
           className="w-full input-field text-xs font-mono" />
         <label className="block space-y-1">
           <span className="text-xs text-[var(--text-secondary)]">User data (optional) — a #cloud-config document or a shell script that runs on first boot</span>
