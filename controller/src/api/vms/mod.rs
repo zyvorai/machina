@@ -513,7 +513,7 @@ pub async fn create_vm(
     }))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CreateFromTemplateBody {
     pub template_ref: String,
     pub name: String,
@@ -3139,5 +3139,111 @@ mod type_change_tests {
     fn a_flavor_without_a_usable_size_is_refused() {
         assert!(type_change_blocker(2, 4096, 0, 4096, false).is_some());
         assert!(type_change_blocker(2, 4096, 2, 64, false).is_some());
+    }
+}
+
+/// Most instances one `run-instances` call may start.
+pub const MAX_RUN_COUNT: u32 = 20;
+
+/// `{ ...create-from-template fields, count, min_count }` (EC2 `RunInstances`).
+#[derive(Debug, Deserialize)]
+pub struct RunInstancesBody {
+    #[serde(flatten)]
+    pub base: CreateFromTemplateBody,
+    #[serde(default = "one")]
+    pub count: u32,
+    /// Fewest instances that count as success; defaults to `count`.
+    #[serde(default)]
+    pub min_count: Option<u32>,
+}
+
+fn one() -> u32 {
+    1
+}
+
+/// Names for `count` instances: the name itself for one, `name-1 … name-N` for several.
+pub(crate) fn run_names(name: &str, count: u32) -> Vec<String> {
+    if count <= 1 {
+        return vec![name.to_string()];
+    }
+    (1..=count).map(|i| format!("{name}-{i}")).collect()
+}
+
+pub(crate) fn validate_run_counts(count: u32, min_count: Option<u32>) -> Result<u32, String> {
+    if count == 0 || count > MAX_RUN_COUNT {
+        return Err(format!("count must be between 1 and {MAX_RUN_COUNT}"));
+    }
+    let min = min_count.unwrap_or(count);
+    if min == 0 || min > count {
+        return Err("min_count must be between 1 and count".into());
+    }
+    Ok(min)
+}
+
+/// Start several instances from one template. Each is created like `create_from_template`; if fewer than
+/// `min_count` could be created the call fails and says which ones were already created (they are not rolled back).
+pub async fn run_instances(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Json(body): Json<RunInstancesBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
+    let min = validate_run_counts(body.count, body.min_count).map_err(ApiError::bad_request)?;
+    let mut created: Vec<serde_json::Value> = Vec::new();
+    let mut last_error: Option<ApiError> = None;
+    for name in run_names(&body.base.name, body.count) {
+        let mut one = body.base.clone();
+        one.name = name.clone();
+        match create_from_template(State(state.clone()), Extension(actor.clone()), Json(one)).await {
+            Ok(Json(t)) => created.push(serde_json::json!({ "name": name, "task_id": t.task_id })),
+            Err(e) => {
+                last_error = Some(e);
+                break;
+            }
+        }
+    }
+    if created.len() < min as usize {
+        let names: Vec<String> = created.iter().filter_map(|c| c["name"].as_str().map(String::from)).collect();
+        let why = last_error.map(|e| e.message).unwrap_or_default();
+        return Err(ApiError::conflict(
+            format!(
+                "only {} of {} instances could be created (minimum {min}): {why}",
+                created.len(),
+                body.count
+            ),
+            if names.is_empty() {
+                "fix the cause and retry".to_string()
+            } else {
+                format!("already created and left in place: {}", names.join(", "))
+            },
+        )
+        .with_code("run_instances_min_count"));
+    }
+    Ok(Json(serde_json::json!({
+        "requested": body.count,
+        "created": created.len(),
+        "instances": created,
+        "error": last_error.map(|e| e.message),
+    })))
+}
+
+#[cfg(test)]
+mod run_instances_tests {
+    use super::*;
+
+    #[test]
+    fn names_one_or_numbered() {
+        assert_eq!(run_names("web", 1), ["web"]);
+        assert_eq!(run_names("web", 3), ["web-1", "web-2", "web-3"]);
+    }
+
+    #[test]
+    fn counts_are_bounded() {
+        assert_eq!(validate_run_counts(3, None), Ok(3));
+        assert_eq!(validate_run_counts(5, Some(2)), Ok(2));
+        assert!(validate_run_counts(0, None).is_err());
+        assert!(validate_run_counts(MAX_RUN_COUNT + 1, None).is_err());
+        assert!(validate_run_counts(3, Some(0)).is_err());
+        assert!(validate_run_counts(3, Some(4)).is_err());
     }
 }

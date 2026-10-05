@@ -1291,6 +1291,7 @@ pub fn router(state: AppState) -> Router {
             get(ha::get_vm_ha_policy).post(ha::set_vm_ha_policy),
         )
         .route("/api/v1/vms/from-template", post(vms::create_from_template))
+        .route("/api/v1/vms/run-instances", post(vms::run_instances))
         .route("/api/v1/vms/from-iso", post(vms::create_from_iso))
         .route(
             "/api/v1/vms/from-virt-install",

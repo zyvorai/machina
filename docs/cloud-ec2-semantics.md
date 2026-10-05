@@ -54,3 +54,10 @@ Instance create (from template, ISO or image) accepts `key_name`: the saved key 
 cloud-init, like EC2's `KeyName`. Giving both `key_name` and `cloud_init_ssh_pubkey` is rejected, and an unknown name fails
 with `keypair_not_found`. Machina still stores public keys only: there is no create-and-return-the-private-key call, so
 generate keys with `ssh-keygen` and register the public half.
+
+## Run several instances (RunInstances)
+`POST /api/v1/vms/run-instances` takes the same body as `from-template` plus `count` (1–20) and optional `min_count`
+(default `count`). With `count > 1` the machines are named `name-1 … name-N`. They are created one after another; if
+fewer than `min_count` could be created the call returns 409 `run_instances_min_count` and lists the ones already
+created, which are left in place (no rollback). Quota and placement are checked per instance, so a project quota that
+fits only some of them yields a partial result when `min_count` allows it.

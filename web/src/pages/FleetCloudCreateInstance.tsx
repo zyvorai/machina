@@ -6,7 +6,7 @@ import { Link, useNavigate } from 'react-router'
 import { listFlavors, type NativeFlavor } from '../api/flavors'
 import { listTemplates, type NativeTemplate } from '../api/nativeTemplates'
 import { listNetworks, type NativeNetwork } from '../api/nativeNetworks'
-import { createFromTemplate } from '../api/nativeVms'
+import { createFromTemplate, runInstances } from '../api/nativeVms'
 import { listKeypairs, type NativeKeypair } from '../api/nativeKeypairs'
 import { useToastContext } from '../contexts/ToastContext'
 import { ChoiceCard, ChoiceCardGrid } from '../components/ChoiceCards'
@@ -44,6 +44,7 @@ export default function FleetCloudCreateInstancePage() {
   const [sleepAfter, setSleepAfter] = useState('inherit')
   const [userData, setUserData] = useState('')
   const [keyName, setKeyName] = useState('')
+  const [count, setCount] = useState('1')
   const [keypairs, setKeypairs] = useState<NativeKeypair[]>([])
   useEffect(() => {
     listKeypairs().then(setKeypairs).catch(() => setKeypairs([]))
@@ -74,7 +75,9 @@ export default function FleetCloudCreateInstancePage() {
 
   const userDataBytes = new TextEncoder().encode(userData).length
   const userDataTooBig = userDataBytes > MAX_USER_DATA_BYTES
-  const canCreate = name.trim().length > 0 && imageId.length > 0 && flavorId.length > 0 && !userDataTooBig
+  const countNum = Number(count)
+  const countOk = Number.isInteger(countNum) && countNum >= 1 && countNum <= 20
+  const canCreate = name.trim().length > 0 && imageId.length > 0 && flavorId.length > 0 && !userDataTooBig && countOk
 
   const handleCreate = async () => {
     if (!canCreate || !selectedImage) {
@@ -83,7 +86,7 @@ export default function FleetCloudCreateInstancePage() {
     }
     setSubmitting(true)
     try {
-      await createFromTemplate({
+      const base = {
         name: name.trim(),
         template_ref: selectedImage.name,
         flavor_id: flavorId,
@@ -94,8 +97,14 @@ export default function FleetCloudCreateInstancePage() {
         cloud_init_ssh_pubkey: keyName ? undefined : cloudInitSshPubkey.trim() || undefined,
         sleep_after_minutes: sleepAfter === 'inherit' ? undefined : Number(sleepAfter),
         cloud_init_user_data: userData.trim() ? userData : undefined,
-      })
-      toast.success(`Instance '${name.trim()}' creation queued`)
+      }
+      if (countNum > 1) {
+        const r = await runInstances({ ...base, count: countNum })
+        toast.success(`${r.created} of ${r.requested} instances queued`)
+      } else {
+        await createFromTemplate(base)
+        toast.success(`Instance '${name.trim()}' creation queued`)
+      }
       navigate('/fleet-cloud/instances')
     } catch (e: unknown) {
       toast.error(`Create failed: ${formatUserError(e)}`)
@@ -153,6 +162,20 @@ export default function FleetCloudCreateInstancePage() {
           className="w-full input-field text-[var(--text-primary)]"
           placeholder="my-vm"
         />
+      </div>
+      <div>
+        <label className="block text-sm text-[var(--text-muted)] mb-1" htmlFor="instance-count">Number of instances</label>
+        <input
+          id="instance-count"
+          inputMode="numeric"
+          value={count}
+          onChange={(e) => setCount(e.target.value)}
+          aria-invalid={!countOk}
+          className="w-32 input-field text-[var(--text-primary)]"
+        />
+        <p className="text-xs text-[var(--text-muted)] mt-1">
+          {countOk ? (countNum > 1 ? `Created as ${name.trim() || 'name'}-1 to ${name.trim() || 'name'}-${countNum}.` : '1 to 20.') : 'Enter a whole number from 1 to 20.'}
+        </p>
       </div>
 
       <div>

@@ -80,6 +80,23 @@ export function createFromTemplate(body: CreateFromTemplateBody): Promise<TaskRe
   })
 }
 
+export interface RunInstancesResult {
+  requested: number
+  created: number
+  instances: { name: string; task_id: string }[]
+  error?: string | null
+}
+
+/** EC2 RunInstances: `count` machines from one image; names become `name-1 … name-N`. */
+export function runInstances(
+  body: CreateFromTemplateBody & { count: number; min_count?: number },
+): Promise<RunInstancesResult> {
+  return platformFetch<RunInstancesResult>('/api/v1/vms/run-instances', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+}
+
 export function listVms(params?: { project?: string }): Promise<NativeVm[]> {
   const qs = params?.project ? `?project=${encodeURIComponent(params.project)}` : ''
   return platformFetch<NativeVm[]>(`/api/v1/vms${qs}`)
