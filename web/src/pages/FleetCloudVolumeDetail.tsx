@@ -19,6 +19,8 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import FleetCloudSubNav from '../components/FleetCloudSubNav'
 import FleetCloudFooter from '../components/FleetCloudFooter'
 import PageLayout from '../components/PageLayout'
+import VolumeSettings from '../components/platform/VolumeSettings'
+import TagEditor from '../components/platform/TagEditor'
 import PageSkeleton from '../components/PageSkeleton'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
@@ -136,6 +138,8 @@ function FleetCloudVolumeDetailContent() {
         <button type="button" className={`px-3 py-1.5 rounded-lg border text-sm ${statusActionLinkClasses('error')}`}
           onClick={() => setConfirmDeleteVolume(true)}>Delete</button>
       </div>
+      <VolumeSettings key={vol.id} volume={vol} onChanged={() => void load()} />
+      <TagEditor resourceType="volume" resourceId={vol.id} />
       <ConfirmDialog
         open={confirmDeleteVolume}
         title="Delete volume"

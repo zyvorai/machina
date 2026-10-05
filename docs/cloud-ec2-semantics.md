@@ -40,3 +40,11 @@ Groups are **advisory** (`mode: audit`, the default for every existing group) un
 - Refused: enforcing while an attached instance has no known address (traffic could not be told from spoofed traffic).
 - Not covered yet: groups per network interface (they attach per instance), a lockout check against the controller and
   console paths (allow the paths you need explicitly), a dry-run diff before the first enforce.
+
+## Volumes: delete on termination and I/O limits
+- `delete_on_termination` (create body, attach body, or `PUT /api/v1/volumes/{id}/delete-on-termination {"value":true}`):
+  when the instance is deleted, flagged volumes attached to it are deleted too. If a backend delete fails the volume is
+  kept (detached) and the failure is logged; the instance delete still succeeds.
+- `PUT /api/v1/volumes/{id}/iotune {read_iops, write_iops, read_bps, write_bps}`: `0` removes a limit, an omitted field is
+  unchanged. On an attached volume the limits are applied to the disk through the agent (`virsh blkdeviotune`, live and
+  persistent); the values are stored either way. They are not re-applied on a later attach yet.

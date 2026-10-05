@@ -22,6 +22,32 @@ export interface NativeVolume {
   attached_vm_id: string | null
   attached_device: string | null
   atlas_backed: boolean
+  delete_on_termination?: boolean
+  read_iops?: number | null
+  write_iops?: number | null
+  read_bps?: number | null
+  write_bps?: number | null
+}
+
+export interface VolumeIoLimits {
+  read_iops?: number
+  write_iops?: number
+  read_bps?: number
+  write_bps?: number
+}
+
+export function setVolumeIoLimits(id: string, limits: VolumeIoLimits): Promise<NativeVolume> {
+  return platformFetch<NativeVolume>(`/api/v1/volumes/${encodeURIComponent(id)}/iotune`, {
+    method: 'PUT',
+    body: JSON.stringify(limits),
+  })
+}
+
+export function setVolumeDeleteOnTermination(id: string, value: boolean): Promise<NativeVolume> {
+  return platformFetch<NativeVolume>(`/api/v1/volumes/${encodeURIComponent(id)}/delete-on-termination`, {
+    method: 'PUT',
+    body: JSON.stringify({ value }),
+  })
 }
 
 export interface NativeVolumeSnapshot {
