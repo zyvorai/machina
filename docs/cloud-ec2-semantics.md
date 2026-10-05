@@ -92,3 +92,9 @@ otherwise 409.
 **Limits:** the reserved address is a reservation, not configuration. It is not yet pinned as a DHCP host entry, so the
 guest must be configured with it (the subnet page says the same). There are no secondary addresses and a port still carries
 one security group; per-interface groups are not enforced (groups attach to instances).
+
+## Metric statistics
+`GET /api/v1/metrics/statistics?subject=<vm name>&metric=<metric>&period=300&statistics=Average,Maximum&start=&end=` buckets
+the stored samples (`metric_samples`) into epoch-aligned windows of `period` seconds (a multiple of 60, 60–86400) and returns
+`Average`, `Minimum`, `Maximum`, `Sum` and `SampleCount` per window. The default range is the last hour; the limit is 15
+days and 1440 datapoints per call. Retention is whatever the sampler keeps; there are no custom dimensions or units yet.

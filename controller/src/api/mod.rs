@@ -37,6 +37,7 @@ mod host_os;
 mod hosts;
 mod ec2;
 mod keypairs;
+mod metric_stats;
 mod kubevirt;
 mod launchpad;
 mod load_balancers;
@@ -1977,6 +1978,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/cpu-compat",
             get(cpu_compat::get_cpu_compat_matrix).patch(cpu_compat::patch_cpu_compat_matrix),
         )
+        .route("/api/v1/metrics/statistics", get(metric_stats::statistics))
         .route(
             "/api/v1/ec2/access-keys",
             get(ec2::list_access_keys).post(ec2::create_access_key),
