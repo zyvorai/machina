@@ -38,8 +38,11 @@ Groups are **advisory** (`mode: audit`, the default for every existing group) un
   state shows `auditing` until the next tick. Enforce mode is per host, so any other VM network policy on a host with an
   enforcing group is enforced too.
 - Refused: enforcing while an attached instance has no known address (traffic could not be told from spoofed traffic).
-- Not covered yet: groups per network interface (they attach per instance), a lockout check against the controller and
-  console paths (allow the paths you need explicitly), a dry-run diff before the first enforce.
+- Dry run: `GET /api/v1/security-groups/{id}/enforce-preview` shows, per attached instance, how many inbound and outbound
+  rules it would end up with and warns about the lockouts that matter (no inbound rule, no outbound rule, no TCP 22, a rule
+  that opens every port to everyone). The Enforce button shows it before the confirmation click. It warns; it does not
+  block, and it cannot see the controller's or the console's own network paths: allow what you need explicitly.
+- Not covered yet: groups per network interface (they attach per instance).
 
 ## Volumes: delete on termination and I/O limits
 - `delete_on_termination` (create body, attach body, or `PUT /api/v1/volumes/{id}/delete-on-termination {"value":true}`):

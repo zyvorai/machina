@@ -184,6 +184,61 @@ pub fn policies(m: &Model) -> Vec<VmNetworkPolicy> {
     out
 }
 
+/// What switching `sg_id` to enforce would do to one attached instance.
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub struct VmPreview {
+    pub vm: String,
+    /// Allowed ingress / egress rules the instance would end up with (all its enforcing groups, plus this one).
+    pub ingress_rules: usize,
+    pub egress_rules: usize,
+    pub warnings: Vec<String>,
+}
+
+/// Dry run: the policy each attached instance would get if `sg_id` were enforcing, with plain-language warnings.
+pub fn preview(m: &Model, sg_id: &str) -> Vec<VmPreview> {
+    let mut what_if = m.clone();
+    what_if.modes.insert(sg_id.to_string(), "enforce".into());
+    let policies = policies(&what_if);
+    let mut out = Vec::new();
+    for (vm, sgs) in &m.attached {
+        if !sgs.contains(sg_id) {
+            continue;
+        }
+        let spec = policies
+            .iter()
+            .find(|p| p.name == policy_name(vm))
+            .and_then(|p| p.specs.first().cloned())
+            .unwrap_or(Value::Null);
+        let ing = spec["ingress"].as_array().cloned().unwrap_or_default();
+        let eg = spec["egress"].as_array().cloned().unwrap_or_default();
+        let mut warnings = Vec::new();
+        if ing.is_empty() {
+            warnings.push("no ingress rule: every inbound connection will be refused, including SSH and the console's network paths".into());
+        } else if !allows_port(&ing, 22) {
+            warnings.push("no ingress rule allows TCP 22 (SSH)".into());
+        }
+        if eg.is_empty() {
+            warnings.push("no egress rule: the instance will not be able to start any outbound connection (DNS, updates, the guest agent's network paths)".into());
+        }
+        if ing.iter().any(|r| r.get("fromEntities").is_some_and(|e| e == &json!(["all"])) && r.get("toPorts").is_none() && r.get("icmps").is_none()) {
+            warnings.push("an ingress rule allows every port from everywhere".into());
+        }
+        out.push(VmPreview { vm: vm.clone(), ingress_rules: ing.len(), egress_rules: eg.len(), warnings });
+    }
+    out
+}
+
+fn allows_port(rules: &[Value], port: u16) -> bool {
+    rules.iter().any(|r| match r.get("toPorts").and_then(|t| t.as_array()) {
+        None => r.get("icmps").is_none(), // no port restriction and not ICMP-only: every port
+        Some(tp) => tp.iter().flat_map(|t| t["ports"].as_array().cloned().unwrap_or_default()).any(|p| {
+            let lo = p["port"].as_str().and_then(|s| s.parse::<u16>().ok()).unwrap_or(0);
+            let hi = p["endPort"].as_u64().map_or(lo, |e| e as u16);
+            (lo..=hi).contains(&port) && p["protocol"].as_str() != Some("UDP")
+        }),
+    })
+}
+
 /// host id → VM names with an enforcing group on that host.
 async fn enforcing_hosts(pool: &SqlitePool) -> BTreeMap<String, Vec<String>> {
     let rows: Vec<(String, String)> = sqlx::query_as(
@@ -366,6 +421,35 @@ mod tests {
         m.rules.push(Rule { security_group_id: "c".into(), ..r });
         let s = &policies(&m)[0].specs[0];
         assert_eq!(s["ingress"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn preview_warns_about_lockout_and_open_rules() {
+        let mut m = model();
+        let p = preview(&m, "a");
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].vm, "web");
+        assert_eq!((p[0].ingress_rules, p[0].egress_rules), (0, 0));
+        assert!(p[0].warnings.iter().any(|w| w.contains("no ingress rule")));
+        assert!(p[0].warnings.iter().any(|w| w.contains("no egress rule")));
+
+        m.rules.push(rule("a", "ingress", Some("tcp"), Some(22), Some(22), Some("10.0.0.0/8"), None));
+        m.rules.push(rule("a", "egress", None, None, None, None, None));
+        let p = preview(&m, "a");
+        assert!(p[0].warnings.is_empty(), "{:?}", p[0].warnings);
+
+        m.rules.push(rule("a", "ingress", Some("tcp"), Some(80), None, Some("0.0.0.0/0"), None));
+        m.rules.retain(|r| r.port_min != Some(22));
+        let p = preview(&m, "a");
+        assert!(p[0].warnings.iter().any(|w| w.contains("TCP 22")));
+    }
+
+    #[test]
+    fn preview_ignores_instances_without_the_group_and_does_not_change_the_model() {
+        let m = model();
+        assert!(preview(&m, "b").iter().all(|v| v.vm == "db"));
+        assert_eq!(m.modes["a"], "enforce");
+        assert_eq!(m.modes["b"], "audit");
     }
 
     #[test]

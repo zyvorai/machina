@@ -11,7 +11,9 @@ import {
   getSecurityGroup,
   listSecurityGroupRules,
   listSecurityGroups,
+  previewSecurityGroupEnforcement,
   setSecurityGroupMode,
+  type EnforcePreview,
   type NativeSecurityGroup,
   type NativeSecurityGroupRule,
 } from '../api/securityGroups'
@@ -48,6 +50,7 @@ function FleetCloudSecurityGroupsContent() {
   const [creatingSg, setCreatingSg] = useState(false)
   const [search, setSearch] = useState('')
   const [armEnforce, setArmEnforce] = useState(false)
+  const [enforcePreview, setEnforcePreview] = useState<EnforcePreview | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -254,8 +257,13 @@ function FleetCloudSecurityGroupsContent() {
                   <button type="button" className="px-2 py-1 rounded border border-[var(--apple-hairline)]"
                     onClick={async () => {
                       const next = active.mode === 'enforce' ? 'audit' : 'enforce'
-                      if (next === 'enforce' && !armEnforce) { setArmEnforce(true); return }
+                      if (next === 'enforce' && !armEnforce) {
+                        try { setEnforcePreview(await previewSecurityGroupEnforcement(active.id)) } catch (e: unknown) { toast.error(formatUserError(e)); return }
+                        setArmEnforce(true)
+                        return
+                      }
                       setArmEnforce(false)
+                      setEnforcePreview(null)
                       try {
                         await setSecurityGroupMode(active.id, next)
                         toast.success(next === 'enforce' ? 'Enforcing' : 'Back to advisory')
@@ -266,7 +274,24 @@ function FleetCloudSecurityGroupsContent() {
                     }}>
                     {active.mode === 'enforce' ? 'Switch to audit' : armEnforce ? 'Confirm: enforce on attached instances' : 'Enforce'}
                   </button>
+                  {armEnforce && (
+                    <button type="button" className="px-2 py-1 rounded border border-[var(--apple-hairline)]"
+                      onClick={() => { setArmEnforce(false); setEnforcePreview(null) }}>Cancel</button>
+                  )}
                 </div>
+                {armEnforce && enforcePreview && (
+                  <div className="mt-2 text-xs space-y-1" data-testid="sg-enforce-preview">
+                    {enforcePreview.instances.length === 0 && (
+                      <p className="text-[var(--text-muted)]">No instance has this group attached, so nothing changes yet.</p>
+                    )}
+                    {enforcePreview.instances.map((i) => (
+                      <div key={i.vm}>
+                        <span className="font-medium">{i.vm}</span>: {i.ingress_rules} inbound and {i.egress_rules} outbound rule(s) would apply
+                        {i.warnings.map((w) => <p key={w} className="text-amber-500">Warning: {w}</p>)}
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <h3 className="text-sm font-medium text-[var(--text-muted)] mt-4 mb-2">
                   Rules ({rules.length})
                 </h3>

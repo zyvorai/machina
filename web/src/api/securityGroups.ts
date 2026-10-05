@@ -108,3 +108,13 @@ export async function detachInstanceSecurityGroup(vmId: string, sgId: string): P
     method: 'DELETE',
   })
 }
+
+export interface EnforcePreview {
+  instances: { vm: string; ingress_rules: number; egress_rules: number; warnings: string[] }[]
+  warning_count: number
+}
+
+/** Dry run of switching a group to enforce: what each attached instance would end up with. */
+export function previewSecurityGroupEnforcement(id: string): Promise<EnforcePreview> {
+  return platformFetch<EnforcePreview>(`/api/v1/security-groups/${encodeURIComponent(id)}/enforce-preview`)
+}

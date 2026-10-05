@@ -645,3 +645,23 @@ pub async fn detach_instance_security_group(
     resync(&state);
     Ok(Json(serde_json::json!({ "vm_id": vm_id, "security_group_id": sg_id, "attached": false })))
 }
+
+/// Dry run of switching a group to enforce: per attached instance, the rules it would end up with and warnings.
+pub async fn preview_security_group_enforcement(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
+    let known: Option<String> = sqlx::query_scalar("SELECT name FROM security_groups WHERE id = ?")
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?;
+    if known.is_none() {
+        return Err(ApiError::not_found("security group not found"));
+    }
+    let model = crate::engine::sg_enforce::load(&state.pool).await;
+    let items = crate::engine::sg_enforce::preview(&model, &id.simple().to_string());
+    let warnings: usize = items.iter().map(|i| i.warnings.len()).sum();
+    Ok(Json(serde_json::json!({ "instances": items, "warning_count": warnings })))
+}

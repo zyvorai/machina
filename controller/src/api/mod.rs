@@ -1752,6 +1752,10 @@ pub fn router(state: AppState) -> Router {
             get(networking::get_security_group).delete(networking::delete_security_group),
         )
         .route(
+            "/api/v1/security-groups/{id}/enforce-preview",
+            get(networking::preview_security_group_enforcement),
+        )
+        .route(
             "/api/v1/security-groups/{id}/mode",
             put(networking::set_security_group_mode),
         )
