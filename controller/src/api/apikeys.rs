@@ -18,6 +18,11 @@ pub struct ApiKeyRow {
     pub role: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_used_at: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(skip)]
+    pub projects_raw: String,
+    /// Projects the key is limited to; empty = not scoped (global role only).
+    #[sqlx(skip)]
+    pub projects: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +30,9 @@ pub struct CreateApiKeyBody {
     pub name: String,
     #[serde(default = "default_role")]
     pub role: String,
+    /// Limit the key to these projects: it can then only use the cloud APIs and the instance routes of those projects.
+    #[serde(default)]
+    pub projects: Vec<String>,
 }
 
 fn default_role() -> String {
@@ -36,6 +44,7 @@ pub struct CreateApiKeyResponse {
     pub id: String,
     pub name: String,
     pub role: String,
+    pub projects: Vec<String>,
     pub token: String,
 }
 
@@ -47,11 +56,19 @@ pub async fn list_api_keys(
     let rows = sqlx::query_as::<_, ApiKeyRow>(
         "SELECT id, name, role,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at,
-                strftime('%Y-%m-%dT%H:%M:%SZ', last_used_at) AS last_used_at
+                strftime('%Y-%m-%dT%H:%M:%SZ', last_used_at) AS last_used_at,
+                projects AS projects_raw
          FROM api_keys ORDER BY created_at DESC LIMIT 500",
     )
     .fetch_all(&state.pool)
     .await?;
+    let rows = rows
+        .into_iter()
+        .map(|mut r| {
+            r.projects = serde_json::from_str(&r.projects_raw).unwrap_or_default();
+            r
+        })
+        .collect();
     Ok(Json(rows))
 }
 
@@ -71,20 +88,36 @@ pub async fn create_api_key(
             "role must be admin, operator, or viewer",
         ));
     }
+    validate_scope(&body.role, &body.projects).map_err(ApiError::bad_request)?;
+    if !body.projects.is_empty() {
+        // The key's name is its identity in audit logs and in the scope lookup, so a scoped key's name must be unique.
+        let dup: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_keys WHERE name = ?").bind(&body.name).fetch_one(&state.pool).await?;
+        if dup > 0 {
+            return Err(ApiError::conflict("an API key with that name exists", "scoped keys need a unique name"));
+        }
+        for p in &body.projects {
+            let known: Option<i64> = sqlx::query_scalar("SELECT 1 FROM projects WHERE name = ? AND enabled = 1").bind(p).fetch_optional(&state.pool).await?;
+            if known.is_none() {
+                return Err(ApiError::bad_request(format!("no enabled project named '{p}'")));
+            }
+        }
+    }
     let id = Uuid::new_v4();
     let token = format!("machina_{}", Uuid::new_v4());
     let hash = hash_token(&token);
-    sqlx::query("INSERT INTO api_keys (id, name, key_hash, role) VALUES (?, ?, ?, ?)")
+    sqlx::query("INSERT INTO api_keys (id, name, key_hash, role, projects) VALUES (?, ?, ?, ?, ?)")
         .bind(id)
         .bind(&body.name)
         .bind(hash)
         .bind(&body.role)
+        .bind(serde_json::to_string(&body.projects).unwrap_or_else(|_| "[]".into()))
         .execute(&state.pool)
         .await?;
     Ok(Json(CreateApiKeyResponse {
         id: id.to_string(),
         name: body.name,
         role: body.role,
+        projects: body.projects,
         token,
     }))
 }
@@ -99,12 +132,12 @@ pub async fn rotate_api_key(
     Path(id): Path<Uuid>,
 ) -> Result<Json<CreateApiKeyResponse>, ApiError> {
     require_admin(&actor)?;
-    let existing: Option<(String, String)> =
-        sqlx::query_as("SELECT name, role FROM api_keys WHERE id = ?")
+    let existing: Option<(String, String, String)> =
+        sqlx::query_as("SELECT name, role, projects FROM api_keys WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
-    let Some((name, role)) = existing else {
+    let Some((name, role, projects)) = existing else {
         return Err(ApiError::not_found("api key not found"));
     };
     let token = format!("machina_{}", Uuid::new_v4());
@@ -121,8 +154,53 @@ pub async fn rotate_api_key(
         id: id.to_string(),
         name,
         role,
+        projects: serde_json::from_str(&projects).unwrap_or_default(),
         token,
     }))
+}
+
+/// A scoped key must not be an admin (admins bypass every project check) and names at most 20 projects.
+pub(crate) fn validate_scope(role: &str, projects: &[String]) -> Result<(), String> {
+    if projects.is_empty() {
+        return Ok(());
+    }
+    if role == "admin" {
+        return Err("an admin key cannot be limited to projects; use operator or viewer".into());
+    }
+    if projects.len() > 20 {
+        return Err("a key can be limited to at most 20 projects".into());
+    }
+    if projects.iter().any(|p| p.is_empty() || p.len() > 128) {
+        return Err("project names must be 1-128 characters".into());
+    }
+    Ok(())
+}
+
+/// Projects an `apikey:<name>` identity is limited to (empty = not scoped, or not an API key).
+pub async fn scope_of(pool: &sqlx::SqlitePool, username: &str) -> Vec<String> {
+    let Some(name) = username.strip_prefix("apikey:") else {
+        return Vec::new();
+    };
+    let raw: Option<String> = sqlx::query_scalar("SELECT projects FROM api_keys WHERE name = ? AND projects <> '[]' LIMIT 1")
+        .bind(name)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    raw.and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default()
+}
+
+pub(crate) async fn scope_of_conn(conn: &mut sqlx::SqliteConnection, username: &str) -> Vec<String> {
+    let Some(name) = username.strip_prefix("apikey:") else {
+        return Vec::new();
+    };
+    let raw: Option<String> = sqlx::query_scalar("SELECT projects FROM api_keys WHERE name = ? AND projects <> '[]' LIMIT 1")
+        .bind(name)
+        .fetch_optional(&mut *conn)
+        .await
+        .ok()
+        .flatten();
+    raw.and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default()
 }
 
 pub async fn delete_api_key(
@@ -175,5 +253,20 @@ pub async fn authenticate_api_key(
         }))
     } else {
         Ok(None)
+    }
+}
+
+#[cfg(test)]
+mod scope_tests {
+    use super::validate_scope;
+
+    #[test]
+    fn scope_rules() {
+        assert!(validate_scope("admin", &[]).is_ok(), "unscoped admin keys are as before");
+        assert!(validate_scope("operator", &["lab".into()]).is_ok());
+        assert!(validate_scope("viewer", &["lab".into()]).is_ok());
+        assert!(validate_scope("admin", &["lab".into()]).is_err());
+        assert!(validate_scope("operator", &vec!["p".to_string(); 21]).is_err());
+        assert!(validate_scope("operator", &["".into()]).is_err());
     }
 }

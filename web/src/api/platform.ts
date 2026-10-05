@@ -2682,8 +2682,8 @@ export const markNotificationDelivered = (id: string) =>
   platformFetch<{ delivered: boolean }>(`/api/v1/notifications/${id}/deliver`, { method: 'POST' })
 
 export const listApiKeys = () => platformFetch<ApiKeyRow[]>('/api/v1/api-keys')
-export const createApiKey = (body: { name: string; role?: string }) =>
-  platformFetch<{ id: string; name: string; role: string; token: string }>('/api/v1/api-keys', { method: 'POST', body: JSON.stringify(body) })
+export const createApiKey = (body: { name: string; role?: string; projects?: string[] }) =>
+  platformFetch<{ id: string; name: string; role: string; projects?: string[]; token: string }>('/api/v1/api-keys', { method: 'POST', body: JSON.stringify(body) })
 export const deleteApiKey = (id: string) =>
   platformFetch<{ deleted: boolean }>(`/api/v1/api-keys/${id}`, { method: 'DELETE' })
 
@@ -2738,6 +2738,8 @@ export interface ApiKeyRow {
   role: string
   created_at: string
   last_used_at?: string | null
+  /** Projects the key is limited to; empty or absent = not scoped. */
+  projects?: string[]
 }
 
 export interface WebhookRow {

@@ -185,3 +185,12 @@ link-local address, which the default NAT network provides through its gateway; 
 gateway, so guests there need a route to `169.254.169.254` via the subnet's gateway address (not automatic yet). There is no
 IMDSv2 token and no hop limit: as on EC2, anything running in the guest, including a vulnerable web application, can read
 the user-data, so keep long-lived secrets out of it. Tags are not exposed yet.
+## Project-scoped API keys
+`POST /api/v1/api-keys` accepts `projects: ["lab", "web"]`. A scoped key (operator or viewer, never admin; its name must be
+unique) can use only:
+- the cloud APIs (`/api/v1/cloud/...`) of those projects, with its own role capping what it may write; and
+- the instance routes (`/api/v1/vms/{id}/...`) of machines in those projects, and the machine list filtered to them.
+
+Everything else (hosts, storage, security, other projects) answers 403 `key_scope_forbidden`, and creating machines through
+the plain instance API is refused: scoped keys launch through launch templates and instance groups. The scope is enforced
+whether or not `MACHINA_PROJECT_RBAC` is on. Rotating a key keeps its scope. Unscoped keys behave as before.

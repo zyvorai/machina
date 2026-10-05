@@ -858,3 +858,30 @@ async fn a_subnet_with_reserved_addresses_cannot_be_deleted() {
         .await;
     assert_ne!(code, StatusCode::OK, "no write access, no delete");
 }
+
+#[tokio::test]
+async fn a_project_scoped_api_key_reaches_only_its_projects() {
+    let f = Fixture::new().await;
+    sqlx::query("INSERT INTO api_keys (id, name, key_hash, role, projects) VALUES (?, 'svc', 'x', 'operator', '[\"cloud-a\"]')")
+        .bind(Uuid::new_v4())
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    let key = Fixture::actor("apikey:svc", "operator");
+    let own = format!("/api/v1/cloud/projects/{}/vpcs", f.project);
+    let other = format!("/api/v1/cloud/projects/{}/vpcs", f.other);
+    assert_eq!(f.call(key.clone(), "GET", &own, json!({})).await.0, StatusCode::OK);
+    let (code, body) = f.call(key.clone(), "GET", &other, json!({})).await;
+    assert_eq!(code, StatusCode::FORBIDDEN, "{body}");
+    assert!(body.to_string().contains("key_scope_forbidden"), "{body}");
+    // a read-only key cannot write even inside its project
+    sqlx::query("INSERT INTO api_keys (id, name, key_hash, role, projects) VALUES (?, 'ro', 'y', 'viewer', '[\"cloud-a\"]')")
+        .bind(Uuid::new_v4())
+        .execute(&f.state.pool)
+        .await
+        .unwrap();
+    let ro = Fixture::actor("apikey:ro", "viewer");
+    assert_eq!(f.call(ro.clone(), "GET", &own, json!({})).await.0, StatusCode::OK);
+    let (code, _) = f.call(ro, "POST", &own, json!({"name":"x","cidr":"10.20.0.0/16","host_id":f.host})).await;
+    assert_eq!(code, StatusCode::FORBIDDEN);
+}

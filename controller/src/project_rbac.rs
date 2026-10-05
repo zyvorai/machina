@@ -60,6 +60,30 @@ pub fn decide(method: &Method, global_role: &str, project_role: Option<&str>) ->
     }
 }
 
+/// What a project-scoped API key may call. `vm_project` is the project of the machine in the path, when there is one.
+/// Cloud routes check the project themselves (`cloud::access`); instance routes are checked here; everything else is global
+/// and is closed to scoped keys. Creating machines through the plain instance API is closed too, because the project is in the
+/// request body: scoped keys launch through the cloud API (launch templates and groups) instead.
+pub fn scoped_decision(scope: &[String], method: &Method, path: &str, vm_project: Option<&str>) -> Decision {
+    if path.starts_with("/api/v1/cloud/") {
+        return Decision::Allow;
+    }
+    if path == "/api/v1/vms" {
+        return if is_read(method) {
+            Decision::Allow // the list is filtered to the key's projects by the caller
+        } else {
+            Decision::Deny("scoped API keys launch machines through the cloud API")
+        };
+    }
+    if vm_id_in_path(path).is_some() {
+        return match vm_project {
+            Some(p) if scope.iter().any(|s| s == p) => Decision::Allow,
+            _ => Decision::Deny("that machine is not in this API key's projects"),
+        };
+    }
+    Decision::Deny("this API key is limited to project APIs")
+}
+
 /// `/api/v1/vms/<uuid>[/…]` → the machine id.
 pub fn vm_id_in_path(path: &str) -> Option<Uuid> {
     let rest = path.strip_prefix("/api/v1/vms/")?;
@@ -118,6 +142,29 @@ pub async fn middleware(
     let Some(Extension(actor)) = actor else {
         return next.run(req).await;
     };
+    // Project-scoped API keys are limited regardless of MACHINA_PROJECT_RBAC: the scope was asked for when the key was issued.
+    let scope = crate::api::apikeys::scope_of(&state.pool, &actor.username).await;
+    if !scope.is_empty() {
+        let path = req.uri().path().to_string();
+        let method = req.method().clone();
+        let vm_project: Option<String> = match vm_id_in_path(&path) {
+            Some(vm) => sqlx::query_scalar("SELECT COALESCE(project, 'default') FROM vms WHERE id = ?")
+                .bind(vm)
+                .fetch_optional(&state.pool)
+                .await
+                .ok()
+                .flatten(),
+            None => None,
+        };
+        return match scoped_decision(&scope, &method, &path, vm_project.as_deref()) {
+            Decision::Deny(why) => ApiError::forbidden(why)
+                .with_code("key_scope_forbidden")
+                .with_remediation("Use a key without a project scope, or call an API of one of this key's projects.")
+                .into_response(),
+            Decision::Allow if path == "/api/v1/vms" => filter_machine_list(next.run(req).await, &scope).await,
+            Decision::Allow => next.run(req).await,
+        };
+    }
     if m == Mode::Off || actor.role == "admin" {
         return next.run(req).await;
     }
@@ -165,6 +212,14 @@ pub async fn middleware(
         return resp;
     }
     let allowed = member_projects(&state, &actor.username).await;
+    filter_machine_list(resp, &allowed).await
+}
+
+/// Keep only the machines whose `project` is in `allowed` (the machine list is a JSON array).
+async fn filter_machine_list(resp: Response, allowed: &[String]) -> Response {
+    if resp.status() != StatusCode::OK {
+        return resp;
+    }
     let (parts, body) = resp.into_parts();
     let bytes = match axum::body::to_bytes(body, 64 * 1024 * 1024).await {
         Ok(b) => b,
@@ -269,5 +324,41 @@ mod tests {
         assert_eq!(strongest(&r(&["viewer", "operator"])), Some("operator"));
         assert_eq!(strongest(&r(&["viewer"])), Some("viewer"));
         assert_eq!(strongest(&r(&[])), None);
+    }
+}
+
+#[cfg(test)]
+mod scoped_key_tests {
+    use super::*;
+
+    fn scope() -> Vec<String> {
+        vec!["lab".into(), "web".into()]
+    }
+
+    #[test]
+    fn cloud_routes_pass_through_to_their_own_project_check() {
+        assert_eq!(scoped_decision(&scope(), &Method::POST, "/api/v1/cloud/projects/x/vpcs", None), Decision::Allow);
+    }
+
+    #[test]
+    fn instance_routes_need_the_machine_to_be_in_scope() {
+        let id = "/api/v1/vms/6f9619ff-8b86-d011-b42d-00cf4fc964ff/stop";
+        assert_eq!(scoped_decision(&scope(), &Method::POST, id, Some("lab")), Decision::Allow);
+        assert!(matches!(scoped_decision(&scope(), &Method::POST, id, Some("prod")), Decision::Deny(_)));
+        assert!(matches!(scoped_decision(&scope(), &Method::GET, id, None), Decision::Deny(_)), "unknown machine: closed");
+    }
+
+    #[test]
+    fn the_list_is_readable_but_creating_machines_is_not() {
+        assert_eq!(scoped_decision(&scope(), &Method::GET, "/api/v1/vms", None), Decision::Allow);
+        assert!(matches!(scoped_decision(&scope(), &Method::POST, "/api/v1/vms", None), Decision::Deny(_)));
+        assert!(matches!(scoped_decision(&scope(), &Method::POST, "/api/v1/vms/from-template", None), Decision::Deny(_)));
+    }
+
+    #[test]
+    fn everything_global_is_closed() {
+        for p in ["/api/v1/hosts", "/api/v1/api-keys", "/api/v1/storage/pools", "/api/v1/zeus-security/hosts"] {
+            assert!(matches!(scoped_decision(&scope(), &Method::GET, p, None), Decision::Deny(_)), "{p}");
+        }
     }
 }

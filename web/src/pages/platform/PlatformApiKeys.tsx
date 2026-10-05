@@ -21,6 +21,7 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
   const [loading, setLoading] = useState(true)
   const [name, setName] = useState('')
   const [role, setRole] = useState('operator')
+  const [projectScope, setProjectScope] = useState('')
   const [newToken, setNewToken] = useState<string | null>(null)
   const [deleteKeyId, setDeleteKeyId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -86,7 +87,8 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
             if (creating || !name.trim()) return
             setCreating(true)
             try {
-              const res = await createApiKey({ name: name.trim(), role })
+              const scope = projectScope.split(',').map((p) => p.trim()).filter(Boolean)
+              const res = await createApiKey({ name: name.trim(), role, projects: scope.length ? scope : undefined })
               setNewToken(res.token)
               setName('')
               toast.success('API key created')
@@ -106,6 +108,10 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
                 <option value="viewer">viewer</option>
               </select>
             </label>
+            <label className="block space-y-1 md:col-span-2">
+              <span className="text-xs text-[var(--text-muted)]">Limit to projects (optional, comma separated; not for admin keys)</span>
+              <input className="input w-full" aria-label="Limit to projects" placeholder="all projects" value={projectScope} onChange={(e) => setProjectScope(e.target.value)} />
+            </label>
             <button type="submit" disabled={creating || !name.trim()} className="btn-primary text-sm w-fit flex items-center gap-2 md:col-span-2 disabled:opacity-40 disabled:cursor-not-allowed"><Plus className="w-4 h-4" /> {creating ? 'Creating…' : 'Create key'}</button>
           </form>
         </MacGlassPanel>
@@ -116,6 +122,7 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
             <>
               <th scope="col" className="p-3 text-left">Name</th>
               <th scope="col" className="p-3 text-left">Role</th>
+              <th scope="col" className="p-3 text-left">Projects</th>
               <th scope="col" className="p-3 text-left">Last used</th>
               <th scope="col" className="p-3 text-right" />
             </>
@@ -131,6 +138,7 @@ export default function PlatformApiKeys({ embedded }: { embedded?: boolean } = {
             <tr key={k.id} className="border-b border-white/[0.04]">
               <td className="p-3 text-[var(--text-primary)]">{k.name}</td>
               <td className="p-3 capitalize">{k.role}</td>
+              <td className="p-3 text-[var(--text-muted)]">{k.projects && k.projects.length ? k.projects.join(', ') : 'all'}</td>
               <td className="p-3 text-[var(--text-muted)]">{k.last_used_at ? new Date(k.last_used_at).toLocaleString() : '—'}</td>
               <td className="p-3 text-right">
                 <div className="inline-flex items-center gap-2">

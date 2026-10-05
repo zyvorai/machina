@@ -107,6 +107,15 @@ pub(crate) async fn access(
     if write && actor.role != "operator" {
         return Err(ApiError::forbidden("operator role required"));
     }
+    // A project-scoped API key may use exactly the projects it was issued for (its own role still caps write access).
+    let scope = crate::api::apikeys::scope_of_conn(conn, &actor.username).await;
+    if !scope.is_empty() {
+        let name: Option<String> = sqlx::query_scalar("SELECT name FROM projects WHERE id = ?").bind(project).fetch_optional(&mut *conn).await?;
+        return match name {
+            Some(n) if scope.contains(&n) => Ok(()),
+            _ => Err(ApiError::forbidden("this API key is not scoped to that project").with_code("key_scope_forbidden")),
+        };
+    }
     let roles: Vec<String> = sqlx::query_scalar("SELECT a.role FROM project_role_assignments a JOIN users u ON u.id = a.user_id WHERE u.username = ? AND a.project_id = ?")
         .bind(&actor.username).bind(project).fetch_all(&mut *conn).await?;
     let allowed = roles
