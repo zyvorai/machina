@@ -7,6 +7,7 @@ import { ArrowLeft, HardDrive } from 'lucide-react'
 import { listTemplates, type NativeTemplate } from '../api/nativeTemplates'
 import FleetCloudSubNav from '../components/FleetCloudSubNav'
 import FleetCloudFooter from '../components/FleetCloudFooter'
+import ImageSharing from '../components/platform/ImageSharing'
 import PageLayout from '../components/PageLayout'
 import PageSkeleton from '../components/PageSkeleton'
 import { useToastContext } from '../contexts/ToastContext'
@@ -94,6 +95,7 @@ function FleetCloudImageDetailContent() {
           <div className="sm:col-span-2"><dt className="text-xs text-[var(--text-muted)] uppercase">Description</dt><dd className="text-[var(--text-primary)] mt-1">{image.description}</dd></div>
         )}
       </dl>
+      <ImageSharing key={image.id} image={image} />
       <FleetCloudFooter />
     </PageLayout>
   )

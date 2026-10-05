@@ -31,6 +31,9 @@ export interface NativeTemplate {
   git_ref: string
   daemon_json_path: string
   project: string
+  visibility?: 'public' | 'private'
+  /** EC2-style id, e.g. ami-0123456789abcdef0. */
+  ec2_id?: string
 }
 
 export function listTemplates(): Promise<NativeTemplate[]> {
@@ -55,4 +58,26 @@ export async function deleteTemplate(name: string, version: string): Promise<voi
     `/api/v1/templates/${encodeURIComponent(name)}/${encodeURIComponent(version)}`,
     { method: 'DELETE' },
   )
+}
+
+const imagePath = (name: string, version: string) =>
+  `/api/v1/templates/${encodeURIComponent(name)}/${encodeURIComponent(version)}`
+
+export function setImageVisibility(name: string, version: string, visibility: 'public' | 'private'): Promise<NativeTemplate> {
+  return platformFetch<NativeTemplate>(`${imagePath(name, version)}/visibility`, {
+    method: 'PUT',
+    body: JSON.stringify({ visibility }),
+  })
+}
+
+export function listImageShares(name: string, version: string): Promise<string[]> {
+  return platformFetch<string[]>(`${imagePath(name, version)}/shares`)
+}
+
+export async function shareImage(name: string, version: string, project: string): Promise<void> {
+  await platformFetch(`${imagePath(name, version)}/shares/${encodeURIComponent(project)}`, { method: 'PUT' })
+}
+
+export async function unshareImage(name: string, version: string, project: string): Promise<void> {
+  await platformFetch(`${imagePath(name, version)}/shares/${encodeURIComponent(project)}`, { method: 'DELETE' })
 }

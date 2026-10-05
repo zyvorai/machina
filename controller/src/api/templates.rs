@@ -33,6 +33,10 @@ pub struct TemplateRow {
     pub git_ref: String,
     pub daemon_json_path: String,
     pub project: String,
+    /// `public` (default), or `private`: only the owning project and projects it shared the image with.
+    pub visibility: String,
+    #[sqlx(skip)]
+    pub ec2_id: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +64,8 @@ pub struct CreateTemplateBody {
 pub struct ListTemplatesQuery {
     pub marketplace: Option<bool>,
     pub featured: Option<bool>,
+    /// Only images this project may see: public ones, its own, and ones shared with it.
+    pub project: Option<String>,
 }
 
 fn default_category() -> String {
@@ -71,7 +77,7 @@ fn default_marketplace() -> bool {
 }
 
 const TEMPLATE_SELECT: &str =
-    "SELECT id, name, version, source_disk, cloud_init, os_family, category, COALESCE(workload, '') AS workload, description, featured, marketplace, icon, firewall_profile, COALESCE(approval_status, 'approved') AS approval_status, COALESCE(git_ref, '') AS git_ref, COALESCE(daemon_json_path, '') AS daemon_json_path, COALESCE(project, '') AS project FROM templates";
+    "SELECT id, name, version, source_disk, cloud_init, os_family, category, COALESCE(workload, '') AS workload, description, featured, marketplace, icon, firewall_profile, COALESCE(approval_status, 'approved') AS approval_status, COALESCE(git_ref, '') AS git_ref, COALESCE(daemon_json_path, '') AS daemon_json_path, COALESCE(project, '') AS project, COALESCE(visibility, 'public') AS visibility FROM templates";
 
 pub async fn list_templates(
     State(state): State<AppState>,
@@ -84,7 +90,7 @@ pub async fn list_templates(
     // no-filter arm and returned every template instead of only non-marketplace
     // ones. Predicates are static literals (no user data interpolated → no
     // injection).
-    let mut preds: Vec<&str> = Vec::new();
+    let mut preds: Vec<&str> = vec![VISIBLE_TO_PROJECT];
     match q.marketplace {
         Some(true) => preds.push("marketplace = TRUE"),
         Some(false) => preds.push("marketplace = FALSE"),
@@ -103,9 +109,21 @@ pub async fn list_templates(
     let rows = sqlx::query_as::<_, TemplateRow>(&format!(
         "{TEMPLATE_SELECT}{where_clause} ORDER BY featured DESC, name, version"
     ))
+    .bind(q.project.as_deref())
     .fetch_all(&state.pool)
     .await?;
-    Ok(Json(rows))
+    Ok(Json(rows.into_iter().map(TemplateRow::with_id).collect()))
+}
+
+/// `?1` is the viewing project (NULL = no filter, the operator view).
+const VISIBLE_TO_PROJECT: &str = "(?1 IS NULL OR COALESCE(visibility, 'public') = 'public' OR COALESCE(project, '') = ?1 \
+     OR id IN (SELECT template_id FROM image_shares WHERE project = ?1))";
+
+impl TemplateRow {
+    fn with_id(mut self) -> Self {
+        self.ec2_id = crate::resource_ids::ec2_id(crate::resource_ids::Kind::Image, self.id);
+        self
+    }
 }
 
 fn template_rows_with_auto_fetch(rows: Vec<TemplateRow>) -> Vec<serde_json::Value> {
@@ -396,4 +414,114 @@ pub async fn approve_template(
     .fetch_one(&state.pool)
     .await?;
     Ok(Json(row))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VisibilityBody {
+    pub visibility: String,
+}
+
+pub(crate) fn valid_visibility(v: &str) -> bool {
+    matches!(v, "public" | "private")
+}
+
+async fn template_id(
+    pool: &sqlx::SqlitePool,
+    name: &str,
+    version: &str,
+) -> Result<Uuid, ApiError> {
+    sqlx::query_scalar("SELECT id FROM templates WHERE name = ? AND version = ?")
+        .bind(name)
+        .bind(version)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| ApiError::not_found("image not found"))
+}
+
+pub async fn set_template_visibility(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    AxumPath((name, version)): AxumPath<(String, String)>,
+    Json(body): Json<VisibilityBody>,
+) -> Result<Json<TemplateRow>, ApiError> {
+    require_operator(&actor)?;
+    if !valid_visibility(&body.visibility) {
+        return Err(ApiError::bad_request("visibility must be public or private"));
+    }
+    let id = template_id(&state.pool, &name, &version).await?;
+    sqlx::query("UPDATE templates SET visibility = ? WHERE id = ?")
+        .bind(&body.visibility)
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+    let row = sqlx::query_as::<_, TemplateRow>(&format!("{TEMPLATE_SELECT} WHERE id = ?"))
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    Ok(Json(row.with_id()))
+}
+
+pub async fn list_template_shares(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    AxumPath((name, version)): AxumPath<(String, String)>,
+) -> Result<Json<Vec<String>>, ApiError> {
+    require_operator(&actor)?;
+    let id = template_id(&state.pool, &name, &version).await?;
+    let rows: Vec<String> =
+        sqlx::query_scalar("SELECT project FROM image_shares WHERE template_id = ? ORDER BY project")
+            .bind(id)
+            .fetch_all(&state.pool)
+            .await?;
+    Ok(Json(rows))
+}
+
+pub async fn share_template(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    AxumPath((name, version, project)): AxumPath<(String, String, String)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
+    let known: Option<String> = sqlx::query_scalar("SELECT name FROM projects WHERE name = ?")
+        .bind(&project)
+        .fetch_optional(&state.pool)
+        .await?;
+    if known.is_none() {
+        return Err(ApiError::bad_request("no project with that name"));
+    }
+    let id = template_id(&state.pool, &name, &version).await?;
+    sqlx::query("INSERT OR IGNORE INTO image_shares (template_id, project) VALUES (?, ?)")
+        .bind(id)
+        .bind(&project)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(serde_json::json!({ "image": name, "version": version, "shared_with": project })))
+}
+
+pub async fn unshare_template(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    AxumPath((name, version, project)): AxumPath<(String, String, String)>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    require_operator(&actor)?;
+    let id = template_id(&state.pool, &name, &version).await?;
+    sqlx::query("DELETE FROM image_shares WHERE template_id = ? AND project = ?")
+        .bind(id)
+        .bind(&project)
+        .execute(&state.pool)
+        .await?;
+    Ok(Json(serde_json::json!({ "image": name, "version": version, "unshared": project })))
+}
+
+#[cfg(test)]
+mod visibility_tests {
+    use super::*;
+
+    #[test]
+    fn only_two_visibilities() {
+        assert!(valid_visibility("public"));
+        assert!(valid_visibility("private"));
+        assert!(!valid_visibility("shared"));
+        assert!(!valid_visibility(""));
+    }
 }

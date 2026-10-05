@@ -65,3 +65,12 @@ fits only some of them yields a partial result when `min_count` allows it.
 ## Ids and tag filters beyond instances
 Volumes, security groups and key pairs now return `ec2_id` (`vol-…`, `sg-…`, `key-…`). `GET /api/v1/volumes?tag_key=&tag_value=`
 filters volumes by tag like the instance list does.
+
+## Image visibility and sharing (AMI-style)
+Images (templates) are `public` by default, as before. `PUT /api/v1/templates/{name}/{version}/visibility {"visibility":"private"}`
+makes one visible only to its owning project and the projects it is shared with
+(`PUT|DELETE .../shares/{project}`, `GET .../shares`). `GET /api/v1/templates?project=<name>` returns what that project
+may see; without `project` you get everything (the operator view). Images return `ec2_id` (`ami-…`).
+
+**Limit:** this controls listing only. Creating an instance from a private image by its name is not blocked yet, so
+treat it as hiding, not as access control.
