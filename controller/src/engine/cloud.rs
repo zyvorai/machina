@@ -10,6 +10,20 @@ use serde_json::Value;
 use std::time::Duration;
 use uuid::Uuid;
 
+/// A reconcile pass may keep acting only while we still lead AND the leadership epoch has not moved since the pass began.
+/// (A deposed leader that is slow to notice would otherwise keep creating VMs next to the new leader.)
+pub(crate) fn tick_still_valid(is_leader: bool, started_epoch: i64, now_epoch: i64) -> bool {
+    is_leader && now_epoch == started_epoch
+}
+
+/// `None` = unfenced (direct calls in tests); `Some(epoch)` = a loop pass that began at that leadership epoch.
+fn fence_ok(state: &AppState, epoch: Option<i64>) -> bool {
+    match epoch {
+        None => true,
+        Some(e) => tick_still_valid(state.leader.is_leader(), e, crate::leader::current_epoch()),
+    }
+}
+
 pub fn spawn(state: AppState) {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(30));
@@ -46,6 +60,7 @@ pub async fn provision_subnet(state: &AppState, msg: &TaskMessage) -> anyhow::Re
 }
 
 pub async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
+    let epoch = crate::leader::current_epoch();
     // Publish committed pending rows again after process/bus failure. Worker
     // claim_task's compare-and-swap makes duplicate deliveries harmless.
     let jobs:Vec<(Uuid,Value)>=sqlx::query_as("SELECT id,payload FROM tasks WHERE operation='cloud.subnet.provision' AND status='pending' ORDER BY created_at LIMIT 100").fetch_all(&state.pool).await?;
@@ -67,15 +82,20 @@ pub async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
     sqlx::query("UPDATE cloud_subnets SET status='error',last_error='Provisioning task failed; inspect task history and retry' WHERE status='pending' AND EXISTS(SELECT 1 FROM tasks WHERE resource_id=cloud_subnets.id AND operation='cloud.subnet.provision' AND status='failed') AND NOT EXISTS(SELECT 1 FROM tasks WHERE resource_id=cloud_subnets.id AND operation='cloud.subnet.provision' AND status IN ('pending','running'))").execute(&state.pool).await?;
     let groups:Vec<Uuid>=sqlx::query_scalar("SELECT g.id FROM cloud_instance_groups g JOIN projects p ON p.id=g.project_id WHERE g.paused=0 AND p.enabled=1 ORDER BY g.id LIMIT 100").fetch_all(&state.pool).await?;
     for id in groups {
-        if !state.leader.is_leader() {
+        if !fence_ok(state, Some(epoch)) {
             break;
         }
-        let error = reconcile_group(state, id)
+        let error = reconcile_group_fenced(state, id, Some(epoch))
             .await
             .err()
             .map(|e| format!("{e:#}"))
             .unwrap_or_default();
-        sqlx::query("UPDATE cloud_instance_groups SET last_error=? WHERE id=?")
+        // A pass that lost its fence must not write: the new leader owns this group now.
+        if !fence_ok(state, Some(epoch)) {
+            break;
+        }
+        // Only write when the message changed, so an unchanged failure is not a database write every tick.
+        sqlx::query("UPDATE cloud_instance_groups SET last_error=? WHERE id=? AND last_error<>?1")
             .bind(error)
             .bind(id)
             .execute(&state.pool)
@@ -86,8 +106,16 @@ pub async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
 
 /// Public for focused tests; normal entry is the leader-gated loop.
 pub async fn reconcile_group(state: &AppState, id: Uuid) -> anyhow::Result<()> {
+    reconcile_group_fenced(state, id, None).await
+}
+
+async fn reconcile_group_fenced(
+    state: &AppState,
+    id: Uuid,
+    epoch: Option<i64>,
+) -> anyhow::Result<()> {
     type Definition = (Uuid, String, String, Uuid, String, String, bool);
-    let (project_id,project,raw,host,network,template,paused):Definition=sqlx::query_as("SELECT g.project_id,p.name,g.policy_json,v.host_id,n.name,t.spec_json,g.paused FROM cloud_instance_groups g JOIN projects p ON p.id=g.project_id AND p.enabled=1 JOIN cloud_launch_templates t ON t.id=g.template_id AND t.project_id=g.project_id JOIN cloud_subnets s ON s.id=g.subnet_id AND s.status='ready' JOIN cloud_vpcs v ON v.id=s.vpc_id AND v.project_id=g.project_id JOIN networks n ON n.id=s.network_id WHERE g.id=?").bind(id).fetch_one(&state.pool).await?;
+    let (_project_id,project,raw,host,network,template,paused):Definition=sqlx::query_as("SELECT g.project_id,p.name,g.policy_json,v.host_id,n.name,t.spec_json,g.paused FROM cloud_instance_groups g JOIN projects p ON p.id=g.project_id AND p.enabled=1 JOIN cloud_launch_templates t ON t.id=g.template_id AND t.project_id=g.project_id JOIN cloud_subnets s ON s.id=g.subnet_id AND s.status='ready' JOIN cloud_vpcs v ON v.id=s.vpc_id AND v.project_id=g.project_id JOIN networks n ON n.id=s.network_id WHERE g.id=?").bind(id).fetch_one(&state.pool).await?;
     if paused {
         return Ok(());
     }
@@ -123,6 +151,9 @@ pub async fn reconcile_group(state: &AppState, id: Uuid) -> anyhow::Result<()> {
     }
     let expected = serde_json::to_string(&policy)?;
     for slot in 0..policy.max {
+        if !fence_ok(state, epoch) {
+            return Ok(());
+        }
         // A PATCH/pause that races this tick wins; do not continue with stale
         // desired counts or resurrect a paused group's stopped VMs.
         let current: Option<String> = sqlx::query_scalar(
@@ -203,6 +234,20 @@ pub async fn reconcile_group(state: &AppState, id: Uuid) -> anyhow::Result<()> {
     }
     // If max was lowered, stopped retained slots above the new max remain owned.
     sqlx::query("UPDATE vms SET desired_state='stopped' WHERE id IN (SELECT vm_id FROM cloud_group_members WHERE group_id=? AND slot>=?) AND EXISTS(SELECT 1 FROM cloud_instance_groups WHERE id=? AND paused=0 AND policy_json=?)").bind(id).bind(policy.desired).bind(id).bind(&expected).execute(&state.pool).await?;
-    let _ = project_id;
     Ok(())
+}
+
+#[cfg(test)]
+mod fence_tests {
+    use super::tick_still_valid;
+
+    #[test]
+    fn a_pass_continues_only_while_leading_at_the_same_epoch() {
+        assert!(tick_still_valid(true, 7, 7));
+        // lost the lease
+        assert!(!tick_still_valid(false, 7, 7));
+        // someone else took over (epoch moved) even if our cached flag has not caught up
+        assert!(!tick_still_valid(true, 7, 8));
+        assert!(!tick_still_valid(false, 7, 8));
+    }
 }
