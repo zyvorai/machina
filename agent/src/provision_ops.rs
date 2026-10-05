@@ -346,6 +346,16 @@ fn provision_cloud_subnet_with(
             String::from_utf8_lossy(&prior.stdout).trim() == id,
             "cloud network ownership conflict"
         );
+        // Ours by UUID is not the same as still configured as asked: a retry must not report success for a network
+        // whose subnet was changed or which was given a forwarding mode (NAT/route would break the isolation promise).
+        let dump = run(&["net-dumpxml", &name])?;
+        anyhow::ensure!(
+            dump.status.success(),
+            "could not read the existing network's configuration"
+        );
+        if let Some(why) = network_drift(cidr, &String::from_utf8_lossy(&dump.stdout)) {
+            anyhow::bail!("cloud network {name} has drifted from its subnet: {why}");
+        }
     } else {
         // Only create on an authoritative missing-network result. Permission or
         // connection errors are not evidence of absence.
@@ -401,6 +411,41 @@ fn provision_cloud_subnet_with(
     Ok(())
 }
 
+/// Prefix length from a libvirt `<ip>` element: IPv4 networks are dumped with `netmask`, not the `prefix` they were defined with.
+fn dumped_prefix(xml: &str) -> Option<u8> {
+    if let Some(p) = machina_core::xml::extract_attr(xml, "ip", "prefix") {
+        return p.parse().ok();
+    }
+    let mask: std::net::Ipv4Addr = machina_core::xml::extract_attr(xml, "ip", "netmask")?.parse().ok()?;
+    let bits = u32::from(mask);
+    // A valid netmask is a run of ones then zeros.
+    (bits.leading_ones() + bits.trailing_zeros() == 32).then(|| bits.leading_ones() as u8)
+}
+
+/// Why an existing network no longer matches the subnet it should be, if it does not: a different gateway or prefix,
+/// or any `<forward>` element (isolated networks have none).
+fn network_drift(cidr: &str, dumpxml: &str) -> Option<String> {
+    let want: machina_spec::CloudCidr = match cidr.parse() {
+        Ok(c) => c,
+        Err(e) => return Some(format!("expected CIDR {cidr} is invalid: {e}")),
+    };
+    if dumpxml.contains("<forward") {
+        return Some("it has a <forward> element (it is no longer isolated)".into());
+    }
+    let gateway = want.address(1).ok()?;
+    let found_gw = machina_core::xml::extract_attr(dumpxml, "ip", "address").unwrap_or_default();
+    let found_prefix = dumped_prefix(dumpxml);
+    if found_gw != gateway || found_prefix != Some(want.prefix) {
+        return Some(format!(
+            "expected gateway {gateway}/{}, found {}/{}",
+            want.prefix,
+            if found_gw.is_empty() { "none" } else { &found_gw },
+            found_prefix.map(|p| p.to_string()).unwrap_or_else(|| "?".into())
+        ));
+    }
+    None
+}
+
 #[cfg(all(test, unix))]
 mod cloud_subnet_tests {
     use super::*;
@@ -409,6 +454,8 @@ mod cloud_subnet_tests {
         process::{ExitStatus, Output},
     };
     const ID: &str = "12345678-1234-1234-1234-123456789abc";
+    const NAME: &str = "mc-12345678-1234-1234-1234-123456789abc";
+    const CIDR: &str = "10.20.1.0/24";
     fn result(ok: bool, text: &str) -> Output {
         Output {
             status: ExitStatus::from_raw(if ok { 0 } else { 256 }),
@@ -416,10 +463,30 @@ mod cloud_subnet_tests {
             stderr: Vec::new(),
         }
     }
+    /// What `virsh net-dumpxml` prints for a healthy network: libvirt reports IPv4 with a netmask.
+    fn healthy_dump() -> String {
+        "<network><name>x</name><bridge name='mc123456781234'/><mac address='52:54:00:00:00:01'/>\
+         <ip address='10.20.1.1' netmask='255.255.255.0'><dhcp><range start='10.20.1.128' end='10.20.1.254'/></dhcp></ip></network>"
+            .to_string()
+    }
+    /// A fake virsh where the network exists, is ours, looks healthy, and (unless `active` is false) is running.
+    fn existing(active: bool, calls: &mut Vec<String>, args: &[&str]) -> std::io::Result<Output> {
+        calls.push(args[0].to_string());
+        Ok(result(
+            true,
+            match args[0] {
+                "net-uuid" => ID,
+                "net-dumpxml" => return Ok(result(true, &healthy_dump())),
+                "net-list" if active => NAME,
+                _ => "",
+            },
+        ))
+    }
+
     #[test]
     fn refuses_foreign_network_and_connection_failure() {
         let mut calls = 0;
-        let error = provision_cloud_subnet_with(ID, "10.20.1.0/24", |_| {
+        let error = provision_cloud_subnet_with(ID, CIDR, |_| {
             calls += 1;
             Ok(result(true, "another-uuid"))
         })
@@ -427,60 +494,119 @@ mod cloud_subnet_tests {
         assert!(error.to_string().contains("ownership"));
         assert_eq!(calls, 1);
         let mut calls = Vec::new();
-        assert!(provision_cloud_subnet_with(ID, "10.20.1.0/24", |args| {
+        assert!(provision_cloud_subnet_with(ID, CIDR, |args| {
             calls.push(args[0].to_string());
             Ok(result(false, ""))
         })
         .is_err());
         assert_eq!(calls, vec!["net-uuid", "net-list"]);
     }
+
     #[test]
-    fn retry_of_active_owned_network_does_not_redefine_or_restart() {
+    fn retry_of_active_owned_network_checks_it_but_does_not_redefine_or_restart() {
         let mut calls = Vec::new();
-        provision_cloud_subnet_with(ID, "10.20.1.0/24", |args| {
-            calls.push(args[0].to_string());
-            Ok(result(
-                true,
-                if args[0] == "net-uuid" {
-                    ID
-                } else if args[0] == "net-list" {
-                    "mc-12345678-1234-1234-1234-123456789abc\n"
-                } else {
-                    ""
-                },
-            ))
-        })
-        .unwrap();
-        assert_eq!(calls, vec!["net-uuid", "net-list", "net-autostart"]);
+        provision_cloud_subnet_with(ID, CIDR, |args| existing(true, &mut calls, args)).unwrap();
+        assert_eq!(calls, vec!["net-uuid", "net-dumpxml", "net-list", "net-autostart"]);
     }
+
+    #[test]
+    fn retry_of_a_defined_but_inactive_network_starts_it() {
+        let mut calls = Vec::new();
+        provision_cloud_subnet_with(ID, CIDR, |args| existing(false, &mut calls, args)).unwrap();
+        assert_eq!(calls, vec!["net-uuid", "net-dumpxml", "net-list", "net-start", "net-autostart"]);
+    }
+
+    #[test]
+    fn an_owned_network_that_drifted_is_an_error_not_a_success() {
+        // different subnet
+        let error = provision_cloud_subnet_with(ID, "10.30.0.0/24", |args| existing(true, &mut Vec::new(), args)).unwrap_err();
+        assert!(error.to_string().contains("drifted"), "{error}");
+        // a forwarding mode was added
+        let error = provision_cloud_subnet_with(ID, CIDR, |args| {
+            Ok(match args[0] {
+                "net-uuid" => result(true, ID),
+                "net-dumpxml" => result(true, &healthy_dump().replace("<ip ", "<forward mode='nat'/><ip ")),
+                _ => result(true, ""),
+            })
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("<forward>"), "{error}");
+        // the configuration cannot be read
+        assert!(provision_cloud_subnet_with(ID, CIDR, |args| {
+            Ok(match args[0] {
+                "net-uuid" => result(true, ID),
+                "net-dumpxml" => result(false, ""),
+                _ => result(true, ""),
+            })
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn drift_check_understands_netmask_and_prefix_forms() {
+        assert_eq!(network_drift(CIDR, &healthy_dump()), None);
+        assert_eq!(network_drift(CIDR, "<network><ip address='10.20.1.1' prefix='24'/></network>"), None);
+        assert!(network_drift(CIDR, "<network><ip address='10.20.1.1' netmask='255.255.0.0'/></network>").is_some());
+        assert!(network_drift(CIDR, "<network><ip address='10.20.1.9' netmask='255.255.255.0'/></network>").is_some());
+        // a non-contiguous netmask is not a prefix
+        assert!(network_drift(CIDR, "<network><ip address='10.20.1.1' netmask='255.0.255.0'/></network>").is_some());
+        assert!(network_drift(CIDR, "<network></network>").is_some());
+    }
+
     #[test]
     fn new_network_defines_validated_xml_and_cleans_temporary_file() {
         let mut path = String::new();
         let mut calls = Vec::new();
-        provision_cloud_subnet_with(ID, "10.20.1.0/24", |args| {
+        provision_cloud_subnet_with(ID, CIDR, |args| {
             calls.push(args[0].to_string());
             if args[0] == "net-define" {
                 path = args[1].into();
                 let xml = std::fs::read_to_string(&path)?;
-                assert_eq!(
-                    xml,
-                    machina_spec::cloud_network_xml(ID, "10.20.1.0/24").unwrap()
-                );
+                // The defined document is exactly what the spec crate generates for this subnet, and it is isolated.
+                assert_eq!(xml, machina_spec::cloud_network_xml(ID, CIDR).unwrap());
+                assert!(!xml.contains("<forward"));
+                assert!(xml.contains("<ip address='10.20.1.1' prefix='24'>"));
             }
             Ok(result(args[0] != "net-uuid", ""))
         })
         .unwrap();
-        assert_eq!(
-            calls,
-            vec![
-                "net-uuid",
-                "net-list",
-                "net-define",
-                "net-list",
-                "net-start",
-                "net-autostart"
-            ]
-        );
+        assert_eq!(calls, vec!["net-uuid", "net-list", "net-define", "net-list", "net-start", "net-autostart"]);
         assert!(!std::path::Path::new(&path).exists());
+    }
+
+    #[test]
+    fn failing_define_start_or_autostart_is_reported_and_leaves_no_temp_file() {
+        for failing in ["net-define", "net-start", "net-autostart"] {
+            let mut path = String::new();
+            let error = provision_cloud_subnet_with(ID, CIDR, |args| {
+                if args[0] == "net-define" {
+                    path = args[1].into();
+                }
+                Ok(result(args[0] != "net-uuid" && args[0] != failing, ""))
+            })
+            .unwrap_err();
+            assert!(error.to_string().contains(failing), "{failing}: {error}");
+            if !path.is_empty() {
+                assert!(!std::path::Path::new(&path).exists(), "{failing} left a temp file");
+            }
+        }
+    }
+
+    #[test]
+    fn a_name_that_exists_but_whose_uuid_cannot_be_read_is_not_overwritten() {
+        let mut defined = false;
+        let error = provision_cloud_subnet_with(ID, CIDR, |args| {
+            if args[0] == "net-define" {
+                defined = true;
+            }
+            Ok(match args[0] {
+                "net-uuid" => result(false, ""),
+                "net-list" => result(true, NAME),
+                _ => result(true, ""),
+            })
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("could not be checked"));
+        assert!(!defined);
     }
 }
