@@ -61,3 +61,7 @@ generate keys with `ssh-keygen` and register the public half.
 fewer than `min_count` could be created the call returns 409 `run_instances_min_count` and lists the ones already
 created, which are left in place (no rollback). Quota and placement are checked per instance, so a project quota that
 fits only some of them yields a partial result when `min_count` allows it.
+
+## Ids and tag filters beyond instances
+Volumes, security groups and key pairs now return `ec2_id` (`vol-…`, `sg-…`, `key-…`). `GET /api/v1/volumes?tag_key=&tag_value=`
+filters volumes by tag like the instance list does.

@@ -53,6 +53,15 @@ pub struct VolumeRow {
     pub write_iops: Option<i64>,
     pub read_bps: Option<i64>,
     pub write_bps: Option<i64>,
+    #[sqlx(skip)]
+    pub ec2_id: String,
+}
+
+impl VolumeRow {
+    fn with_id(mut self) -> Self {
+        self.ec2_id = crate::resource_ids::ec2_id(crate::resource_ids::Kind::Volume, self.id);
+        self
+    }
 }
 
 const VOLUME_SELECT: &str = "SELECT id, project_id, name, size_gib, volume_class, status, \
@@ -108,6 +117,11 @@ pub(crate) async fn wait_for_task_timeout(
 pub struct ListVolumesQuery {
     #[serde(default)]
     pub project_id: Option<Uuid>,
+    /// Only volumes carrying this tag (`resource_tags`); `tag_value` is optional.
+    #[serde(default)]
+    pub tag_key: Option<String>,
+    #[serde(default)]
+    pub tag_value: Option<String>,
 }
 
 pub async fn list_volumes(
@@ -117,12 +131,17 @@ pub async fn list_volumes(
 ) -> Result<Json<Vec<VolumeRow>>, ApiError> {
     require_operator(&actor)?;
     let rows = sqlx::query_as::<_, VolumeRow>(&format!(
-        "{VOLUME_SELECT} WHERE (?1 IS NULL OR project_id = ?1) ORDER BY created_at DESC"
+        "{VOLUME_SELECT} WHERE (?1 IS NULL OR project_id = ?1) \
+         AND (?2 IS NULL OR EXISTS (SELECT 1 FROM resource_tags rt WHERE rt.resource_type = 'volume' \
+              AND rt.resource_id = lower(hex(volumes.id)) AND rt.key = ?2 AND (?3 IS NULL OR rt.value = ?3))) \
+         ORDER BY created_at DESC"
     ))
     .bind(q.project_id)
+    .bind(q.tag_key.as_deref())
+    .bind(q.tag_value.as_deref())
     .fetch_all(&state.pool)
     .await?;
-    Ok(Json(rows))
+    Ok(Json(rows.into_iter().map(VolumeRow::with_id).collect()))
 }
 
 pub async fn get_volume(
@@ -135,7 +154,7 @@ pub async fn get_volume(
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
-    Ok(Json(row))
+    Ok(Json(row.with_id()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -202,7 +221,7 @@ pub async fn create_volume(
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
-    Ok(Json(row))
+    Ok(Json(row.with_id()))
 }
 
 async fn create_volume_atlas(
@@ -456,7 +475,7 @@ pub async fn attach_volume(
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
-    Ok(Json(row))
+    Ok(Json(row.with_id()))
 }
 
 pub async fn detach_volume(
@@ -490,7 +509,7 @@ pub async fn detach_volume(
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
-    Ok(Json(row))
+    Ok(Json(row.with_id()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -546,7 +565,7 @@ pub async fn extend_volume(
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
-    Ok(Json(row))
+    Ok(Json(row.with_id()))
 }
 
 // ---------------------------------------------------------------------------

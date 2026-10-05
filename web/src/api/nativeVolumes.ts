@@ -22,6 +22,8 @@ export interface NativeVolume {
   attached_vm_id: string | null
   attached_device: string | null
   atlas_backed: boolean
+  /** EC2-style id, e.g. vol-0123456789abcdef0. */
+  ec2_id?: string
   delete_on_termination?: boolean
   read_iops?: number | null
   write_iops?: number | null

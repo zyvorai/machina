@@ -98,7 +98,7 @@ function FleetCloudVolumeDetailContent() {
         {vol.name}
       </h1>
       <dl className="grid sm:grid-cols-2 gap-4 rounded-2xl border border-[var(--apple-hairline)] bg-[var(--apple-surface)] p-4 text-sm">
-        <div><dt className="text-xs text-[var(--text-muted)] uppercase">ID</dt><dd className="font-mono text-[var(--text-primary)] mt-1 break-all">{vol.id}</dd></div>
+        <div><dt className="text-xs text-[var(--text-muted)] uppercase">ID</dt><dd className="font-mono text-[var(--text-primary)] mt-1 break-all">{vol.ec2_id ? <>{vol.ec2_id}<span className="block text-xs text-[var(--text-faint)]">{vol.id}</span></> : vol.id}</dd></div>
         <div><dt className="text-xs text-[var(--text-muted)] uppercase">Size</dt><dd className="text-[var(--text-primary)] mt-1">{vol.size_gib} GiB</dd></div>
         <div><dt className="text-xs text-[var(--text-muted)] uppercase">Status</dt><dd className="text-[var(--text-primary)] mt-1">{vol.status}</dd></div>
         <div><dt className="text-xs text-[var(--text-muted)] uppercase">Class</dt><dd className="text-[var(--text-primary)] mt-1">{vol.volume_class}{vol.atlas_backed ? ' (Atlas)' : ''}</dd></div>

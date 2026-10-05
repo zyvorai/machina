@@ -40,10 +40,13 @@ pub struct SecurityGroupRow {
     pub mode: String,
     #[sqlx(skip)]
     pub enforcement: Option<serde_json::Value>,
+    #[sqlx(skip)]
+    pub ec2_id: String,
 }
 
 async fn with_enforcement(pool: &sqlx::SqlitePool, mut r: SecurityGroupRow) -> SecurityGroupRow {
     r.enforcement = Some(crate::engine::sg_enforce::enforcement(pool, &r.id.simple().to_string()).await);
+    r.ec2_id = crate::resource_ids::ec2_id(crate::resource_ids::Kind::SecurityGroup, r.id);
     r
 }
 
@@ -133,6 +136,7 @@ pub async fn create_security_group(
         enforced: false,
         mode: "audit".into(),
         enforcement: None,
+        ec2_id: crate::resource_ids::ec2_id(crate::resource_ids::Kind::SecurityGroup, id),
     }))
 }
 

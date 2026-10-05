@@ -27,6 +27,15 @@ pub struct KeypairRow {
     pub name: String,
     pub public_key: String,
     pub fingerprint: String,
+    #[sqlx(skip)]
+    pub ec2_id: String,
+}
+
+impl KeypairRow {
+    fn with_id(mut self) -> Self {
+        self.ec2_id = crate::resource_ids::ec2_id(crate::resource_ids::Kind::KeyPair, self.id);
+        self
+    }
 }
 
 const KEYPAIR_SELECT: &str = "SELECT id, project_id, name, public_key, fingerprint FROM keypairs";
@@ -39,7 +48,7 @@ pub async fn list_keypairs(
     let rows = sqlx::query_as::<_, KeypairRow>(&format!("{KEYPAIR_SELECT} ORDER BY name"))
         .fetch_all(&state.pool)
         .await?;
-    Ok(Json(rows))
+    Ok(Json(rows.into_iter().map(KeypairRow::with_id).collect()))
 }
 
 pub async fn get_keypair(
@@ -52,7 +61,7 @@ pub async fn get_keypair(
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
-    Ok(Json(row))
+    Ok(Json(row.with_id()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -107,6 +116,7 @@ pub async fn create_keypair(
         name: body.name,
         public_key: body.public_key,
         fingerprint,
+        ec2_id: crate::resource_ids::ec2_id(crate::resource_ids::Kind::KeyPair, id),
     }))
 }
 
