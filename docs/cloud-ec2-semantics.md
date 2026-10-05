@@ -98,3 +98,18 @@ one security group; per-interface groups are not enforced (groups attach to inst
 the stored samples (`metric_samples`) into epoch-aligned windows of `period` seconds (a multiple of 60, 60–86400) and returns
 `Average`, `Minimum`, `Maximum`, `Sum` and `SampleCount` per window. The default range is the last hour; the limit is 15
 days and 1440 datapoints per call. Retention is whatever the sampler keeps; there are no custom dimensions or units yet.
+
+## Alarms
+`POST /api/v1/alarms` creates a CloudWatch-style alarm over the stored metric samples: `subject` (a VM name, or
+`group:<group id, 32 hex>` for every member of an instance group), `metric`, `statistic`, `period_secs` (60–3600, multiples
+of 60), `evaluation_periods` (1–10), `comparator` (`gt|gte|lt|lte`) and `threshold`. It is `OK`, `ALARM` or
+`INSUFFICIENT_DATA` (fewer than `evaluation_periods` windows with data) and re-evaluated every minute on the leader; state
+changes are events and carry a reason.
+
+With `action: "scale_group"`, `group_id` and a non-zero `step` (±10) the alarm changes the group's desired size on entering
+`ALARM`, and again every `cooldown_secs` while it stays there. The result is clamped to the group's min/max and uses the same
+compare-and-swap as the group reconciler, so a concurrent policy edit wins. Paused groups are left alone. Re-enabling an alarm
+(`PUT /api/v1/alarms/{id}/enabled`) resets it to `INSUFFICIENT_DATA`.
+
+**Limits:** no notification actions (use alert rules and webhooks for those), no alarm history table beyond events, and
+`INSUFFICIENT_DATA` does not trigger anything.

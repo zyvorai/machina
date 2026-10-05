@@ -17,7 +17,7 @@ pub(crate) fn tick_still_valid(is_leader: bool, started_epoch: i64, now_epoch: i
 }
 
 /// `None` = unfenced (direct calls in tests); `Some(epoch)` = a loop pass that began at that leadership epoch.
-fn fence_ok(state: &AppState, epoch: Option<i64>) -> bool {
+pub(crate) fn fence_ok(state: &AppState, epoch: Option<i64>) -> bool {
     match epoch {
         None => true,
         Some(e) => tick_still_valid(state.leader.is_leader(), e, crate::leader::current_epoch()),

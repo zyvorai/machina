@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 mod ai;
+mod alarms;
 pub mod alerts;
 pub mod apikeys;
 mod applications;
@@ -37,7 +38,7 @@ mod host_os;
 mod hosts;
 mod ec2;
 mod keypairs;
-mod metric_stats;
+pub(crate) mod metric_stats;
 mod kubevirt;
 mod launchpad;
 mod load_balancers;
@@ -1979,6 +1980,9 @@ pub fn router(state: AppState) -> Router {
             get(cpu_compat::get_cpu_compat_matrix).patch(cpu_compat::patch_cpu_compat_matrix),
         )
         .route("/api/v1/metrics/statistics", get(metric_stats::statistics))
+        .route("/api/v1/alarms", get(alarms::list_alarms).post(alarms::create_alarm))
+        .route("/api/v1/alarms/{id}", get(alarms::get_alarm).delete(alarms::delete_alarm))
+        .route("/api/v1/alarms/{id}/enabled", put(alarms::set_alarm_enabled))
         .route(
             "/api/v1/ec2/access-keys",
             get(ec2::list_access_keys).post(ec2::create_access_key),
