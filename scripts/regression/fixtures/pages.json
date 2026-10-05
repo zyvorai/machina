@@ -43,6 +43,7 @@
   "/fleet-cloud/floating-ips",
   "/fleet-cloud/load-balancers",
   "/fleet-cloud/topology",
+  "/fleet-cloud/vpcs",
   "/fleet-cloud/keypairs",
   "/fleet-cloud/flavors",
   "/fleet-cloud/server-groups",
