@@ -8,6 +8,7 @@ pub mod eip;
 pub mod epoch;
 pub mod grpc;
 pub mod jwt;
+pub mod lbprobe;
 pub mod libvirt_invoke;
 pub mod natgw;
 pub mod libvirt_ops;

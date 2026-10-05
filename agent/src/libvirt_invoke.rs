@@ -560,6 +560,7 @@ pub fn host_invoke(conn: &Connect, action: &str, payload: &Value) -> Result<Valu
             let n = crate::natgw::sync(payload).map_err(LibvirtError::Operation)?;
             Ok(serde_json::json!({ "status": "ok", "entries": n }))
         }
+        "lb.probe" => crate::lbprobe::run(payload).map_err(LibvirtError::Invalid),
         "network.start" => {
             let name = payload_str(payload, "name")?;
             network::start_network(conn, &name)?;

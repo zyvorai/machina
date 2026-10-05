@@ -154,3 +154,13 @@ The response says whether the host confirmed it (`applied`, `apply_error`).
 **Limits:** IPv4, host-local. Cloud subnets are libvirt isolated networks that do not advertise a default gateway, so an
 instance still needs a default route via the subnet's gateway address (the `.1` of the subnet) set by its own configuration
 (cloud-init network config or user-data); the NAT gateway makes that route work, it does not install it.
+## Load balancer health checks
+`PUT /api/v1/load-balancers/{id}/health-check {protocol: "tcp"|"http"|"none", port?, path?, interval_secs (5–300), timeout_secs,
+healthy_threshold, unhealthy_threshold}` makes the owning host's agent probe every member (a TCP connect, or an HTTP GET that
+must answer 2xx or 3xx) from the host, which is the only place that can reach the guests' private addresses. A member shows
+`health: unknown | healthy | unhealthy` with the last probe's detail. It turns `unhealthy` after `unhealthy_threshold`
+consecutive failures and is taken out of the rule set; it comes back after `healthy_threshold` consecutive successes. A
+member that was never probed stays in rotation, as does everything when the check is `none` (the default). Changing the check
+resets the members to `unknown`. State changes are events (`lb.health`).
+
+This is the existing kernel round-robin balancer plus health checks, not target groups: one check per balancer, L4 only.

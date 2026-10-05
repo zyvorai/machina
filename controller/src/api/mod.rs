@@ -1855,6 +1855,10 @@ pub fn router(state: AppState) -> Router {
             get(load_balancers::get_load_balancer).delete(load_balancers::delete_load_balancer),
         )
         .route(
+            "/api/v1/load-balancers/{id}/health-check",
+            put(load_balancers::set_health_check),
+        )
+        .route(
             "/api/v1/load-balancers/{id}/members",
             get(load_balancers::list_lb_members).post(load_balancers::add_lb_member),
         )
