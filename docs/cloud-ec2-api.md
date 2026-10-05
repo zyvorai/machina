@@ -29,7 +29,7 @@ Any other action returns `UnsupportedOperation`. Unknown filter names match noth
 - The endpoint sits behind the same rate limit as login.
 
 ## Not yet
-RunInstances/TerminateInstances, volumes, security groups, images and the VPC calls; pagination (`NextToken`); the
+Volumes, security groups, images and the VPC calls; pagination (`NextToken`); the
 `describe-instances` fields that have no Machina equivalent (image id, placement, block device mappings) are empty.
 
 ## Run, terminate and tags
