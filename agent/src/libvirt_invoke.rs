@@ -543,8 +543,8 @@ pub fn host_invoke(conn: &Connect, action: &str, payload: &Value) -> Result<Valu
                 .get("format")
                 .and_then(|v| v.as_str())
                 .unwrap_or("qcow2");
-            storage::create_volume(conn, &pool, &vol_name, capacity_gb.max(1), format)?;
-            Ok(serde_json::json!({ "status": "created", "pool": pool, "name": vol_name }))
+            let path = storage::create_volume(conn, &pool, &vol_name, capacity_gb.max(1), format)?;
+            Ok(serde_json::json!({ "status": "created", "pool": pool, "name": vol_name, "path": path }))
         }
         "storage.volume.delete" => {
             let pool = payload_str(payload, "pool")?;

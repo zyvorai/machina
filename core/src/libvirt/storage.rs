@@ -385,7 +385,7 @@ pub fn create_volume(
     vol_name: &str,
     capacity_gb: u64,
     format: &str,
-) -> Result<(), LibvirtError> {
+) -> Result<String, LibvirtError> {
     crate::validate::validate_name(vol_name)?;
     let pool = lookup_pool(conn, pool_name)?;
 
@@ -404,10 +404,12 @@ pub fn create_volume(
         crate::xml::escape(format),
     );
 
-    StorageVol::create_xml(&pool, &xml, 0).map_err(|e| {
+    let vol = StorageVol::create_xml(&pool, &xml, 0).map_err(|e| {
         LibvirtError::Operation(format!("Failed to create volume '{vol_name}': {e}"))
     })?;
-    Ok(())
+    // The path is what a disk attach needs; callers store it with the volume.
+    vol.get_path()
+        .map_err(|e| LibvirtError::Operation(format!("Created volume '{vol_name}' but could not read its path: {e}")))
 }
 
 pub fn set_pool_autostart(conn: &Connect, name: &str, autostart: bool) -> Result<(), LibvirtError> {

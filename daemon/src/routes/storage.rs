@@ -131,12 +131,12 @@ async fn create_volume(
     // same 1 GB–10 TB validator every other disk-size input in core goes
     // through (create.rs, device.rs, virt_builder.rs, virt_install.rs).
     machina_core::validate::validate_disk_gb(req2.capacity_gb)?;
-    spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
+    let path = spawn_libvirt_actor(manager, Some(&actor), conn_q, move |conn| {
         storage::create_volume(conn, &pool2, &req2.name, req2.capacity_gb, &req2.format)
     })
     .await?;
     Ok(Json(
-        serde_json::json!({ "status": "created", "pool": pool_name, "volume": vol_name }),
+        serde_json::json!({ "status": "created", "pool": pool_name, "volume": vol_name, "path": path }),
     ))
 }
 
