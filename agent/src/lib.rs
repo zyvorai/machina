@@ -7,6 +7,7 @@ pub mod console_ws;
 pub mod eip;
 pub mod epoch;
 pub mod grpc;
+pub mod imds;
 pub mod jwt;
 pub mod lbprobe;
 pub mod libvirt_invoke;

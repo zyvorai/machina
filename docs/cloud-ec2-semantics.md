@@ -169,3 +169,19 @@ This is the existing kernel round-robin balancer plus health checks, not target 
 subnet. It is refused (409) while the subnet still has reserved addresses, network interfaces, instance groups or instances,
 and it fails without deleting anything if the host cannot be reached or libvirt refuses. A network that is already gone is
 not an error. `DELETE /api/v1/cloud/vpcs/{id}` works once the VPC has no subnets and no peerings.
+## Instance metadata service
+Guests can read their own metadata at `http://169.254.169.254/latest/meta-data/` (also under dated versions such as
+`/2009-04-04/`, which cirros and other EC2 datasources use): `instance-id`, `hostname`, `local-ipv4`, `instance-type`,
+`ami-id`, `placement/availability-zone`, `public-keys/0/openssh-key`, plus `/latest/user-data` and
+`/latest/dynamic/instance-identity/document`.
+
+How it works: the controller pushes one entry per instance to its host's agent every 30 s; the agent serves them on port
+8169 and an nft rule (`table ip machina_imds`) redirects `169.254.169.254:80` to it. The answer is chosen by the request's
+**source address**, so a guest sees only its own entry and an unknown address gets 404. Disable with `MACHINA_IMDS=0` (agent
+and controller); `MACHINA_IMDS_PORT` changes the port.
+
+**Limits:** it needs an address the controller knows for the guest (DHCP lease or guest agent). Guests need a route to the
+link-local address, which the default NAT network provides through its gateway; isolated cloud subnets do not advertise a
+gateway, so guests there need a route to `169.254.169.254` via the subnet's gateway address (not automatic yet). There is no
+IMDSv2 token and no hop limit: as on EC2, anything running in the guest, including a vulnerable web application, can read
+the user-data, so keep long-lived secrets out of it. Tags are not exposed yet.

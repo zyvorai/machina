@@ -571,6 +571,10 @@ pub fn host_invoke(conn: &Connect, action: &str, payload: &Value) -> Result<Valu
             network::stop_network(conn, &name)?;
             Ok(serde_json::json!({ "status": "stopped", "name": name }))
         }
+        "imds.sync" => {
+            let n = crate::imds::sync(payload).map_err(LibvirtError::Invalid)?;
+            Ok(serde_json::json!({ "status": "ok", "entries": n }))
+        }
         "network.autostart" => {
             let name = payload_str(payload, "name")?;
             let enabled = payload_bool(payload, "enabled");

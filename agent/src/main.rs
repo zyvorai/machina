@@ -129,6 +129,7 @@ async fn run_serve(cli: &Cli) -> anyhow::Result<()> {
     let libvirt = Arc::new(Mutex::new(LibvirtCtx::open(&libvirt_uri)?));
     let service = AgentService::new(state, libvirt.clone());
     machina_agent::wake::spawn(libvirt.clone());
+    machina_agent::imds::spawn();
 
     let grpc_addr: SocketAddr = cli.listen.parse()?;
     let console_addr: SocketAddr = cli.console_listen.parse()?;
