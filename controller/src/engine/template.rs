@@ -41,6 +41,52 @@ pub async fn resolve_template_disk(
     Ok(disk)
 }
 
+/// Whether `project` may launch from an image: public images are open to everyone; a private one only to its owning
+/// project and the projects it was shared with.
+pub fn image_allows(visibility: &str, owner: &str, project: &str, shared_with: &[String]) -> bool {
+    visibility != "private" || owner == project || shared_with.iter().any(|p| p == project)
+}
+
+/// `Some(reason)` when `project` may not launch from `template_ref` (`name` or `name@version`). An unknown image is not
+/// this function's business: the normal "template not found" path reports it.
+pub async fn image_access_error(
+    pool: &SqlitePool,
+    template_ref: &str,
+    project: &str,
+) -> anyhow::Result<Option<String>> {
+    let row: Option<(Uuid, String, String)> = match template_ref.split_once('@') {
+        Some((n, v)) => {
+            sqlx::query_as("SELECT id, COALESCE(visibility, 'public'), COALESCE(project, '') FROM templates WHERE name = ? AND version = ?")
+                .bind(n)
+                .bind(v)
+                .fetch_optional(pool)
+                .await?
+        }
+        None => {
+            sqlx::query_as("SELECT id, COALESCE(visibility, 'public'), COALESCE(project, '') FROM templates WHERE name = ? ORDER BY created_at DESC LIMIT 1")
+                .bind(template_ref)
+                .fetch_optional(pool)
+                .await?
+        }
+    };
+    let Some((id, visibility, owner)) = row else {
+        return Ok(None);
+    };
+    if visibility != "private" {
+        return Ok(None);
+    }
+    let shared: Vec<String> = sqlx::query_scalar("SELECT project FROM image_shares WHERE template_id = ?")
+        .bind(id)
+        .fetch_all(pool)
+        .await?;
+    Ok((!image_allows(&visibility, &owner, project, &shared)).then(|| {
+        format!(
+            "the image '{template_ref}' is private{}; ask its owner to share it with project '{project}'",
+            if owner.is_empty() { String::new() } else { format!(" to project '{owner}'") }
+        )
+    }))
+}
+
 pub async fn resolve_template_firewall_profile(
     pool: &SqlitePool,
     template_ref: &str,
@@ -142,4 +188,18 @@ pub struct HaPolicyRow {
     pub restart_priority: String,
     pub fence_on_failure: bool,
     pub anti_affinity: bool,
+}
+
+#[cfg(test)]
+mod image_access_tests {
+    use super::image_allows;
+
+    #[test]
+    fn public_is_open_private_is_owner_and_shares_only() {
+        assert!(image_allows("public", "core", "anyone", &[]));
+        assert!(image_allows("private", "core", "core", &[]));
+        assert!(image_allows("private", "core", "lab", &["lab".into()]));
+        assert!(!image_allows("private", "core", "lab", &["ops".into()]));
+        assert!(!image_allows("private", "", "lab", &[]), "an ownerless private image is open to its shares only");
+    }
 }

@@ -257,6 +257,14 @@ pub async fn create_vm(
         .project
         .clone()
         .unwrap_or_else(|| "default".into());
+    if let Some(tref) = body.vm.spec.template_ref.as_deref() {
+        if let Some(why) = crate::engine::template::image_access_error(&state.pool, tref, &project)
+            .await
+            .map_err(|e| ApiError::internal(e.to_string()))?
+        {
+            return Err(ApiError::forbidden(why).with_code("image_not_shared"));
+        }
+    }
     if !(0..=crate::engine::preempt::MAX_PRIORITY).contains(&body.preempt_priority) {
         return Err(ApiError::bad_request("preempt_priority must be 0..=100"));
     }

@@ -75,8 +75,9 @@ makes one visible only to its owning project and the projects it is shared with
 (`PUT|DELETE .../shares/{project}`, `GET .../shares`). `GET /api/v1/templates?project=<name>` returns what that project
 may see; without `project` you get everything (the operator view). Images return `ec2_id` (`ami-…`).
 
-**Limit:** this controls listing only. Creating an instance from a private image by its name is not blocked yet, so
-treat it as hiding, not as access control.
+Launching is checked too: creating an instance from a private image fails with 403 `image_not_shared` unless the instance's
+project owns the image or it was shared with that project. The project is the instance's own (`metadata.project`, default
+`default`), so a caller who may create instances in a project can launch that project's shared images.
 
 ## Volume from snapshot
 `POST /api/v1/volume-snapshots/{id}/create-volume {"name"}` creates a new volume (same size, class and project as the
