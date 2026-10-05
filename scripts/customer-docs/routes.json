@@ -461,6 +461,11 @@
       "category": "Fleet Cloud"
     },
     {
+      "label": "VPCs & elastic compute",
+      "path": "/fleet-cloud/vpcs",
+      "category": "Fleet Cloud"
+    },
+    {
       "label": "Heat Orchestration",
       "path": "/fleet-cloud/heat",
       "category": "Fleet Cloud"
@@ -531,11 +536,6 @@
       "path": "/api-docs",
       "category": "Platform",
       "legacy": false
-    },
-    {
-      "label": "VPCs & elastic compute",
-      "path": "/fleet-cloud/vpcs",
-      "category": "Fleet Cloud"
     }
   ]
 }

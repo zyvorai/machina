@@ -50,6 +50,24 @@ references. Subnet teardown and group deletion are intentionally not exposed:
 stop/pause groups, retain data, and use an operator-controlled maintenance flow.
 Retained stopped instances continue consuming project VM/storage quota.
 
+## Things to know before you rely on it
+
+- **The page sets capacity by hand.** `/fleet-cloud/vpcs` creates groups with a fixed `min 0 / max 10` policy and no CPU
+  target. CPU autoscaling (`target_cpu`, `cooldown_secs`, up to `max` 100) is configured through the API.
+- **Scoped API keys are not supported.** Cloud APIs check project membership for the signed-in *user*; an API key is not a
+  member of any project, so non-admin keys receive `403`. Admin-role keys bypass project scoping entirely. Use a user
+  session, or an admin key for automation, until scoped keys exist.
+- **A host that owns a VPC cannot be removed** (`409 host_has_vpcs`): there is no VPC deletion yet, and removing the host would
+  orphan its libvirt networks.
+- **Nothing deletes a network yet.** Subnets, templates, groups and peerings have no delete routes in this release; a
+  provisioned `mc-<uuid>` libvirt network stays until removed by hand (`virsh net-destroy` / `net-undefine`).
+- **A provisioned network is re-checked on retry.** If a network with the subnet's UUID already exists but its subnet changed
+  or it gained a forwarding mode, provisioning fails with a clear `drifted` error instead of reporting success.
+- **A stale leader cannot create instances.** The reconcile loop stops as soon as this controller loses leadership or the
+  leadership epoch changes.
+- **Run the smoke script as root, or point it at the system libvirt** (`virsh -c qemu:///system`): with a plain user it talks
+  to a per-user session that has no bridges.
+
 ## API walkthrough
 
 Use your existing bearer token with the controller or the daemon's authenticated

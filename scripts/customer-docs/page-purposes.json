@@ -87,6 +87,7 @@
   "/fleet-cloud/floating-ips": "Floating IPs \u2014 Machina Fleet Cloud page at `/fleet-cloud/floating-ips`.",
   "/fleet-cloud/load-balancers": "Load Balancers \u2014 Machina Fleet Cloud page at `/fleet-cloud/load-balancers`.",
   "/fleet-cloud/topology": "Network Topology \u2014 Machina Fleet Cloud page at `/fleet-cloud/topology`.",
+  "/fleet-cloud/vpcs": "Isolated subnets and desired-capacity instance groups.",
   "/fleet-cloud/heat": "Heat Orchestration \u2014 Machina Fleet Cloud page at `/fleet-cloud/heat`.",
   "/fleet-cloud/identity": "Identity \u2014 Machina Fleet Cloud page at `/fleet-cloud/identity`.",
   "/node": "Host Overview \u2014 Machina Monitoring page at `/node`.",
