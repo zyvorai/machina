@@ -164,3 +164,8 @@ member that was never probed stays in rotation, as does everything when the chec
 resets the members to `unknown`. State changes are events (`lb.health`).
 
 This is the existing kernel round-robin balancer plus health checks, not target groups: one check per balancer, L4 only.
+## Deleting subnets
+`DELETE /api/v1/cloud/subnets/{id}` tears down the subnet's libvirt network on its host (through the agent) and removes the
+subnet. It is refused (409) while the subnet still has reserved addresses, network interfaces, instance groups or instances,
+and it fails without deleting anything if the host cannot be reached or libvirt refuses. A network that is already gone is
+not an error. `DELETE /api/v1/cloud/vpcs/{id}` works once the VPC has no subnets and no peerings.

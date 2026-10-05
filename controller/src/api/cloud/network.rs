@@ -294,6 +294,92 @@ pub async fn set_subnet_nat(
     Ok(Json(json!({ "subnet_id": id, "nat_enabled": body.enabled, "applied": applied, "apply_error": error })))
 }
 
+/// What still depends on a subnet (None = it can be deleted).
+pub(crate) fn subnet_delete_blocker(addresses: i64, ports: i64, groups: i64, instances: i64) -> Option<String> {
+    let mut parts = Vec::new();
+    if addresses > 0 {
+        parts.push(format!("{addresses} reserved address(es)"));
+    }
+    if ports > 0 {
+        parts.push(format!("{ports} network interface(s)"));
+    }
+    if groups > 0 {
+        parts.push(format!("{groups} instance group(s)"));
+    }
+    if instances > 0 {
+        parts.push(format!("{instances} instance(s)"));
+    }
+    (!parts.is_empty()).then(|| format!("the subnet still has {}; remove them first", parts.join(", ")))
+}
+
+async fn subnet_dependents(conn: &mut SqliteConnection, id: Uuid, network_id: Uuid, network_name: &str) -> Result<(i64, i64, i64, i64), ApiError> {
+    let addresses: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cloud_ip_allocations WHERE subnet_id = ?").bind(id).fetch_one(&mut *conn).await?;
+    let ports: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ports WHERE network_id = ?").bind(network_id).fetch_one(&mut *conn).await?;
+    let groups: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cloud_instance_groups WHERE subnet_id = ?").bind(id).fetch_one(&mut *conn).await?;
+    // Instances whose spec names the libvirt network (created on the subnet directly or through a group).
+    let instances: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE spec_json LIKE ?")
+        .bind(format!("%\"network\":\"{network_name}\"%"))
+        .fetch_one(&mut *conn)
+        .await?;
+    Ok((addresses, ports, groups, instances))
+}
+
+/// Delete a subnet and tear down its libvirt network on the owning host. Refused while addresses, interfaces, groups or
+/// instances still use it. The libvirt network is removed first; if the host cannot be reached nothing is deleted.
+pub async fn delete_subnet(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, ApiError> {
+    let mut conn = state.pool.acquire().await?;
+    let (sub, parent) = subnet_vpc(&mut conn, &actor, id, true).await?;
+    let (network_name, agent_addr): (String, String) = sqlx::query_as(
+        "SELECT n.name, h.agent_grpc_addr FROM networks n JOIN hosts h ON h.id = ? WHERE n.id = ?",
+    )
+    .bind(parent.host_id)
+    .bind(sub.network_id)
+    .fetch_one(&mut *conn)
+    .await?;
+    let (a, p, g, i) = subnet_dependents(&mut conn, id, sub.network_id, &network_name).await?;
+    if let Some(why) = subnet_delete_blocker(a, p, g, i) {
+        return Err(conflict(why));
+    }
+    drop(conn);
+    let mut client = crate::agent_client::connect(&agent_addr)
+        .await
+        .map_err(|e| ApiError::internal(format!("the subnet's host is not reachable: {e:#}")))?;
+    if let Err(e) = crate::agent_client::host_libvirt_invoke(&mut client, "network.delete", &json!({ "name": network_name })).await {
+        let msg = format!("{e:#}");
+        // A network that is already gone is fine; anything else keeps the subnet so the operator can retry.
+        if !msg.to_ascii_lowercase().contains("not found") && !msg.to_ascii_lowercase().contains("no network") {
+            return Err(ApiError::internal(format!("could not remove the libvirt network: {msg}")));
+        }
+    }
+    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let (a, p, g, i) = subnet_dependents(&mut tx, id, sub.network_id, &network_name).await?;
+    if let Some(why) = subnet_delete_blocker(a, p, g, i) {
+        return Err(conflict(why));
+    }
+    sqlx::query("DELETE FROM cloud_subnets WHERE id = ?").bind(id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM networks WHERE id = ?").bind(sub.network_id).execute(&mut *tx).await?;
+    audit(&mut tx, &actor, "cloud.subnet.delete", id).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"deleted":true})))
+}
+
+#[cfg(test)]
+mod subnet_delete_tests {
+    use super::subnet_delete_blocker;
+
+    #[test]
+    fn lists_what_still_uses_the_subnet() {
+        assert!(subnet_delete_blocker(0, 0, 0, 0).is_none());
+        let m = subnet_delete_blocker(2, 0, 1, 3).unwrap();
+        assert!(m.contains("2 reserved address") && m.contains("1 instance group") && m.contains("3 instance(s)"));
+        assert!(!m.contains("network interface"));
+    }
+}
+
 pub async fn retry_subnet(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,

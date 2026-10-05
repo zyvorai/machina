@@ -840,3 +840,21 @@ fn a_group_with_running_members_cannot_be_deleted() {
     assert!(elastic::group_delete_blocker(0).is_none());
     assert!(elastic::group_delete_blocker(2).unwrap().contains("2 member"));
 }
+
+#[tokio::test]
+async fn a_subnet_with_reserved_addresses_cannot_be_deleted() {
+    let f = Fixture::new().await;
+    let vpc = f.vpc("10.20.0.0/16").await;
+    let subnet = f.subnet(vpc).await;
+    let (status, addr) = f
+        .admin("POST", &format!("/api/v1/cloud/subnets/{subnet}/addresses"), json!({"request_key":"keep"}))
+        .await;
+    assert_eq!(status, StatusCode::OK, "{addr}");
+    let (code, body) = f.admin("DELETE", &format!("/api/v1/cloud/subnets/{subnet}"), Value::Null).await;
+    assert_eq!(code, StatusCode::CONFLICT, "{body}");
+    assert!(body.to_string().contains("reserved address"), "{body}");
+    let (code, _) = f
+        .call(Fixture::actor("alice", "viewer"), "DELETE", &format!("/api/v1/cloud/subnets/{subnet}"), Value::Null)
+        .await;
+    assert_ne!(code, StatusCode::OK, "no write access, no delete");
+}

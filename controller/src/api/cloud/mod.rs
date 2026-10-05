@@ -30,6 +30,10 @@ pub fn routes() -> Router<AppState> {
             axum::routing::put(network::set_subnet_nat),
         )
         .route(
+            "/api/v1/cloud/subnets/{id}",
+            axum::routing::delete(network::delete_subnet),
+        )
+        .route(
             "/api/v1/cloud/subnets/{id}/retry",
             post(network::retry_subnet),
         )
