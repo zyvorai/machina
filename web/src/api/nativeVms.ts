@@ -27,6 +27,10 @@ export interface NativeVm {
   inventory_source: string
   guest_ip: string | null
   guest_tools_status: string | null
+  /** EC2-style id, e.g. i-0123456789abcdef0 (controller 0.2+). */
+  ec2_id?: string
+  /** The flavor (instance type) the machine was launched as or last changed to, when known. */
+  flavor_id?: string | null
 }
 
 interface TaskResponse {
@@ -61,6 +65,8 @@ interface CreateFromTemplateBody {
   cloud_init_ssh_pubkey?: string
   /** Scale to zero after this many idle minutes; 0 = never, omit = project default. */
   sleep_after_minutes?: number
+  /** Free-form cloud-init user-data (a #cloud-config document or a script), at most 16 KiB. */
+  cloud_init_user_data?: string
 }
 
 /** POST /api/v1/vms/from-template — boots an instance from a native image
@@ -302,5 +308,13 @@ export function attachVmNic(id: string, network: string, model = 'virtio'): Prom
 export function detachVmNic(id: string, mac: string): Promise<TaskResponse> {
   return platformFetch<TaskResponse>(`/api/v1/vms/${encodeURIComponent(id)}/nics/detach/${encodeURIComponent(mac)}`, {
     method: 'POST',
+  })
+}
+
+/** Change the instance type: the guest is shut down cleanly, resized to the flavor and started again if it was running. */
+export function changeVmType(id: string, flavorId: string): Promise<TaskResponse> {
+  return platformFetch<TaskResponse>(`/api/v1/vms/${encodeURIComponent(id)}/change-type`, {
+    method: 'POST',
+    body: JSON.stringify({ flavor_id: flavorId }),
   })
 }

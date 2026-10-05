@@ -25,6 +25,8 @@ import ConfirmDialog from '../components/ConfirmDialog'
 import InstanceIsolation from '../components/flow/InstanceIsolation'
 import InstanceSleep from '../components/flow/InstanceSleep'
 import InstanceTimeTravel from '../components/flow/InstanceTimeTravel'
+import TagEditor from '../components/platform/TagEditor'
+import InstanceTypeCard from '../components/platform/InstanceTypeCard'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
 import { instanceStatusTone, statusBadgeClasses, statusActionLinkClasses } from '../utils/semanticColors'
@@ -53,13 +55,14 @@ function FleetCloudInstanceDetailContent() {
   useBreadcrumbName(vm?.name)
   const loadSeq = useRef(0)
 
-  const load = useCallback(async () => {
+  // `quiet` refreshes in place (no full-page skeleton) so cards with their own state keep showing it.
+  const load = useCallback(async (quiet = false) => {
     if (!id) return
     // Last-response-wins: only the newest load may commit so a stale fetch for a
     // prior instance can't overwrite the one now shown.
     const seq = ++loadSeq.current
     const alive = () => seq === loadSeq.current
-    setLoading(true)
+    if (!quiet) setLoading(true)
     try {
       const [v, d, n] = await Promise.all([
         getVm(id),
@@ -129,7 +132,7 @@ function FleetCloudInstanceDetailContent() {
       </div>
 
       <dl className="grid sm:grid-cols-2 gap-4 rounded-2xl border border-[var(--apple-hairline)] bg-[var(--apple-surface)] p-4 text-sm">
-        <div><dt className="text-xs text-[var(--text-muted)] uppercase">ID</dt><dd className="font-mono mt-1 break-all">{vm.id}</dd></div>
+        <div><dt className="text-xs text-[var(--text-muted)] uppercase">ID</dt><dd className="font-mono mt-1 break-all">{vm.ec2_id ?? vm.id}{vm.ec2_id ? <span className="block text-[11px] text-[var(--text-muted)]">{vm.id}</span> : null}</dd></div>
         <div><dt className="text-xs text-[var(--text-muted)] uppercase">Status</dt><dd className="mt-1">
           <span className={`inline-block px-2 py-0.5 rounded border text-xs ${statusBadgeClasses(instanceStatusTone(status))}`}>{status}</span>
         </dd></div>
@@ -151,6 +154,9 @@ function FleetCloudInstanceDetailContent() {
         running={vm.observed_state === 'running'}
         onChanged={() => void load()}
       />
+      <InstanceTypeCard vm={vm} onQueued={() => void load(true)} />
+
+      <TagEditor resourceType="vm" resourceId={vm.id} />
 
       <InstanceIsolation vmName={vm.name} project={vm.project} />
 

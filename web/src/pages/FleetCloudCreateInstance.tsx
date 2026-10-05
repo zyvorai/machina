@@ -21,6 +21,8 @@ import { formatUserError } from '../utils/apiError'
 // with a flavor and network resolved server-side
 // (controller::api::vms::create_from_template, extended with flavor_id/network)
 // instead of the daemon's Nova instance-create call.
+const MAX_USER_DATA_BYTES = 16 * 1024
+
 export default function FleetCloudCreateInstancePage() {
   const navigate = useNavigate()
   const toast = useToastContext()
@@ -39,6 +41,7 @@ export default function FleetCloudCreateInstancePage() {
   const [cloudInitPassword, setCloudInitPassword] = useState('')
   const [cloudInitSshPubkey, setCloudInitSshPubkey] = useState('')
   const [sleepAfter, setSleepAfter] = useState('inherit')
+  const [userData, setUserData] = useState('')
 
   const loadCatalogs = useCallback(async () => {
     setLoading(true)
@@ -63,7 +66,9 @@ export default function FleetCloudCreateInstancePage() {
 
   const selectedImage = images.find((i) => i.id === imageId)
 
-  const canCreate = name.trim().length > 0 && imageId.length > 0 && flavorId.length > 0
+  const userDataBytes = new TextEncoder().encode(userData).length
+  const userDataTooBig = userDataBytes > MAX_USER_DATA_BYTES
+  const canCreate = name.trim().length > 0 && imageId.length > 0 && flavorId.length > 0 && !userDataTooBig
 
   const handleCreate = async () => {
     if (!canCreate || !selectedImage) {
@@ -81,6 +86,7 @@ export default function FleetCloudCreateInstancePage() {
         cloud_init_password: cloudInitPassword || undefined,
         cloud_init_ssh_pubkey: cloudInitSshPubkey.trim() || undefined,
         sleep_after_minutes: sleepAfter === 'inherit' ? undefined : Number(sleepAfter),
+        cloud_init_user_data: userData.trim() ? userData : undefined,
       })
       toast.success(`Instance '${name.trim()}' creation queued`)
       navigate('/fleet-cloud/instances')
@@ -239,6 +245,15 @@ export default function FleetCloudCreateInstancePage() {
         <textarea aria-label="SSH public key" value={cloudInitSshPubkey} onChange={(e) => setCloudInitSshPubkey(e.target.value)} rows={2}
           placeholder="SSH public key (optional) — or pick a saved keypair on the Keys page and paste its key here"
           className="w-full input-field text-xs font-mono" />
+        <label className="block space-y-1">
+          <span className="text-xs text-[var(--text-secondary)]">User data (optional) — a #cloud-config document or a shell script that runs on first boot</span>
+          <textarea aria-label="User data" value={userData} onChange={(e) => setUserData(e.target.value)} rows={6} spellCheck={false}
+            placeholder={'#cloud-config\npackages:\n  - nginx'}
+            className="w-full input-field text-xs font-mono" />
+        </label>
+        <p className={`text-xs ${userDataTooBig ? 'text-red-500' : 'text-[var(--text-muted)]'}`} role={userDataTooBig ? 'alert' : undefined}>
+          {userDataTooBig ? `User data is ${userDataBytes.toLocaleString()} bytes; the limit is ${MAX_USER_DATA_BYTES.toLocaleString()}.` : `${userDataBytes.toLocaleString()} of ${MAX_USER_DATA_BYTES.toLocaleString()} bytes. It is passed to the guest as-is and may contain secrets: anyone who can read this machine's spec can read it.`}
+        </p>
       </div>
 
       <div className="space-y-2 rounded-2xl border border-[var(--apple-hairline)] bg-[var(--apple-surface)] p-4">
