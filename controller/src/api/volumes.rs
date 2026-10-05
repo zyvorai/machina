@@ -802,7 +802,7 @@ pub(crate) async fn purge_terminating_volumes(state: &AppState, vm_id: Uuid, hos
     for (id, atlas, pool) in rows {
         let result: Result<(), String> = if let Some(a) = atlas {
             match atlas_bridge::require_client(&state.config) {
-                Ok(c) => c.delete_volume(&a).await.map_err(|e| e.to_string()),
+                Ok(c) => c.delete_volume(&a).await.map(|_| ()).map_err(|e| e.to_string()),
                 Err(e) => Err(e.to_string()),
             }
         } else if let (Some(pool), Some(host)) = (pool, host) {

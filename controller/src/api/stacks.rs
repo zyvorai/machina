@@ -506,6 +506,7 @@ async fn build_stack(
                 size_gib: vol.size_gib,
                 project_id: Some(project_id),
                 volume_class: vol.volume_class.clone(),
+                delete_on_termination: false,
             }),
         )
         .await
@@ -583,6 +584,7 @@ async fn build_stack(
                 Json(AttachVolumeBody {
                     vm_id,
                     target_dev: default_target_dev_for(attach_count),
+                    delete_on_termination: None,
                 }),
             )
             .await

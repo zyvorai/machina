@@ -291,6 +291,7 @@ pub async fn approve_and_execute(
                     size_gib,
                     project_id: None,
                     volume_class,
+                    delete_on_termination: false,
                 }),
             )
             .await
