@@ -332,6 +332,8 @@ pub async fn approve_and_execute(
                     port_min: port,
                     port_max: port,
                     remote_cidr: Some("0.0.0.0/0".into()),
+                    remote_sg_id: None,
+                    description: String::new(),
                 }),
             )
             .await

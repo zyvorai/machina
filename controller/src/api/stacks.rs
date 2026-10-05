@@ -487,6 +487,8 @@ async fn build_stack(
                     port_min: rule.port_min,
                     port_max: rule.port_max,
                     remote_cidr: rule.remote_cidr.clone(),
+                    remote_sg_id: None,
+                    description: String::new(),
                 }),
             )
             .await

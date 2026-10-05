@@ -34,7 +34,7 @@ pub struct HostRef {
 }
 
 impl HostRef {
-    fn is_local(&self) -> bool {
+    pub(crate) fn is_local(&self) -> bool {
         self.id == LOCAL_HOST_ID
     }
 }
