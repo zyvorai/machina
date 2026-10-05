@@ -113,3 +113,10 @@ compare-and-swap as the group reconciler, so a concurrent policy edit wins. Paus
 
 **Limits:** no notification actions (use alert rules and webhooks for those), no alarm history table beyond events, and
 `INSUFFICIENT_DATA` does not trigger anything.
+
+## Deleting instance groups and launch templates
+`DELETE /api/v1/cloud/instance-groups/{id}` removes a group once none of its members is running (scale it to min 0 and desired 0,
+let them stop, then delete). The stopped instances and their disks are kept; they just stop being managed. Alarms that scaled
+the group lose their action. A refused delete leaves the group unpaused and unchanged.
+`DELETE /api/v1/cloud/launch-templates/{id}` removes a template that no group uses (409 otherwise).
+Subnet and VPC delete with libvirt network teardown are still not implemented.

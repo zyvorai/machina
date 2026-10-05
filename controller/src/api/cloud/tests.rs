@@ -805,3 +805,38 @@ async fn samples_roll_up_hourly_with_a_network_rate() {
         .unwrap();
     assert_eq!(net.get(&hour), Some(&3.0), "7200 bytes over 2400 s");
 }
+
+#[tokio::test]
+async fn groups_and_unused_templates_can_be_deleted_and_used_ones_cannot() {
+    let f = Fixture::new().await;
+    let vpc = f.vpc("10.20.0.0/16").await;
+    let subnet = f.subnet(vpc).await;
+    sqlx::query("UPDATE cloud_subnets SET status='ready' WHERE id=?").bind(subnet).execute(&f.state.pool).await.unwrap();
+    let (_, t) = f.admin("POST", &format!("/api/v1/cloud/projects/{}/launch-templates", f.project), json!({"name":"base","vm":template()})).await;
+    let (status, g) = f
+        .admin(
+            "POST",
+            &format!("/api/v1/cloud/projects/{}/instance-groups", f.project),
+            json!({"name":"web","template_id":t["id"],"subnet_id":subnet,"policy":{"min":1,"max":2,"desired":1,"cooldown_secs":60}}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{g}");
+    let template = t["id"].as_str().unwrap();
+    let group = g["id"].as_str().unwrap();
+    let (code, _) = f.admin("DELETE", &format!("/api/v1/cloud/launch-templates/{template}"), Value::Null).await;
+    assert_eq!(code, StatusCode::CONFLICT, "a template in use cannot be deleted");
+    let (code, _) = f.call(Fixture::actor("alice", "viewer"), "DELETE", &format!("/api/v1/cloud/instance-groups/{group}"), Value::Null).await;
+    assert_ne!(code, StatusCode::OK, "no write access, no delete");
+    let (code, body) = f.admin("DELETE", &format!("/api/v1/cloud/instance-groups/{group}"), Value::Null).await;
+    assert_eq!(code, StatusCode::OK, "{body}");
+    let (code, _) = f.admin("DELETE", &format!("/api/v1/cloud/instance-groups/{group}"), Value::Null).await;
+    assert_eq!(code, StatusCode::NOT_FOUND);
+    let (code, _) = f.admin("DELETE", &format!("/api/v1/cloud/launch-templates/{template}"), Value::Null).await;
+    assert_eq!(code, StatusCode::OK, "unused now");
+}
+
+#[test]
+fn a_group_with_running_members_cannot_be_deleted() {
+    assert!(elastic::group_delete_blocker(0).is_none());
+    assert!(elastic::group_delete_blocker(2).unwrap().contains("2 member"));
+}

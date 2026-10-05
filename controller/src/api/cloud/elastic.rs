@@ -348,3 +348,72 @@ pub async fn update_group(
     tx.commit().await?;
     Ok(Json(json!({"updated":true})))
 }
+
+/// Why a group cannot be deleted yet (None = it can).
+pub(crate) fn group_delete_blocker(active_members: i64) -> Option<String> {
+    (active_members > 0).then(|| {
+        format!("{active_members} member instance(s) are still running; set the group's min and desired to 0, wait for them to stop, then delete it")
+    })
+}
+
+/// Delete an instance group. Its stopped member instances and their disks are kept (they just stop being managed);
+/// alarms that scaled it lose their action.
+pub async fn delete_group(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, ApiError> {
+    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let project: Uuid = sqlx::query_scalar("SELECT project_id FROM cloud_instance_groups WHERE id=?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::not_found("instance group not found"))?;
+    access(&mut tx, &actor, project, true).await?;
+    // Stop the reconciler touching it while we check.
+    sqlx::query("UPDATE cloud_instance_groups SET paused=1 WHERE id=?").bind(id).execute(&mut *tx).await?;
+    let active: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM cloud_group_members m JOIN vms v ON v.id = m.vm_id \
+         WHERE m.group_id = ? AND v.observed_state NOT IN ('shutoff', 'stopped', 'missing')",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if let Some(why) = group_delete_blocker(active) {
+        // Roll back the pause: a refused delete must not leave the group frozen.
+        tx.rollback().await?;
+        return Err(conflict(why));
+    }
+    sqlx::query("DELETE FROM cloud_group_members WHERE group_id=?").bind(id).execute(&mut *tx).await?;
+    sqlx::query("UPDATE cloud_alarms SET action='none', group_id=NULL, step=0 WHERE group_id=?").bind(id).execute(&mut *tx).await?;
+    sqlx::query("DELETE FROM cloud_instance_groups WHERE id=?").bind(id).execute(&mut *tx).await?;
+    audit(&mut tx, &actor, "cloud.group.delete", id).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"deleted":true})))
+}
+
+/// Delete a launch template that no group uses.
+pub async fn delete_template(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Value>, ApiError> {
+    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let project: Uuid = sqlx::query_scalar("SELECT project_id FROM cloud_launch_templates WHERE id=?")
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::not_found("launch template not found"))?;
+    access(&mut tx, &actor, project, true).await?;
+    let used: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cloud_instance_groups WHERE template_id=?")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await?;
+    if used > 0 {
+        return Err(conflict(format!("{used} instance group(s) still use this launch template")));
+    }
+    sqlx::query("DELETE FROM cloud_launch_templates WHERE id=?").bind(id).execute(&mut *tx).await?;
+    audit(&mut tx, &actor, "cloud.template.delete", id).await?;
+    tx.commit().await?;
+    Ok(Json(json!({"deleted":true})))
+}

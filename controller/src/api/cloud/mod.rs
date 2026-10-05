@@ -59,12 +59,18 @@ pub fn routes() -> Router<AppState> {
             get(elastic::list_templates).post(elastic::create_template),
         )
         .route(
+            "/api/v1/cloud/launch-templates/{id}",
+            axum::routing::delete(elastic::delete_template),
+        )
+        .route(
             "/api/v1/cloud/projects/{id}/instance-groups",
             get(elastic::list_groups).post(elastic::create_group),
         )
         .route(
             "/api/v1/cloud/instance-groups/{id}",
-            get(elastic::get_group).patch(elastic::update_group),
+            get(elastic::get_group)
+                .patch(elastic::update_group)
+                .delete(elastic::delete_group),
         )
         .route(
             "/api/v1/cloud/instance-groups/{id}/forecast",
