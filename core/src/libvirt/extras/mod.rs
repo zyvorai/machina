@@ -448,11 +448,7 @@ pub fn generate_cloud_init_iso_with(
     let tmp_dir = scratch.0.clone();
 
     // meta-data (escape user-provided hostname to prevent YAML injection)
-    let meta_data = format!(
-        "instance-id: {}\nlocal-hostname: {}\n",
-        yaml_escape(hostname),
-        yaml_escape(hostname),
-    );
+    let meta_data = super::cloud_init::nocloud_meta_data(hostname, hostname);
     std::fs::write(tmp_dir.join("meta-data"), &meta_data)
         .map_err(|e| LibvirtError::Operation(format!("Failed to write meta-data: {e}")))?;
 

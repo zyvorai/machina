@@ -11,6 +11,15 @@ use crate::config::LibvirtConfig;
 use crate::state::CreateVmRequest;
 use crate::LibvirtError;
 
+/// NoCloud `meta-data` as one line of JSON. JSON is also valid YAML, so cloud-init reads it as before, and minimal NoCloud
+/// readers (cirros parses this file with a small awk JSON converter and fails on YAML with quoted values) accept it too.
+pub fn nocloud_meta_data(instance_id: &str, hostname: &str) -> String {
+    format!(
+        "{}\n",
+        serde_json::json!({ "instance-id": instance_id, "local-hostname": hostname })
+    )
+}
+
 fn pick_seed_dir() -> PathBuf {
     // Prefer a common ISO pool location if present; otherwise fall back to machina-owned dir.
     let candidates = [
@@ -135,7 +144,7 @@ pub fn materialize_cloud_init_seed_if_requested(
         super::guest_agent_provision::append_desktop_graphical_cloud_config(&mut ud, &user);
     }
 
-    let md = format!("instance-id: {}\nlocal-hostname: {}\n", req.name, req.name);
+    let md = nocloud_meta_data(&req.name, &req.name);
 
     fs::write(&user_data, ud)
         .map_err(|e| LibvirtError::Operation(format!("write {}: {e}", user_data.display())))?;
@@ -196,4 +205,26 @@ pub fn materialize_cloud_init_seed_if_requested(
         &format!("cloud-init seed ISO created: {}", req.cloud_init_iso),
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod meta_data_tests {
+    use super::nocloud_meta_data;
+
+    #[test]
+    fn is_one_line_of_valid_json_that_round_trips() {
+        let m = nocloud_meta_data("web-1", "web-1");
+        assert_eq!(m.matches('\n').count(), 1, "one line, newline-terminated");
+        let v: serde_json::Value = serde_json::from_str(m.trim()).unwrap();
+        assert_eq!(v["instance-id"], "web-1");
+        assert_eq!(v["local-hostname"], "web-1");
+    }
+
+    #[test]
+    fn hostile_names_cannot_break_out_of_the_document() {
+        let m = nocloud_meta_data("a\"b: c\nruncmd: [x]", "h'ost");
+        let v: serde_json::Value = serde_json::from_str(m.trim()).unwrap();
+        assert_eq!(v.as_object().unwrap().len(), 2, "no extra keys");
+        assert_eq!(v["instance-id"], "a\"b: c\nruncmd: [x]");
+    }
 }

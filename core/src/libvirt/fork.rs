@@ -620,11 +620,7 @@ fn yaml_quote(s: &str) -> String {
 fn write_seed(dir: &str, new_name: &str) -> Result<String, LibvirtError> {
     let tmp = std::env::temp_dir().join(format!("machina-fork-seed-{:016x}", random_u64()));
     std::fs::create_dir_all(&tmp).map_err(|e| LibvirtError::Operation(format!("seed dir: {e}")))?;
-    let meta = format!(
-        "instance-id: {}\nlocal-hostname: {}\n",
-        yaml_quote(&format!("{new_name}-{:016x}", random_u64())),
-        yaml_quote(new_name)
-    );
+    let meta = super::cloud_init::nocloud_meta_data(&format!("{new_name}-{:016x}", random_u64()), new_name);
     let user = format!(
         "#cloud-config\nhostname: {}\npreserve_hostname: false\nbootcmd:\n  - [cloud-init-per, instance, machina-fork-id, sh, -c, \"rm -f /etc/machine-id /var/lib/dbus/machine-id && systemd-machine-id-setup\"]\n",
         yaml_quote(new_name)
