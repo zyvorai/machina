@@ -19,6 +19,14 @@ impl FromStr for CloudCidr {
     fn from_str(value: &str) -> Result<Self, Self::Err> {
         let (ip, prefix) = value.split_once('/').ok_or("CIDR prefix required")?;
         let ip: Ipv4Addr = ip.parse().map_err(|_| "IPv4 CIDR required")?;
+        // Canonical digits only: `u8::from_str` would accept "+24" and "024", and the CIDR string is stored and
+        // compared as text elsewhere, so one network must have exactly one spelling.
+        if prefix.is_empty()
+            || !prefix.bytes().all(|b| b.is_ascii_digit())
+            || (prefix.len() > 1 && prefix.starts_with('0'))
+        {
+            return Err("invalid prefix".into());
+        }
         let prefix: u8 = prefix.parse().map_err(|_| "invalid prefix")?;
         if prefix > 32 {
             return Err("prefix must be 0..32".into());
@@ -69,7 +77,8 @@ impl CloudCidr {
     }
     /// Lower half is managed IPAM, upper half DHCP. Never allocate DHCP's range.
     pub fn ipam_end_offset(self) -> u32 {
-        (self.last() - self.network).div_ceil(2) - 1
+        // Saturating: a /32 has no host range (callers validate the prefix first, but this is public).
+        (self.last() - self.network).div_ceil(2).saturating_sub(1)
     }
 }
 
@@ -80,11 +89,12 @@ pub fn cloud_network_xml(id: &str, cidr: &str) -> Result<String, String> {
             if [8, 13, 18, 23].contains(&i) {
                 c == '-'
             } else {
-                c.is_ascii_hexdigit()
+                // Lowercase only: libvirt lower-cases UUIDs, so an uppercase id would never match its own network again.
+                c.is_ascii_digit() || ('a'..='f').contains(&c)
             }
         })
     {
-        return Err("invalid subnet UUID".into());
+        return Err("invalid subnet UUID (lowercase hex expected)".into());
     }
     let c: CloudCidr = cidr.parse()?;
     c.validate_private(true)?;
@@ -160,6 +170,33 @@ mod tests {
             .unwrap()
             .validate_private(true)
             .is_err());
+    }
+    #[test]
+    fn only_canonical_spellings_parse_and_tiny_prefixes_do_not_panic() {
+        for bad in [
+            "10.0.0.0/+24",
+            "10.0.0.0/024",
+            "10.0.0.0/ 24",
+            "10.0.0.0/",
+            "10.0.0.0/2 4",
+            "010.0.0.0/24",
+        ] {
+            assert!(bad.parse::<CloudCidr>().is_err(), "{bad} must be rejected");
+        }
+        assert!("10.0.0.0/24".parse::<CloudCidr>().is_ok());
+        assert!("0.0.0.0/0".parse::<CloudCidr>().is_ok());
+        // /31 and /32 are not usable subnets, but computing their range must not underflow.
+        for c in ["10.0.0.0/32", "10.0.0.0/31"] {
+            let c: CloudCidr = c.parse().unwrap();
+            let _ = c.ipam_end_offset();
+            assert!(c.validate_private(true).is_err());
+        }
+    }
+    #[test]
+    fn subnet_uuids_must_be_lowercase_hex() {
+        assert!(cloud_network_xml("12345678-1234-1234-1234-123456789abc", "10.2.3.0/24").is_ok());
+        assert!(cloud_network_xml("12345678-1234-1234-1234-123456789ABC", "10.2.3.0/24").is_err());
+        assert!(cloud_network_xml("12345678-1234-1234-1234-123456789abg", "10.2.3.0/24").is_err());
     }
     #[test]
     fn isolated_xml_has_disjoint_dhcp_and_ipam_ranges() {
