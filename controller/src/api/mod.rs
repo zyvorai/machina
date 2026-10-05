@@ -1735,6 +1735,10 @@ pub fn router(state: AppState) -> Router {
             get(volumes::list_all_volume_snapshots),
         )
         .route(
+            "/api/v1/volume-snapshots/{id}/create-volume",
+            post(volumes::create_volume_from_snapshot),
+        )
+        .route(
             "/api/v1/volume-snapshots/{id}",
             delete(volumes::delete_volume_snapshot),
         )

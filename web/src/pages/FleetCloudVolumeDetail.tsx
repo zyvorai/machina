@@ -9,6 +9,7 @@ import {
   deleteVolume,
   deleteVolumeSnapshot,
   detachVolume,
+  createVolumeFromSnapshot,
   extendVolume,
   getVolume,
   listVolumeSnapshots,
@@ -179,7 +180,17 @@ function FleetCloudVolumeDetailContent() {
               <li key={s.id} className="flex items-center gap-2">
                 <span>{s.name}</span>
                 <span className="text-[var(--text-muted)] text-xs">{s.status}</span>
-                <button type="button" className={statusActionLinkClasses('error', 'text-xs ml-auto')}
+                <button type="button" className="text-xs text-[var(--accent)] hover:underline ml-auto"
+                  onClick={async () => {
+                    const n = prompt('Name for the new volume', `${vol.name}-copy`)
+                    if (!n) return
+                    try {
+                      const v = await createVolumeFromSnapshot(s.id, n)
+                      toast.success('Volume created')
+                      navigate(`/fleet-cloud/volumes/${v.id}`)
+                    } catch (e: unknown) { toast.error(formatUserError(e)) }
+                  }}>Create volume</button>
+                <button type="button" className={statusActionLinkClasses('error', 'text-xs')}
                   onClick={() => setPendingDeleteSnapshot(s)}>Delete</button>
               </li>
             ))}

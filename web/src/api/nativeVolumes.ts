@@ -118,3 +118,11 @@ export function createVolumeSnapshot(volumeId: string, name: string): Promise<Na
 export async function deleteVolumeSnapshot(id: string): Promise<void> {
   await platformFetch(`/api/v1/volume-snapshots/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
+
+/** EC2 CreateVolume from a snapshot: a new volume cloned from `snapshotId`. */
+export function createVolumeFromSnapshot(snapshotId: string, name: string): Promise<NativeVolume> {
+  return platformFetch<NativeVolume>(`/api/v1/volume-snapshots/${encodeURIComponent(snapshotId)}/create-volume`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}

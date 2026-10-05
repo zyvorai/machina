@@ -858,3 +858,80 @@ mod iotune_tests {
         assert!(validate_iotune(&big).is_err());
     }
 }
+
+#[derive(Debug, Deserialize)]
+pub struct VolumeFromSnapshotBody {
+    pub name: String,
+}
+
+/// EC2 `CreateVolume` with `SnapshotId`: a new volume (same size, class and project as the source) cloned from an
+/// Atlas snapshot.
+pub async fn create_volume_from_snapshot(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(snapshot_id): Path<Uuid>,
+    Json(body): Json<VolumeFromSnapshotBody>,
+) -> Result<Json<VolumeRow>, ApiError> {
+    require_operator(&actor)?;
+    machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
+    let snap: Option<(Option<String>, Uuid)> =
+        sqlx::query_as("SELECT atlas_snapshot_id, volume_id FROM volume_snapshots WHERE id = ?")
+            .bind(snapshot_id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let Some((atlas_snapshot, parent)) = snap else {
+        return Err(ApiError::not_found("snapshot not found"));
+    };
+    let atlas_snapshot = atlas_snapshot
+        .ok_or_else(|| ApiError::bad_request("this snapshot has no Atlas snapshot behind it"))?;
+    let (project_id, size_gib, class): (Option<Uuid>, i64, String) =
+        sqlx::query_as("SELECT project_id, size_gib, volume_class FROM volumes WHERE id = ?")
+            .bind(parent)
+            .fetch_one(&state.pool)
+            .await?;
+    let client = atlas_bridge::require_client(&state.config)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO volumes (id, project_id, name, size_gib, volume_class, status) VALUES (?, ?, ?, ?, ?, 'creating')",
+    )
+    .bind(id)
+    .bind(project_id)
+    .bind(&body.name)
+    .bind(size_gib)
+    .bind(&class)
+    .execute(&state.pool)
+    .await?;
+    let cloned = async {
+        let job = client
+            .clone_snapshot(&atlas_snapshot, &atlas_safe_name(&body.name), None)
+            .await
+            .map_err(|e| ApiError::internal(format!("Atlas snapshot clone failed: {e}")))?;
+        let vol = job
+            .resource_volume_id()
+            .ok_or_else(|| ApiError::internal("Atlas clone returned no volume_id"))?;
+        if let Some(jid) = job.job_id() {
+            let _ = client.wait_for_job(jid, Duration::from_secs(60)).await;
+        }
+        Ok::<String, ApiError>(vol)
+    }
+    .await;
+    match cloned {
+        Ok(vol) => {
+            sqlx::query("UPDATE volumes SET status = 'available', atlas_volume_id = ? WHERE id = ?")
+                .bind(&vol)
+                .bind(id)
+                .execute(&state.pool)
+                .await?;
+        }
+        Err(e) => {
+            sqlx::query("UPDATE volumes SET status = 'error' WHERE id = ?")
+                .bind(id)
+                .execute(&state.pool)
+                .await?;
+            return Err(e);
+        }
+    }
+    get_volume(State(state), Extension(actor), Path(id)).await
+}

@@ -74,3 +74,8 @@ may see; without `project` you get everything (the operator view). Images return
 
 **Limit:** this controls listing only. Creating an instance from a private image by its name is not blocked yet, so
 treat it as hiding, not as access control.
+
+## Volume from snapshot
+`POST /api/v1/volume-snapshots/{id}/create-volume {"name"}` creates a new volume (same size, class and project as the
+source) cloned from the snapshot through Atlas. Snapshots exist only for Atlas-backed volumes, so this needs
+`ATLAS_ENABLED=1`; local-pool volumes have no snapshots yet.
