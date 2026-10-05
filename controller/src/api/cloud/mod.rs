@@ -3,6 +3,7 @@
 
 pub(crate) mod elastic;
 mod network;
+pub(crate) use network::reserve_address;
 
 use crate::{api::ApiError, auth::AuthUser, state::AppState};
 use axum::routing::{get, post};

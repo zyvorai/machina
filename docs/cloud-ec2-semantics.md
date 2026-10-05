@@ -79,3 +79,13 @@ treat it as hiding, not as access control.
 `POST /api/v1/volume-snapshots/{id}/create-volume {"name"}` creates a new volume (same size, class and project as the
 source) cloned from the snapshot through Atlas. Snapshots exist only for Atlas-backed volumes, so this needs
 `ATLAS_ENABLED=1`; local-pool volumes have no snapshots yet.
+
+## Network interfaces (ENIs)
+A port (`POST /api/v1/ports`) on a cloud subnet now behaves like an ENI: it reserves a managed address of the subnet
+(`private_ip` in the request, or the first free one), returns `private_ip`, `subnet_id`, `mac_address` and an `eni-` id, and
+releases the address when the port is deleted. A requested address must be in the managed (lower-half) range and free,
+otherwise 409.
+
+**Limits:** the reserved address is a reservation, not configuration. It is not yet pinned as a DHCP host entry, so the
+guest must be configured with it (the subnet page says the same). There are no secondary addresses and a port still carries
+one security group; per-interface groups are not enforced (groups attach to instances).

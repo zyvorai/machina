@@ -316,10 +316,23 @@ pub struct PortRow {
     pub mac_address: Option<String>,
     pub security_group_id: Option<Uuid>,
     pub status: String,
+    /// Cloud subnet the interface lives on, and the managed address reserved for it.
+    pub subnet_id: Option<String>,
+    pub private_ip: Option<String>,
+    pub description: String,
+    #[sqlx(skip)]
+    pub ec2_id: String,
 }
 
-const PORT_SELECT: &str =
-    "SELECT id, network_id, project_id, vm_id, mac_address, security_group_id, status FROM ports";
+impl PortRow {
+    fn with_id(mut self) -> Self {
+        self.ec2_id = crate::resource_ids::ec2_id(crate::resource_ids::Kind::Port, self.id);
+        self
+    }
+}
+
+const PORT_SELECT: &str = "SELECT id, network_id, project_id, vm_id, mac_address, security_group_id, status, \
+    subnet_id, private_ip, COALESCE(description, '') AS description FROM ports";
 
 #[derive(Debug, Deserialize)]
 pub struct ListPortsQuery {
@@ -342,7 +355,7 @@ pub async fn list_ports(
     .bind(q.vm_id)
     .fetch_all(&state.pool)
     .await?;
-    Ok(Json(rows))
+    Ok(Json(rows.into_iter().map(PortRow::with_id).collect()))
 }
 
 pub async fn get_port(
@@ -355,7 +368,7 @@ pub async fn get_port(
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
-    Ok(Json(row))
+    Ok(Json(row.with_id()))
 }
 
 #[derive(Debug, Deserialize)]
@@ -367,6 +380,11 @@ pub struct CreatePortBody {
     pub security_group_id: Option<Uuid>,
     #[serde(default)]
     pub project_id: Option<Uuid>,
+    /// On a cloud subnet: the managed address to reserve (default: the first free one).
+    #[serde(default)]
+    pub private_ip: Option<String>,
+    #[serde(default)]
+    pub description: String,
 }
 
 /// `POST /api/v1/ports` — creating a port with `vm_id` set delegates the actual NIC
@@ -402,6 +420,24 @@ pub async fn create_port(
     let id = Uuid::new_v4();
     let mut mac_address: Option<String> = None;
     let mut status = "DOWN";
+    if body.description.len() > 255 {
+        return Err(ApiError::bad_request("description is limited to 255 characters"));
+    }
+    // A port on a cloud subnet owns a managed address, reserved before anything is attached.
+    let subnet: Option<Uuid> = sqlx::query_scalar("SELECT id FROM cloud_subnets WHERE network_id = ?")
+        .bind(body.network_id)
+        .fetch_optional(&state.pool)
+        .await?;
+    if subnet.is_none() && body.private_ip.is_some() {
+        return Err(ApiError::bad_request("private_ip needs a port on a cloud subnet"));
+    }
+    let private_ip = match subnet {
+        Some(sid) => Some(
+            crate::api::cloud::reserve_address(&state.pool, sid, &format!("eni-{id}"), body.private_ip.as_deref())
+                .await?,
+        ),
+        None => None,
+    };
 
     if let Some(vm_id) = body.vm_id {
         let task = vms::attach_vm_nic(
@@ -433,8 +469,8 @@ pub async fn create_port(
     }
 
     sqlx::query(
-        "INSERT INTO ports (id, network_id, project_id, vm_id, mac_address, security_group_id, status) \
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO ports (id, network_id, project_id, vm_id, mac_address, security_group_id, status, subnet_id, private_ip, description) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(body.network_id)
@@ -443,6 +479,9 @@ pub async fn create_port(
     .bind(&mac_address)
     .bind(body.security_group_id)
     .bind(status)
+    .bind(subnet.map(|s| s.to_string()))
+    .bind(&private_ip)
+    .bind(&body.description)
     .execute(&state.pool)
     .await?;
 
@@ -454,6 +493,10 @@ pub async fn create_port(
         mac_address,
         security_group_id: body.security_group_id,
         status: status.to_string(),
+        subnet_id: subnet.map(|s| s.to_string()),
+        private_ip,
+        description: body.description,
+        ec2_id: crate::resource_ids::ec2_id(crate::resource_ids::Kind::Port, id),
     }))
 }
 
@@ -478,6 +521,10 @@ pub async fn delete_port(
     }
     sqlx::query("DELETE FROM ports WHERE id = ?")
         .bind(id)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("DELETE FROM cloud_ip_allocations WHERE request_key = ?")
+        .bind(format!("eni-{id}"))
         .execute(&state.pool)
         .await?;
     Ok(Json(serde_json::json!({ "deleted": true })))

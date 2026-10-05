@@ -344,6 +344,99 @@ pub async fn allocate_address(
     tx.commit().await?;
     Ok(Json(row))
 }
+/// First free managed address in `cidr`, or `wanted` when it is a free managed address of the subnet.
+pub(crate) fn pick_address(
+    cidr: &CloudCidr,
+    used: &std::collections::HashSet<String>,
+    wanted: Option<&str>,
+) -> Result<String, String> {
+    let managed = || (4..=cidr.ipam_end_offset()).filter_map(|n| cidr.address(n).ok());
+    if let Some(w) = wanted {
+        let ip: std::net::Ipv4Addr = w.trim().parse().map_err(|_| format!("'{w}' is not an IPv4 address"))?;
+        let w = ip.to_string();
+        if !managed().any(|a| a == w) {
+            return Err(format!("{w} is not in the subnet's managed address range"));
+        }
+        if used.contains(&w) {
+            return Err(format!("{w} is already reserved"));
+        }
+        return Ok(w);
+    }
+    managed()
+        .find(|a| !used.contains(a))
+        .ok_or_else(|| "managed address pool exhausted".to_string())
+}
+
+/// Reserve an address of `subnet_id` for a network interface (idempotent per `request_key`).
+pub(crate) async fn reserve_address(
+    pool: &sqlx::SqlitePool,
+    subnet_id: Uuid,
+    request_key: &str,
+    wanted: Option<&str>,
+) -> Result<String, ApiError> {
+    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let prior: Option<String> = sqlx::query_scalar(
+        "SELECT address FROM cloud_ip_allocations WHERE subnet_id = ? AND request_key = ?",
+    )
+    .bind(subnet_id)
+    .bind(request_key)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some(a) = prior {
+        return Ok(a);
+    }
+    let cidr: String = sqlx::query_scalar("SELECT cidr FROM cloud_subnets WHERE id = ?")
+        .bind(subnet_id)
+        .fetch_one(&mut *tx)
+        .await?;
+    let cidr: CloudCidr = cidr.parse().map_err(invalid)?;
+    let used: std::collections::HashSet<String> =
+        sqlx::query_scalar("SELECT address FROM cloud_ip_allocations WHERE subnet_id = ?")
+            .bind(subnet_id)
+            .fetch_all(&mut *tx)
+            .await?
+            .into_iter()
+            .collect();
+    let address = pick_address(&cidr, &used, wanted).map_err(conflict)?;
+    sqlx::query("INSERT INTO cloud_ip_allocations (id,subnet_id,request_key,address) VALUES (?,?,?,?)")
+        .bind(Uuid::new_v4())
+        .bind(subnet_id)
+        .bind(request_key)
+        .bind(&address)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(address)
+}
+
+#[cfg(test)]
+mod pick_address_tests {
+    use super::*;
+
+    fn cidr() -> CloudCidr {
+        "10.9.0.0/24".parse().unwrap()
+    }
+
+    #[test]
+    fn first_free_skips_used_and_starts_after_the_reserved_offsets() {
+        let mut used = std::collections::HashSet::new();
+        assert_eq!(pick_address(&cidr(), &used, None).unwrap(), "10.9.0.4");
+        used.insert("10.9.0.4".to_string());
+        assert_eq!(pick_address(&cidr(), &used, None).unwrap(), "10.9.0.5");
+    }
+
+    #[test]
+    fn a_wanted_address_must_be_managed_and_free() {
+        let mut used = std::collections::HashSet::new();
+        assert_eq!(pick_address(&cidr(), &used, Some("10.9.0.20")).unwrap(), "10.9.0.20");
+        used.insert("10.9.0.20".to_string());
+        assert!(pick_address(&cidr(), &used, Some("10.9.0.20")).unwrap_err().contains("already reserved"));
+        assert!(pick_address(&cidr(), &used, Some("10.9.0.2")).is_err(), "gateway/reserved offsets are not managed");
+        assert!(pick_address(&cidr(), &used, Some("10.9.0.250")).is_err(), "DHCP half is not managed");
+        assert!(pick_address(&cidr(), &used, Some("not-an-ip")).is_err());
+    }
+}
+
 pub async fn list_addresses(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,
