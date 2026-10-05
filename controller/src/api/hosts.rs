@@ -725,6 +725,18 @@ pub async fn delete_host(
     Query(q): Query<DeleteHostQuery>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
+    // A cloud VPC lives on exactly one host (RESTRICT foreign key); refuse clearly instead of failing on the constraint.
+    let vpcs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cloud_vpcs WHERE host_id = ?")
+        .bind(id)
+        .fetch_one(&state.pool)
+        .await?;
+    if vpcs > 0 {
+        return Err(ApiError::conflict(
+            format!("host still owns {vpcs} cloud VPC(s)"),
+            "Cloud VPCs are host-local and cannot be deleted yet; keep this host enrolled until VPC deletion is supported.",
+        )
+        .with_code("host_has_vpcs"));
+    }
     let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE host_id = ?")
         .bind(id)
         .fetch_one(&state.pool)
