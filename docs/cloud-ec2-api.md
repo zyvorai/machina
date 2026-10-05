@@ -40,3 +40,8 @@ Volumes, security groups, images and the VPC calls; pagination (`NextToken`); th
 - `TerminateInstances`: deletes through the normal delete path. If the cluster requires approval for deletions it is refused,
   exactly as in the UI.
 - `CreateTags` / `DeleteTags` on any resource that has an EC2 id (`i-`, `vol-`, `sg-`, `key-`, `ami-`, `eni-`, …).
+
+## Terminated instances
+Deleting an instance leaves a tombstone: `DescribeInstances` keeps listing it as `terminated` (state code 48) for an hour,
+with its tags, then drops it. `StartInstances`/`StopInstances` on a terminated instance fail with `IncorrectInstanceState`;
+terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list tombstones.

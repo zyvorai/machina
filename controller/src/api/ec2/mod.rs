@@ -84,6 +84,7 @@ pub(crate) fn instance_state(observed: &str) -> (u16, &'static str) {
         "running" | "blocked" => (16, "running"),
         "shutoff" | "stopped" | "paused" | "suspended" | "pmsuspended" | "crashed" => (80, "stopped"),
         "shutdown" => (64, "stopping"),
+        "terminated" => (48, "terminated"),
         _ => (0, "pending"),
     }
 }
@@ -181,11 +182,27 @@ async fn load_instances(state: &AppState) -> Result<Vec<Inst>, Ec2Error> {
     )
     .fetch_all(&state.pool)
     .await?;
+    // Terminated instances stay visible for an hour; then the tombstone and its tags go.
+    let _ = sqlx::query(
+        "DELETE FROM resource_tags WHERE resource_type = 'vm' AND resource_id IN \
+         (SELECT lower(hex(id)) FROM terminated_instances WHERE terminated_at < datetime('now', '-1 hour'))",
+    )
+    .execute(&state.pool)
+    .await;
+    let _ = sqlx::query("DELETE FROM terminated_instances WHERE terminated_at < datetime('now', '-1 hour')")
+        .execute(&state.pool)
+        .await;
+    let gone: Vec<(Uuid, String, Option<String>, i64, i64, String)> = sqlx::query_as(
+        "SELECT id, name, instance_type, vcpus, memory_mib, terminated_at FROM terminated_instances \
+         WHERE id NOT IN (SELECT id FROM vms) ORDER BY name",
+    )
+    .fetch_all(&state.pool)
+    .await?;
     let tags: Vec<(String, String, String)> =
         sqlx::query_as("SELECT resource_id, key, value FROM resource_tags WHERE resource_type = 'vm'")
             .fetch_all(&state.pool)
             .await?;
-    Ok(rows
+    let mut out: Vec<Inst> = rows
         .into_iter()
         .map(|(id, name, state, vcpus, memory_mib, flavor, ip, created)| Inst {
             tags: tags.iter().filter(|(r, _, _)| *r == id.simple().to_string()).map(|(_, k, v)| (k.clone(), v.clone())).collect(),
@@ -198,7 +215,19 @@ async fn load_instances(state: &AppState) -> Result<Vec<Inst>, Ec2Error> {
             ip,
             created,
         })
-        .collect())
+        .collect();
+    out.extend(gone.into_iter().map(|(id, name, flavor, vcpus, memory_mib, at)| Inst {
+        tags: tags.iter().filter(|(r, _, _)| *r == id.simple().to_string()).map(|(_, k, v)| (k.clone(), v.clone())).collect(),
+        id,
+        name,
+        state: "terminated".into(),
+        vcpus,
+        memory_mib,
+        flavor,
+        ip: None,
+        created: at,
+    }));
+    Ok(out)
 }
 
 // ---- actions ---------------------------------------------------------------
@@ -303,6 +332,9 @@ async fn power(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, String>,
             .find(|i| &i.eid() == want)
             .ok_or_else(|| Ec2Error::bad("InvalidInstanceID.NotFound", format!("The instance ID '{want}' does not exist")))?;
         let (pc, pn) = instance_state(&i.state);
+        if i.state == "terminated" {
+            return Err(Ec2Error::bad("IncorrectInstanceState", format!("The instance '{want}' is terminated")));
+        }
         let r = if start {
             crate::api::vms::start_vm(State(state.clone()), Extension(actor.clone()), Path(i.id)).await
         } else {
@@ -442,6 +474,10 @@ async fn terminate(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, Stri
             .find(|i| &i.eid() == want)
             .ok_or_else(|| Ec2Error::bad("InvalidInstanceID.NotFound", format!("The instance ID '{want}' does not exist")))?;
         let (pc, pn) = instance_state(&i.state);
+        if i.state == "terminated" {
+            items.push_str(&format!("<item><instanceId>{want}</instanceId><currentState><code>48</code><name>terminated</name></currentState><previousState><code>48</code><name>terminated</name></previousState></item>"));
+            continue;
+        }
         // No `confirmed`: a cluster that requires approval for deletions keeps requiring it here.
         crate::api::vms::delete_vm(State(state.clone()), Extension(actor.clone()), Path(i.id), None).await?;
         items.push_str(&format!(
@@ -660,6 +696,7 @@ mod tests {
         assert_eq!(instance_state("running"), (16, "running"));
         assert_eq!(instance_state("shutoff"), (80, "stopped"));
         assert_eq!(instance_state("weird"), (0, "pending"));
+        assert_eq!(instance_state("terminated"), (48, "terminated"));
     }
 
     #[test]
