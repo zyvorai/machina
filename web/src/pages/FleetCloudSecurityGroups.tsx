@@ -11,6 +11,7 @@ import {
   getSecurityGroup,
   listSecurityGroupRules,
   listSecurityGroups,
+  setSecurityGroupMode,
   type NativeSecurityGroup,
   type NativeSecurityGroupRule,
 } from '../api/securityGroups'
@@ -46,6 +47,7 @@ function FleetCloudSecurityGroupsContent() {
   const [newSgName, setNewSgName] = useState('')
   const [creatingSg, setCreatingSg] = useState(false)
   const [search, setSearch] = useState('')
+  const [armEnforce, setArmEnforce] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -137,8 +139,8 @@ function FleetCloudSecurityGroupsContent() {
           Refresh
         </button>
       </div>
-      <p className="text-xs text-amber-400/90 -mt-2">
-        Advisory only — rule enforcement isn't wired to the firewall yet.
+      <p className="text-xs text-[var(--text-muted)] -mt-2">
+        Groups are advisory until you switch them to Enforce; the badge shows what each host&apos;s VM edge reports.
       </p>
 
       <div className="rounded-2xl border border-[var(--apple-hairline)] bg-[var(--apple-surface)] p-4 flex flex-wrap gap-2 items-end text-sm">
@@ -244,6 +246,27 @@ function FleetCloudSecurityGroupsContent() {
                   <p className="text-sm text-[var(--text-muted)] mt-1">{active.description}</p>
                 )}
                 <p className="text-xs font-mono text-[var(--text-faint)] mt-2 break-all">{active.id}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2 text-xs" data-testid="sg-enforcement">
+                  <span className="rounded-full border border-[var(--apple-hairline)] px-2 py-0.5 font-medium">
+                    {active.enforcement?.state ?? 'advisory'}
+                  </span>
+                  <span className="text-[var(--text-muted)]">{active.enforcement?.reason}</span>
+                  <button type="button" className="px-2 py-1 rounded border border-[var(--apple-hairline)]"
+                    onClick={async () => {
+                      const next = active.mode === 'enforce' ? 'audit' : 'enforce'
+                      if (next === 'enforce' && !armEnforce) { setArmEnforce(true); return }
+                      setArmEnforce(false)
+                      try {
+                        await setSecurityGroupMode(active.id, next)
+                        toast.success(next === 'enforce' ? 'Enforcing' : 'Back to advisory')
+                        void loadDetail(active.id)
+                      } catch (e: unknown) {
+                        toast.error(formatUserError(e))
+                      }
+                    }}>
+                    {active.mode === 'enforce' ? 'Switch to audit' : armEnforce ? 'Confirm: enforce on attached instances' : 'Enforce'}
+                  </button>
+                </div>
                 <h3 className="text-sm font-medium text-[var(--text-muted)] mt-4 mb-2">
                   Rules ({rules.length})
                 </h3>
@@ -277,7 +300,7 @@ function FleetCloudSecurityGroupsContent() {
                           <th scope="col">Direction</th>
                           <th scope="col">Protocol</th>
                           <th scope="col">Ports</th>
-                          <th scope="col">Remote CIDR</th>
+                          <th scope="col">Remote</th>
                           <th scope="col" />
                         </tr>
                       </thead>
@@ -294,7 +317,7 @@ function FleetCloudSecurityGroupsContent() {
                                 : '—'}
                             </td>
                             <td className="text-[var(--text-muted)]">
-                              {r.remote_cidr || '—'}
+                              {r.remote_sg_id ? `sg:${r.remote_sg_id.slice(0, 8)}` : r.remote_cidr || '—'}
                             </td>
                             <td>
                               <button type="button" className={statusActionLinkClasses('error')}

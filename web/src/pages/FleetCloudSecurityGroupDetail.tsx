@@ -89,7 +89,7 @@ function FleetCloudSecurityGroupDetailContent() {
       </h1>
       {group.description && <p className="text-sm text-[var(--text-muted)]">{group.description}</p>}
       <p className="text-xs text-amber-400/90">
-        Advisory only — rule enforcement isn't wired to the firewall yet.
+        Advisory until switched to Enforce on the Security groups page; the badge there shows what the hosts report.
       </p>
       <dl className="grid sm:grid-cols-2 gap-4 rounded-2xl border border-[var(--apple-hairline)] bg-[var(--apple-surface)] p-4 text-sm">
         <div><dt className="text-xs text-[var(--text-muted)] uppercase">ID</dt><dd className="font-mono text-[var(--text-primary)] mt-1 break-all">{group.id}</dd></div>

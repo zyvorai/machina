@@ -4,10 +4,8 @@
 // Native security groups + rules (controller::api::networking) — Phase 4 of the
 // external-cloud-client replacement. Goes through the platform controller proxy.
 //
-// Narrower than Neutron security groups: only CIDR-based remote rules (no
-// remote-group references) and no ethertype field — matches what the native
-// backend actually stores. Rule enforcement is not yet wired to the firewall
-// (advisory only), surfaced via the `enforced` field on every row.
+// Groups are advisory (`mode: audit`) until switched to `enforce`; `enforcement` carries what the
+// hosts' VM edge actually reports.
 
 import { platformFetch } from './platform'
 
@@ -17,6 +15,16 @@ export interface NativeSecurityGroup {
   name: string
   description: string
   enforced: boolean
+  mode: 'audit' | 'enforce'
+  enforcement?: SecurityGroupEnforcement
+}
+
+export type SecurityGroupEnforcementState = 'advisory' | 'pending' | 'enforced' | 'auditing' | 'failed'
+
+export interface SecurityGroupEnforcement {
+  state: SecurityGroupEnforcementState
+  reason: string
+  vms: string[]
 }
 
 export interface NativeSecurityGroupRule {
@@ -27,7 +35,8 @@ export interface NativeSecurityGroupRule {
   port_min: number | null
   port_max: number | null
   remote_cidr: string | null
-  enforced: boolean
+  remote_sg_id?: string | null
+  description?: string
 }
 
 export function listSecurityGroups(): Promise<NativeSecurityGroup[]> {
@@ -73,6 +82,29 @@ export function createSecurityGroupRule(
 
 export async function deleteSecurityGroupRule(id: string): Promise<void> {
   await platformFetch<{ deleted: boolean }>(`/api/v1/security-group-rules/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+export function setSecurityGroupMode(id: string, mode: 'audit' | 'enforce'): Promise<NativeSecurityGroup> {
+  return platformFetch<NativeSecurityGroup>(`/api/v1/security-groups/${encodeURIComponent(id)}/mode`, {
+    method: 'PUT',
+    body: JSON.stringify({ mode }),
+  })
+}
+
+export function listInstanceSecurityGroups(vmId: string): Promise<NativeSecurityGroup[]> {
+  return platformFetch<NativeSecurityGroup[]>(`/api/v1/vms/${encodeURIComponent(vmId)}/security-groups`)
+}
+
+export async function attachInstanceSecurityGroup(vmId: string, sgId: string): Promise<void> {
+  await platformFetch(`/api/v1/vms/${encodeURIComponent(vmId)}/security-groups/${encodeURIComponent(sgId)}`, {
+    method: 'PUT',
+  })
+}
+
+export async function detachInstanceSecurityGroup(vmId: string, sgId: string): Promise<void> {
+  await platformFetch(`/api/v1/vms/${encodeURIComponent(vmId)}/security-groups/${encodeURIComponent(sgId)}`, {
     method: 'DELETE',
   })
 }

@@ -1,0 +1,41 @@
+# Fleet Cloud: EC2 semantics
+
+What behaves like EC2 today, what is enforced, and what is not. Everything here is available through the controller
+API (`/api/v1/...`) and the Fleet Cloud pages.
+
+## Tags and ids
+- `GET|PUT|DELETE /api/v1/tags/{resource_type}/{id}` stores key/value tags (≤ 50 per resource, keys ≤ 128, values ≤ 256).
+  `GET /api/v1/tags?key=&value=` lists resources by tag. `GET /api/v1/vms?tag_key=&tag_value=` filters instances.
+- Every taggable resource has an EC2-style id (`i-`, `vol-`, `snap-`, `sg-`, `key-`, `ami-`, `eni-`, `vpc-`, `subnet-`,
+  `asg-`, `lt-` + 17 hex characters), derived from its UUID, so it never changes. `GET /api/v1/ids/{ec2_id}` resolves one;
+  routes that take an instance id also accept the EC2 id.
+
+## Instance types
+`POST /api/v1/vms/{id}/change-type {flavor_id}` shuts the instance down cleanly, sets vCPUs and memory to the flavor's,
+starts it again, and records `vms.flavor_id`. It is a task with events. Refused: shrinking the disk, a type that would
+exceed the project's vCPU/memory quota, and a VM that is not stopped or running.
+
+## User data
+`cloud_init_user_data` (≤ 16 KB) on instance create and launch templates is written verbatim as the NoCloud `user-data`
+in the seed ISO (merged with the user/ssh key vendor data) and is never logged. There is no 169.254.169.254 metadata
+service yet; the seed ISO is the delivery path.
+
+## Security groups
+Groups are **advisory** (`mode: audit`, the default for every existing group) until you switch them:
+`PUT /api/v1/security-groups/{id}/mode {"mode":"enforce"}`.
+
+- Attach to instances with `PUT|DELETE /api/v1/vms/{id}/security-groups/{sg_id}`; list with `GET .../security-groups`.
+- Rules: ingress/egress, protocol tcp/udp/icmp/icmpv6/all, port or range, peer = CIDR **or** another group
+  (`remote_sg_id`: every instance carrying that group). New groups get an allow-all egress rule, as in EC2.
+- An enforcing instance gets one managed policy `sg-<instance name>` on the VM edge. Rules of all its groups are unioned
+  (allow-only). Both directions are default-deny, so an enforcing group with no ingress rules accepts nothing, and one
+  with no egress rule sends nothing. Replies to allowed connections pass (connection tracking).
+- `enforcement.state` is what the hosts say, not what was requested: `advisory` (audit mode), `pending` (no instance
+  attached), `enforced`, `auditing` (the host's VM edge is not enforcing), `failed` (a host did not answer).
+- Enforcement is lease-gated and fails open: the controller re-asserts enforce mode and a fresh lease every 30 s
+  (`MACHINA_BPF_ENFORCE_LEASE_SECS`); if the controller or `machina-bpfd` stops, the host drops back to observe and the
+  state shows `auditing` until the next tick. Enforce mode is per host, so any other VM network policy on a host with an
+  enforcing group is enforced too.
+- Refused: enforcing while an attached instance has no known address (traffic could not be told from spoofed traffic).
+- Not covered yet: groups per network interface (they attach per instance), a lockout check against the controller and
+  console paths (allow the paths you need explicitly), a dry-run diff before the first enforce.

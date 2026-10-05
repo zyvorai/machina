@@ -27,6 +27,7 @@ import InstanceSleep from '../components/flow/InstanceSleep'
 import InstanceTimeTravel from '../components/flow/InstanceTimeTravel'
 import TagEditor from '../components/platform/TagEditor'
 import InstanceTypeCard from '../components/platform/InstanceTypeCard'
+import InstanceSecurityGroups from '../components/platform/InstanceSecurityGroups'
 import { useToastContext } from '../contexts/ToastContext'
 import { formatUserError } from '../utils/apiError'
 import { instanceStatusTone, statusBadgeClasses, statusActionLinkClasses } from '../utils/semanticColors'
@@ -156,6 +157,7 @@ function FleetCloudInstanceDetailContent() {
       />
       <InstanceTypeCard vm={vm} onQueued={() => void load(true)} />
 
+      <InstanceSecurityGroups vmId={vm.id} />
       <TagEditor resourceType="vm" resourceId={vm.id} />
 
       <InstanceIsolation vmName={vm.name} project={vm.project} />
