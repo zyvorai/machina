@@ -92,7 +92,7 @@ pub struct HaSpec {
     pub anti_affinity: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CloudInitSpec {
     #[serde(default = "default_cloud_user")]
     pub user: String,
@@ -100,6 +100,50 @@ pub struct CloudInitSpec {
     pub password: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ssh_pubkey: Option<String>,
+    /// Free-form cloud-init user-data (a `#cloud-config` document or a script), passed to the guest verbatim as the NoCloud
+    /// `user-data`; Machina's own generated settings travel in `vendor-data` beside it. At most [`MAX_USER_DATA_BYTES`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub user_data: Option<String>,
+}
+
+/// EC2's user-data limit.
+pub const MAX_USER_DATA_BYTES: usize = 16 * 1024;
+
+/// Why this user-data cannot be used, if it cannot: empty, over the limit, or containing a NUL byte.
+pub fn validate_user_data(data: &str) -> Result<(), SpecError> {
+    if data.trim().is_empty() {
+        return Err(SpecError::Validation("user_data must not be empty".into()));
+    }
+    if data.len() > MAX_USER_DATA_BYTES {
+        return Err(SpecError::Validation(format!(
+            "user_data is {} bytes; the limit is {MAX_USER_DATA_BYTES}",
+            data.len()
+        )));
+    }
+    if data.contains('\0') {
+        return Err(SpecError::Validation(
+            "user_data must not contain NUL bytes".into(),
+        ));
+    }
+    Ok(())
+}
+
+// Never print credentials or user-data (which commonly carries secrets) into logs.
+impl std::fmt::Debug for CloudInitSpec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CloudInitSpec")
+            .field("user", &self.user)
+            .field("password", &self.password.as_ref().map(|_| "<redacted>"))
+            .field("ssh_pubkey", &self.ssh_pubkey)
+            .field(
+                "user_data",
+                &self
+                    .user_data
+                    .as_ref()
+                    .map(|d| format!("<{} bytes>", d.len())),
+            )
+            .finish()
+    }
 }
 
 fn default_cloud_user() -> String {
@@ -211,6 +255,14 @@ impl VirtualMachine {
             ));
         }
         parse_memory_mib(&self.spec.memory)?;
+        if let Some(data) = self
+            .spec
+            .cloud_init
+            .as_ref()
+            .and_then(|c| c.user_data.as_deref())
+        {
+            validate_user_data(data)?;
+        }
         if self.spec.storage.is_empty() {
             return Err(SpecError::Validation(
                 "at least one storage volume required".into(),
@@ -719,5 +771,26 @@ mod tests {
         assert!(vm.validate().is_err());
         vm.spec.graphics.allow_public_listen = true;
         assert!(vm.validate().is_ok());
+    }
+
+    #[test]
+    fn user_data_is_bounded_and_never_debug_printed() {
+        assert!(validate_user_data("#cloud-config\npackages: [nginx]\n").is_ok());
+        assert!(validate_user_data("   \n").is_err());
+        assert!(validate_user_data(&"x".repeat(MAX_USER_DATA_BYTES)).is_ok());
+        assert!(validate_user_data(&"x".repeat(MAX_USER_DATA_BYTES + 1)).is_err());
+        assert!(validate_user_data("a\0b").is_err());
+        let ci = CloudInitSpec {
+            user: "u".into(),
+            password: Some("hunter2".into()),
+            ssh_pubkey: None,
+            user_data: Some("#!/bin/sh\necho secret-token".into()),
+        };
+        let shown = format!("{ci:?}");
+        assert!(
+            !shown.contains("hunter2") && !shown.contains("secret-token"),
+            "{shown}"
+        );
+        assert!(shown.contains("<redacted>") && shown.contains("bytes"));
     }
 }

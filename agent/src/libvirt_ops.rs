@@ -1467,13 +1467,14 @@ fn maybe_cloud_init_iso(
         .and_then(|c| c.ssh_pubkey.as_deref())
         .unwrap_or(cloud.ssh_pubkey.as_str());
     Ok(Some(
-        machina_core::libvirt::extras::generate_cloud_init_iso(
+        machina_core::libvirt::extras::generate_cloud_init_iso_with(
             "",
             images_dir,
             &vm.metadata.name,
             user,
             pass,
             key,
+            ci.and_then(|c| c.user_data.as_deref()),
             None,
         )?,
     ))

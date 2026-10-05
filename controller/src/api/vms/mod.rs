@@ -31,6 +31,9 @@ use crate::tasks::enqueue::enqueue_task;
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct VmRow {
     pub id: Uuid,
+    /// EC2-style id (`i-0123456789abcdef0`), derived from the UUID; filled in after the row is read.
+    #[sqlx(skip)]
+    pub ec2_id: String,
     pub name: String,
     pub host_id: Option<Uuid>,
     pub desired_state: String,
@@ -49,10 +52,24 @@ pub struct VmRow {
     pub last_seen_at: Option<chrono::DateTime<chrono::Utc>>,
     pub guest_ip: Option<String>,
     pub guest_tools_status: Option<String>,
+    /// The instance type (flavor) the machine was launched as or last changed to, if known.
+    pub flavor_id: Option<Uuid>,
+}
+
+impl VmRow {
+    fn with_ec2_id(mut self) -> Self {
+        self.ec2_id = crate::resource_ids::ec2_id(crate::resource_ids::Kind::Vm, self.id);
+        self
+    }
 }
 
 #[derive(Debug, serde::Deserialize)]
 pub struct VmListQuery {
+    /// Only machines carrying this key/value tag (`resource_tags`); `tag_value` is optional.
+    #[serde(default)]
+    pub tag_key: Option<String>,
+    #[serde(default)]
+    pub tag_value: Option<String>,
     #[serde(default)]
     pub project: Option<String>,
     #[serde(default)]
@@ -80,10 +97,14 @@ pub async fn list_vms(
                 v.uuid, v.vcpus, v.memory_mib,
                 COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '[]') AS tags,
                 COALESCE(v.inventory_source, 'libvirt') AS inventory_source,
-                v.k8s_namespace, v.last_seen_at, v.guest_ip, v.guest_tools_status
+                v.k8s_namespace, v.last_seen_at, v.guest_ip, v.guest_tools_status, v.flavor_id
          FROM vms v LEFT JOIN ha_policies hp ON hp.vm_id = v.id
          LEFT JOIN vm_metrics m ON m.vm_id = v.id
          WHERE (?1 IS NULL OR v.project = ?1)
+           AND (?7 IS NULL OR EXISTS (
+                 SELECT 1 FROM resource_tags rt
+                 WHERE rt.resource_type = 'vm' AND rt.resource_id = lower(hex(v.id))
+                   AND rt.key = ?7 AND (?8 IS NULL OR rt.value = ?8)))
            AND (?2 IS NULL OR v.host_id = ?2)
            AND (?3 IS NULL OR v.managed = ?3)
            AND (?4 IS NULL OR EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value = ?4))
@@ -128,9 +149,11 @@ pub async fn list_vms(
     .bind(q.tag.as_deref())
     .bind(q.source.as_deref())
     .bind(q.status.as_deref())
+    .bind(q.tag_key.as_deref())
+    .bind(q.tag_value.as_deref())
     .fetch_all(&state.pool)
     .await?;
-    Ok(Json(rows))
+    Ok(Json(rows.into_iter().map(VmRow::with_ec2_id).collect()))
 }
 
 pub async fn get_vm(
@@ -145,14 +168,14 @@ pub async fn get_vm(
                 v.uuid, v.vcpus, v.memory_mib,
                 COALESCE(hp.enabled, FALSE) AS ha_enabled, v.project, COALESCE(v.tags, '[]') AS tags,
                 COALESCE(v.inventory_source, 'libvirt') AS inventory_source,
-                v.k8s_namespace, v.last_seen_at, v.guest_ip, v.guest_tools_status
+                v.k8s_namespace, v.last_seen_at, v.guest_ip, v.guest_tools_status, v.flavor_id
          FROM vms v LEFT JOIN ha_policies hp ON hp.vm_id = v.id
          WHERE v.id = ?",
     )
     .bind(id)
     .fetch_one(&state.pool)
     .await?;
-    Ok(Json(row))
+    Ok(Json(row.with_ec2_id()))
 }
 
 pub async fn get_vm_spec(
@@ -180,6 +203,9 @@ pub struct CreateVmBody {
     /// of a local qcow2 file, and attach it as a libvirt network disk.
     #[serde(default)]
     pub atlas_root_disk: bool,
+    /// The flavor (instance type) this machine is launched as; recorded so it can be shown and changed later.
+    #[serde(default)]
+    pub flavor_id: Option<Uuid>,
     /// Atlas intent → placement policy for the root volume (default from config).
     #[serde(default)]
     pub atlas_policy: Option<String>,
@@ -269,8 +295,8 @@ pub async fn create_vm(
     }
 
     sqlx::query(
-        "INSERT INTO vms (id, cluster_id, host_id, name, project, spec_json, desired_state, lifecycle_phase, vcpus, memory_mib, tags)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?)",
+        "INSERT INTO vms (id, cluster_id, host_id, name, project, spec_json, desired_state, lifecycle_phase, vcpus, memory_mib, tags, flavor_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?, ?)",
     )
     .bind(vm_id)
     .bind(cluster_id)
@@ -286,6 +312,7 @@ pub async fn create_vm(
     .bind(vcpus)
     .bind(memory_mib)
     .bind(serde_json::to_string(&body.tags).unwrap_or_else(|_| "[]".into()))
+    .bind(body.flavor_id)
     .execute(&mut *tx)
     .await?;
 
@@ -502,6 +529,9 @@ pub struct CreateFromTemplateBody {
     pub cloud_init_password: Option<String>,
     #[serde(default)]
     pub cloud_init_ssh_pubkey: Option<String>,
+    /// Free-form cloud-init user-data (a `#cloud-config` document or script), at most 16 KiB; passed to the guest verbatim.
+    #[serde(default)]
+    pub cloud_init_user_data: Option<String>,
     /// Substituted into name and cloud-init fields as `{{ key }}`.
     #[serde(default)]
     pub template_vars: std::collections::HashMap<String, String>,
@@ -572,6 +602,7 @@ pub async fn create_from_template(
     if body.cloud_init_user.is_some()
         || body.cloud_init_password.is_some()
         || body.cloud_init_ssh_pubkey.is_some()
+        || body.cloud_init_user_data.is_some()
     {
         vm.spec.cloud_init = Some(CloudInitSpec {
             user: body
@@ -581,6 +612,7 @@ pub async fn create_from_template(
                 .unwrap_or_else(|| "ubuntu".into()),
             password: body.cloud_init_password.as_ref().map(|p| apply(p)),
             ssh_pubkey: body.cloud_init_ssh_pubkey.as_ref().map(|k| apply(k)),
+            user_data: body.cloud_init_user_data.clone(),
         });
     }
     if let Ok(Some(profile)) =
@@ -591,6 +623,7 @@ pub async fn create_from_template(
         }
     }
     let create_body = CreateVmBody {
+        flavor_id: body.flavor_id,
         vm,
         host_id: body.host_id,
         tags: vec![],
@@ -629,6 +662,9 @@ pub struct CreateFromIsoBody {
     pub cloud_init_password: Option<String>,
     #[serde(default)]
     pub cloud_init_ssh_pubkey: Option<String>,
+    /// Free-form cloud-init user-data (a `#cloud-config` document or script), at most 16 KiB; passed to the guest verbatim.
+    #[serde(default)]
+    pub cloud_init_user_data: Option<String>,
 }
 
 pub async fn create_from_iso(
@@ -696,6 +732,7 @@ pub async fn create_from_iso(
     if body.cloud_init_user.is_some()
         || body.cloud_init_password.is_some()
         || body.cloud_init_ssh_pubkey.is_some()
+        || body.cloud_init_user_data.is_some()
     {
         vm.spec.cloud_init = Some(CloudInitSpec {
             user: body
@@ -704,9 +741,11 @@ pub async fn create_from_iso(
                 .unwrap_or_else(|| "ubuntu".into()),
             password: body.cloud_init_password.clone(),
             ssh_pubkey: body.cloud_init_ssh_pubkey.clone(),
+            user_data: body.cloud_init_user_data.clone(),
         });
     }
     let create_body = CreateVmBody {
+        flavor_id: None,
         vm,
         host_id: body.host_id,
         tags: vec!["iso-install".into()],
@@ -772,6 +811,9 @@ pub struct CreateFromVirtInstallBody {
     pub cloud_init_password: Option<String>,
     #[serde(default)]
     pub cloud_init_ssh_pubkey: Option<String>,
+    /// Free-form cloud-init user-data (a `#cloud-config` document or script), at most 16 KiB; passed to the guest verbatim.
+    #[serde(default)]
+    pub cloud_init_user_data: Option<String>,
 }
 
 pub async fn create_from_virt_install(
@@ -928,6 +970,7 @@ pub async fn create_from_virt_install(
     if body.cloud_init_user.is_some()
         || body.cloud_init_password.is_some()
         || body.cloud_init_ssh_pubkey.is_some()
+        || body.cloud_init_user_data.is_some()
     {
         vm.spec.cloud_init = Some(CloudInitSpec {
             user: body
@@ -936,6 +979,7 @@ pub async fn create_from_virt_install(
                 .unwrap_or_else(|| "ubuntu".into()),
             password: body.cloud_init_password.clone(),
             ssh_pubkey: body.cloud_init_ssh_pubkey.clone(),
+            user_data: body.cloud_init_user_data.clone(),
         });
     }
 
@@ -949,6 +993,7 @@ pub async fn create_from_virt_install(
         "url-install"
     };
     let create_body = CreateVmBody {
+        flavor_id: None,
         vm,
         host_id: body.host_id,
         tags: vec![tag.into(), "virt-install".into()],
@@ -2683,6 +2728,101 @@ pub async fn set_vm_vcpus(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct ChangeTypeBody {
+    pub flavor_id: Uuid,
+}
+
+/// Why a type change cannot proceed from these sizes, if it cannot. Same size under a different flavor is allowed (it only
+/// relabels the machine); the identical flavor at the identical size is refused so a click does not cost a restart.
+pub(crate) fn type_change_blocker(
+    cur_vcpus: i32,
+    cur_memory_mib: i64,
+    new_vcpus: i32,
+    new_memory_mib: i64,
+    same_flavor: bool,
+) -> Option<String> {
+    if new_vcpus < 1 || new_memory_mib < 128 {
+        return Some("that flavor has no usable CPU or memory size".into());
+    }
+    if same_flavor && cur_vcpus == new_vcpus && cur_memory_mib == new_memory_mib {
+        return Some("the machine already has that instance type".into());
+    }
+    None
+}
+
+/// Change a machine's instance type (EC2's ModifyInstanceAttribute `instanceType`): the guest is shut down cleanly, resized to
+/// the flavor's vCPUs and memory, and started again if it was running. Disk size is not changed. Machines managed by an
+/// instance group are refused (change the launch template instead).
+pub async fn change_vm_type(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<ChangeTypeBody>,
+) -> Result<Json<TaskResponse>, ApiError> {
+    require_operator(&actor)?;
+    let vm: Option<(i32, i64, Option<String>, Option<Uuid>)> =
+        sqlx::query_as("SELECT vcpus, memory_mib, project, flavor_id FROM vms WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let Some((vcpus, memory_mib, project, current_flavor)) = vm else {
+        return Err(ApiError::not_found("vm not found"));
+    };
+    let flavor: Option<(i32, i64)> =
+        sqlx::query_as("SELECT vcpus, memory_mib FROM flavors WHERE id = ?")
+            .bind(body.flavor_id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let (new_vcpus, new_memory) = flavor.ok_or_else(|| ApiError::bad_request("flavor not found"))?;
+    if let Some(why) = type_change_blocker(
+        vcpus,
+        memory_mib,
+        new_vcpus,
+        new_memory,
+        current_flavor == Some(body.flavor_id),
+    ) {
+        return Err(ApiError::bad_request(why));
+    }
+    let in_group: Option<i64> =
+        sqlx::query_scalar("SELECT 1 FROM cloud_group_members WHERE vm_id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    if in_group.is_some() {
+        return Err(ApiError::conflict(
+            "this machine is managed by an instance group",
+            "Change the group's launch template instead; a group only adopts machines that match its template exactly.",
+        ));
+    }
+    let mut conn = state.pool.acquire().await?;
+    policy::evaluate_vm_resize_tx(
+        &mut conn,
+        project.as_deref().unwrap_or("default"),
+        i64::from(new_vcpus) - i64::from(vcpus),
+        new_memory - memory_mib,
+    )
+    .await
+    .map_err(|v| ApiError::policy_violation(v.message, v.remediation))?;
+    drop(conn);
+    let _ = crate::tasks::enqueue::write_audit(
+        &state,
+        &actor.username,
+        "vm.change_type",
+        "vm",
+        Some(id),
+        serde_json::json!({ "flavor_id": body.flavor_id, "from": { "vcpus": vcpus, "memory_mib": memory_mib }, "to": { "vcpus": new_vcpus, "memory_mib": new_memory } }),
+    )
+    .await;
+    enqueue_vm_host_task(
+        &state,
+        id,
+        "vm.change_type",
+        serde_json::json!({ "vm_id": id.to_string(), "flavor_id": body.flavor_id.to_string() }),
+    )
+    .await
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SetMemoryBody {
     pub memory_mb: u64,
 }
@@ -2945,4 +3085,27 @@ pub async fn export_vm_disk(
         status: "pending".into(),
         operation: "vm.disk.export".into(),
     }))
+}
+
+#[cfg(test)]
+mod type_change_tests {
+    use super::type_change_blocker;
+
+    #[test]
+    fn the_same_flavor_at_the_same_size_is_refused() {
+        assert!(type_change_blocker(2, 4096, 2, 4096, true).unwrap().contains("already"));
+    }
+
+    #[test]
+    fn a_different_flavor_is_allowed_even_at_the_same_size_or_smaller_or_larger() {
+        assert_eq!(type_change_blocker(2, 4096, 2, 4096, false), None); // relabel only
+        assert_eq!(type_change_blocker(2, 4096, 4, 8192, true), None);
+        assert_eq!(type_change_blocker(4, 8192, 2, 2048, false), None);
+    }
+
+    #[test]
+    fn a_flavor_without_a_usable_size_is_refused() {
+        assert!(type_change_blocker(2, 4096, 0, 4096, false).is_some());
+        assert!(type_change_blocker(2, 4096, 2, 64, false).is_some());
+    }
 }

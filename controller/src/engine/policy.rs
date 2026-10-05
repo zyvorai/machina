@@ -85,15 +85,14 @@ pub async fn check_project_quota_batch(
     check_project_quota(&mut conn, project, vms, vcpus, memory_mib, storage_gib).await
 }
 
-async fn check_project_quota(
+type QuotaRow = (i32, i32, i64, i64, i64, i64, i64, i64);
+
+/// (limits, current usage) for a project, or None when it has no quota row.
+async fn load_quota(
     conn: &mut SqliteConnection,
     project: &str,
-    vms: i64,
-    vcpus: i32,
-    memory_mib: i64,
-    storage_gib: i64,
-) -> Result<(), PolicyViolation> {
-    let row: Option<(i32, i32, i64, i64, i64, i64, i64, i64)> = sqlx::query_as(
+) -> Result<Option<QuotaRow>, PolicyViolation> {
+    sqlx::query_as(
         "SELECT q.max_vms, q.max_vcpu, q.max_memory_mib, q.max_storage_gib,
                 COALESCE((SELECT COUNT(*) FROM vms WHERE COALESCE(project, 'default') = ?), 0),
                 COALESCE((SELECT SUM(vcpus) FROM vms WHERE COALESCE(project, 'default') = ?), 0),
@@ -108,7 +107,47 @@ async fn check_project_quota(
     .bind(project)
     .fetch_optional(&mut *conn)
     .await
-    .map_err(unavailable)?;
+    .map_err(unavailable)
+}
+
+/// Quota check for making an existing machine bigger: only increases count, and the machine count does not change.
+pub async fn evaluate_vm_resize_tx(
+    conn: &mut SqliteConnection,
+    project: &str,
+    add_vcpus: i64,
+    add_memory_mib: i64,
+) -> Result<(), PolicyViolation> {
+    let Some((_, max_vcpu, max_mem, _, _, cur_vcpu, cur_mem, _)) =
+        load_quota(conn, project).await?
+    else {
+        return Ok(());
+    };
+    if add_vcpus > 0 && max_vcpu > 0 && cur_vcpu + add_vcpus > i64::from(max_vcpu) {
+        return Err(PolicyViolation {
+            rule_name: "project_quota".into(),
+            message: format!("Project '{project}' vCPU quota exceeded ({max_vcpu})"),
+            remediation: "Increase max_vcpu quota or choose a smaller instance type.".into(),
+        });
+    }
+    if add_memory_mib > 0 && max_mem > 0 && cur_mem + add_memory_mib > max_mem {
+        return Err(PolicyViolation {
+            rule_name: "project_quota".into(),
+            message: format!("Project '{project}' memory quota exceeded ({max_mem} MiB)"),
+            remediation: "Increase max_memory_mib quota or choose a smaller instance type.".into(),
+        });
+    }
+    Ok(())
+}
+
+async fn check_project_quota(
+    conn: &mut SqliteConnection,
+    project: &str,
+    vms: i64,
+    vcpus: i32,
+    memory_mib: i64,
+    storage_gib: i64,
+) -> Result<(), PolicyViolation> {
+    let row = load_quota(conn, project).await?;
 
     let Some((max_vms, max_vcpu, max_mem, max_storage, cur_vms, cur_vcpu, cur_mem, cur_storage)) =
         row
@@ -283,5 +322,33 @@ mod quota_race_tests {
             "exactly the quota's worth of creates may succeed"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn resizing_counts_only_increases_against_cpu_and_memory_quota() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        for ddl in [
+            "CREATE TABLE vms (id TEXT PRIMARY KEY, name TEXT, project TEXT, vcpus INTEGER, memory_mib INTEGER)",
+            "CREATE TABLE vm_disks (id TEXT, vm_id TEXT, size_gib INTEGER)",
+            "CREATE TABLE project_quotas (project TEXT, max_vms INTEGER, max_vcpu INTEGER, max_memory_mib INTEGER, max_storage_gib INTEGER)",
+            "INSERT INTO project_quotas VALUES ('p', 0, 8, 16384, 0)",
+            "INSERT INTO vms VALUES ('a', 'a', 'p', 4, 8192)",
+            "INSERT INTO vms VALUES ('b', 'b', 'p', 3, 4096)",
+        ] {
+            sqlx::query(ddl).execute(&pool).await.unwrap();
+        }
+        let mut c = pool.acquire().await.unwrap();
+        // 7 of 8 vCPU and 12288 of 16384 MiB used
+        assert!(evaluate_vm_resize_tx(&mut c, "p", 1, 4096).await.is_ok()); // exactly at both limits
+        assert!(evaluate_vm_resize_tx(&mut c, "p", 2, 0).await.is_err()); // one vCPU over
+        assert!(evaluate_vm_resize_tx(&mut c, "p", 0, 4097).await.is_err()); // one MiB over
+        assert!(evaluate_vm_resize_tx(&mut c, "p", -3, -4096).await.is_ok()); // shrinking is always fine
+        assert!(evaluate_vm_resize_tx(&mut c, "no-quota", 100, 1_000_000)
+            .await
+            .is_ok()); // no quota row: unlimited
     }
 }

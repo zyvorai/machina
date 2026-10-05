@@ -14,6 +14,7 @@ pub mod engine;
 pub mod jwt;
 pub mod leader;
 pub mod project_rbac;
+pub mod resource_ids;
 pub mod oidc_flow;
 pub mod rate_limit;
 pub mod state;

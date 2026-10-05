@@ -235,6 +235,7 @@ async fn reconcile_group_fenced(
                 auth_source: None,
             };
             let body = crate::api::vms::CreateVmBody {
+                flavor_id: None,
                 vm: vm.clone(),
                 host_id: Some(host),
                 tags: vec![format!("cloud.group={id}")],

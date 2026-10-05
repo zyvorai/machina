@@ -530,6 +530,7 @@ async fn build_stack(
             State(state.clone()),
             Extension(actor.clone()),
             Json(CreateVmBody {
+                flavor_id: None,
                 vm,
                 host_id: None,
                 tags: vec!["stack".into()],

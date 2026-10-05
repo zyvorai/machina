@@ -379,14 +379,73 @@ pub fn generate_cloud_init_iso(
     ssh_key: &str,
     libvirt_cfg: Option<&crate::config::LibvirtConfig>,
 ) -> Result<String, LibvirtError> {
-    let tmp_dir = PathBuf::from("/tmp/machina-cloud-init");
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(0o700)
-        .create(&tmp_dir)
-        .map_err(|e| {
-            LibvirtError::Operation(format!("Failed to create cloud-init temp dir: {e}"))
-        })?;
+    generate_cloud_init_iso_with(
+        output_path,
+        default_images_dir,
+        hostname,
+        username,
+        password,
+        ssh_key,
+        None,
+        libvirt_cfg,
+    )
+}
+
+/// A per-VM scratch directory for seed files that is always removed, including on early error returns. (It used to be one
+/// fixed shared path, so two VMs created at once could overwrite each other's seed, and a failure left credentials behind.)
+struct SeedScratch(PathBuf);
+
+impl SeedScratch {
+    fn create(hostname: &str) -> Result<Self, LibvirtError> {
+        let root = PathBuf::from("/tmp/machina-cloud-init");
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o700)
+            .create(&root)
+            .map_err(|e| LibvirtError::Operation(format!("Failed to create cloud-init temp dir: {e}")))?;
+        let safe: String = hostname
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+            .take(64)
+            .collect();
+        let dir = root.join(format!("{safe}-{}", uuid::Uuid::new_v4().simple()));
+        std::fs::DirBuilder::new()
+            .mode(0o700)
+            .create(&dir)
+            .map_err(|e| LibvirtError::Operation(format!("Failed to create cloud-init scratch dir: {e}")))?;
+        Ok(Self(dir))
+    }
+}
+
+impl Drop for SeedScratch {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+/// Like [`generate_cloud_init_iso`], with optional free-form `user_data`. When it is given it becomes the NoCloud `user-data`
+/// verbatim and the settings Machina generates (user, key, password, guest agent) move to `vendor-data`, which cloud-init
+/// applies alongside it (user-data wins on conflicts). Without it the generated settings are the user-data, as before.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_cloud_init_iso_with(
+    output_path: &str,
+    default_images_dir: &str,
+    hostname: &str,
+    username: &str,
+    password: &str,
+    ssh_key: &str,
+    user_data_override: Option<&str>,
+    libvirt_cfg: Option<&crate::config::LibvirtConfig>,
+) -> Result<String, LibvirtError> {
+    if let Some(d) = user_data_override {
+        if d.trim().is_empty() || d.len() > 16 * 1024 || d.contains('\0') {
+            return Err(LibvirtError::Invalid(
+                "user_data must be 1 byte to 16 KiB of text without NUL bytes".into(),
+            ));
+        }
+    }
+    let scratch = SeedScratch::create(hostname)?;
+    let tmp_dir = scratch.0.clone();
 
     // meta-data (escape user-provided hostname to prevent YAML injection)
     let meta_data = format!(
@@ -436,8 +495,18 @@ pub fn generate_cloud_init_iso(
         );
     }
 
-    std::fs::write(tmp_dir.join("user-data"), &user_data)
-        .map_err(|e| LibvirtError::Operation(format!("Failed to write user-data: {e}")))?;
+    match user_data_override {
+        Some(custom) => {
+            std::fs::write(tmp_dir.join("user-data"), custom)
+                .map_err(|e| LibvirtError::Operation(format!("Failed to write user-data: {e}")))?;
+            std::fs::write(tmp_dir.join("vendor-data"), &user_data)
+                .map_err(|e| LibvirtError::Operation(format!("Failed to write vendor-data: {e}")))?;
+        }
+        None => {
+            std::fs::write(tmp_dir.join("user-data"), &user_data)
+                .map_err(|e| LibvirtError::Operation(format!("Failed to write user-data: {e}")))?;
+        }
+    }
     super::guest_agent_provision::stage_guestkit_seed_files(&tmp_dir, libvirt_cfg, None)?;
 
     // Generate ISO (try genisoimage, then mkisofs, then xorriso)
@@ -488,8 +557,8 @@ pub fn generate_cloud_init_iso(
         }
     }
 
-    // Cleanup
-    let _ = std::fs::remove_dir_all(&tmp_dir);
+    // `scratch` removes the directory when it drops, on every path out of this function.
+    drop(scratch);
 
     if !success {
         return Err(LibvirtError::Operation(
@@ -2649,4 +2718,41 @@ pub fn host_reboot() -> Result<(), LibvirtError> {
         return Err(LibvirtError::Operation(format!("reboot failed: {stderr}")));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod seed_scratch_tests {
+    use super::*;
+
+    #[test]
+    fn each_seed_gets_its_own_directory_and_it_disappears_when_dropped() {
+        let a = SeedScratch::create("web-1").unwrap();
+        let b = SeedScratch::create("web-1").unwrap();
+        assert_ne!(a.0, b.0, "two seeds for the same name must not share a directory");
+        assert!(a.0.is_dir() && b.0.is_dir());
+        let (pa, pb) = (a.0.clone(), b.0.clone());
+        std::fs::write(pa.join("user-data"), "secret").unwrap();
+        drop(a);
+        assert!(!pa.exists(), "the scratch directory (and its secret) must be removed");
+        assert!(pb.is_dir(), "dropping one must not touch the other");
+        drop(b);
+        assert!(!pb.exists());
+    }
+
+    #[test]
+    fn hostile_names_cannot_escape_the_scratch_root() {
+        let s = SeedScratch::create("../../etc/passwd").unwrap();
+        assert!(s.0.starts_with("/tmp/machina-cloud-init"));
+        assert!(!s.0.to_string_lossy().contains(".."));
+    }
+
+    #[test]
+    fn unusable_user_data_is_refused_before_anything_is_written() {
+        for bad in ["", "   \n", "a\0b"] {
+            let err = generate_cloud_init_iso_with("", "/tmp", "vm", "u", "", "", Some(bad), None).unwrap_err();
+            assert!(err.to_string().contains("user_data"), "{err}");
+        }
+        let big = "x".repeat(16 * 1024 + 1);
+        assert!(generate_cloud_init_iso_with("", "/tmp", "vm", "u", "", "", Some(&big), None).is_err());
+    }
 }

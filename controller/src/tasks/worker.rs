@@ -189,6 +189,7 @@ async fn process_one(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
         "vm.nic.detach" => vm_nic_detach(state, msg).await?,
         "vm.autostart" => vm_autostart(state, msg).await?,
         "vm.resize" => vm_resize(state, msg).await?,
+        "vm.change_type" => vm_change_type(state, msg).await?,
         "vm.guest_tools.install" => vm_guest_tools_install(state, msg).await?,
         "vm.install" => vm_install(state, msg).await?,
         "templates.prefetch_missing" => templates_prefetch_missing(state, msg).await?,
@@ -2863,6 +2864,87 @@ async fn vm_resize(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         other => anyhow::bail!("unknown resize kind: {other}"),
     }
     update_task_progress(&state.pool, msg.task_id, 100, "resize complete").await?;
+    Ok(())
+}
+
+/// Change a machine's instance type: clean shutdown if it is running, resize to the flavor, start again, record the flavor.
+/// A guest that does not shut down within 2.5 minutes is left running and the task fails; nothing is changed in that case.
+async fn vm_change_type(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
+    let vm_id: Uuid = msg.payload["vm_id"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| anyhow::anyhow!("vm_id missing"))?;
+    let flavor_id: Uuid = msg.payload["flavor_id"]
+        .as_str()
+        .and_then(|s| Uuid::parse_str(s).ok())
+        .ok_or_else(|| anyhow::anyhow!("flavor_id missing"))?;
+    let (new_vcpus, new_memory): (i32, i64) =
+        sqlx::query_as("SELECT vcpus, memory_mib FROM flavors WHERE id = ?")
+            .bind(flavor_id)
+            .fetch_optional(&state.pool)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("flavor not found"))?;
+    let (cur_vcpus, cur_memory): (i32, i64) =
+        sqlx::query_as("SELECT vcpus, memory_mib FROM vms WHERE id = ?")
+            .bind(vm_id)
+            .fetch_one(&state.pool)
+            .await?;
+    let (name, host_id) = vm_host_row(&state.pool, vm_id).await?;
+    let agent_addr = host_agent_addr(&state.pool, host_id).await?;
+    let mut client = agent_client::connect(&agent_addr).await?;
+
+    let resize_needed = new_vcpus != cur_vcpus || new_memory != cur_memory;
+    if resize_needed {
+        let running = agent_client::list_vms(&mut client)
+            .await?
+            .vms
+            .iter()
+            .any(|v| v.name == name && v.state == "running");
+        if running {
+            update_task_progress(&state.pool, msg.task_id, 15, "shutting the machine down").await?;
+            agent_client::vm_power(&mut client, &name, "shutdown", None).await?;
+            let mut stopped = false;
+            for _ in 0..50 {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let still = agent_client::list_vms(&mut client)
+                    .await?
+                    .vms
+                    .iter()
+                    .any(|v| v.name == name && v.state == "running");
+                if !still {
+                    stopped = true;
+                    break;
+                }
+            }
+            anyhow::ensure!(
+                stopped,
+                "the guest did not shut down within 2.5 minutes; nothing was changed"
+            );
+        }
+        update_task_progress(&state.pool, msg.task_id, 50, "resizing").await?;
+        agent_client::set_vcpus(&mut client, &name, new_vcpus as u32).await?;
+        agent_client::set_memory(&mut client, &name, new_memory as u64).await?;
+        sqlx::query("UPDATE vms SET vcpus = ?, memory_mib = ?, updated_at = datetime('now') WHERE id = ?")
+            .bind(new_vcpus)
+            .bind(new_memory)
+            .bind(vm_id)
+            .execute(&state.pool)
+            .await?;
+        if running {
+            update_task_progress(&state.pool, msg.task_id, 80, "starting").await?;
+            agent_client::vm_power(&mut client, &name, "start", None).await?;
+        }
+    }
+    sqlx::query("UPDATE vms SET flavor_id = ?, updated_at = datetime('now') WHERE id = ?")
+        .bind(flavor_id)
+        .bind(vm_id)
+        .execute(&state.pool)
+        .await?;
+    state.emit_event(
+        "vm.change_type",
+        format!("{name} is now {new_vcpus} vCPU / {new_memory} MiB"),
+    );
+    update_task_progress(&state.pool, msg.task_id, 100, "instance type changed").await?;
     Ok(())
 }
 

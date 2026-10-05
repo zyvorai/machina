@@ -3668,6 +3668,7 @@ dependencies = [
  "toml",
  "tracing",
  "url",
+ "uuid",
  "virt",
  "wiremock",
 ]

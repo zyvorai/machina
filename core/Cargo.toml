@@ -16,6 +16,7 @@ thiserror = { workspace = true }
 chrono = { workspace = true }
 rand = { workspace = true }
 hex = { workspace = true }
+uuid = { workspace = true }
 sha2 = "0.11"
 base64 = { workspace = true }
 reqwest = { workspace = true }

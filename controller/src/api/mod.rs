@@ -41,6 +41,7 @@ mod load_balancers;
 mod maintenance;
 mod marketplace;
 mod mcp;
+mod tags;
 mod metrics;
 mod migration_jobs;
 mod network_canvas;
@@ -338,6 +339,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/vms/{id}/autostart", post(vms::set_vm_autostart))
         .route("/api/v1/vms/{id}/vcpus", post(vms::set_vm_vcpus))
         .route("/api/v1/vms/{id}/memory", post(vms::set_vm_memory))
+        .route("/api/v1/vms/{id}/change-type", post(vms::change_vm_type))
         .route(
             "/api/v1/vms/{id}/libvirt-details",
             get(vms::get_vm_libvirt_details),
@@ -607,6 +609,12 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/v1/ai/actions/history", get(ai::zyra_action_history))
         .route("/api/v1/mcp", post(mcp::mcp_post))
+        .route("/api/v1/tags", get(tags::list_tags))
+        .route(
+            "/api/v1/tags/{resource_type}/{id}",
+            get(tags::get_tags).put(tags::put_tags).delete(tags::delete_tags),
+        )
+        .route("/api/v1/ids/{ec2_id}", get(tags::resolve_ec2_id))
         .route("/api/v1/ai/trust", get(ai::zyra_trust_list))
         .route("/api/v1/ai/trust/{action_type}", put(ai::zyra_trust_set))
         .route("/api/v1/ai/agent/run", post(ai::run_zyra_agent))
