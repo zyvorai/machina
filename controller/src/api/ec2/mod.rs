@@ -4,7 +4,7 @@
 //! EC2-compatible Query API (`POST /ec2`), signed with AWS SigV4 so awscli / boto3 work with `--endpoint-url`.
 //!
 //! v1 actions: DescribeInstances, DescribeInstanceTypes, DescribeTags, DescribeKeyPairs, StartInstances,
-//! StopInstances. Everything else answers `UnsupportedOperation`. Access keys are managed under
+//! StopInstances, RunInstances, TerminateInstances, CreateTags, DeleteTags. Everything else answers `UnsupportedOperation`. Access keys are managed under
 //! `/api/v1/ec2/access-keys` (admin).
 
 pub mod sigv4;
@@ -146,7 +146,8 @@ fn matches_filter(i: &Inst, name: &str, values: &[String]) -> bool {
     }
 }
 
-fn instance_item(i: &Inst) -> String {
+/// One instance as an `<item>` of an `instancesSet`.
+fn instance_core(i: &Inst) -> String {
     let (code, name) = instance_state(&i.state);
     let tags: String = i
         .tags
@@ -155,12 +156,20 @@ fn instance_item(i: &Inst) -> String {
         .collect();
     let ip = i.ip.as_deref().map(|a| format!("<privateIpAddress>{}</privateIpAddress>", xml_escape(a))).unwrap_or_default();
     format!(
-        "<item><reservationId>r-{}</reservationId><ownerId>{OWNER}</ownerId><groupSet/><instancesSet><item><instanceId>{}</instanceId><imageId/><instanceState><code>{code}</code><name>{name}</name></instanceState><privateDnsName>{}</privateDnsName>{ip}<instanceType>{}</instanceType><launchTime>{}</launchTime><tagSet>{tags}</tagSet></item></instancesSet></item>",
-        &i.id.simple().to_string()[..17],
+        "<item><instanceId>{}</instanceId><imageId/><instanceState><code>{code}</code><name>{name}</name></instanceState><privateDnsName>{}</privateDnsName>{ip}<instanceType>{}</instanceType><launchTime>{}</launchTime><tagSet>{tags}</tagSet></item>",
         i.eid(),
         xml_escape(&i.name),
         xml_escape(&i.itype()),
         xml_escape(&i.created),
+    )
+}
+
+/// One instance as a one-instance reservation (DescribeInstances).
+fn instance_item(i: &Inst) -> String {
+    format!(
+        "<item><reservationId>r-{}</reservationId><ownerId>{OWNER}</ownerId><groupSet/><instancesSet>{}</instancesSet></item>",
+        &i.id.simple().to_string()[..17],
+        instance_core(i)
     )
 }
 
@@ -308,6 +317,171 @@ async fn power(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, String>,
     Ok(format!("<instancesSet>{items}</instancesSet>"))
 }
 
+/// `Tag.N.Key/Value` and `TagSpecification.N.Tag.M.Key/Value` (instance specs only) → tags.
+pub(crate) fn parse_tags(p: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    let mut out = BTreeMap::new();
+    let mut add = |kp: String, vp: String| {
+        if let Some(k) = p.get(&kp) {
+            out.insert(k.clone(), p.get(&vp).cloned().unwrap_or_default());
+        }
+    };
+    for n in 1..=50 {
+        add(format!("Tag.{n}.Key"), format!("Tag.{n}.Value"));
+    }
+    for sidx in 1..=5 {
+        let rt = p.get(&format!("TagSpecification.{sidx}.ResourceType")).map(String::as_str);
+        if rt.is_some_and(|r| r != "instance") {
+            continue;
+        }
+        for n in 1..=50 {
+            add(format!("TagSpecification.{sidx}.Tag.{n}.Key"), format!("TagSpecification.{sidx}.Tag.{n}.Value"));
+        }
+    }
+    out
+}
+
+/// `UserData` is base64 in the EC2 API.
+pub(crate) fn decode_user_data(b64: &str) -> Result<String, String> {
+    use base64::Engine;
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .map_err(|_| "UserData must be base64".to_string())?;
+    String::from_utf8(raw).map_err(|_| "UserData must be UTF-8 text".to_string())
+}
+
+async fn wait_for_vm(state: &AppState, name: &str) -> Option<Uuid> {
+    for _ in 0..40 {
+        if let Ok(Some(id)) = sqlx::query_scalar::<_, Uuid>("SELECT id FROM vms WHERE name = ?")
+            .bind(name)
+            .fetch_optional(&state.pool)
+            .await
+        {
+            return Some(id);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    None
+}
+
+async fn run_instances(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, String>) -> Result<String, Ec2Error> {
+    require_operator(actor)?;
+    let need = |k: &str| p.get(k).cloned().ok_or_else(|| Ec2Error::bad("MissingParameter", format!("The request must contain the parameter {k}")));
+    let image = need("ImageId")?;
+    let max: u32 = need("MaxCount")?.parse().map_err(|_| Ec2Error::bad("InvalidParameterValue", "MaxCount must be a number"))?;
+    let min: u32 = p.get("MinCount").map_or(Ok(max), |v| v.parse()).map_err(|_| Ec2Error::bad("InvalidParameterValue", "MinCount must be a number"))?;
+
+    // ImageId: an ami- id, or an image (template) name.
+    let template_ref: String = if let Some((Kind::Image, hex)) = crate::resource_ids::parse(&image) {
+        let mut conn = state.pool.acquire().await?;
+        match crate::resource_ids::resolve(&mut conn, Kind::Image, &hex).await? {
+            crate::resource_ids::Lookup::Found(id) => sqlx::query_scalar("SELECT name FROM templates WHERE id = ?").bind(id).fetch_one(&mut *conn).await?,
+            _ => return Err(Ec2Error::bad("InvalidAMIID.NotFound", format!("The image id '{image}' does not exist"))),
+        }
+    } else {
+        image.clone()
+    };
+    let flavor: Option<Uuid> = match p.get("InstanceType") {
+        Some(t) => Some(
+            sqlx::query_scalar("SELECT id FROM flavors WHERE name = ?")
+                .bind(t)
+                .fetch_optional(&state.pool)
+                .await?
+                .ok_or_else(|| Ec2Error::bad("InvalidParameterValue", format!("Unknown instance type '{t}'")))?,
+        ),
+        None => None,
+    };
+    let tags = parse_tags(p);
+    let name = tags.get("Name").cloned().unwrap_or_else(|| format!("ec2-{}", &Uuid::new_v4().simple().to_string()[..8]));
+    let mut spec = serde_json::json!({ "template_ref": template_ref, "name": name, "count": max, "min_count": min });
+    if let Some(f) = flavor {
+        spec["flavor_id"] = serde_json::json!(f);
+    }
+    if let Some(k) = p.get("KeyName") {
+        spec["key_name"] = serde_json::json!(k);
+    }
+    if let Some(u) = p.get("UserData") {
+        spec["cloud_init_user_data"] = serde_json::json!(decode_user_data(u).map_err(|m| Ec2Error::bad("InvalidParameterValue", m))?);
+    }
+    let body: crate::api::vms::RunInstancesBody =
+        serde_json::from_value(spec).map_err(|e| Ec2Error::bad("InvalidParameterValue", e.to_string()))?;
+    let Json(done) = crate::api::vms::run_instances(State(state.clone()), Extension(actor.clone()), Json(body))
+        .await
+        .map_err(|e| Ec2Error::bad("InsufficientInstanceCapacity", e.message))?;
+    let names: Vec<String> = done["instances"].as_array().into_iter().flatten().filter_map(|i| i["name"].as_str().map(String::from)).collect();
+
+    let mut ids = Vec::new();
+    for n in &names {
+        if let Some(id) = wait_for_vm(state, n).await {
+            if !tags.is_empty() {
+                let mut tx = state.pool.begin().await?;
+                let _ = crate::api::tags::put_tag_map(&mut tx, Kind::Vm, id, &tags).await?;
+                tx.commit().await?;
+            }
+            ids.push(id);
+        }
+    }
+    let all = load_instances(state).await?;
+    let items: String = all.iter().filter(|i| ids.contains(&i.id)).map(instance_core).collect();
+    Ok(format!(
+        "<reservationId>r-{}</reservationId><ownerId>{OWNER}</ownerId><groupSet/><instancesSet>{items}</instancesSet>",
+        &Uuid::new_v4().simple().to_string()[..17]
+    ))
+}
+
+async fn terminate(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, String>) -> Result<String, Ec2Error> {
+    require_operator(actor)?;
+    let ids = indexed(p, "InstanceId");
+    if ids.is_empty() {
+        return Err(Ec2Error::bad("MissingParameter", "The request must contain the parameter InstanceId"));
+    }
+    let all = load_instances(state).await?;
+    let mut items = String::new();
+    for want in &ids {
+        let i = all
+            .iter()
+            .find(|i| &i.eid() == want)
+            .ok_or_else(|| Ec2Error::bad("InvalidInstanceID.NotFound", format!("The instance ID '{want}' does not exist")))?;
+        let (pc, pn) = instance_state(&i.state);
+        // No `confirmed`: a cluster that requires approval for deletions keeps requiring it here.
+        crate::api::vms::delete_vm(State(state.clone()), Extension(actor.clone()), Path(i.id), None).await?;
+        items.push_str(&format!(
+            "<item><instanceId>{want}</instanceId><currentState><code>32</code><name>shutting-down</name></currentState><previousState><code>{pc}</code><name>{pn}</name></previousState></item>"
+        ));
+    }
+    Ok(format!("<instancesSet>{items}</instancesSet>"))
+}
+
+async fn tag_resources(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, String>, delete: bool) -> Result<String, Ec2Error> {
+    require_operator(actor)?;
+    let resources = indexed(p, "ResourceId");
+    if resources.is_empty() {
+        return Err(Ec2Error::bad("MissingParameter", "The request must contain the parameter ResourceId"));
+    }
+    let tags = parse_tags(p);
+    if tags.is_empty() {
+        return Err(Ec2Error::bad("MissingParameter", "The request must contain the parameter Tag"));
+    }
+    if !delete {
+        crate::api::tags::validate_tags(&tags).map_err(|m| Ec2Error::bad("InvalidParameterValue", m))?;
+    }
+    for r in &resources {
+        let (kind, hex) = crate::resource_ids::parse(r).ok_or_else(|| Ec2Error::bad("InvalidID", format!("The id '{r}' is not valid")))?;
+        let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let id = match crate::resource_ids::resolve(&mut tx, kind, &hex).await? {
+            crate::resource_ids::Lookup::Found(id) => id,
+            _ => return Err(Ec2Error::bad("InvalidResourceID.NotFound", format!("The resource '{r}' does not exist"))),
+        };
+        if delete {
+            let keys: Vec<String> = tags.keys().cloned().collect();
+            crate::api::tags::delete_tag_keys(&mut tx, kind, id, &keys).await?;
+        } else if let crate::api::tags::PutOutcome::TooMany(n) = crate::api::tags::put_tag_map(&mut tx, kind, id, &tags).await? {
+            return Err(Ec2Error::bad("TagLimitExceeded", format!("that would give the resource {n} tags")));
+        }
+        tx.commit().await?;
+    }
+    Ok("<return>true</return>".into())
+}
+
 // ---- the endpoint ----------------------------------------------------------
 
 fn respond(status: StatusCode, xml: String) -> Response {
@@ -373,6 +547,10 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
         "DescribeKeyPairs" => describe_key_pairs(state, &params).await?,
         "StartInstances" => power(state, &actor, &params, true).await?,
         "StopInstances" => power(state, &actor, &params, false).await?,
+        "RunInstances" => run_instances(state, &actor, &params).await?,
+        "TerminateInstances" => terminate(state, &actor, &params).await?,
+        "CreateTags" => tag_resources(state, &actor, &params, false).await?,
+        "DeleteTags" => tag_resources(state, &actor, &params, true).await?,
         "" => return Err(Ec2Error::bad("MissingAction", "No action was specified")),
         other => {
             return Err(Ec2Error::bad("UnsupportedOperation", format!("The action {other} is not supported by this endpoint")))
@@ -526,6 +704,22 @@ mod tests {
         assert!(x.contains("web&lt;1&gt;"));
         assert!(x.contains("<key>Env</key><value>prod</value>"));
         assert!(x.contains("<instanceId>i-0123456789abcdef0</instanceId>"));
+    }
+
+    #[test]
+    fn tags_from_tag_and_tag_specification_params() {
+        let m = parse_form("Tag.1.Key=A&Tag.1.Value=1&TagSpecification.1.ResourceType=instance&TagSpecification.1.Tag.1.Key=Name&TagSpecification.1.Tag.1.Value=web&TagSpecification.2.ResourceType=volume&TagSpecification.2.Tag.1.Key=Skip&TagSpecification.2.Tag.1.Value=x");
+        let t = parse_tags(&m);
+        assert_eq!(t.get("A").map(String::as_str), Some("1"));
+        assert_eq!(t.get("Name").map(String::as_str), Some("web"));
+        assert!(!t.contains_key("Skip"), "volume tag specs are not applied to instances");
+    }
+
+    #[test]
+    fn user_data_is_base64_text() {
+        assert_eq!(decode_user_data("I2Nsb3VkLWNvbmZpZw==").unwrap(), "#cloud-config");
+        assert!(decode_user_data("not base64!!").is_err());
+        assert!(decode_user_data("/w==").is_err(), "0xFF is not UTF-8");
     }
 
     #[test]

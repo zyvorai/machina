@@ -31,3 +31,12 @@ Any other action returns `UnsupportedOperation`. Unknown filter names match noth
 ## Not yet
 RunInstances/TerminateInstances, volumes, security groups, images and the VPC calls; pagination (`NextToken`); the
 `describe-instances` fields that have no Machina equivalent (image id, placement, block device mappings) are empty.
+
+## Run, terminate and tags
+- `RunInstances`: `ImageId` (an `ami-` id or an image name), `MaxCount`/`MinCount` (1–20, see run-instances in
+  `cloud-ec2-semantics.md`), optional `InstanceType` (a flavor name), `KeyName`, `UserData` (base64) and tags from `Tag.N` /
+  `TagSpecification` (an instance `Name` tag becomes the machine name; several machines get `-1…-N`). Subnet, security group
+  and block-device parameters are ignored. The call waits up to 20 s per machine for its record before answering.
+- `TerminateInstances`: deletes through the normal delete path. If the cluster requires approval for deletions it is refused,
+  exactly as in the UI.
+- `CreateTags` / `DeleteTags` on any resource that has an EC2 id (`i-`, `vol-`, `sg-`, `key-`, `ami-`, `eni-`, …).
