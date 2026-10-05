@@ -453,6 +453,7 @@ impl Fleet {
             .collect();
         let mut generated = tenant::policies(&projects, &project_names(pool, &vms).await);
         generated.extend(tenant::egress_ip_guards(&projects, &hostnames));
+        generated.extend(super::sg_enforce::policies(&super::sg_enforce::load(pool).await));
         for g in generated {
             if !policies.iter().any(|p| p.name == g.name) {
                 policies.push(g);
@@ -884,6 +885,7 @@ pub fn spawn(state: AppState) {
                     );
                 }
             }
+            super::sg_enforce::renew(&state).await;
             reconcile_threat(&state.pool).await;
             forward_alerts(&state, &mut alerts_seen).await;
             egress_gap_events(&state, &mut gaps_seen);

@@ -1726,6 +1726,19 @@ pub fn router(state: AppState) -> Router {
             get(networking::get_security_group).delete(networking::delete_security_group),
         )
         .route(
+            "/api/v1/security-groups/{id}/mode",
+            put(networking::set_security_group_mode),
+        )
+        .route(
+            "/api/v1/vms/{id}/security-groups",
+            get(networking::list_instance_security_groups),
+        )
+        .route(
+            "/api/v1/vms/{id}/security-groups/{sg_id}",
+            put(networking::attach_instance_security_group)
+                .delete(networking::detach_instance_security_group),
+        )
+        .route(
             "/api/v1/security-groups/{id}/rules",
             get(networking::list_security_group_rules).post(networking::create_security_group_rule),
         )

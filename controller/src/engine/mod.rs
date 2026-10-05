@@ -76,6 +76,7 @@ pub mod upgrade_skew;
 pub mod vm_health;
 pub mod vm_inventory;
 pub mod vm_lifecycle;
+pub mod sg_enforce;
 pub mod vm_netpol;
 pub mod vm_overlay;
 pub mod vm_schedule_runner;
