@@ -540,6 +540,8 @@ async fn build_stack(
                 desired_state: "running".into(),
                 atlas_root_disk: false,
                 atlas_policy: None,
+                preemptible: false,
+                preempt_priority: 0,
             }),
         )
         .await
@@ -864,6 +866,8 @@ async fn create_instance(
             desired_state: "running".into(),
             atlas_root_disk: false,
             atlas_policy: None,
+            preemptible: false,
+            preempt_priority: 0,
         }),
     )
     .await?;

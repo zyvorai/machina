@@ -209,6 +209,12 @@ pub struct CreateVmBody {
     /// Atlas intent → placement policy for the root volume (default from config).
     #[serde(default)]
     pub atlas_policy: Option<String>,
+    /// Sleeps (memory saved) instead of running when capacity is short.
+    #[serde(default)]
+    pub preemptible: bool,
+    /// 0..=100; lower is preempted first.
+    #[serde(default)]
+    pub preempt_priority: i64,
 }
 
 fn default_desired() -> String {
@@ -251,11 +257,24 @@ pub async fn create_vm(
         .project
         .clone()
         .unwrap_or_else(|| "default".into());
+    if !(0..=crate::engine::preempt::MAX_PRIORITY).contains(&body.preempt_priority) {
+        return Err(ApiError::bad_request("preempt_priority must be 0..=100"));
+    }
     let host_id = match body.host_id {
         Some(id) => id,
-        None => pick_host_for_vm(&state.pool, &body.tags, memory_mib)
-            .await
-            .map_err(|e| ApiError::bad_request(e.to_string()))?,
+        None => match pick_host_for_vm(&state.pool, &body.tags, memory_mib).await {
+            Ok(id) => id,
+            Err(e) => {
+                let room = if body.preemptible {
+                    None
+                } else {
+                    crate::engine::preempt::make_room(&state, memory_mib, &body.vm.metadata.name)
+                        .await
+                        .map_err(|e| ApiError::internal(e.to_string()))?
+                };
+                room.ok_or_else(|| ApiError::bad_request(e.to_string()))?
+            }
+        },
     };
 
     for network in &body.vm.spec.network {
@@ -295,8 +314,8 @@ pub async fn create_vm(
     }
 
     sqlx::query(
-        "INSERT INTO vms (id, cluster_id, host_id, name, project, spec_json, desired_state, lifecycle_phase, vcpus, memory_mib, tags, flavor_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?, ?)",
+        "INSERT INTO vms (id, cluster_id, host_id, name, project, spec_json, desired_state, lifecycle_phase, vcpus, memory_mib, tags, flavor_id, preemptible, preempt_priority)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?, ?, ?, ?)",
     )
     .bind(vm_id)
     .bind(cluster_id)
@@ -313,6 +332,8 @@ pub async fn create_vm(
     .bind(memory_mib)
     .bind(serde_json::to_string(&body.tags).unwrap_or_else(|_| "[]".into()))
     .bind(body.flavor_id)
+    .bind(body.preemptible)
+    .bind(body.preempt_priority)
     .execute(&mut *tx)
     .await?;
 
@@ -551,6 +572,10 @@ pub struct CreateFromTemplateBody {
     /// Scale-to-zero policy (see `set_vm_sleep_policy`); omit to inherit the project default.
     #[serde(default)]
     pub sleep_after_minutes: Option<i64>,
+    #[serde(default)]
+    pub preemptible: bool,
+    #[serde(default)]
+    pub preempt_priority: i64,
 }
 
 fn default_memory() -> String {
@@ -634,6 +659,8 @@ pub async fn create_from_template(
         desired_state: body.desired_state,
         atlas_root_disk: false,
         atlas_policy: None,
+        preemptible: body.preemptible,
+        preempt_priority: body.preempt_priority,
     };
     let resp = create_vm(State(state), Extension(actor), Json(create_body)).await?;
     if let (Some(m), Ok(task_id)) = (sleep_after, Uuid::parse_str(&resp.task_id)) {
@@ -760,6 +787,8 @@ pub async fn create_from_iso(
         desired_state: body.desired_state,
         atlas_root_disk: false,
         atlas_policy: None,
+        preemptible: false,
+        preempt_priority: 0,
     };
     create_vm(State(state), Extension(actor), Json(create_body)).await
 }
@@ -1012,6 +1041,8 @@ pub async fn create_from_virt_install(
         desired_state: body.desired_state,
         atlas_root_disk: false,
         atlas_policy: None,
+        preemptible: false,
+        preempt_priority: 0,
     };
     create_vm(State(state), Extension(actor), Json(create_body)).await
 }

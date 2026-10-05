@@ -366,11 +366,20 @@ async fn vm_power(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     .execute(&state.pool)
     .await?;
     if action == "managedsave" {
-        sqlx::query("UPDATE vms SET slept_at = datetime('now') WHERE id = ?")
-            .bind(vm_id)
-            .execute(&state.pool)
-            .await?;
+        let preempt = msg.payload["preempt"].as_bool() == Some(true);
+        sqlx::query(
+            "UPDATE vms SET slept_at = datetime('now'),
+             preempted_at = CASE WHEN ? THEN datetime('now') ELSE NULL END WHERE id = ?",
+        )
+        .bind(preempt)
+        .bind(vm_id)
+        .execute(&state.pool)
+        .await?;
         let reason = match msg.payload["idle_minutes"].as_i64() {
+            _ if preempt => msg.payload["reason"]
+                .as_str()
+                .unwrap_or("preempted")
+                .to_string(),
             Some(m) if msg.payload["auto_sleep"].as_bool() == Some(true) => {
                 format!("idle {m} min")
             }
@@ -385,13 +394,18 @@ async fn vm_power(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
                 .await
                 .unwrap_or(false);
         sqlx::query(
-            "UPDATE vms SET slept_at = NULL, last_active_at = datetime('now') WHERE id = ?",
+            "UPDATE vms SET slept_at = NULL, preempted_at = NULL, last_active_at = datetime('now') WHERE id = ?",
         )
         .bind(vm_id)
         .execute(&state.pool)
         .await?;
         if was_sleeping && action == "start" {
-            crate::engine::vm_sleep::record(&state.pool, vm_id, "wake", "manual").await;
+            let reason = if msg.payload["resume_preempted"].as_bool() == Some(true) {
+                "capacity freed"
+            } else {
+                "manual"
+            };
+            crate::engine::vm_sleep::record(&state.pool, vm_id, "wake", reason).await;
         }
     }
     if action == "managedsave" || action == "start" {

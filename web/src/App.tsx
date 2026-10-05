@@ -75,6 +75,7 @@ const FleetCloudVolumes = lazyWithRetry(() => import('./pages/FleetCloudVolumes'
 const FleetCloudVpc = lazyWithRetry(() => import('./pages/FleetCloudVpc'))
 const FleetCloudAutopilot = lazyWithRetry(() => import('./pages/FleetCloudAutopilot'))
 const FleetCloudChaos = lazyWithRetry(() => import('./pages/FleetCloudChaos'))
+const FleetCloudPreemptible = lazyWithRetry(() => import('./pages/FleetCloudPreemptible'))
 const FleetCloudNetworking = lazyWithRetry(() => import('./pages/FleetCloudNetworking'))
 const FleetCloudKeypairs = lazyWithRetry(() => import('./pages/FleetCloudKeypairs'))
 const FleetCloudFlavors = lazyWithRetry(() => import('./pages/FleetCloudFlavors'))
@@ -496,6 +497,7 @@ function AuthenticatedShellRoutes() {
                 <Route path="/fleet-cloud/vpcs" element={<FleetCloudVpc />} />
                 <Route path="/fleet-cloud/autopilot" element={<FleetCloudAutopilot />} />
                 <Route path="/fleet-cloud/chaos" element={<FleetCloudChaos />} />
+                <Route path="/fleet-cloud/preemptible" element={<FleetCloudPreemptible />} />
                 <Route path="/fleet-cloud/networking" element={<FleetCloudNetworking />} />
                 <Route path="/fleet-cloud/keypairs" element={<FleetCloudKeypairs />} />
                 <Route path="/fleet-cloud/flavors" element={<FleetCloudFlavors />} />

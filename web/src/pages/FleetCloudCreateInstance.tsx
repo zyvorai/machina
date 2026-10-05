@@ -42,6 +42,8 @@ export default function FleetCloudCreateInstancePage() {
   const [cloudInitPassword, setCloudInitPassword] = useState('')
   const [cloudInitSshPubkey, setCloudInitSshPubkey] = useState('')
   const [sleepAfter, setSleepAfter] = useState('inherit')
+  const [preemptible, setPreemptible] = useState(false)
+  const [priority, setPriority] = useState('0')
   const [userData, setUserData] = useState('')
   const [keyName, setKeyName] = useState('')
   const [count, setCount] = useState('1')
@@ -77,7 +79,9 @@ export default function FleetCloudCreateInstancePage() {
   const userDataTooBig = userDataBytes > MAX_USER_DATA_BYTES
   const countNum = Number(count)
   const countOk = Number.isInteger(countNum) && countNum >= 1 && countNum <= 20
-  const canCreate = name.trim().length > 0 && imageId.length > 0 && flavorId.length > 0 && !userDataTooBig && countOk
+  const priorityNum = Number(priority)
+  const priorityOk = !preemptible || (Number.isInteger(priorityNum) && priorityNum >= 0 && priorityNum <= 100)
+  const canCreate = name.trim().length > 0 && imageId.length > 0 && flavorId.length > 0 && !userDataTooBig && countOk && priorityOk
 
   const handleCreate = async () => {
     if (!canCreate || !selectedImage) {
@@ -97,6 +101,8 @@ export default function FleetCloudCreateInstancePage() {
         cloud_init_ssh_pubkey: keyName ? undefined : cloudInitSshPubkey.trim() || undefined,
         sleep_after_minutes: sleepAfter === 'inherit' ? undefined : Number(sleepAfter),
         cloud_init_user_data: userData.trim() ? userData : undefined,
+        preemptible: preemptible || undefined,
+        preempt_priority: preemptible ? Number(priority) : undefined,
       }
       if (countNum > 1) {
         const r = await runInstances({ ...base, count: countNum })
@@ -307,6 +313,24 @@ export default function FleetCloudCreateInstancePage() {
           <option value="60">After 1 h idle</option>
           <option value="240">After 4 h idle</option>
         </select>
+      </div>
+
+      <div className="space-y-2 rounded-2xl border border-[var(--apple-hairline)] bg-[var(--apple-surface)] p-4">
+        <h2 className="text-sm font-medium text-[var(--text-secondary)]">Preemptible</h2>
+        <label className="flex min-h-11 items-center gap-2 text-sm">
+          <input type="checkbox" checked={preemptible} onChange={(e) => setPreemptible(e.target.checked)} />
+          Give way when capacity is short
+        </label>
+        <p className="text-xs text-[var(--text-muted)]">
+          When its host runs low on memory, the instance is saved to disk instead of stopped, and comes back by itself once there is room.
+        </p>
+        {preemptible && (
+          <label className="block space-y-1">
+            <span className="text-xs text-[var(--text-secondary)]">Priority, 0 to 100 (lower gives way first)</span>
+            <input aria-label="Preemption priority" inputMode="numeric" value={priority} onChange={(e) => setPriority(e.target.value)}
+              aria-invalid={!priorityOk} className="w-32 input-field text-sm" />
+          </label>
+        )}
       </div>
 
       <FleetCloudFooter />

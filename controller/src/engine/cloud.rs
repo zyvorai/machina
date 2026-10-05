@@ -242,6 +242,8 @@ async fn reconcile_group_fenced(
                 desired_state: "running".into(),
                 atlas_root_disk: false,
                 atlas_policy: None,
+                preemptible: false,
+                preempt_priority: 0,
             };
             let _ = crate::api::vms::create_vm(State(state.clone()), Extension(actor), Json(body))
                 .await

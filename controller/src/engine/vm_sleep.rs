@@ -104,7 +104,7 @@ fn addresses(guest_ip: &str, guest_ips: &str) -> Vec<String> {
 pub async fn wake_set(pool: &SqlitePool, host_id: Uuid) -> VmWake {
     let rows: Vec<(String, String, String)> = sqlx::query_as(
         "SELECT name, COALESCE(guest_ip, ''), COALESCE(guest_ips, '[]') FROM vms
-         WHERE host_id = ? AND desired_state = 'sleeping' ORDER BY name",
+         WHERE host_id = ? AND desired_state = 'sleeping' AND preempted_at IS NULL ORDER BY name",
     )
     .bind(host_id)
     .fetch_all(pool)
@@ -188,7 +188,7 @@ pub async fn tick(state: &AppState) -> anyhow::Result<()> {
     .await?;
     for (vm_id, name) in woken {
         sqlx::query(
-            "UPDATE vms SET desired_state = 'running', slept_at = NULL,
+            "UPDATE vms SET desired_state = 'running', slept_at = NULL, preempted_at = NULL,
              last_active_at = datetime('now') WHERE id = ? AND desired_state = 'sleeping'",
         )
         .bind(vm_id)

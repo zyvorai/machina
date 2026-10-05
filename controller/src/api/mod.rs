@@ -59,6 +59,7 @@ mod observability_middleware;
 mod oidc;
 mod operations;
 mod placement;
+mod preempt;
 mod policy;
 mod projects;
 mod proxmox;
@@ -1807,6 +1808,9 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/chaos/runs/{id}", get(chaos::get_run))
         .route("/api/v1/chaos/runs/{id}/abort", post(chaos::abort_run))
         .route("/api/v1/chaos/faults", get(chaos::faults))
+        .route("/api/v1/preemption", get(preempt::overview))
+        .route("/api/v1/preemption/settings", put(preempt::update_settings))
+        .route("/api/v1/vms/{id}/preemptible", put(preempt::set_vm))
         .route("/api/v1/rightsizing", get(autopilot::rightsizing))
         .route("/api/v1/rightsizing/propose", post(autopilot::propose_resize))
         .route("/api/v1/drs/consolidation", get(autopilot::consolidation))

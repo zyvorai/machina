@@ -53,6 +53,7 @@ pub mod observability;
 pub mod operations;
 pub mod operations_scheduler;
 pub mod placement;
+pub mod preempt;
 pub mod platform_plugins;
 pub mod policy;
 pub mod recommendations;

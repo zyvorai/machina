@@ -69,6 +69,10 @@ interface CreateFromTemplateBody {
   key_name?: string
   /** Free-form cloud-init user-data (a #cloud-config document or a script), at most 16 KiB. */
   cloud_init_user_data?: string
+  /** Sleeps (memory saved) instead of running when capacity is short. */
+  preemptible?: boolean
+  /** 0..100; lower is preempted first. */
+  preempt_priority?: number
 }
 
 /** POST /api/v1/vms/from-template — boots an instance from a native image
