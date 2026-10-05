@@ -472,3 +472,87 @@ mod tests {
         assert_eq!(new_dev, "vda");
     }
 }
+
+/// Throughput limits for one disk; `0` removes a limit (libvirt's meaning), `None` leaves it alone.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DiskIoTune {
+    pub target: String,
+    #[serde(default)]
+    pub read_iops: Option<u64>,
+    #[serde(default)]
+    pub write_iops: Option<u64>,
+    #[serde(default)]
+    pub read_bps: Option<u64>,
+    #[serde(default)]
+    pub write_bps: Option<u64>,
+}
+
+/// `virsh blkdeviotune` arguments (after the domain name) for `t`.
+pub fn iotune_args(vm_name: &str, t: &DiskIoTune) -> Result<Vec<String>, LibvirtError> {
+    crate::validate::validate_name(vm_name)?;
+    let dev_ok = (2..=8).contains(&t.target.len())
+        && t.target.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        && t.target.starts_with(|c: char| c.is_ascii_lowercase());
+    if !dev_ok {
+        return Err(LibvirtError::Invalid(format!("bad disk target '{}'", t.target)));
+    }
+    let mut a = vec!["blkdeviotune".to_string(), vm_name.to_string(), t.target.clone()];
+    for (flag, v) in [
+        ("--read-iops-sec", t.read_iops),
+        ("--write-iops-sec", t.write_iops),
+        ("--read-bytes-sec", t.read_bps),
+        ("--write-bytes-sec", t.write_bps),
+    ] {
+        if let Some(v) = v {
+            a.push(flag.into());
+            a.push(v.to_string());
+        }
+    }
+    if a.len() == 3 {
+        return Err(LibvirtError::Invalid("no limit given".into()));
+    }
+    a.push("--current".into());
+    Ok(a)
+}
+
+/// Apply I/O limits to a disk of a defined domain (live if running, persistent config otherwise).
+pub fn set_disk_iotune(vm_name: &str, t: &DiskIoTune) -> Result<(), LibvirtError> {
+    let args = iotune_args(vm_name, t)?;
+    let out = std::process::Command::new("virsh")
+        .args(&args)
+        .output()
+        .map_err(|e| LibvirtError::Operation(format!("virsh blkdeviotune: {e}")))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(LibvirtError::Operation(format!(
+            "virsh blkdeviotune: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )))
+    }
+}
+
+#[cfg(test)]
+mod iotune_tests {
+    use super::*;
+
+    #[test]
+    fn builds_args_for_given_limits_only() {
+        let t = DiskIoTune { target: "vdb".into(), read_iops: Some(500), write_bps: Some(0), ..Default::default() };
+        let a = iotune_args("web-1", &t).unwrap();
+        assert_eq!(
+            a,
+            ["blkdeviotune", "web-1", "vdb", "--read-iops-sec", "500", "--write-bytes-sec", "0", "--current"]
+        );
+    }
+
+    #[test]
+    fn rejects_empty_and_bad_targets() {
+        let none = DiskIoTune { target: "vdb".into(), ..Default::default() };
+        assert!(iotune_args("web-1", &none).is_err());
+        let bad = DiskIoTune { target: "vdb; rm".into(), read_iops: Some(1), ..Default::default() };
+        assert!(iotune_args("web-1", &bad).is_err());
+        let ok = DiskIoTune { target: "vdb".into(), read_iops: Some(1), ..Default::default() };
+        assert!(iotune_args("bad name;", &ok).is_err());
+    }
+}

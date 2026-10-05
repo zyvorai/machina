@@ -48,10 +48,16 @@ pub struct VolumeRow {
     pub attached_vm_id: Option<Uuid>,
     pub attached_device: Option<String>,
     pub atlas_backed: bool,
+    pub delete_on_termination: bool,
+    pub read_iops: Option<i64>,
+    pub write_iops: Option<i64>,
+    pub read_bps: Option<i64>,
+    pub write_bps: Option<i64>,
 }
 
 const VOLUME_SELECT: &str = "SELECT id, project_id, name, size_gib, volume_class, status, \
-    attached_vm_id, attached_device, (atlas_volume_id IS NOT NULL) AS atlas_backed FROM volumes";
+    attached_vm_id, attached_device, (atlas_volume_id IS NOT NULL) AS atlas_backed, \
+    delete_on_termination, read_iops, write_iops, read_bps, write_bps FROM volumes";
 
 /// `vms::{attach_vm_disk, detach_vm_disk, resize_vm_disk}` only enqueue a task and
 /// return immediately — they don't wait for the agent to actually finish the libvirt
@@ -140,6 +146,9 @@ pub struct CreateVolumeBody {
     pub project_id: Option<Uuid>,
     #[serde(default = "default_volume_class")]
     pub volume_class: String,
+    /// Delete the volume together with the instance it is attached to (EC2 `DeleteOnTermination`).
+    #[serde(default)]
+    pub delete_on_termination: bool,
 }
 
 fn default_volume_class() -> String {
@@ -165,13 +174,14 @@ pub async fn create_volume(
 
     let id = Uuid::new_v4();
     sqlx::query(
-        "INSERT INTO volumes (id, project_id, name, size_gib, volume_class, status) VALUES (?, ?, ?, ?, ?, 'creating')",
+        "INSERT INTO volumes (id, project_id, name, size_gib, volume_class, status, delete_on_termination) VALUES (?, ?, ?, ?, ?, 'creating', ?)",
     )
     .bind(id)
     .bind(project_id)
     .bind(&body.name)
     .bind(body.size_gib)
     .bind(&body.volume_class)
+    .bind(body.delete_on_termination)
     .execute(&state.pool)
     .await?;
 
@@ -386,6 +396,8 @@ pub struct AttachVolumeBody {
     pub vm_id: Uuid,
     #[serde(default = "default_target_dev")]
     pub target_dev: String,
+    #[serde(default)]
+    pub delete_on_termination: Option<bool>,
 }
 
 fn default_target_dev() -> String {
@@ -432,9 +444,10 @@ pub async fn attach_volume(
     .await?;
     wait_for_task(&state.pool, &task.0.task_id).await?;
 
-    sqlx::query("UPDATE volumes SET status = 'in-use', attached_vm_id = ?, attached_device = ? WHERE id = ?")
+    sqlx::query("UPDATE volumes SET status = 'in-use', attached_vm_id = ?, attached_device = ?, delete_on_termination = COALESCE(?, delete_on_termination) WHERE id = ?")
         .bind(body.vm_id)
         .bind(&body.target_dev)
+        .bind(body.delete_on_termination)
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -665,4 +678,164 @@ pub async fn delete_volume_snapshot(
         .execute(&state.pool)
         .await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteOnTerminationBody {
+    pub value: bool,
+}
+
+pub async fn set_volume_delete_on_termination(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<DeleteOnTerminationBody>,
+) -> Result<Json<VolumeRow>, ApiError> {
+    require_operator(&actor)?;
+    let r = sqlx::query("UPDATE volumes SET delete_on_termination = ? WHERE id = ?")
+        .bind(body.value)
+        .bind(id)
+        .execute(&state.pool)
+        .await?;
+    if r.rows_affected() == 0 {
+        return Err(ApiError::not_found("volume not found"));
+    }
+    get_volume(State(state), Extension(actor), Path(id)).await
+}
+
+/// Per-volume I/O limits. `0` removes a limit; an omitted field is left as it is.
+#[derive(Debug, Deserialize)]
+pub struct IoTuneBody {
+    #[serde(default)]
+    pub read_iops: Option<u64>,
+    #[serde(default)]
+    pub write_iops: Option<u64>,
+    #[serde(default)]
+    pub read_bps: Option<u64>,
+    #[serde(default)]
+    pub write_bps: Option<u64>,
+}
+
+const MAX_IOPS: u64 = 10_000_000;
+const MAX_BPS: u64 = 100_000_000_000;
+
+pub(crate) fn validate_iotune(b: &IoTuneBody) -> Result<(), String> {
+    if b.read_iops.is_none() && b.write_iops.is_none() && b.read_bps.is_none() && b.write_bps.is_none() {
+        return Err("give at least one of read_iops, write_iops, read_bps, write_bps".into());
+    }
+    if [b.read_iops, b.write_iops].iter().flatten().any(|v| *v > MAX_IOPS) {
+        return Err(format!("iops limits are at most {MAX_IOPS}"));
+    }
+    if [b.read_bps, b.write_bps].iter().flatten().any(|v| *v > MAX_BPS) {
+        return Err(format!("bytes-per-second limits are at most {MAX_BPS}"));
+    }
+    Ok(())
+}
+
+pub async fn set_volume_iotune(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<IoTuneBody>,
+) -> Result<Json<VolumeRow>, ApiError> {
+    require_operator(&actor)?;
+    validate_iotune(&body).map_err(ApiError::bad_request)?;
+    let row: Option<(Option<Uuid>, Option<String>)> =
+        sqlx::query_as("SELECT attached_vm_id, attached_device FROM volumes WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let Some((vm, dev)) = row else {
+        return Err(ApiError::not_found("volume not found"));
+    };
+    if let (Some(vm), Some(dev)) = (vm, dev) {
+        let (name, host): (String, Option<Uuid>) =
+            sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+                .bind(vm)
+                .fetch_one(&state.pool)
+                .await?;
+        let host = host.ok_or_else(|| ApiError::conflict("the instance has no host", "start it first"))?;
+        let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+            .bind(host)
+            .fetch_one(&state.pool)
+            .await?;
+        let mut client = crate::agent_client::connect(&addr)
+            .await
+            .map_err(|e| ApiError::internal(format!("agent unreachable: {e:#}")))?;
+        crate::agent_client::vm_libvirt_invoke(
+            &mut client,
+            &name,
+            "disk.iotune",
+            &serde_json::json!({
+                "target": dev, "read_iops": body.read_iops, "write_iops": body.write_iops,
+                "read_bps": body.read_bps, "write_bps": body.write_bps,
+            }),
+        )
+        .await
+        .map_err(|e| ApiError::internal(format!("applying the limits failed: {e:#}")))?;
+    }
+    sqlx::query(
+        "UPDATE volumes SET read_iops = COALESCE(?, read_iops), write_iops = COALESCE(?, write_iops), \
+         read_bps = COALESCE(?, read_bps), write_bps = COALESCE(?, write_bps) WHERE id = ?",
+    )
+    .bind(body.read_iops.map(|v| v as i64))
+    .bind(body.write_iops.map(|v| v as i64))
+    .bind(body.read_bps.map(|v| v as i64))
+    .bind(body.write_bps.map(|v| v as i64))
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+    get_volume(State(state), Extension(actor), Path(id)).await
+}
+
+/// Called by the VM delete task after the domain is gone and before the instance row is removed:
+/// deletes the volumes flagged `delete_on_termination` that were attached to it. Failures are logged and
+/// leave the volume behind (detached) rather than failing the instance delete.
+pub(crate) async fn purge_terminating_volumes(state: &AppState, vm_id: Uuid, host: Option<Uuid>) {
+    let rows: Vec<(Uuid, Option<String>, Option<Uuid>)> = sqlx::query_as(
+        "SELECT id, atlas_volume_id, storage_pool_id FROM volumes WHERE attached_vm_id = ? AND delete_on_termination = 1",
+    )
+    .bind(vm_id)
+    .fetch_all(&state.pool)
+    .await
+    .unwrap_or_default();
+    for (id, atlas, pool) in rows {
+        let result: Result<(), String> = if let Some(a) = atlas {
+            match atlas_bridge::require_client(&state.config) {
+                Ok(c) => c.delete_volume(&a).await.map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            }
+        } else if let (Some(pool), Some(host)) = (pool, host) {
+            storage::delete_pool_volume_file(state, host, pool, &format!("vol-{id}"))
+                .await
+                .map_err(|e| e.message)
+        } else {
+            Ok(())
+        };
+        match result {
+            Ok(()) => {
+                let _ = sqlx::query("DELETE FROM volumes WHERE id = ?").bind(id).execute(&state.pool).await;
+                state.emit_event("volume.delete", format!("Volume {id} deleted with its instance"));
+            }
+            Err(e) => tracing::warn!(volume = %id, "delete on termination failed: {e}"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod iotune_tests {
+    use super::*;
+
+    fn b(r: Option<u64>) -> IoTuneBody {
+        IoTuneBody { read_iops: r, write_iops: None, read_bps: None, write_bps: None }
+    }
+
+    #[test]
+    fn needs_a_limit_and_bounds_it() {
+        assert!(validate_iotune(&b(None)).is_err());
+        assert!(validate_iotune(&b(Some(0))).is_ok());
+        assert!(validate_iotune(&b(Some(MAX_IOPS + 1))).is_err());
+        let big = IoTuneBody { read_iops: None, write_iops: None, read_bps: None, write_bps: Some(MAX_BPS + 1) };
+        assert!(validate_iotune(&big).is_err());
+    }
 }

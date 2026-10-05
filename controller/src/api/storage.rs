@@ -470,6 +470,18 @@ pub async fn create_storage_pool_volume(
     Ok(Json(result))
 }
 
+/// Delete a volume file from a storage pool on `host_id` without a request context (used on instance delete).
+pub(crate) async fn delete_pool_volume_file(
+    state: &AppState,
+    host_id: Uuid,
+    pool_id: Uuid,
+    vol_name: &str,
+) -> Result<(), ApiError> {
+    let name = storage_pool_name(&state.pool, pool_id).await?;
+    invoke_pool_action(state, host_id, "storage.volume.delete", &name, serde_json::json!({ "name": vol_name })).await?;
+    Ok(())
+}
+
 pub async fn delete_storage_pool_volume(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,

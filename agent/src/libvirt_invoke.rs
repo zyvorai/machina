@@ -173,6 +173,12 @@ pub fn vm_invoke(
             device_tune::update_disk_tune(conn, vm_name, &tune)?;
             Ok(serde_json::json!({ "status": "ok" }))
         }
+        "disk.iotune" => {
+            let t: device_tune::DiskIoTune = serde_json::from_value(payload.clone())
+                .map_err(|e| LibvirtError::Invalid(format!("disk.iotune payload: {e}")))?;
+            device_tune::set_disk_iotune(vm_name, &t)?;
+            Ok(serde_json::json!({ "status": "ok" }))
+        }
         "nic.tune" => {
             let tune: device_tune::NicTuneRequest = serde_json::from_value(payload.clone())
                 .map_err(|e| LibvirtError::Invalid(format!("nic.tune payload: {e}")))?;

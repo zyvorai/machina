@@ -501,6 +501,7 @@ async fn vm_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         }
     }
 
+    crate::api::volumes::purge_terminating_volumes(state, vm_id, row.1).await;
     sqlx::query("DELETE FROM vm_forks WHERE fork_vm_id = ?1 OR source_vm_id = ?1")
         .bind(vm_id)
         .execute(&state.pool)

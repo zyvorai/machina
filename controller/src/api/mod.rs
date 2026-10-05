@@ -1706,6 +1706,14 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/volumes/{id}/detach", post(volumes::detach_volume))
         .route("/api/v1/volumes/{id}/extend", post(volumes::extend_volume))
         .route(
+            "/api/v1/volumes/{id}/iotune",
+            put(volumes::set_volume_iotune),
+        )
+        .route(
+            "/api/v1/volumes/{id}/delete-on-termination",
+            put(volumes::set_volume_delete_on_termination),
+        )
+        .route(
             "/api/v1/volumes/{id}/snapshots",
             get(volumes::list_volume_snapshots).post(volumes::create_volume_snapshot),
         )
