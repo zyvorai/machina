@@ -320,6 +320,8 @@ pub struct PortRow {
     pub subnet_id: Option<String>,
     pub private_ip: Option<String>,
     pub description: String,
+    /// The reserved address is pinned as a DHCP host entry on the subnet's network, so the guest's DHCP client gets it.
+    pub dhcp_pinned: bool,
     #[sqlx(skip)]
     pub ec2_id: String,
 }
@@ -332,7 +334,7 @@ impl PortRow {
 }
 
 const PORT_SELECT: &str = "SELECT id, network_id, project_id, vm_id, mac_address, security_group_id, status, \
-    subnet_id, private_ip, COALESCE(description, '') AS description FROM ports";
+    subnet_id, private_ip, COALESCE(description, '') AS description, dhcp_pinned FROM ports";
 
 #[derive(Debug, Deserialize)]
 pub struct ListPortsQuery {
@@ -468,9 +470,20 @@ pub async fn create_port(
         status = "ACTIVE";
     }
 
+    // Pin the reserved address so the guest's DHCP client is handed it (best effort: the port still exists if this fails).
+    let dhcp_pinned = match (&mac_address, &private_ip) {
+        (Some(mac), Some(ip)) => match pin_dhcp(&state, body.network_id, mac, ip, true).await {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::warn!(port = %id, "could not pin the reserved address: {e}");
+                false
+            }
+        },
+        _ => false,
+    };
     sqlx::query(
-        "INSERT INTO ports (id, network_id, project_id, vm_id, mac_address, security_group_id, status, subnet_id, private_ip, description) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO ports (id, network_id, project_id, vm_id, mac_address, security_group_id, status, subnet_id, private_ip, description, dhcp_pinned) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(id)
     .bind(body.network_id)
@@ -482,6 +495,7 @@ pub async fn create_port(
     .bind(subnet.map(|s| s.to_string()))
     .bind(&private_ip)
     .bind(&body.description)
+    .bind(dhcp_pinned)
     .execute(&state.pool)
     .await?;
 
@@ -496,6 +510,7 @@ pub async fn create_port(
         subnet_id: subnet.map(|s| s.to_string()),
         private_ip,
         description: body.description,
+        dhcp_pinned,
         ec2_id: crate::resource_ids::ec2_id(crate::resource_ids::Kind::Port, id),
     }))
 }
@@ -506,6 +521,16 @@ pub async fn delete_port(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
+    let pinned: Option<(Uuid, Option<String>, Option<String>, bool)> =
+        sqlx::query_as("SELECT network_id, mac_address, private_ip, dhcp_pinned FROM ports WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
+    if let Some((net, Some(mac), Some(ip), true)) = pinned {
+        if let Err(e) = pin_dhcp(&state, net, &mac, &ip, false).await {
+            tracing::warn!(port = %id, "could not unpin the reserved address: {e}");
+        }
+    }
     let row: Option<(Option<Uuid>, Option<String>)> =
         sqlx::query_as("SELECT vm_id, mac_address FROM ports WHERE id = ?")
             .bind(id)
@@ -664,4 +689,28 @@ pub async fn preview_security_group_enforcement(
     let items = crate::engine::sg_enforce::preview(&model, &id.simple().to_string());
     let warnings: usize = items.iter().map(|i| i.warnings.len()).sum();
     Ok(Json(serde_json::json!({ "instances": items, "warning_count": warnings })))
+}
+
+/// Pin (or unpin) `ip` for `mac` on the libvirt network behind a cloud subnet, on the host that owns it.
+async fn pin_dhcp(state: &AppState, network_id: Uuid, mac: &str, ip: &str, enabled: bool) -> Result<(), String> {
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT h.agent_grpc_addr, n.name FROM cloud_subnets s JOIN cloud_vpcs v ON v.id = s.vpc_id \
+         JOIN hosts h ON h.id = v.host_id JOIN networks n ON n.id = s.network_id WHERE s.network_id = ?",
+    )
+    .bind(network_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let Some((addr, name)) = row else {
+        return Err("the network is not a cloud subnet".into());
+    };
+    let mut client = crate::agent_client::connect(&addr).await.map_err(|e| format!("{e:#}"))?;
+    crate::agent_client::host_libvirt_invoke(
+        &mut client,
+        "network.dhcp_host",
+        &serde_json::json!({ "name": name, "mac": mac, "ip": ip, "enabled": enabled }),
+    )
+    .await
+    .map(|_| ())
+    .map_err(|e| format!("{e:#}"))
 }

@@ -300,3 +300,80 @@ pub fn set_network_autostart(
     }
     Ok(())
 }
+
+fn valid_mac(mac: &str) -> bool {
+    let parts: Vec<&str> = mac.split(':').collect();
+    parts.len() == 6 && parts.iter().all(|p| p.len() == 2 && p.bytes().all(|b| b.is_ascii_hexdigit()))
+}
+
+/// `virsh net-update` arguments that add (or delete) a static DHCP host entry. Everything is validated first:
+/// the values end up inside an XML fragment.
+pub fn dhcp_host_args(network: &str, mac: &str, ip: &str, add: bool) -> Result<Vec<String>, LibvirtError> {
+    crate::validate::validate_name(network)?;
+    if !valid_mac(mac) {
+        return Err(LibvirtError::Invalid(format!("'{mac}' is not a MAC address")));
+    }
+    let ip: std::net::Ipv4Addr = ip
+        .parse()
+        .map_err(|_| LibvirtError::Invalid(format!("'{ip}' is not an IPv4 address")))?;
+    Ok(vec![
+        "net-update".into(),
+        network.into(),
+        if add { "add" } else { "delete" }.into(),
+        "ip-dhcp-host".into(),
+        format!("<host mac='{}' ip='{ip}'/>", mac.to_ascii_lowercase()),
+        "--live".into(),
+        "--config".into(),
+    ])
+}
+
+fn run_virsh(args: &[String]) -> Result<(), LibvirtError> {
+    let out = std::process::Command::new("virsh")
+        .args(args)
+        .output()
+        .map_err(|e| LibvirtError::Operation(format!("virsh {}: {e}", args.first().map_or("", String::as_str))))?;
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(LibvirtError::Operation(format!(
+            "virsh {}: {}",
+            args.first().map_or("", String::as_str),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )))
+    }
+}
+
+/// Pin `mac` to `ip` on a libvirt network (or unpin). Pinning replaces an earlier entry for the same MAC or address, so
+/// repeating the call is safe.
+pub fn set_dhcp_host(network: &str, mac: &str, ip: &str, enabled: bool) -> Result<(), LibvirtError> {
+    if enabled {
+        // net-update refuses a duplicate: drop any previous entry first and ignore "not found".
+        let _ = run_virsh(&dhcp_host_args(network, mac, ip, false)?);
+        run_virsh(&dhcp_host_args(network, mac, ip, true)?)
+    } else {
+        run_virsh(&dhcp_host_args(network, mac, ip, false)?)
+    }
+}
+
+#[cfg(test)]
+mod dhcp_host_tests {
+    use super::*;
+
+    #[test]
+    fn builds_the_update_for_add_and_delete() {
+        let a = dhcp_host_args("mc-abc", "52:54:00:AA:BB:CC", "10.20.1.7", true).unwrap();
+        assert_eq!(a[..4], ["net-update", "mc-abc", "add", "ip-dhcp-host"]);
+        assert_eq!(a[4], "<host mac='52:54:00:aa:bb:cc' ip='10.20.1.7'/>");
+        assert_eq!(a[5..], ["--live", "--config"]);
+        assert_eq!(dhcp_host_args("mc-abc", "52:54:00:aa:bb:cc", "10.20.1.7", false).unwrap()[2], "delete");
+    }
+
+    #[test]
+    fn nothing_that_could_break_out_of_the_xml_is_accepted() {
+        assert!(dhcp_host_args("mc-abc", "52:54:00:aa:bb:c'", "10.20.1.7", true).is_err());
+        assert!(dhcp_host_args("mc-abc", "52:54:00:aa:bb", "10.20.1.7", true).is_err());
+        assert!(dhcp_host_args("mc-abc", "52:54:00:aa:bb:cc", "10.20.1.7' x='", true).is_err());
+        assert!(dhcp_host_args("bad name;", "52:54:00:aa:bb:cc", "10.20.1.7", true).is_err());
+        assert!(dhcp_host_args("mc-abc", "52:54:00:aa:bb:cc", "::1", true).is_err());
+    }
+}

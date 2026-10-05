@@ -571,6 +571,13 @@ pub fn host_invoke(conn: &Connect, action: &str, payload: &Value) -> Result<Valu
                 "name": name,
             }))
         }
+        "network.dhcp_host" => {
+            let name = payload_str(payload, "name")?;
+            let mac = payload_str(payload, "mac")?;
+            let ip = payload_str(payload, "ip")?;
+            network::set_dhcp_host(&name, &mac, &ip, payload_bool(payload, "enabled"))?;
+            Ok(serde_json::json!({ "status": "ok", "name": name, "mac": mac, "ip": ip }))
+        }
         "network.delete" => {
             let name = payload_str(payload, "name")?;
             network::delete_network(conn, &name)?;

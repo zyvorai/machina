@@ -89,9 +89,12 @@ A port (`POST /api/v1/ports`) on a cloud subnet now behaves like an ENI: it rese
 releases the address when the port is deleted. A requested address must be in the managed (lower-half) range and free,
 otherwise 409.
 
-**Limits:** the reserved address is a reservation, not configuration. It is not yet pinned as a DHCP host entry, so the
-guest must be configured with it (the subnet page says the same). There are no secondary addresses and a port still carries
-one security group; per-interface groups are not enforced (groups attach to instances).
+When the port is attached to an instance, its reserved address is pinned as a DHCP host entry (MAC to address) on the
+subnet's libvirt network, so a guest that uses DHCP is handed exactly that address (`dhcp_pinned` on the port says whether it
+worked; a failure is logged and the port still exists). Deleting the port unpins it.
+
+**Limits:** a guest with a static configuration must still be set up with the address by hand. There are no secondary
+addresses and a port still carries one security group; per-interface groups are not enforced (groups attach to instances).
 
 ## Metric statistics
 `GET /api/v1/metrics/statistics?subject=<vm name>&metric=<metric>&period=300&statistics=Average,Maximum&start=&end=` buckets
