@@ -573,6 +573,16 @@ pub fn generate_cloud_init_iso_with(
 // ── VM Import ──────────────────────────────────────────────────────
 
 /// Import a disk image by converting it to qcow2 if needed. Destination directory follows the primary libvirt pool.
+/// qemu-img's name for a disk file extension: VHD is `vpc` and a bare `.img` is raw, neither is accepted as `-f vhd` / `-f img`
+/// (the import used to fail with "Unknown driver").
+fn qemu_input_format(ext: &str) -> &str {
+    match ext {
+        "vhd" | "vpc" => "vpc",
+        "img" => "raw",
+        other => other,
+    }
+}
+
 pub fn import_disk_image(
     conn: &Connect,
     source: &str,
@@ -624,7 +634,7 @@ pub fn import_disk_image(
                 .args([
                     "convert",
                     "-f",
-                    &ext,
+                    qemu_input_format(&ext),
                     "-O",
                     "qcow2",
                     &*source_str,
@@ -2761,5 +2771,20 @@ mod seed_scratch_tests {
         }
         let big = "x".repeat(16 * 1024 + 1);
         assert!(generate_cloud_init_iso_with("", "/tmp", "vm", "u", "", "", Some(&big), None).is_err());
+    }
+}
+
+#[cfg(test)]
+mod import_format_tests {
+    use super::qemu_input_format;
+
+    #[test]
+    fn extensions_map_to_the_names_qemu_img_accepts() {
+        assert_eq!(qemu_input_format("vhd"), "vpc");
+        assert_eq!(qemu_input_format("vpc"), "vpc");
+        assert_eq!(qemu_input_format("img"), "raw");
+        for same in ["vmdk", "vdi", "raw"] {
+            assert_eq!(qemu_input_format(same), same);
+        }
     }
 }
