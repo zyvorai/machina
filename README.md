@@ -118,7 +118,7 @@ Add hypervisors with a gRPC agent over TLS. The controller keeps desired state, 
 
 ### Fleet Cloud: self-service like a public cloud
 
-Flavors, images, instances, volumes and snapshots, security groups, keypairs, floating IPs, server groups, Heat-style stacks, projects and load balancers, all native controller APIs. Beyond that, idle instances can scale to zero and wake on traffic. [Fleet Cloud →](docs/customer/pages/fleet-cloud/fleet-cloud.md) · [Features OpenStack doesn't have →](docs/fleet-cloud-features.md)
+Flavors, images, instances, volumes and snapshots, security groups, keypairs, floating IPs, server groups, Heat-style stacks, projects and load balancers, all native controller APIs. Beyond that, idle instances can scale to zero and wake on traffic. EC2-style semantics on top: tags and ids, instance types, user data, enforced security groups, Elastic IPs and a NAT gateway, an instance metadata service, alarms with scaling actions, project-scoped API keys, and an EC2-compatible endpoint (`aws`/boto3 work with an endpoint override). [EC2 semantics →](docs/cloud-ec2-semantics.md) · [EC2 API →](docs/cloud-ec2-api.md) [Fleet Cloud →](docs/customer/pages/fleet-cloud/fleet-cloud.md) · [Features OpenStack doesn't have →](docs/fleet-cloud-features.md)
 
 ![Fleet Cloud](docs/ux/machina-fleet-cloud-dark.png)
 

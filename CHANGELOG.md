@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-10-06 — Fleet Cloud: EC2 semantics and API
+
+See [docs/cloud-ec2-semantics.md](docs/cloud-ec2-semantics.md) and [docs/cloud-ec2-api.md](docs/cloud-ec2-api.md).
+
+- **Identity.** Tags and EC2-style ids on instances, volumes, security groups, key pairs, images, interfaces; tag filters;
+  project-scoped API keys (`projects` on `POST /api/v1/api-keys`).
+- **Compute.** Instance types that stick and `change-type`; free-form user data; key pair by name; run-instances with
+  `count`/`min_count`; terminated instances stay visible for an hour; an instance metadata service at 169.254.169.254.
+- **Storage.** Delete-on-termination and per-volume I/O limits; volumes from snapshots; image visibility and per-project
+  sharing, enforced at launch; creating a volume now returns its path so local volumes attach.
+- **Network.** Security groups enforced by the VM edge (audit by default, dry-run preview, honest status); reserved interface
+  addresses pinned as DHCP host entries; Elastic IPs; a NAT gateway; subnet delete with libvirt teardown; load balancer health
+  checks.
+- **Scaling.** Alarms with a step-scaling action on instance groups; metric statistics; delete instance groups and launch
+  templates.
+- **EC2 endpoint.** `POST /ec2` with SigV4: describe, volume, security group, image, VPC, key pair, reboot, type change, run,
+  terminate and tag actions. Access keys under `/api/v1/ec2/access-keys`.
+- **Also.** NoCloud `meta-data` is now JSON (cirros and other minimal readers accept it). Migrations `045`–`059`.
+- **Tests.** Live checks on the lab host with throwaway guests; see the verified list at the top of the semantics doc.
+
 ## 2026-10-05 — Fleet Cloud: preemptible instances
 
 See [docs/fleet-cloud-features.md](docs/fleet-cloud-features.md#preemptible-instances).

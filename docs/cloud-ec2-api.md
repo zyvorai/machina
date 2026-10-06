@@ -16,8 +16,8 @@ The service name in the credential scope must be `ec2`; the region is not checke
 
 ## What works
 `DescribeInstances` (filters: `instance-id`, `instance-state-name`, `instance-type`, `private-ip-address`, `tag-key`,
-`tag:Key`), `DescribeInstanceTypes`, `DescribeTags`, `DescribeKeyPairs`, `StartInstances`, `StopInstances`.
-Any other action returns `UnsupportedOperation`. Unknown filter names match nothing.
+`tag:Key`), `DescribeInstanceTypes`, `DescribeTags`, `DescribeKeyPairs`, `StartInstances`, `StopInstances`, and the
+actions under *More actions* and *Run, terminate and tags* below. Any other action returns `UnsupportedOperation`. Unknown filter names match nothing.
 
 ## Security
 - Requests older or newer than 15 minutes (`X-Amz-Date`) are refused, and the signature is compared in constant time.
@@ -37,10 +37,6 @@ and egress, with CIDR or group peers), images (`DescribeImages`), networking (`D
 validation and audit are the same. Filters work as for instances (`tag:Key`, `tag-key`, ids, `status`, `group-name`, `name`,
 `is-public`); unknown filter names match nothing.
 
-## Not yet
-Creating VPCs and subnets, snapshots and AMI creation, Elastic IP and NAT calls; pagination (`NextToken`); the
-`describe-instances` fields that have no Machina equivalent (image id, placement, block device mappings) are empty.
-
 ## Run, terminate and tags
 - `RunInstances`: `ImageId` (an `ami-` id or an image name), `MaxCount`/`MinCount` (1–20, see run-instances in
   `cloud-ec2-semantics.md`), optional `InstanceType` (a flavor name), `KeyName`, `UserData` (base64) and tags from `Tag.N` /
@@ -54,3 +50,10 @@ Creating VPCs and subnets, snapshots and AMI creation, Elastic IP and NAT calls;
 Deleting an instance leaves a tombstone: `DescribeInstances` keeps listing it as `terminated` (state code 48) for an hour,
 with its tags, then drops it. `StartInstances`/`StopInstances` on a terminated instance fail with `IncorrectInstanceState`;
 terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list tombstones.
+
+## Not yet
+- Creating VPCs and subnets, snapshots and AMI creation, and the Elastic IP calls (`AllocateAddress`, `AssociateAddress`,
+  `DisassociateAddress`, `ReleaseAddress`, `DescribeAddresses`); use the REST API (`/api/v1/elastic-ips`) for those.
+- Pagination (`NextToken`): lists come back whole.
+- `DescribeInstances` fields that have no Machina equivalent (image id, placement, block-device mappings) are empty.
+- CloudWatch-style calls: metrics and alarms are in the REST API (`/api/v1/metrics/statistics`, `/api/v1/alarms`).

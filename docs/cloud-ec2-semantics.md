@@ -1,7 +1,22 @@
 # Fleet Cloud: EC2 semantics
 
 What behaves like EC2 today, what is enforced, and what is not. Everything here is available through the controller
-API (`/api/v1/...`) and the Fleet Cloud pages.
+API (`/api/v1/...`) and the Fleet Cloud pages; the EC2-compatible Query endpoint is described in
+[cloud-ec2-api.md](cloud-ec2-api.md).
+
+| Area | Sections |
+|---|---|
+| Identity | [Tags and ids](#tags-and-ids), [Ids and tag filters beyond instances](#ids-and-tag-filters-beyond-instances), [Project-scoped API keys](#project-scoped-api-keys) |
+| Compute | [Instance types](#instance-types), [User data](#user-data), [Key pairs by name](#key-pairs-by-name), [Run several instances](#run-several-instances-runinstances), [Instance metadata service](#instance-metadata-service) |
+| Storage | [Volumes](#volumes-delete-on-termination-and-io-limits), [Volume from snapshot](#volume-from-snapshot), [Image visibility and sharing](#image-visibility-and-sharing-ami-style) |
+| Network | [Security groups](#security-groups), [Network interfaces](#network-interfaces-enis), [Elastic IPs](#elastic-ips), [NAT gateway](#nat-gateway-for-private-subnets), [Deleting subnets](#deleting-subnets), [Load balancer health checks](#load-balancer-health-checks) |
+| Scaling and metrics | [Alarms](#alarms), [Metric statistics](#metric-statistics), [Deleting instance groups and launch templates](#deleting-instance-groups-and-launch-templates) |
+
+**Verified on a real host.** Security-group enforcement (allow and deny on live packets, status through a `machina-bpfd`
+restart), run-instances, instance-type change, volume attach with live I/O limits and delete-on-termination, pinned DHCP
+addresses, alarm-driven group scaling, group and template delete, private-image launch checks, the EC2 endpoint through boto3,
+and the user-data path with a cirros guest. **Written and unit-tested but not yet run live:** Elastic IPs, the NAT gateway,
+the metadata service, project-scoped keys, subnet delete and load balancer health checks.
 
 ## Tags and ids
 - `GET|PUT|DELETE /api/v1/tags/{resource_type}/{id}` stores key/value tags (≤ 50 per resource, keys ≤ 128, values ≤ 256).
