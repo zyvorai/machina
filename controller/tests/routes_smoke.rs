@@ -27,8 +27,7 @@ async fn build_app_with_pool() -> (axum::Router, machina_controller::db::DbPool)
     // Disable JWT auth so routes respond without a token.
     std::env::set_var("MACHINA_SKIP_AUTH", "1");
 
-    let pool = machina_controller::db::DbPool::connect("sqlite::memory:").await.unwrap();
-    db::migrate(&pool).await.expect("migrate failed");
+    let pool = machina_controller::db::testing::pool().await;
     db::ensure_bootstrap(&pool, "admin", "admin")
         .await
         .expect("bootstrap failed");
@@ -82,8 +81,7 @@ async fn delete(app: &axum::Router, path: &str) -> StatusCode {
 
 #[tokio::test]
 async fn migrate_creates_all_tables() {
-    let pool = machina_controller::db::DbPool::connect("sqlite::memory:").await.unwrap();
-    db::migrate(&pool).await.expect("migrate must succeed");
+    let pool = machina_controller::db::testing::pool().await;
 
     let tables = [
         "clusters",
@@ -122,8 +120,7 @@ async fn migrate_creates_all_tables() {
 
 #[tokio::test]
 async fn bootstrap_creates_default_rows() {
-    let pool = machina_controller::db::DbPool::connect("sqlite::memory:").await.unwrap();
-    db::migrate(&pool).await.unwrap();
+    let pool = machina_controller::db::testing::pool().await;
     db::ensure_bootstrap(&pool, "admin", "s3cret")
         .await
         .unwrap();

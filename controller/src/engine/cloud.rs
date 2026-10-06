@@ -123,7 +123,7 @@ async fn reconcile_group_fenced(
     policy.validate().map_err(anyhow::Error::msg)?;
     // Autoscaling is only allowed on a fully converged group with a fresh
     // sample from EVERY active member. Averages over a partial set are unsafe.
-    let (count,cpu):(i64,Option<f64>)=crate::db::query_as("SELECT COUNT(*),AVG(m.cpu_percent) FROM cloud_group_members gm JOIN vms v ON v.id=gm.vm_id JOIN vm_metrics m ON m.vm_id=v.id WHERE gm.group_id=? AND gm.slot<? AND v.observed_state='running' AND m.updated_at>datetime('now','-2 minutes')").bind(id).bind(policy.desired).fetch_one(&state.pool).await?;
+    let (count,cpu):(i64,Option<f64>)=crate::db::query_as("SELECT COUNT(*),AVG(m.cpu_percent) FROM cloud_group_members gm JOIN vms v ON v.id=gm.vm_id JOIN vm_metrics m ON m.vm_id=v.id WHERE gm.group_id=? AND gm.slot<? AND v.observed_state='running' AND m.updated_at>datetime('now','-2 minutes')").bind(id).bind(i64::from(policy.desired)).fetch_one(&state.pool).await?;
     let elapsed:i64=crate::db::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)-CAST(strftime('%s',last_scaled_at) AS INTEGER) FROM cloud_instance_groups WHERE id=?").bind(id).fetch_one(&state.pool).await?;
     let peak = if policy.predictive {
         crate::engine::ai::forecast::group_demand_peak(&state.pool, id).await
@@ -179,7 +179,7 @@ async fn reconcile_group_fenced(
              WHERE gm.group_id = ? AND gm.slot = ?",
         )
         .bind(id)
-        .bind(slot)
+        .bind(i64::from(slot))
         .fetch_optional(&state.pool)
         .await?;
         let guard = Guard {
@@ -254,10 +254,10 @@ async fn reconcile_group_fenced(
                 .fetch_one(&state.pool)
                 .await?
         };
-        crate::db::query("INSERT INTO cloud_group_members (group_id,slot,vm_id) VALUES (?,?,?) ON CONFLICT(group_id,slot) DO UPDATE SET vm_id=excluded.vm_id WHERE cloud_group_members.vm_id IS NULL").bind(id).bind(slot).bind(vm_id).execute(&state.pool).await?;
+        crate::db::query("INSERT INTO cloud_group_members (group_id,slot,vm_id) VALUES (?,?,?) ON CONFLICT(group_id,slot) DO UPDATE SET vm_id=excluded.vm_id WHERE cloud_group_members.vm_id IS NULL").bind(id).bind(i64::from(slot)).bind(vm_id).execute(&state.pool).await?;
     }
     // If max was lowered, stopped retained slots above the new max remain owned.
-    crate::db::query("UPDATE vms SET desired_state='stopped' WHERE id IN (SELECT vm_id FROM cloud_group_members WHERE group_id=? AND slot>=?) AND desired_state<>'sleeping' AND EXISTS(SELECT 1 FROM cloud_instance_groups WHERE id=? AND paused=0 AND policy_json=?)").bind(id).bind(policy.max).bind(id).bind(&expected).execute(&state.pool).await?;
+    crate::db::query("UPDATE vms SET desired_state='stopped' WHERE id IN (SELECT vm_id FROM cloud_group_members WHERE group_id=? AND slot>=?) AND desired_state<>'sleeping' AND EXISTS(SELECT 1 FROM cloud_instance_groups WHERE id=? AND paused=0 AND policy_json=?)").bind(id).bind(i64::from(policy.max)).bind(id).bind(&expected).execute(&state.pool).await?;
     Ok(())
 }
 
@@ -293,7 +293,7 @@ async fn set_draining(state: &AppState, group: Uuid, slot: u32, on: bool) -> any
     };
     crate::db::query(sql)
         .bind(group)
-        .bind(slot)
+        .bind(i64::from(slot))
         .execute(&state.pool)
         .await?;
     Ok(())

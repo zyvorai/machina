@@ -368,8 +368,7 @@ mod tests {
 
     #[tokio::test]
     async fn restore_guard_rejects_cross_vm_and_incomplete_backups() {
-        let pool = crate::db::DbPool::connect("sqlite::memory:").await.unwrap();
-        sqlx::migrate!().run(&pool).await.unwrap();
+        let pool = crate::db::testing::pool().await;
 
         let vm_a = Uuid::new_v4();
         let vm_b = Uuid::new_v4();

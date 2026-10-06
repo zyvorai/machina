@@ -189,22 +189,10 @@ mod tests {
         assert!(!holds_lease(true, lease_until + 100, lease_until));
     }
 
+    /// The migrated schema seeds the single leadership row; start each test from "nobody holds it".
     async fn pool_with_lease_table() -> crate::db::DbPool {
-        let pool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await
-            .unwrap();
-        crate::db::query(
-            "CREATE TABLE controller_leadership (
-                 id INTEGER PRIMARY KEY CHECK (id = 1), holder_id TEXT NOT NULL DEFAULT '',
-                 lease_until TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, epoch INTEGER NOT NULL DEFAULT 0)",
-        )
-        .execute(&pool)
-        .await
-        .unwrap();
-        crate::db::query("INSERT INTO controller_leadership (id, holder_id) VALUES (1, '')")
+        let pool = crate::db::testing::pool().await;
+        crate::db::query("UPDATE controller_leadership SET holder_id = '', epoch = 0, lease_until = datetime('now', '-1 minute') WHERE id = 1")
             .execute(&pool)
             .await
             .unwrap();

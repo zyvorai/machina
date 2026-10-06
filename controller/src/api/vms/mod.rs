@@ -306,7 +306,7 @@ pub async fn create_vm(
 
     // Quota and policy are checked inside this same write transaction (BEGIN IMMEDIATE takes the SQLite write lock
     // up front), so concurrent creates at a project's limit are serialised and cannot both pass.
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     if let Err(v) = policy::evaluate_vm_create_tx(
         &mut tx,
         &project,

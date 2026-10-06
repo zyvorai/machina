@@ -132,7 +132,7 @@ pub struct Allocate {
 
 pub async fn allocate(State(state): State<AppState>, Extension(actor): Extension<AuthUser>, Json(b): Json<Allocate>) -> Result<Json<EipRow>, ApiError> {
     require_operator(&actor)?;
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let pools: Vec<PoolRow> = match &b.pool {
         Some(n) => crate::db::query_as("SELECT id, name, cidr, host_id, interface FROM eip_pools WHERE name = ?").bind(n).fetch_all(&mut *tx).await?,
         None => crate::db::query_as("SELECT id, name, cidr, host_id, interface FROM eip_pools ORDER BY name").fetch_all(&mut *tx).await?,
@@ -208,7 +208,7 @@ pub async fn associate(State(state): State<AppState>, Extension(actor): Extensio
     if known.is_none() {
         return Err(ApiError::conflict("the instance has no known address yet", "wait for its DHCP lease or guest agent"));
     }
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let current: Option<Uuid> = crate::db::query_scalar("SELECT vm_id FROM elastic_ips WHERE id = ?").bind(eip.id).fetch_one(&mut *tx).await?;
     if current.is_some() && current != Some(b.vm_id) {
         return Err(ApiError::conflict("the address is already associated with another instance", "disassociate it first"));

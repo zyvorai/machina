@@ -258,7 +258,9 @@ pub async fn list_policy_rules(
     )
 }
 
-#[cfg(test)]
+// These build their own SQLite tables and race real connections for SQLite's write lock; the PostgreSQL equivalent of the
+// quota race (advisory lock via db::begin_write) is covered by the integration run against a real server.
+#[cfg(all(test, feature = "sqlite"))]
 mod quota_race_tests {
     use super::*;
     use sqlx::sqlite::SqlitePoolOptions;
@@ -266,7 +268,7 @@ mod quota_race_tests {
 
     /// The create path: take the write lock, check the quota on that connection, insert, commit.
     async fn create_one(pool: &DbPool, n: usize) -> bool {
-        let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
+        let mut tx = crate::db::begin_write(&pool).await.unwrap();
         let ok = evaluate_vm_create_tx(&mut tx, "p", &[], 1, 512, 10, false)
             .await
             .is_ok();

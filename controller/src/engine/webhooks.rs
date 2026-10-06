@@ -141,8 +141,7 @@ mod tests {
     // real path end-to-end against an in-memory DB with the actual migrations.
     #[tokio::test]
     async fn dispatch_channels_delivers_to_matching_channels_only() {
-        let pool = crate::db::DbPool::connect("sqlite::memory:").await.unwrap();
-        sqlx::migrate!().run(&pool).await.unwrap();
+        let pool = crate::db::testing::pool().await;
 
         let match_id = uuid::Uuid::new_v4();
         let skip_id = uuid::Uuid::new_v4();

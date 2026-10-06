@@ -262,7 +262,7 @@ pub async fn put_tags(
     validate_tags(&body.tags).map_err(ApiError::bad_request)?;
     let (kind, uuid) = locate(&state, &resource_type, &id).await?;
     authorize(&state, &actor, kind, uuid, true).await?;
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let tags = match put_tag_map(&mut tx, kind, uuid, &body.tags).await? {
         PutOutcome::Ok(t) => t,
         PutOutcome::TooMany(n) => {
@@ -303,7 +303,7 @@ pub async fn delete_tags(
     }
     let (kind, uuid) = locate(&state, &resource_type, &id).await?;
     authorize(&state, &actor, kind, uuid, true).await?;
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let tags = delete_tag_keys(&mut tx, kind, uuid, &body.keys).await?;
     tx.commit().await?;
     let _ = write_audit(
@@ -406,7 +406,6 @@ pub async fn resolve_ec2_id(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sqlx::sqlite::SqlitePoolOptions;
 
     #[test]
     fn keys_and_values_are_validated() {
@@ -439,8 +438,9 @@ mod tests {
         assert!(validate_tags(&TagMap::new()).is_err());
     }
 
+    #[cfg(feature = "sqlite")]
     async fn conn_with_schema() -> crate::db::DbPool {
-        let pool = SqlitePoolOptions::new()
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
             .await
@@ -461,6 +461,7 @@ mod tests {
             .collect()
     }
 
+    #[cfg(feature = "sqlite")]
     #[tokio::test]
     async fn put_merges_overwrites_and_delete_removes() {
         let pool = conn_with_schema().await;
@@ -503,6 +504,7 @@ mod tests {
             .is_empty());
     }
 
+    #[cfg(feature = "sqlite")]
     #[tokio::test]
     async fn the_tag_limit_is_enforced_on_the_merged_total() {
         let pool = conn_with_schema().await;
@@ -535,6 +537,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "sqlite")]
     #[tokio::test]
     async fn ec2_ids_resolve_back_to_the_resource_and_unknown_ones_do_not() {
         let pool = conn_with_schema().await;

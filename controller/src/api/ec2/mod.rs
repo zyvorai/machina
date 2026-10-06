@@ -503,7 +503,7 @@ async fn tag_resources(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, 
     }
     for r in &resources {
         let (kind, hex) = crate::resource_ids::parse(r).ok_or_else(|| Ec2Error::bad("InvalidID", format!("The id '{r}' is not valid")))?;
-        let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+        let mut tx = crate::db::begin_write(&state.pool).await?;
         let id = match crate::resource_ids::resolve(&mut tx, kind, &hex).await? {
             crate::resource_ids::Lookup::Found(id) => id,
             _ => return Err(Ec2Error::bad("InvalidResourceID.NotFound", format!("The resource '{r}' does not exist"))),

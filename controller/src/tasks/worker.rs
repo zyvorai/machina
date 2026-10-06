@@ -2309,7 +2309,14 @@ fn is_transient_connect_error(err: &str) -> bool {
 /// infra/DB-contention hiccup.
 fn is_transient_db_busy_error(err: &str) -> bool {
     let e = err.to_ascii_lowercase();
-    e.contains("database is locked") || e.contains("code: 5") || e.contains("code: 6")
+    // SQLite: busy/locked (codes 5/6). PostgreSQL: deadlock_detected (40P01) and serialization_failure (40001).
+    e.contains("database is locked")
+        || e.contains("code: 5")
+        || e.contains("code: 6")
+        || e.contains("deadlock detected")
+        || e.contains("could not serialize access")
+        || e.contains("40p01")
+        || e.contains("40001")
 }
 
 async fn on_task_failure(state: &AppState, msg: &TaskMessage, err: &str) {

@@ -8,6 +8,12 @@ license = "LicenseRef-Zyvor-Production-1.0"
 name = "machina-controller"
 path = "src/main.rs"
 
+[features]
+# Exactly one database backend per build (see src/db/mod.rs): the embedded SQLite default, or PostgreSQL for large fleets.
+default = ["sqlite"]
+sqlite = []
+postgres = []
+
 [dependencies]
 machina-core = { path = "../core" }
 machina-spec = { path = "../spec" }
@@ -28,7 +34,7 @@ tower-http = { workspace = true }
 clap = { workspace = true }
 uuid = { workspace = true }
 chrono = { workspace = true }
-sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "uuid", "chrono", "json", "migrate"] }
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite", "postgres", "uuid", "chrono", "json", "migrate"] }
 tonic = { version = "0.14", features = ["tls-ring", "tls-native-roots"] }
 futures-util = { workspace = true }
 tokio-stream = { workspace = true }

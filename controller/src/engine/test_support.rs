@@ -8,7 +8,6 @@
 
 use std::sync::Arc;
 
-use sqlx::sqlite::SqlitePoolOptions;
 use tokio::sync::mpsc::UnboundedReceiver;
 use uuid::Uuid;
 
@@ -17,18 +16,9 @@ use crate::leader::LeaderHandle;
 use crate::state::AppState;
 use crate::tasks::{bus::InMemoryTaskBus, TaskBus, TaskMessage};
 
-/// A fresh, migrated database for one test. Every DB test should start here so the backend a test runs on is chosen in one place.
+/// A fresh, migrated database for one test (see `db::testing`).
 pub(crate) async fn test_pool() -> crate::db::DbPool {
-    // max_connections(1) is load-bearing: sqlx opens `sqlite::memory:` with a
-    // PRIVATE cache, so every pooled connection is a separate empty database —
-    // only the first one ever sees the migrated schema.
-    let pool = SqlitePoolOptions::new()
-        .max_connections(1)
-        .connect("sqlite::memory:")
-        .await
-        .unwrap();
-    crate::db::migrate(&pool).await.expect("migrate failed");
-    pool
+    crate::db::testing::pool().await
 }
 
 pub(crate) async fn test_state() -> (AppState, UnboundedReceiver<TaskMessage>) {

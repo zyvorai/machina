@@ -79,7 +79,7 @@ pub async fn create_vpc(
     machina_spec::validate_name(&body.name).map_err(invalid)?;
     let cidr: CloudCidr = body.cidr.parse().map_err(invalid)?;
     cidr.validate_private(false).map_err(invalid)?;
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     access(&mut tx, &actor, project, true).await?;
     let online: bool =
         crate::db::query_scalar("SELECT EXISTS(SELECT 1 FROM hosts WHERE id = ? AND state = 'online')")
@@ -159,7 +159,7 @@ pub async fn delete_vpc(
     Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     vpc(&mut tx, &actor, id, true).await?;
     let count: i64 = crate::db::query_scalar("SELECT (SELECT COUNT(*) FROM cloud_subnets WHERE vpc_id = ?) + (SELECT COUNT(*) FROM cloud_peerings WHERE requester_id = ? OR accepter_id = ?)").bind(id).bind(id).bind(id).fetch_one(&mut *tx).await?;
     if count > 0 {
@@ -189,7 +189,7 @@ pub async fn create_subnet(
     machina_spec::validate_name(&body.name).map_err(invalid)?;
     let cidr: CloudCidr = body.cidr.parse().map_err(invalid)?;
     cidr.validate_private(true).map_err(invalid)?;
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let parent = vpc(&mut tx, &actor, id, true).await?;
     if !parent
         .cidr
@@ -279,7 +279,7 @@ pub async fn set_subnet_nat(
     Path(id): Path<Uuid>,
     Json(body): Json<SetNat>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let (sub, parent) = subnet_vpc(&mut tx, &actor, id, true).await?;
     if body.enabled && sub.status != "ready" {
         return Err(conflict("the subnet is not ready yet"));
@@ -355,7 +355,7 @@ pub async fn delete_subnet(
             return Err(ApiError::internal(format!("could not remove the libvirt network: {msg}")));
         }
     }
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let (a, p, g, i) = subnet_dependents(&mut tx, id, sub.network_id, &network_name).await?;
     if let Some(why) = subnet_delete_blocker(a, p, g, i) {
         return Err(conflict(why));
@@ -385,7 +385,7 @@ pub async fn retry_subnet(
     Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let (sub, parent) = subnet_vpc(&mut tx, &actor, id, true).await?;
     let pending: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'cloud.subnet.provision' AND status IN ('pending','running')").bind(id).fetch_one(&mut *tx).await?;
     if pending > 0 || sub.status == "ready" {
@@ -424,7 +424,7 @@ pub async fn allocate_address(
     if body.request_key.is_empty() || body.request_key.len() > 128 {
         return Err(invalid("request_key must be 1..128 bytes"));
     }
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let (sub, _) = subnet_vpc(&mut tx, &actor, id, true).await?;
     let prior = crate::db::query_as("SELECT id,subnet_id,request_key,address FROM cloud_ip_allocations WHERE subnet_id = ? AND request_key = ?").bind(id).bind(&body.request_key).fetch_optional(&mut *tx).await?;
     if let Some(prior) = prior {
@@ -490,7 +490,7 @@ pub(crate) async fn reserve_address(
     request_key: &str,
     wanted: Option<&str>,
 ) -> Result<String, ApiError> {
-    let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&pool).await?;
     let prior: Option<String> = crate::db::query_scalar(
         "SELECT address FROM cloud_ip_allocations WHERE subnet_id = ? AND request_key = ?",
     )
@@ -567,7 +567,7 @@ pub async fn release_address(
     Extension(actor): Extension<AuthUser>,
     Path((id, allocation)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     subnet_vpc(&mut tx, &actor, id, true).await?;
     let n = crate::db::query("DELETE FROM cloud_ip_allocations WHERE subnet_id = ? AND id = ?")
         .bind(id)
@@ -601,7 +601,7 @@ pub async fn create_peering(
     Path(id): Path<Uuid>,
     Json(body): Json<PeeringRequest>,
 ) -> Result<Json<Peering>, ApiError> {
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let a = vpc(&mut tx, &actor, id, true).await?;
     // Target existence alone is insufficient: both VPCs must be visible to the
     // requester, and acceptance requires write permission on the target.
@@ -639,7 +639,7 @@ pub async fn accept_peering(
     Extension(actor): Extension<AuthUser>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let accepter: Uuid = crate::db::query_scalar("SELECT accepter_id FROM cloud_peerings WHERE id=?")
         .bind(id)
         .fetch_one(&mut *tx)
@@ -685,7 +685,7 @@ pub async fn create_route(
     Json(body): Json<RouteBody>,
 ) -> Result<Json<Value>, ApiError> {
     let destination: CloudCidr = body.destination.parse().map_err(invalid)?;
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     let a = vpc(&mut tx, &actor, id, true).await?;
     match body.target.as_str() {
         "blackhole" if body.target_id.is_none() => {}
@@ -764,7 +764,7 @@ pub async fn delete_route(
     Extension(actor): Extension<AuthUser>,
     Path((id, rid)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<Value>, ApiError> {
-    let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
+    let mut tx = crate::db::begin_write(&state.pool).await?;
     vpc(&mut tx, &actor, id, true).await?;
     if crate::db::query("DELETE FROM cloud_routes WHERE id=? AND vpc_id=?")
         .bind(rid)

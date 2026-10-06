@@ -159,8 +159,7 @@ mod tests {
     /// invisibly, because the error was only logged at debug level.
     #[tokio::test]
     async fn a_probe_result_can_be_saved_against_the_migrated_schema() {
-        let pool = crate::db::DbPool::connect("sqlite::memory:").await.unwrap();
-        sqlx::migrate!().run(&pool).await.unwrap();
+        let pool = crate::db::testing::pool().await;
         record(&pool, Uuid::new_v4(), "healthy", 2, 0, "ok").await.unwrap();
     }
 
