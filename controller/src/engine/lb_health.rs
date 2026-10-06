@@ -108,20 +108,28 @@ async fn run_one(state: &AppState, lb: LbRow) -> anyhow::Result<()> {
             changed = true;
             state.emit_event("lb.health", format!("Load balancer member {mid}: {prev} -> {state_now} ({})", r["detail"].as_str().unwrap_or("")));
         }
-        sqlx::query("UPDATE lb_members SET health = ?, health_ok = ?, health_fail = ?, health_detail = ?, \
-                     health_changed_at = CASE WHEN health <> ? THEN CURRENT_TIMESTAMP ELSE health_changed_at END WHERE id = ?")
-            .bind(&state_now)
-            .bind(ok2)
-            .bind(fail2)
-            .bind(r["detail"].as_str().unwrap_or(""))
-            .bind(&state_now)
-            .bind(mid)
-            .execute(&state.pool)
-            .await?;
+        record(&state.pool, mid, &state_now, ok2, fail2, r["detail"].as_str().unwrap_or("")).await?;
     }
     if changed {
         crate::engine::load_balancer::apply(&state.pool, &state.config, id).await?;
     }
+    Ok(())
+}
+
+/// Save one member's probe outcome; `health_changed_at` moves only when the state does.
+async fn record(pool: &SqlitePool, member: Uuid, state_now: &str, ok: i64, fail: i64, detail: &str) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE lb_members SET health = ?, health_ok = ?, health_fail = ?, health_detail = ?, \
+         health_changed_at = CASE WHEN health <> ? THEN CURRENT_TIMESTAMP ELSE health_changed_at END WHERE id = ?",
+    )
+    .bind(state_now)
+    .bind(ok)
+    .bind(fail)
+    .bind(detail)
+    .bind(state_now)
+    .bind(member)
+    .execute(pool)
+    .await?;
     Ok(())
 }
 
@@ -136,7 +144,7 @@ pub fn spawn(state: AppState) {
             }
             for lb in due(&state.pool).await.unwrap_or_default() {
                 if let Err(e) = run_one(&state, lb).await {
-                    tracing::debug!("lb health check: {e:#}");
+                    tracing::warn!("lb health check: {e:#}");
                 }
             }
         }
@@ -146,6 +154,15 @@ pub fn spawn(state: AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The statement the checker runs against the real schema: 058 once missed a column and every result failed to save,
+    /// invisibly, because the error was only logged at debug level.
+    #[tokio::test]
+    async fn a_probe_result_can_be_saved_against_the_migrated_schema() {
+        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!().run(&pool).await.unwrap();
+        record(&pool, Uuid::new_v4(), "healthy", 2, 0, "ok").await.unwrap();
+    }
 
     #[test]
     fn a_member_turns_unhealthy_only_after_the_failure_threshold() {

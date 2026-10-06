@@ -109,9 +109,16 @@ pub async fn delete_pool(State(state): State<AppState>, Extension(actor): Extens
     if used > 0 {
         return Err(ApiError::conflict(format!("{used} address(es) are still allocated from this pool"), "release them first"));
     }
+    let host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM eip_pools WHERE id = ?").bind(id).fetch_optional(&state.pool).await?;
     let r = sqlx::query("DELETE FROM eip_pools WHERE id = ?").bind(id).execute(&state.pool).await?;
     if r.rows_affected() == 0 {
         return Err(ApiError::not_found("pool not found"));
+    }
+    // The sync loop only visits hosts that still have a pool, so without this push the last pool's alias would stay on the host.
+    if let Some(host) = host {
+        if let Err(e) = crate::engine::eip::push_host(&state.pool, host).await {
+            tracing::warn!(%host, "elastic ip cleanup after pool delete: {e:#}");
+        }
     }
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
