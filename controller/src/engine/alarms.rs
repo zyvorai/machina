@@ -7,7 +7,6 @@
 use std::time::Duration;
 
 use machina_spec::ScalingPolicy;
-use sqlx::SqlitePool;
 use uuid::Uuid;
 
 use crate::api::metric_stats::{aggregate, Datapoint};
