@@ -69,7 +69,7 @@ pub async fn list_fleet_sprites(
     let mut names: HashMap<Uuid, String> = HashMap::new();
     for host_id in unique_host_ids {
         if let Ok(Some(name)) =
-            crate::db::query_scalar::<_, String>("SELECT name FROM hosts WHERE id = ?")
+            crate::db::query_scalar::<_, String>("SELECT hostname FROM hosts WHERE id = ?")
                 .bind(host_id)
                 .fetch_optional(&state.pool)
                 .await

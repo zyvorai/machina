@@ -137,7 +137,7 @@ pub async fn summary(
     .fetch_one(&state.pool)
     .await?;
     let counts: (i64, i64) = crate::db::query_as(
-        "SELECT COALESCE(SUM(kind = 'wake'), 0), COALESCE(SUM(kind = 'sleep'), 0)
+        "SELECT COALESCE(SUM(CASE WHEN kind = 'wake' THEN 1 ELSE 0 END), 0), COALESCE(SUM(CASE WHEN kind = 'sleep' THEN 1 ELSE 0 END), 0)
          FROM vm_sleep_events WHERE at > datetime('now', '-1 day')",
     )
     .fetch_one(&state.pool)

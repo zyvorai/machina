@@ -82,6 +82,20 @@ CREATE FUNCTION max(a double precision, b double precision) RETURNS double preci
 CREATE FUNCTION min(a bigint, b bigint) RETURNS bigint LANGUAGE sql IMMUTABLE AS $$ SELECT LEAST($1, $2) $$;
 CREATE FUNCTION min(a double precision, b double precision) RETURNS double precision LANGUAGE sql IMMUTABLE AS $$ SELECT LEAST($1, $2) $$;
 
+-- json_insert(tags, '$[#]', 'x'): append to a JSON array stored as text (the only form the controller uses)
+CREATE FUNCTION json_insert(doc text, path text, val text) RETURNS text LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+  IF path <> '$[#]' THEN RAISE EXCEPTION 'unsupported json path: %', path; END IF;
+  RETURN (COALESCE(doc, '[]')::jsonb || to_jsonb(val))::text;
+END
+$$;
+
+-- SQLite's typeof() and length() on a stored id: ids are 16-byte BLOBs there (`typeof(id) = 'blob' AND length(id) = 16`); a uuid
+-- column answers the same way here
+CREATE FUNCTION typeof(v uuid) RETURNS text LANGUAGE sql IMMUTABLE AS $$ SELECT 'blob'::text $$;
+CREATE FUNCTION typeof(v text) RETURNS text LANGUAGE sql IMMUTABLE AS $$ SELECT 'text'::text $$;
+CREATE FUNCTION length(v uuid) RETURNS integer LANGUAGE sql IMMUTABLE AS $$ SELECT 16 $$;
+
 -- the current time as the controller stores it (CURRENT_TIMESTAMP in SQL text is rewritten to this)
 CREATE FUNCTION machina_now() RETURNS text LANGUAGE sql STABLE AS $$ SELECT datetime() $$;
 

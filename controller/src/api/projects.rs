@@ -41,7 +41,7 @@ pub async fn list_projects(
         "SELECT p.id, v.name, COUNT(*) AS vm_count
          FROM (SELECT COALESCE(NULLIF(project, ''), 'default') AS name FROM vms) v
          LEFT JOIN projects p ON p.name = v.name
-         GROUP BY v.name ORDER BY v.name",
+         GROUP BY v.name, p.id ORDER BY v.name",
     )
     .fetch_all(&state.pool)
     .await?;

@@ -47,7 +47,7 @@ BOOL_NAMES = {
     "firewall_enabled", "ha_allow_unfenced_recovery", "ha_enabled", "installed", "inventory_mark_managed_missing",
     "inventory_prune_unmanaged", "is_public", "live", "maintenance_mode", "managed", "marketplace", "paused", "quiesce",
     "require_vm_delete_approval", "schedulable", "success", "preemptible", "quiesced", "block",
-    "is_default", "recording_enabled", "zeus_air_gap_llm", "zeus_memory_enabled", "zeus_memory_project_scope", "zeus_memory_team_scope",
+    "is_default", "lockdown_enabled", "ok", "recording_enabled", "zeus_air_gap_llm", "zeus_memory_enabled", "zeus_memory_project_scope", "zeus_memory_team_scope",
 }
 
 
