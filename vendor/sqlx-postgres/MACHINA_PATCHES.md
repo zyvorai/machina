@@ -17,7 +17,7 @@ column is bound as (BOOLEAN, BIGINT, UUID, TEXT).
 | `types/int.rs` | `i16`/`i32`/`i64` read any integer column and NUMERIC (SUM() is NUMERIC) |
 | `types/float.rs` | `f32`/`f64` read FLOAT4, FLOAT8, integers and NUMERIC (AVG() is NUMERIC) |
 | `types/bool.rs` | `bool` also reads integer columns |
-| `types/json.rs` | `Json<T>` / `serde_json::Value` also read TEXT |
+| `types/json.rs` | `Json<T>` / `serde_json::Value` read TEXT too, and are *written* as compact TEXT (not JSONB), matching what SQLite stores |
 | `types/uuid.rs` | `Uuid` also reads TEXT |
 | `types/chrono/datetime.rs` | `DateTime<Tz>` / `NaiveDateTime` also read TEXT timestamps (RFC 3339, `YYYY-MM-DD HH:MM:SS`, ISO with `Z`) |
 | `types/lenient.rs` | new: shared helpers (NUMERIC to f64/i64, text timestamp parsing) |

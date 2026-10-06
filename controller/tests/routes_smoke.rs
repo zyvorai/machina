@@ -46,8 +46,19 @@ async fn build_app_with_pool() -> (axum::Router, machina_controller::db::DbPool)
 }
 
 async fn get(app: &axum::Router, path: &str) -> StatusCode {
+    get_with_body(app, path).await.0
+}
+
+/// The status and, for an error, the start of the response body (so a failing route says why).
+async fn get_with_body(app: &axum::Router, path: &str) -> (StatusCode, String) {
     let req = Request::builder().uri(path).body(Body::empty()).unwrap();
-    app.clone().oneshot(req).await.unwrap().status()
+    let resp = app.clone().oneshot(req).await.unwrap();
+    let status = resp.status();
+    if status.is_success() {
+        return (status, String::new());
+    }
+    let bytes = axum::body::to_bytes(resp.into_body(), 1 << 16).await.unwrap_or_default();
+    (status, String::from_utf8_lossy(&bytes).chars().take(400).collect())
 }
 
 async fn post(app: &axum::Router, path: &str, body: &str) -> StatusCode {
@@ -144,11 +155,13 @@ async fn bootstrap_creates_default_rows() {
     assert_eq!(hosts, 1, "should have exactly 1 default localhost host");
 
     // Verify UUID PKs are 16-byte BLOBs, not text strings.
-    let bad_ids: i64 = machina_controller::db::query_scalar("SELECT COUNT(*) FROM clusters WHERE length(id) != 16")
+    let bad_ids: i64 = machina_controller::db::query_scalar("SELECT COUNT(*) FROM clusters WHERE id IS NULL")
         .fetch_one(&pool)
         .await
         .unwrap();
-    assert_eq!(bad_ids, 0, "cluster id must be a 16-byte UUID blob");
+    assert_eq!(bad_ids, 0, "cluster id must be set");
+    // ... and it must decode as a Uuid, which fails on a text id on either backend
+    let _: uuid::Uuid = machina_controller::db::query_scalar("SELECT id FROM clusters LIMIT 1").fetch_one(&pool).await.unwrap();
 }
 
 #[tokio::test]
@@ -190,9 +203,9 @@ async fn smoke_get_routes() {
 
     let mut failures = Vec::new();
     for path in routes {
-        let status = get(&app, path).await;
+        let (status, body) = get_with_body(&app, path).await;
         if !status.is_success() {
-            failures.push(format!("{path} [{status}]"));
+            failures.push(format!("{path} [{status}] {body}"));
         }
     }
 

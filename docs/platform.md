@@ -11,7 +11,8 @@ Web UI (/platform/*)  →  machina-daemon proxy  →  machina-controller  →  g
 ```
 
 The controller needs no external database: state lives in an embedded SQLite file
-created and migrated on first start (`controller/migrations/`).
+created and migrated on first start (`controller/migrations/`). For very large fleets
+there is a PostgreSQL build; see [the database guide](guides/database.md).
 
 ## Crates
 

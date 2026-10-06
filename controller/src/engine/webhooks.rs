@@ -147,7 +147,7 @@ mod tests {
         let skip_id = uuid::Uuid::new_v4();
         crate::db::query(
             "INSERT INTO notification_channels (id, name, kind, target, events, enabled)
-             VALUES (?, 'm', 'slack', 'https://example.com/x', '[\"alert.*\"]', 1)",
+             VALUES (?, 'm', 'slack', 'https://example.com/x', '[\"alert.*\"]', TRUE)",
         )
         .bind(match_id)
         .execute(&pool)
@@ -155,7 +155,7 @@ mod tests {
         .unwrap();
         crate::db::query(
             "INSERT INTO notification_channels (id, name, kind, target, events, enabled)
-             VALUES (?, 's', 'slack', 'https://example.com/y', '[\"cert.*\"]', 1)",
+             VALUES (?, 's', 'slack', 'https://example.com/y', '[\"cert.*\"]', TRUE)",
         )
         .bind(skip_id)
         .execute(&pool)

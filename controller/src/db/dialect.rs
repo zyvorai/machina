@@ -14,8 +14,9 @@
 //! | `LIKE` (case-insensitive for ASCII) | `ILIKE` |
 //! | `CAST(x AS REAL)` / `AS INTEGER` | `AS DOUBLE PRECISION` / `AS BIGINT` |
 //! | `INSERT OR IGNORE INTO ...` | `INSERT INTO ... ON CONFLICT DO NOTHING` |
+//! | `rowid` (insertion-order tie-break) | `seq`, an identity column that tasks, vm_restore_points and ha_events have in PostgreSQL |
 //!
-//! `INSERT OR REPLACE`, `rowid`, `typeof()` and the JSON builders are not rewritten: those few statements are written for each
+//! `INSERT OR REPLACE`, `typeof()` and the JSON builders are not rewritten: those few statements are written for each
 //! backend at the call site, and a statement that slips through fails loudly in PostgreSQL's parser instead of misbehaving.
 
 #[cfg(feature = "postgres")]
@@ -76,6 +77,9 @@ pub fn to_postgres(sql: &str) -> String {
                     out.push_str("machina_now()");
                 } else if word.eq_ignore_ascii_case("LIKE") {
                     out.push_str("ILIKE");
+                } else if word.eq_ignore_ascii_case("rowid") {
+                    // insertion-order tie-break (`ORDER BY created_at, rowid`): tables that need it carry a `seq` identity column
+                    out.push_str("seq");
                 } else if word.eq_ignore_ascii_case("AS") {
                     out.push_str(word);
                     // `AS REAL` / `AS INTEGER` in a CAST: PostgreSQL's REAL is 4 bytes and INTEGER 4, the controller means 8
@@ -197,6 +201,12 @@ mod tests {
             "  INSERT into t (a) VALUES ($1) ON CONFLICT DO NOTHING RETURNING a"
         );
         assert_eq!(to_postgres("INSERT INTO t (a) VALUES (?)"), "INSERT INTO t (a) VALUES ($1)");
+    }
+
+    #[test]
+    fn rowid_tie_breaks_use_the_seq_column() {
+        assert_eq!(to_postgres("SELECT x FROM t ORDER BY created_at DESC, rowid DESC"), "SELECT x FROM t ORDER BY created_at DESC, seq DESC");
+        assert_eq!(to_postgres("SELECT 'rowid', myrowid FROM t"), "SELECT 'rowid', myrowid FROM t");
     }
 
     #[test]

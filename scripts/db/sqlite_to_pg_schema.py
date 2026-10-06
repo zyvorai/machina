@@ -31,6 +31,9 @@ TEXT_IDS = {
     "vm_atlas_volumes.volume_id", "vm_atlas_volumes.backend_native_id", "volume_snapshots.atlas_snapshot_id", "volumes.atlas_volume_id",
 }
 TEXT_ID_PREFIXES = ("ai_",)
+# Tables whose queries break ties with SQLite's `rowid` ("the row inserted later"); PostgreSQL gets an explicit identity column
+# and db::dialect rewrites `rowid` to `seq`.
+SEQ_TABLES = {"tasks", "vm_restore_points", "ha_events"}
 # INTEGER columns the controller reads or binds as a Rust `bool` become BOOLEAN (PostgreSQL will not decode or bind a bool as a
 # bigint). Found from the FromRow structs plus the columns the PostgreSQL test run reported; a column that is flag-like but missing
 # here fails loudly ("mismatched types ... BOOL") the first time the code touches it, so add it here and regenerate.
@@ -40,6 +43,7 @@ BOOL_NAMES = {
     "firewall_enabled", "ha_allow_unfenced_recovery", "ha_enabled", "installed", "inventory_mark_managed_missing",
     "inventory_prune_unmanaged", "is_public", "live", "maintenance_mode", "managed", "marketplace", "paused", "quiesce",
     "require_vm_delete_approval", "schedulable", "success", "preemptible", "quiesced", "block",
+    "is_default", "recording_enabled", "zeus_air_gap_llm", "zeus_memory_enabled", "zeus_memory_project_scope", "zeus_memory_team_scope",
 }
 
 
@@ -225,6 +229,8 @@ def main():
                     cols.append("    " + d)
             else:
                 cols.append(column(name, d, uuid, fks, review))
+        if name in SEQ_TABLES:
+            cols.append("    seq BIGINT GENERATED ALWAYS AS IDENTITY")
         out.append("CREATE TABLE %s (\n%s\n);\n" % (name, ",\n".join(cols)))
     seeds = seed_rows(conn, tables, uuid)
     out.append("-- rows the SQLite migrations seed (defaults and catalogs)")

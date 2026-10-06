@@ -202,7 +202,7 @@ CREATE TABLE ai_providers (
     deployment_name TEXT NOT NULL DEFAULT '',
     api_key_encrypted TEXT NOT NULL DEFAULT '',
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    is_default BIGINT NOT NULL DEFAULT 0,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
 
@@ -555,11 +555,11 @@ CREATE TABLE clusters (
     zeus_multi_provider BIGINT NOT NULL DEFAULT 1,
     zeus_agents_enabled BIGINT NOT NULL DEFAULT 1,
     zeus_ambient_ux BIGINT NOT NULL DEFAULT 1,
-    zeus_memory_enabled BIGINT NOT NULL DEFAULT 1,
-    zeus_memory_team_scope BIGINT NOT NULL DEFAULT 0,
-    zeus_memory_project_scope BIGINT NOT NULL DEFAULT 1,
+    zeus_memory_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    zeus_memory_team_scope BOOLEAN NOT NULL DEFAULT FALSE,
+    zeus_memory_project_scope BOOLEAN NOT NULL DEFAULT TRUE,
     zeus_memory_retention_days BIGINT NOT NULL DEFAULT 90,
-    zeus_air_gap_llm BIGINT NOT NULL DEFAULT 0,
+    zeus_air_gap_llm BOOLEAN NOT NULL DEFAULT FALSE,
     ha_allow_unfenced_recovery BOOLEAN NOT NULL DEFAULT FALSE
 );
 
@@ -592,7 +592,7 @@ CREATE TABLE console_sessions (
     ended_at TEXT,
     expires_at TEXT NOT NULL,
     audit_id TEXT,
-    recording_enabled BIGINT NOT NULL DEFAULT 0,
+    recording_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     recording_path TEXT,
     spectator_token TEXT,
     metadata_json TEXT NOT NULL DEFAULT '{}'
@@ -885,7 +885,8 @@ CREATE TABLE ha_events (
     host_id UUID,
     action TEXT NOT NULL,
     message TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
+    created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
+    seq BIGINT GENERATED ALWAYS AS IDENTITY
 );
 
 CREATE TABLE ha_policies (
@@ -1495,7 +1496,8 @@ CREATE TABLE tasks (
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     updated_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     attempts BIGINT NOT NULL DEFAULT 0,
-    claimed_by TEXT
+    claimed_by TEXT,
+    seq BIGINT GENERATED ALWAYS AS IDENTITY
 );
 
 CREATE TABLE templates (
@@ -1643,7 +1645,8 @@ CREATE TABLE vm_restore_points (
     note TEXT,
     layers TEXT NOT NULL DEFAULT '[]',
     quiesced BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
+    created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')),
+    seq BIGINT GENERATED ALWAYS AS IDENTITY
 );
 
 CREATE TABLE vm_schedules (
@@ -1781,78 +1784,78 @@ CREATE TABLE webhooks (
 );
 
 -- rows the SQLite migrations seed (defaults and catalogs)
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('aws-expert', 'AWS Expert', 'Cloud architecture and AWS service guidance', 'architect', '{}', FALSE, '2026-10-06 16:51:52');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('azure-expert', 'Azure Expert', 'Azure landing zones and NSG guidance', 'architect', '{}', FALSE, '2026-10-06 16:51:52');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('gcp-expert', 'GCP Expert', 'GCP networking and GKE guidance', 'architect', '{}', FALSE, '2026-10-06 16:51:52');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('linux-expert', 'Linux Expert', 'Host tuning and systemd diagnostics', 'sre', '{}', FALSE, '2026-10-06 16:51:52');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('kubernetes-expert', 'Kubernetes Expert', 'Cluster ops and workload placement', 'kubernetes', '{}', FALSE, '2026-10-06 16:51:52');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('terraform-expert', 'Terraform Expert', 'IaC generation and module guidance', 'architect', '{}', FALSE, '2026-10-06 16:51:52');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('finops-expert', 'FinOps Expert', 'Cost optimization and chargeback', 'cost', '{}', FALSE, '2026-10-06 16:51:52');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('security-expert', 'Security Expert', 'Threat hunting and compliance', 'security', '{}', FALSE, '2026-10-06 16:51:52');
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('37d3d701-d851-ea32-7562-236c6080c0e5'::uuid, 'infrastructure', NULL, NULL, 10, TRUE);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('2cf501ef-7289-ed62-704d-f9599d3dcc85'::uuid, 'code_generation', NULL, NULL, 20, TRUE);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('f0658aba-fd22-5701-fccf-c791f610d92a'::uuid, 'security_analysis', NULL, NULL, 30, TRUE);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('99058a04-d218-32ef-bdfe-b6451fff3b34'::uuid, 'research', NULL, NULL, 40, TRUE);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('a1899f82-54a6-1713-12ee-72ef642b2e8a'::uuid, 'long_context', NULL, NULL, 50, TRUE);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('58d5b3b7-2bf7-8dfb-82e6-c6d9a78f66a5'::uuid, 'fast_local', NULL, NULL, 60, TRUE);
-INSERT INTO controller_leadership (id, holder_id, lease_until, updated_at, epoch) VALUES (1, '', '2026-10-06 16:51:52', '2026-10-06 16:51:52', 0);
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('aws-expert', 'AWS Expert', 'Cloud architecture and AWS service guidance', 'architect', '{}', FALSE, '2026-10-06 17:59:26');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('azure-expert', 'Azure Expert', 'Azure landing zones and NSG guidance', 'architect', '{}', FALSE, '2026-10-06 17:59:26');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('gcp-expert', 'GCP Expert', 'GCP networking and GKE guidance', 'architect', '{}', FALSE, '2026-10-06 17:59:26');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('linux-expert', 'Linux Expert', 'Host tuning and systemd diagnostics', 'sre', '{}', FALSE, '2026-10-06 17:59:26');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('kubernetes-expert', 'Kubernetes Expert', 'Cluster ops and workload placement', 'kubernetes', '{}', FALSE, '2026-10-06 17:59:26');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('terraform-expert', 'Terraform Expert', 'IaC generation and module guidance', 'architect', '{}', FALSE, '2026-10-06 17:59:26');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('finops-expert', 'FinOps Expert', 'Cost optimization and chargeback', 'cost', '{}', FALSE, '2026-10-06 17:59:26');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('security-expert', 'Security Expert', 'Threat hunting and compliance', 'security', '{}', FALSE, '2026-10-06 17:59:26');
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('06111fe7-a766-e2b1-214d-0e4f65e4b558'::uuid, 'infrastructure', NULL, NULL, 10, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('14a09f8d-c5cb-24cd-7768-afaf8c6db8cf'::uuid, 'code_generation', NULL, NULL, 20, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('005a0109-03d1-cfb5-313e-8b13fa1c25ca'::uuid, 'security_analysis', NULL, NULL, 30, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('ab70a562-d7fb-b285-331f-c906ddec33a9'::uuid, 'research', NULL, NULL, 40, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('e6a613fb-489d-1eb5-b8f3-80c77374d077'::uuid, 'long_context', NULL, NULL, 50, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('06c7bb37-e8ff-0752-0e0e-f5b1515d3216'::uuid, 'fast_local', NULL, NULL, 60, TRUE);
+INSERT INTO controller_leadership (id, holder_id, lease_until, updated_at, epoch) VALUES (1, '', '2026-10-06 17:59:26', '2026-10-06 17:59:26', 0);
 INSERT INTO fips_crypto_profiles (id, name, tls_min_version, fips_mode, cipher_suites, notes) VALUES ('f1000000-0000-4000-8000-000000000001'::uuid, 'platform-default', '1.2', 'disabled', 'TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384', 'Controller TLS via system OpenSSL — FIPS module not selected');
 INSERT INTO fips_crypto_profiles (id, name, tls_min_version, fips_mode, cipher_suites, notes) VALUES ('f1000000-0000-4000-8000-000000000002'::uuid, 'fips-ready', '1.2', 'required', 'TLS_AES_256_GCM_SHA384', 'Target profile for FIPS 140-3 validated module rollout');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('1e35cbdd-f70e-9365-eac2-215c021e8bfc'::uuid, 'Public', 'Public', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('0229a6c3-819b-1ce0-15d7-ef7374c34c26'::uuid, 'Private', 'Private', '{"default_inbound":"allow"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('31f004d4-7f22-ba93-1e72-a2a8ad78b861'::uuid, 'ProductionServer', 'Production Server', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('d13e9f95-d1dd-e896-952f-93e31b035372'::uuid, 'DatabaseServer', 'Database Server', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('9de7d2d0-bb01-6ed8-78b0-092a6e085f74'::uuid, 'WebServer', 'Web Server', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('1b6a5386-4817-9a3b-0a9c-b6c224dc9d01'::uuid, 'KubernetesNode', 'Kubernetes Node', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('28449cc6-a43c-9158-80cf-bc68cdeb2c6e'::uuid, 'StorageNode', 'Storage Node', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('b602c7c5-b189-d07a-a553-21c20f41755f'::uuid, 'ManagementNode', 'Management Node', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('4e9f1fea-5ce6-0f3a-4f36-ff46923f106f'::uuid, 'DevelopmentVm', 'Development VM', '{"default_inbound":"allow"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('66984f79-aebf-8503-a7ed-48e726adbf1d'::uuid, 'LockedDown', 'Locked Down', '{"default_inbound":"deny","default_outbound":"deny"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('2c2fcdf2-d15f-0512-0060-90ff6b990bbb'::uuid, 'EmergencyIsolation', 'Emergency Isolation', '{"default_inbound":"deny","default_outbound":"deny","stealth":"emergency"}', TRUE, '2026-10-06 16:51:52');
-INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair, created_at) VALUES ('10000000-0000-4000-8000-000000000001'::uuid, 'primary-local', 'local', 'primary', 'site-primary', 0, NULL, 'dr-replica', '2026-10-06 16:51:52');
-INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair, created_at) VALUES ('20000000-0000-4000-8000-000000000001'::uuid, 'dr-replica', 'dr', 'replica', 'site-dr', 0, NULL, 'primary-local', '2026-10-06 16:51:52');
-INSERT INTO network_ipam_pools (id, segment_id, cidr, gateway, dns_json, next_offset, created_at) VALUES ('b1000000-0000-4000-8000-000000000001'::uuid, 'a1000000-0000-4000-8000-000000000001'::uuid, '10.10.0.0/16', '10.10.0.1', '["10.10.0.1"]', 10, '2026-10-06 16:51:52');
-INSERT INTO network_ipam_pools (id, segment_id, cidr, gateway, dns_json, next_offset, created_at) VALUES ('b1000000-0000-4000-8000-000000000002'::uuid, 'a1000000-0000-4000-8000-000000000002'::uuid, '172.16.0.0/24', '172.16.0.1', '["172.16.0.1"]', 10, '2026-10-06 16:51:52');
-INSERT INTO network_segments (id, name, tier, cidr, east_west_default, firewall_profile, gitops_namespace, created_at) VALUES ('a1000000-0000-4000-8000-000000000001'::uuid, 'prod-tier1', 'tier1', '10.10.0.0/16', 'allow', 'ProductionServer', 'prod-segments', '2026-10-06 16:51:52');
-INSERT INTO network_segments (id, name, tier, cidr, east_west_default, firewall_profile, gitops_namespace, created_at) VALUES ('a1000000-0000-4000-8000-000000000002'::uuid, 'dmz-tier0', 'tier0', '172.16.0.0/24', 'deny', 'WebServer', 'dmz-segments', '2026-10-06 16:51:52');
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000001'::uuid, 'host_offline', 'Host offline recovery', 'incident', 'high', 'host.state=offline', TRUE, '2026-10-06 16:51:52', NULL);
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000002'::uuid, 'backup_failed', 'Backup failure triage', 'incident', 'medium', 'task.failed:backup', TRUE, '2026-10-06 16:51:52', NULL);
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000003'::uuid, 'migration_failed', 'Migration failure triage', 'incident', 'medium', 'task.failed:migrate', TRUE, '2026-10-06 16:51:52', NULL);
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000004'::uuid, 'firewall_drift', 'Firewall drift remediation', 'compliance', 'high', 'zeus.drift_detected', TRUE, '2026-10-06 16:51:52', NULL);
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000005'::uuid, 'storage_full', 'Storage pool capacity', 'capacity', 'critical', 'storage.used_pct>85', TRUE, '2026-10-06 16:51:52', NULL);
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000001'::uuid, 'guestkit', 'GuestKit', 'automation', 'Guest health checks, job runner, and in-VM automation bridge.', '1.0.0', 'Zyvor', TRUE, FALSE, '{}', '2026-10-06 16:51:52');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000002'::uuid, 'native-bpf', 'Native eBPF', 'observability', 'Kernel-native flows, process telemetry, enforcement, capture and QoS (machina-bpfd).', '1.0.0', 'Zyvor', TRUE, TRUE, '{}', '2026-10-06 16:51:52');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000003'::uuid, 'hypersdk', 'HyperSDK', 'migration', 'P2V migration assistant and Windows VM discovery.', '1.0.0', 'Zyvor', TRUE, FALSE, '{}', '2026-10-06 16:51:52');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000004'::uuid, 'zeus-firewall', 'Zeus Firewall', 'security', 'Fleet machine shield, profiles, and connectivity simulation.', '1.0.0', 'Zyvor', TRUE, TRUE, '{}', '2026-10-06 16:51:52');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000005'::uuid, 'kubevirt-bridge', 'KubeVirt Bridge', 'kubernetes', 'Export libvirt VMs and qcow2 bundles for Kubernetes.', '1.0.0', 'Zyvor', FALSE, FALSE, '{}', '2026-10-06 16:51:52');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000006'::uuid, 'network-overlay', 'Network Overlay', 'networking', 'NSX-class segments, IPAM pools, and micro-segmentation stubs.', '1.0.0', 'Zyvor', FALSE, TRUE, '{}', '2026-10-06 16:51:52');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000010'::uuid, 'kasm-workspaces', 'Kasm Workspaces', 'console', 'Disposable browser and isolated desktop labs (Marketplace workload — not core ConsoleHub).', '1.0.0', 'Kasm', FALSE, FALSE, '{}', '2026-10-06 16:51:52');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000011'::uuid, 'rustdesk', 'RustDesk', 'console', 'TeamViewer-style remote support sessions via Marketplace plugin.', '1.0.0', 'RustDesk', FALSE, FALSE, '{}', '2026-10-06 16:51:52');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000012'::uuid, 'meshcentral', 'MeshCentral', 'console', 'Remote management and support gateway as optional Marketplace plugin.', '1.0.0', 'MeshCentral', FALSE, FALSE, '{}', '2026-10-06 16:51:52');
-INSERT INTO policy_rules (id, name, enabled, rule_json, created_at) VALUES ('00000000-0000-4000-8000-000000000001'::uuid, 'production-ha-required', TRUE, '{"when":{"tags_contains":"production"},"require":{"ha_enabled":true}}', '2026-10-06 16:51:52');
-INSERT INTO preempt_settings (id, enabled, reserve_pct, updated_at) VALUES (1, TRUE, 10, '2026-10-06 16:51:52');
-INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000001'::uuid, 'api-availability', 'controller /api/v1/*', 99.5, 720, 'HTTP 2xx/3xx rate for platform API', '2026-10-06 16:51:52');
-INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000002'::uuid, 'task-success', 'platform tasks', 98.0, 168, 'Completed vs failed task ratio', '2026-10-06 16:51:52');
-INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000003'::uuid, 'host-availability', 'online hosts', 99.0, 720, 'Hosts reporting online vs registered', '2026-10-06 16:51:52');
-INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000001'::uuid, 'critical_anomaly', 'Native eBPF critical or high severity anomaly', TRUE, 'high', '{"type":"match","match":{"source":"machina-bpf","severity":["critical","high"]}}', 30, TRUE, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
-INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000002'::uuid, 'firewall_deny_spike', 'Three or more firewall deny events in 15 minutes', TRUE, 'medium', '{"type":"threshold","match":{"source":"firewall","category":"firewall"},"window_minutes":15,"min_count":3}', 60, TRUE, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
-INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000003'::uuid, 'brute_force_ssh', 'Repeated failed SSH or auth audit events', TRUE, 'high', '{"type":"threshold","match":{"source":"audit","ecs.event.action":["auth.failure","login.failed"]},"window_minutes":10,"min_count":5}', 120, TRUE, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
-INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000004'::uuid, 'new_admin_api_key', 'New API key created by admin actor', TRUE, 'medium', '{"type":"match","match":{"source":"audit","ecs.event.action":["api_key.create","api_keys.create"]}}', 60, TRUE, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('08c09869-44a1-079a-25cd-214c751310df'::uuid, 'Public', 'Public', '{"default_inbound":"deny"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('b86ee03d-47bf-36ac-20d4-f9b921e9c805'::uuid, 'Private', 'Private', '{"default_inbound":"allow"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('ecb50ed6-9ff0-6112-8433-23b83a2f88c9'::uuid, 'ProductionServer', 'Production Server', '{"default_inbound":"deny"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('d45c7041-1d4d-3afc-3977-3e7f2565a23d'::uuid, 'DatabaseServer', 'Database Server', '{"default_inbound":"deny"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('2135297a-596f-219e-ea57-27e256105b5b'::uuid, 'WebServer', 'Web Server', '{"default_inbound":"deny"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('9eddc8cb-d018-87cc-8656-a3b20261f107'::uuid, 'KubernetesNode', 'Kubernetes Node', '{"default_inbound":"deny"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('caab7349-57d0-2c30-4ae9-567dbe233ed5'::uuid, 'StorageNode', 'Storage Node', '{"default_inbound":"deny"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('2470b38d-ad13-11fc-f373-ecfae797440a'::uuid, 'ManagementNode', 'Management Node', '{"default_inbound":"deny"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('152a11a7-e009-937e-a36e-b7376df3b35f'::uuid, 'DevelopmentVm', 'Development VM', '{"default_inbound":"allow"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('7130f569-d63b-b591-33b5-39042fcae90f'::uuid, 'LockedDown', 'Locked Down', '{"default_inbound":"deny","default_outbound":"deny"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('9593d932-9711-da39-24b0-63ff0dc6708f'::uuid, 'EmergencyIsolation', 'Emergency Isolation', '{"default_inbound":"deny","default_outbound":"deny","stealth":"emergency"}', TRUE, '2026-10-06 17:59:26');
+INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair, created_at) VALUES ('10000000-0000-4000-8000-000000000001'::uuid, 'primary-local', 'local', 'primary', 'site-primary', 0, NULL, 'dr-replica', '2026-10-06 17:59:26');
+INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair, created_at) VALUES ('20000000-0000-4000-8000-000000000001'::uuid, 'dr-replica', 'dr', 'replica', 'site-dr', 0, NULL, 'primary-local', '2026-10-06 17:59:26');
+INSERT INTO network_ipam_pools (id, segment_id, cidr, gateway, dns_json, next_offset, created_at) VALUES ('b1000000-0000-4000-8000-000000000001'::uuid, 'a1000000-0000-4000-8000-000000000001'::uuid, '10.10.0.0/16', '10.10.0.1', '["10.10.0.1"]', 10, '2026-10-06 17:59:26');
+INSERT INTO network_ipam_pools (id, segment_id, cidr, gateway, dns_json, next_offset, created_at) VALUES ('b1000000-0000-4000-8000-000000000002'::uuid, 'a1000000-0000-4000-8000-000000000002'::uuid, '172.16.0.0/24', '172.16.0.1', '["172.16.0.1"]', 10, '2026-10-06 17:59:26');
+INSERT INTO network_segments (id, name, tier, cidr, east_west_default, firewall_profile, gitops_namespace, created_at) VALUES ('a1000000-0000-4000-8000-000000000001'::uuid, 'prod-tier1', 'tier1', '10.10.0.0/16', 'allow', 'ProductionServer', 'prod-segments', '2026-10-06 17:59:26');
+INSERT INTO network_segments (id, name, tier, cidr, east_west_default, firewall_profile, gitops_namespace, created_at) VALUES ('a1000000-0000-4000-8000-000000000002'::uuid, 'dmz-tier0', 'tier0', '172.16.0.0/24', 'deny', 'WebServer', 'dmz-segments', '2026-10-06 17:59:26');
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000001'::uuid, 'host_offline', 'Host offline recovery', 'incident', 'high', 'host.state=offline', TRUE, '2026-10-06 17:59:26', NULL);
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000002'::uuid, 'backup_failed', 'Backup failure triage', 'incident', 'medium', 'task.failed:backup', TRUE, '2026-10-06 17:59:26', NULL);
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000003'::uuid, 'migration_failed', 'Migration failure triage', 'incident', 'medium', 'task.failed:migrate', TRUE, '2026-10-06 17:59:26', NULL);
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000004'::uuid, 'firewall_drift', 'Firewall drift remediation', 'compliance', 'high', 'zeus.drift_detected', TRUE, '2026-10-06 17:59:26', NULL);
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000005'::uuid, 'storage_full', 'Storage pool capacity', 'capacity', 'critical', 'storage.used_pct>85', TRUE, '2026-10-06 17:59:26', NULL);
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000001'::uuid, 'guestkit', 'GuestKit', 'automation', 'Guest health checks, job runner, and in-VM automation bridge.', '1.0.0', 'Zyvor', TRUE, FALSE, '{}', '2026-10-06 17:59:26');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000002'::uuid, 'native-bpf', 'Native eBPF', 'observability', 'Kernel-native flows, process telemetry, enforcement, capture and QoS (machina-bpfd).', '1.0.0', 'Zyvor', TRUE, TRUE, '{}', '2026-10-06 17:59:26');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000003'::uuid, 'hypersdk', 'HyperSDK', 'migration', 'P2V migration assistant and Windows VM discovery.', '1.0.0', 'Zyvor', TRUE, FALSE, '{}', '2026-10-06 17:59:26');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000004'::uuid, 'zeus-firewall', 'Zeus Firewall', 'security', 'Fleet machine shield, profiles, and connectivity simulation.', '1.0.0', 'Zyvor', TRUE, TRUE, '{}', '2026-10-06 17:59:26');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000005'::uuid, 'kubevirt-bridge', 'KubeVirt Bridge', 'kubernetes', 'Export libvirt VMs and qcow2 bundles for Kubernetes.', '1.0.0', 'Zyvor', FALSE, FALSE, '{}', '2026-10-06 17:59:26');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000006'::uuid, 'network-overlay', 'Network Overlay', 'networking', 'NSX-class segments, IPAM pools, and micro-segmentation stubs.', '1.0.0', 'Zyvor', FALSE, TRUE, '{}', '2026-10-06 17:59:26');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000010'::uuid, 'kasm-workspaces', 'Kasm Workspaces', 'console', 'Disposable browser and isolated desktop labs (Marketplace workload — not core ConsoleHub).', '1.0.0', 'Kasm', FALSE, FALSE, '{}', '2026-10-06 17:59:26');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000011'::uuid, 'rustdesk', 'RustDesk', 'console', 'TeamViewer-style remote support sessions via Marketplace plugin.', '1.0.0', 'RustDesk', FALSE, FALSE, '{}', '2026-10-06 17:59:26');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000012'::uuid, 'meshcentral', 'MeshCentral', 'console', 'Remote management and support gateway as optional Marketplace plugin.', '1.0.0', 'MeshCentral', FALSE, FALSE, '{}', '2026-10-06 17:59:26');
+INSERT INTO policy_rules (id, name, enabled, rule_json, created_at) VALUES ('00000000-0000-4000-8000-000000000001'::uuid, 'production-ha-required', TRUE, '{"when":{"tags_contains":"production"},"require":{"ha_enabled":true}}', '2026-10-06 17:59:26');
+INSERT INTO preempt_settings (id, enabled, reserve_pct, updated_at) VALUES (1, TRUE, 10, '2026-10-06 17:59:26');
+INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000001'::uuid, 'api-availability', 'controller /api/v1/*', 99.5, 720, 'HTTP 2xx/3xx rate for platform API', '2026-10-06 17:59:26');
+INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000002'::uuid, 'task-success', 'platform tasks', 98.0, 168, 'Completed vs failed task ratio', '2026-10-06 17:59:26');
+INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000003'::uuid, 'host-availability', 'online hosts', 99.0, 720, 'Hosts reporting online vs registered', '2026-10-06 17:59:26');
+INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000001'::uuid, 'critical_anomaly', 'Native eBPF critical or high severity anomaly', TRUE, 'high', '{"type":"match","match":{"source":"machina-bpf","severity":["critical","high"]}}', 30, TRUE, '2026-10-06 17:59:26', '2026-10-06 17:59:26');
+INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000002'::uuid, 'firewall_deny_spike', 'Three or more firewall deny events in 15 minutes', TRUE, 'medium', '{"type":"threshold","match":{"source":"firewall","category":"firewall"},"window_minutes":15,"min_count":3}', 60, TRUE, '2026-10-06 17:59:26', '2026-10-06 17:59:26');
+INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000003'::uuid, 'brute_force_ssh', 'Repeated failed SSH or auth audit events', TRUE, 'high', '{"type":"threshold","match":{"source":"audit","ecs.event.action":["auth.failure","login.failed"]},"window_minutes":10,"min_count":5}', 120, TRUE, '2026-10-06 17:59:26', '2026-10-06 17:59:26');
+INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000004'::uuid, 'new_admin_api_key', 'New API key created by admin actor', TRUE, 'medium', '{"type":"match","match":{"source":"audit","ecs.event.action":["api_key.create","api_keys.create"]}}', 60, TRUE, '2026-10-06 17:59:26', '2026-10-06 17:59:26');
 INSERT INTO soc_ingest_watermarks (source, last_at) VALUES ('firewall_timeline', '1970-01-01T00:00:00Z');
 INSERT INTO soc_ingest_watermarks (source, last_at) VALUES ('audit_logs', '1970-01-01T00:00:00Z');
 INSERT INTO soc_ingest_watermarks (source, last_at) VALUES ('platform_events', '1970-01-01T00:00:00Z');
 INSERT INTO soc_ingest_watermarks (source, last_at) VALUES ('machina-bpf', '1970-01-01T00:00:00Z');
-INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000001'::uuid, 'splunk_hec', 'default', FALSE, '{"url":"","token":"","index":"machina","sourcetype_events":"machina:soc:ecs","sourcetype_alerts":"machina:soc:alert","host":""}', NULL, NULL, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
-INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000002'::uuid, 'elastic_bulk', 'default', FALSE, '{"url":"","api_key":"","index":"logs-machina.soc","pipeline":""}', NULL, NULL, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
-INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000003'::uuid, 'sentinel_dcr', 'default', FALSE, '{"dce_endpoint":"","dcr_immutable_id":"","stream_name":"","tenant_id":"","client_id":"","client_secret":""}', NULL, NULL, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
-INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000004'::uuid, 'qradar_rest', 'default', FALSE, '{"url":"","api_token":"","log_source_id":""}', NULL, NULL, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
-INSERT INTO soc_playbooks (id, name, description, enabled, trigger_json, steps_json, created_at, updated_at) VALUES ('c3000003-0003-4003-8003-000000000001'::uuid, 'notify_on_critical', 'Webhook notify when critical SOC alert opens', TRUE, '{"min_severity":"high","rule_names":[]}', '[{"type":"webhook","url_from_setting":"soc_webhook_url","body":{"alert_id":"{{alert_id}}","title":"{{title}}","severity":"{{severity}}"}}]', '2026-10-06 16:51:52', '2026-10-06 16:51:52');
-INSERT INTO soc_settings (id, webhook_url, updated_at) VALUES (1, '', '2026-10-06 16:51:52');
-INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000001'::uuid, 'gold-performance', 'gold', 'nvme', 'sync-mirror', 30, 4, 'Low-latency NVMe tier with synchronous mirror stub', '2026-10-06 16:51:52');
-INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000002'::uuid, 'silver-standard', 'silver', 'standard', 'local', 14, 24, 'Default production datastore tier', '2026-10-06 16:51:52');
-INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000003'::uuid, 'bronze-archive', 'bronze', 'hdd', 'local', 7, 72, 'Capacity-optimized cold tier', '2026-10-06 16:51:52');
-INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at) VALUES ('10000000-0000-4000-8000-000000000001'::uuid, 'default', 'shared', 0, 0, 0, '2026-10-06 16:51:52');
-INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at) VALUES ('10000000-0000-4000-8000-000000000002'::uuid, 'production', 'segmented', 50, 10240, 1, '2026-10-06 16:51:52');
+INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000001'::uuid, 'splunk_hec', 'default', FALSE, '{"url":"","token":"","index":"machina","sourcetype_events":"machina:soc:ecs","sourcetype_alerts":"machina:soc:alert","host":""}', NULL, NULL, '2026-10-06 17:59:26', '2026-10-06 17:59:26');
+INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000002'::uuid, 'elastic_bulk', 'default', FALSE, '{"url":"","api_key":"","index":"logs-machina.soc","pipeline":""}', NULL, NULL, '2026-10-06 17:59:26', '2026-10-06 17:59:26');
+INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000003'::uuid, 'sentinel_dcr', 'default', FALSE, '{"dce_endpoint":"","dcr_immutable_id":"","stream_name":"","tenant_id":"","client_id":"","client_secret":""}', NULL, NULL, '2026-10-06 17:59:26', '2026-10-06 17:59:26');
+INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000004'::uuid, 'qradar_rest', 'default', FALSE, '{"url":"","api_token":"","log_source_id":""}', NULL, NULL, '2026-10-06 17:59:26', '2026-10-06 17:59:26');
+INSERT INTO soc_playbooks (id, name, description, enabled, trigger_json, steps_json, created_at, updated_at) VALUES ('c3000003-0003-4003-8003-000000000001'::uuid, 'notify_on_critical', 'Webhook notify when critical SOC alert opens', TRUE, '{"min_severity":"high","rule_names":[]}', '[{"type":"webhook","url_from_setting":"soc_webhook_url","body":{"alert_id":"{{alert_id}}","title":"{{title}}","severity":"{{severity}}"}}]', '2026-10-06 17:59:26', '2026-10-06 17:59:26');
+INSERT INTO soc_settings (id, webhook_url, updated_at) VALUES (1, '', '2026-10-06 17:59:26');
+INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000001'::uuid, 'gold-performance', 'gold', 'nvme', 'sync-mirror', 30, 4, 'Low-latency NVMe tier with synchronous mirror stub', '2026-10-06 17:59:26');
+INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000002'::uuid, 'silver-standard', 'silver', 'standard', 'local', 14, 24, 'Default production datastore tier', '2026-10-06 17:59:26');
+INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000003'::uuid, 'bronze-archive', 'bronze', 'hdd', 'local', 7, 72, 'Capacity-optimized cold tier', '2026-10-06 17:59:26');
+INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at) VALUES ('10000000-0000-4000-8000-000000000001'::uuid, 'default', 'shared', 0, 0, 0, '2026-10-06 17:59:26');
+INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at) VALUES ('10000000-0000-4000-8000-000000000002'::uuid, 'production', 'segmented', 50, 10240, 1, '2026-10-06 17:59:26');
 
 ALTER TABLE ai_models ADD CONSTRAINT ai_models_provider_id_fk0 FOREIGN KEY (provider_id) REFERENCES ai_providers(id) ON DELETE CASCADE;
 ALTER TABLE ai_routing_rules ADD CONSTRAINT ai_routing_rules_provider_id_fk1 FOREIGN KEY (provider_id) REFERENCES ai_providers(id) ON DELETE SET NULL;

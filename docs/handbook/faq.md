@@ -214,8 +214,13 @@ controller's AI engine.
 **Q37. Does the controller need PostgreSQL?**
 No — it uses embedded SQLite by default (`DATABASE_URL=
 sqlite:///var/lib/machina/controller.db`), created and migrated on first
-start. NATS (`NATS_URL`) is optional, for fanning tasks out across several
-controller instances.
+start, which is the right choice for 1 or 2 machines. For hundreds of
+machines or several controllers on different hosts there is a PostgreSQL
+build of the controller (`--no-default-features --features postgres`); it
+passes the whole unit-test suite against PostgreSQL 16 but has not run a live
+fleet yet, and the installer choice is planned. See
+[the database guide](../guides/database.md). NATS (`NATS_URL`) is optional,
+for fanning tasks out across several controller instances.
 
 ---
 

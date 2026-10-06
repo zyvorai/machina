@@ -15,8 +15,10 @@ pub(crate) use sqlx_core::types::{Json, Type};
 // about ordering of object keys.
 
 impl<T> Type<Postgres> for Json<T> {
+    // machina: JSON documents are TEXT columns in the controller's schema, written compact exactly as SQLite stores them (JSONB
+    // would reformat the text, and a TEXT column rejects a JSONB parameter on some paths)
     fn type_info() -> PgTypeInfo {
-        PgTypeInfo::JSONB
+        PgTypeInfo::TEXT
     }
 
     fn compatible(ty: &PgTypeInfo) -> bool {
@@ -60,16 +62,8 @@ where
     T: Serialize,
 {
     fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
-        // we have a tiny amount of dynamic behavior depending if we are resolved to be JSON
-        // instead of JSONB
-        buf.patch(|buf, ty: &PgTypeInfo| {
-            if *ty == PgTypeInfo::JSON || *ty == PgTypeInfo::JSON_ARRAY {
-                buf[0] = b' ';
-            }
-        });
-
-        // JSONB version (as of 2020-03-20)
-        buf.push(1);
+        // machina: plain compact JSON text (the parameter type is TEXT, see `type_info` above); real JSON/JSONB parameters are not
+        // used by the controller
 
         // the JSON data written to the buffer is the same regardless of parameter type
         serde_json::to_writer(&mut **buf, &self.0)?;

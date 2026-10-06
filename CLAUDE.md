@@ -111,7 +111,7 @@ The **web UI** proxies all `/api/...` and `/ws/...` requests to `machina-daemon`
 
 - **`api/`** — Axum route handlers; one file per feature area (e.g. `api/vms.rs`, `api/fleet.rs`, `api/ai.rs`). All routes are assembled in `api/mod.rs`.
 - **`engine/`** — Background engine modules: `ha.rs` (HA failover), `drs.rs` (distributed resource scheduling), `reconcile.rs` (desired-state reconciliation), `scheduler.rs`, `webhook_worker.rs`. The AI sub-engine lives in `engine/ai/` with dozens of specialized modules (`llm.rs`, `agents.rs`, `actions.rs`, `providers.rs`, etc.).
-- **`db/`** — SQLx SQLite queries, migrations (`controller/migrations/`), bootstrap.
+- **`db/`** — database layer for both backends (SQLite default, PostgreSQL build): `Db`/`DbPool` aliases, `query*` wrappers, `dialect.rs` (SQL rewriting for PostgreSQL), `begin_write`, `testing.rs`, migrations (`controller/migrations/` and `controller/migrations_pg/`), bootstrap. See "Database backends" below.
 - **`tasks/`** — Async task bus abstraction: `InMemoryTaskBus` + optional `NatsTaskBus`; `worker.rs` processes tasks; `nats_subscriber.rs` bridges NATS → local bus.
 - **`state.rs`** — `AppState` holds config, DB pool, task bus, and agent client.
 - **`agent_client.rs`** — gRPC client to `machina-agent`.
@@ -119,9 +119,20 @@ The **web UI** proxies all `/api/...` and `/ws/...` requests to `machina-daemon`
 - **`auth.rs`**, **`jwt.rs`** — JWT-based auth for the controller (separate from daemon PAM auth).
 - **`sync.rs`** — Periodic sync loops (KubeVirt inventory, storage, etc.).
 
+### Database backends
+
+The controller builds for exactly one backend: `sqlite` (default feature) or `postgres` (`cargo build -p machina-controller --no-default-features --features postgres`, Linux host only). Guide: [docs/guides/database.md](docs/guides/database.md). Rules that keep both working:
+
+- Never name `sqlx::Sqlite*`/`Pg*` types or call `sqlx::query*` outside `controller/src/db/`. Use `crate::db::{DbPool, DbConn, query, query_as, query_scalar}`; the wrappers pass SQLite SQL through and rewrite it for PostgreSQL (`db/dialect.rs`: `?` to `$n`, `CURRENT_TIMESTAMP`, `LIKE` to `ILIKE`, `CAST ... AS REAL/INTEGER`, `INSERT OR IGNORE`, `rowid` to `seq`).
+- Write SQL both backends accept. SQLite date/JSON helpers (`datetime`, `strftime`, `julianday`, `hex`, `printf`, `json_extract`, `json_each`, two-argument `max`/`min`) exist as functions in the PostgreSQL schema. Use `TRUE`/`FALSE` for flag columns, `ON CONFLICT ... DO UPDATE` (qualify self-references: `table.col + 1`) instead of `INSERT OR REPLACE`, and no unqualified `rowid` outside `tasks`, `vm_restore_points`, `ha_events`.
+- **Every schema change is written twice**: `controller/migrations/NNN_*.sql` (SQLite) and `controller/migrations_pg/NNN_*.sql` (PostgreSQL), same number. The PostgreSQL baseline `000_postgres_schema.sql` covers SQLite migrations 000-060 and is drafted by `scripts/db/sqlite_to_pg_schema.py`. Column types follow how Rust reads and binds the column: ids are `UUID`, flags `BOOLEAN` (add the name to `BOOL_NAMES` in the generator and use `TRUE`/`FALSE`), JSON and timestamps `TEXT`, integers `BIGINT`.
+- No `u32`/`u64`/`usize` binds (PostgreSQL has no unsigned types): cast to `i64`. A machine in `metric_samples.subject` binds as `db::subject_id(id)`.
+- Serialized check-then-write sections (address/quota allocation, tags, Elastic IPs) start with `crate::db::begin_write(&pool)` (SQLite `BEGIN IMMEDIATE`, PostgreSQL advisory lock), never `begin_with("BEGIN IMMEDIATE")`.
+- Tests start from `crate::db::testing::pool()` (in-memory SQLite, or a clone of a migrated template database via `TEST_DATABASE_URL` on PostgreSQL). The PostgreSQL build uses a vendored, patched `sqlx-postgres` (`vendor/sqlx-postgres/MACHINA_PATCHES.md`); reapply the patch on sqlx upgrades.
+
 ### Controller config (env vars)
 ```
-DATABASE_URL          sqlite:///var/lib/machina/controller.db   (embedded, no PostgreSQL needed)
+DATABASE_URL          sqlite:///var/lib/machina/controller.db   (embedded, no PostgreSQL needed; the PostgreSQL build takes postgres://user:pw@host/db)
 NATS_URL              nats://127.0.0.1:4222   (optional, enables NATS task fan-out)
 MACHINA_AGENT_ADDR    http://127.0.0.1:50051
 MACHINA_JWT_SECRET    (random per-process secret if unset; controller refuses to boot on the well-known dev literal unless MACHINA_ALLOW_DEV_SECRETS=1)

@@ -57,6 +57,8 @@ against the **same** state database:
   serves the API.
 - With the embedded SQLite store the instances must share the database file
   (same host or a shared volume). There is no built-in database replication.
+  With the PostgreSQL build the instances share one PostgreSQL server instead, so they can run on
+  different hosts ([database guide](guides/database.md); not yet proven live).
 - Set `NATS_URL` so tasks enqueued on any instance fan out to all of them.
 
 The web UI reaches the controller through the daemon's same-origin proxy
@@ -89,8 +91,10 @@ seen**. If the old primary returns after a failover it can no longer act on host
 agents to also refuse controllers that send no epoch (older builds).
 
 **Expectations.** Data loss on failover is about one second of writes (`sync-interval`). Promotion is deliberate, not automatic,
-so a network partition can never produce two controllers acting at once. A Postgres backend is intentionally not part of this:
-it would mean porting every query (the controller has roughly 1,450 SQLite-specific calls); revisit only if scale demands it.
+so a network partition can never produce two controllers acting at once. This pod is for the
+SQLite store. For fleets of hundreds of machines there is now a PostgreSQL build of the controller (see
+[the database guide](guides/database.md)): the instances share one PostgreSQL server and its own replication and backups replace
+Litestream. It was ported by routing every query through one layer, not by rewriting them, and has not run a live fleet yet.
 
 ## Related
 

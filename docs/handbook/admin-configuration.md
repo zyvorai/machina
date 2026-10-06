@@ -274,7 +274,8 @@ TLS is active only when `enabled=true` **and** both paths are non-empty.
 ### Controller (`machina-controller`)
 | Variable | Effect | Default |
 |----------|--------|---------|
-| `DATABASE_URL` | State store | `sqlite:///var/lib/machina/controller.db` (embedded SQLite; no external database) |
+| `DATABASE_URL` | State store | `sqlite:///var/lib/machina/controller.db` (embedded SQLite; no external database). The PostgreSQL build of the controller takes `postgres://user:password@host:5432/db` ([guide](../guides/database.md)) |
+| `MACHINA_DB_MAX_CONNECTIONS` | PostgreSQL pool size | `20` (PostgreSQL build only) |
 | `NATS_URL` | Enables NATS task fan-out | `nats://127.0.0.1:4222` (optional) |
 | `MACHINA_AGENT_ADDR` | gRPC agent address | `http://127.0.0.1:50051` |
 | `MACHINA_JWT_SECRET` | JWT signing secret | unset → a random secret is generated per process start (sessions won't survive a restart); explicitly set to the literal `machina-dev-jwt-secret-change-me` and the controller **refuses to start** unless `MACHINA_ALLOW_DEV_SECRETS=1`/`MACHINA_SKIP_AUTH=1` |

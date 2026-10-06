@@ -106,7 +106,20 @@ pub(crate) async fn subject_keys(pool: &DbPool, subject: &str) -> Vec<SubjectKey
 pub(crate) async fn fetch_samples(pool: &DbPool, keys: &[SubjectKey], metric: &str, start: i64, end: i64) -> Result<Vec<(i64, f64)>, sqlx::Error> {
     let sql = "SELECT ts, value FROM metric_samples WHERE subject = ? AND metric = ? AND ts >= ? AND ts < ? ORDER BY ts";
     let mut out = Vec::new();
+    // On PostgreSQL a machine's id and its canonical text are the same subject; query it once.
+    #[cfg(feature = "postgres")]
+    let mut seen = std::collections::HashSet::new();
     for k in keys {
+        #[cfg(feature = "postgres")]
+        {
+            let text = match k {
+                SubjectKey::Text(t) => t.clone(),
+                SubjectKey::Id(u) => u.to_string(),
+            };
+            if !seen.insert(text) {
+                continue;
+            }
+        }
         let q = crate::db::query_as::<_, (i64, f64)>(sql);
         let q = match k {
             SubjectKey::Text(t) => q.bind(t.clone()),

@@ -31,6 +31,8 @@ Before you quote a claim, check its row. When a live run changes a status, updat
 | C19 | Pilot-ready for a guided single-site Linux KVM deployment | verified | `docs/CUSTOMER_SITE_READINESS.md` (full lab test-all, UI sweep 130/130) |
 | C20 | Four Rust services, embedded SQLite, no SQL cluster or message queue required | verified | Architecture in `CLAUDE.md`/README; NATS is optional |
 | C23 | Disks from other hypervisors import and boot (VMDK, VDI, raw) | verified | Live: made from a cirros image, imported through `/api/v1/import/disk`, VMs created from them booted, got DHCP and answered ping; negative cases refused. VHD/`.img` fixed in #72, pending a live re-check |
+| C24 | The controller builds for PostgreSQL and its whole unit-test suite passes on PostgreSQL 16 | unit-tested | Lab host: `cargo test -p machina-controller --no-default-features --features postgres` (255 unit + 8 integration tests, the integration run includes a GET against every route; CI job `controller-postgres`); not yet run as a live controller |
+| C25 | Installer choice of database, managed Postgres pod, data move from SQLite | planned | Not built; see `docs/guides/database.md` |
 | C21 | Multi-host HA failover under real host loss | planned | Needs a customer host-loss drill (`CUSTOMER_SITE_READINESS.md`) |
 | C22 | Cross-host VPC, IGW/route-table datapath, real Rivora load balancer | planned | Not built; see `docs/cloud-ec2-semantics.md` |
 

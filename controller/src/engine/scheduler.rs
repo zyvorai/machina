@@ -72,7 +72,7 @@ mod tests {
         let sched_id = Uuid::from_u128(21);
         crate::db::query(
             "INSERT INTO maintenance_schedules (id, host_id, action, evacuate, run_at, status)
-             VALUES (?, ?, 'enter', 1, datetime('now', ?), 'pending')",
+             VALUES (?, ?, 'enter', TRUE, datetime('now', ?), 'pending')",
         )
         .bind(sched_id)
         .bind(host_id)

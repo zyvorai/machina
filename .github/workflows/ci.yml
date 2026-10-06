@@ -61,6 +61,48 @@ jobs:
         continue-on-error: true
         run: cargo clippy --workspace
 
+  controller-postgres:
+    # The controller's PostgreSQL build: same tests, run against a real server (see docs/guides/database.md).
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: machina
+          POSTGRES_PASSWORD: machina
+          POSTGRES_DB: machina_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U machina" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://machina:machina@127.0.0.1:5432/machina_test
+    steps:
+      - name: Checkout machina
+        uses: actions/checkout@v4
+        with:
+          path: machina
+      - name: Checkout guestkit (sibling path dependency)
+        uses: actions/checkout@v4
+        with:
+          repository: hypersdk/guestkit
+          path: guestkit
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable (pinned 2026-07-24)
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2 (floating tag, pinned 2026-07-24)
+        with:
+          workspaces: machina
+          key: controller-postgres
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libvirt-dev libpam0g-dev \
+            libclang-dev clang protobuf-compiler libssl-dev
+      - name: Test the controller on PostgreSQL
+        working-directory: machina
+        run: cargo test -p machina-controller --locked --no-default-features --features postgres
+
   web:
     runs-on: ubuntu-latest
     defaults:

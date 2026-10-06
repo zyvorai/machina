@@ -90,7 +90,7 @@ pub async fn upsert(pool: &DbPool, p: &VmNetworkPolicy, actor: &str) -> anyhow::
     crate::db::query(
         "INSERT INTO vm_network_policies (name, kind, policy_json, created_by) VALUES (?, ?, ?, ?)
          ON CONFLICT(name) DO UPDATE SET kind = excluded.kind, policy_json = excluded.policy_json,
-           generation = generation + 1, updated_at = CURRENT_TIMESTAMP",
+           generation = vm_network_policies.generation + 1, updated_at = CURRENT_TIMESTAMP",
     )
     .bind(&p.name)
     .bind(&p.kind)

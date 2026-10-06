@@ -191,7 +191,7 @@ pub async fn hourly_vm(
     let rows: Vec<(i64, f64, f64)> = crate::db::query_as(
         "SELECT hour, avg, max FROM metric_hourly WHERE subject = ? AND metric = ? AND hour >= ?",
     )
-    .bind(vm)
+    .bind(crate::db::subject_id(vm))
     .bind(metric)
     .bind(since)
     .fetch_all(pool)

@@ -1187,7 +1187,7 @@ async fn sync_backups(
                 let id = Uuid::new_v4();
                 crate::db::query(
                     "INSERT INTO backup_schedules (id, name, project, tag_filter, backup_type, interval_hours, retain_count, enabled)
-                     VALUES (?, ?, ?, ?, 'full', ?, ?, 1)",
+                     VALUES (?, ?, ?, ?, 'full', ?, ?, TRUE)",
                 )
                 .bind(id)
                 .bind(&name)

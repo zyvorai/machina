@@ -377,7 +377,7 @@ async fn lb_member(state: &AppState, lb: LbBinding, vm: Uuid, enabled: bool) -> 
         Some(_) => false,
         None if enabled => {
             crate::db::query(
-                "INSERT INTO lb_members (id, load_balancer_id, vm_id, port, weight, enabled) VALUES (?, ?, ?, ?, 1, 1)",
+                "INSERT INTO lb_members (id, load_balancer_id, vm_id, port, weight, enabled) VALUES (?, ?, ?, ?, 1, TRUE)",
             )
             .bind(Uuid::new_v4())
             .bind(lb.id)

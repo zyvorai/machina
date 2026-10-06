@@ -17,6 +17,10 @@ how to configure it, how to use it, how to check it works, and its limits. Refer
 | Project-scoped API keys | [scoped-api-keys.md](scoped-api-keys.md) | `scoped_key_tests`, `scope_tests`, `a_project_scoped_api_key` |
 | Instance metadata service | [metadata-service.md](metadata-service.md) | `imds::tests`, `engine::imds` |
 
+## Platform
+
+- [Choosing the controller's database: SQLite or PostgreSQL](database.md): what exists, how to build and test the PostgreSQL controller, and what is still planned.
+
 ## CI
 The *Fleet Cloud* workflow (`.github/workflows/fleet-cloud.yml`) runs on every pull request that touches Fleet Cloud code:
 

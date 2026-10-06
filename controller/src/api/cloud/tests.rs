@@ -523,7 +523,13 @@ async fn instance_reconciliation_is_idempotent_and_scale_in_retains_disks() {
 async fn subnet_creation_rolls_back_if_the_outbox_insert_fails() {
     let f = Fixture::new().await;
     let vpc = f.vpc("10.20.0.0/16").await;
+    #[cfg(feature = "sqlite")]
     crate::db::query("CREATE TRIGGER fail_cloud_job BEFORE INSERT ON tasks WHEN NEW.operation='cloud.subnet.provision' BEGIN SELECT RAISE(ABORT,'outbox unavailable'); END").execute(&f.state.pool).await.unwrap();
+    #[cfg(feature = "postgres")]
+    {
+        crate::db::query("CREATE FUNCTION fail_cloud_job() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'outbox unavailable'; END $$").execute(&f.state.pool).await.unwrap();
+        crate::db::query("CREATE TRIGGER fail_cloud_job BEFORE INSERT ON tasks FOR EACH ROW WHEN (NEW.operation = 'cloud.subnet.provision') EXECUTE FUNCTION fail_cloud_job()").execute(&f.state.pool).await.unwrap();
+    }
     let (status, _) = f
         .admin(
             "POST",

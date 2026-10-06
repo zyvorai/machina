@@ -71,14 +71,14 @@ pub struct HostDetailRow {
 }
 
 const HOST_LIST_SQL: &str = "SELECT id, hostname, address, state, maintenance_mode,
-         COALESCE(schedulable, 1) AS schedulable, agent_grpc_addr, vm_count,
+         COALESCE(schedulable, TRUE) AS schedulable, agent_grpc_addr, vm_count,
          cpu_percent, memory_used_mib, memory_total_mib, fenced,
          COALESCE(validation_status, 'pending') AS validation_status,
          last_heartbeat_at,
          COALESCE(site, '') AS site, COALESCE(rack, '') AS rack, rack_u FROM hosts";
 
 const HOST_DETAIL_SQL: &str = "SELECT id, hostname, address, state, maintenance_mode,
-         COALESCE(schedulable, 1) AS schedulable, agent_grpc_addr,
+         COALESCE(schedulable, TRUE) AS schedulable, agent_grpc_addr,
          COALESCE(agent_console_addr, '127.0.0.1:50052') AS agent_console_addr,
          COALESCE(libvirt_uri, 'qemu:///system') AS libvirt_uri,
          COALESCE(agent_version, '') AS agent_version,
