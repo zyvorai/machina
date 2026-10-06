@@ -397,7 +397,12 @@ struct SeedScratch(PathBuf);
 
 impl SeedScratch {
     fn create(hostname: &str) -> Result<Self, LibvirtError> {
-        let root = PathBuf::from("/tmp/machina-cloud-init");
+        Self::create_in(Path::new("/tmp/machina-cloud-init"), hostname)
+    }
+
+    /// `create` under a chosen root (the tests use their own: the real one is owned by whichever user ran the agent).
+    fn create_in(root: &Path, hostname: &str) -> Result<Self, LibvirtError> {
+        let root = root.to_path_buf();
         std::fs::DirBuilder::new()
             .recursive(true)
             .mode(0o700)
@@ -2720,10 +2725,15 @@ pub fn host_reboot() -> Result<(), LibvirtError> {
 mod seed_scratch_tests {
     use super::*;
 
+    fn test_root() -> PathBuf {
+        std::env::temp_dir().join(format!("machina-seed-test-{}", uuid::Uuid::new_v4().simple()))
+    }
+
     #[test]
     fn each_seed_gets_its_own_directory_and_it_disappears_when_dropped() {
-        let a = SeedScratch::create("web-1").unwrap();
-        let b = SeedScratch::create("web-1").unwrap();
+        let root = test_root();
+        let a = SeedScratch::create_in(&root, "web-1").unwrap();
+        let b = SeedScratch::create_in(&root, "web-1").unwrap();
         assert_ne!(a.0, b.0, "two seeds for the same name must not share a directory");
         assert!(a.0.is_dir() && b.0.is_dir());
         let (pa, pb) = (a.0.clone(), b.0.clone());
@@ -2737,8 +2747,9 @@ mod seed_scratch_tests {
 
     #[test]
     fn hostile_names_cannot_escape_the_scratch_root() {
-        let s = SeedScratch::create("../../etc/passwd").unwrap();
-        assert!(s.0.starts_with("/tmp/machina-cloud-init"));
+        let root = test_root();
+        let s = SeedScratch::create_in(&root, "../../etc/passwd").unwrap();
+        assert!(s.0.starts_with(&root));
         assert!(!s.0.to_string_lossy().contains(".."));
     }
 
