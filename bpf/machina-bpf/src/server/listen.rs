@@ -707,6 +707,14 @@ impl Daemon {
             Request::AfxdpStatus => v(&lock(&self.engine).afxdp_status()),
             Request::ScxConfigure { config } => v(&lock(&self.engine).scx_configure(config)?),
             Request::ScxStatus => v(&lock(&self.engine).scx_status()),
+            Request::BlackBoxList => v(&super::blackbox::list()),
+            Request::BlackBoxGet { vm } => v(&super::blackbox::get(&vm)),
+            Request::BlackBoxTrigger { vm, post_secs, reason } => {
+                v(&super::blackbox::trigger(&vm, post_secs, reason))
+            }
+            Request::BlackBoxClear { vm } => {
+                json!({ "vm": vm, "cleared": super::blackbox::clear(&vm) })
+            }
             Request::GuardEvents { limit } => {
                 let s = lock(&self.shared);
                 let out: Vec<&GuardRecord> = s.guard.iter().rev().take(lim(limit)).collect();

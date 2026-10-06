@@ -30,6 +30,7 @@ use crate::policy::{self, proto_name, Prefix, Rule};
 use crate::{dns, fmt_addr};
 
 mod afxdp;
+mod blackbox;
 mod chaos;
 mod cni;
 mod direct;
@@ -204,6 +205,8 @@ fn publish_vm_flow(
 type SharedState = Arc<Mutex<Shared>>;
 
 fn publish<T: serde::Serialize>(bus: &broadcast::Sender<StreamEvent>, topic: &str, ev: &T) {
+    // Record even without an SSE subscriber. This is best-effort and observe-only.
+    blackbox::record(topic, ev);
     if bus.receiver_count() == 0 {
         return;
     }

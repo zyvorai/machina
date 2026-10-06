@@ -550,6 +550,45 @@ async fn scx_configure(
     bpfd(Request::ScxConfigure { config }).await
 }
 
+
+#[derive(Deserialize, Default)]
+struct BlackBoxTriggerBody {
+    post_secs: Option<u64>,
+    #[serde(default)]
+    reason: String,
+}
+
+async fn blackbox_list() -> Result<Json<Value>, AppError> {
+    bpfd(Request::BlackBoxList).await
+}
+
+async fn blackbox_get(Path(vm): Path<String>) -> Result<Json<Value>, AppError> {
+    bpfd(Request::BlackBoxGet { vm }).await
+}
+
+async fn blackbox_trigger(
+    Extension(actor): Extension<RequestActor>,
+    Path(vm): Path<String>,
+    body: Option<Json<BlackBoxTriggerBody>>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&actor, "Triggering a VM Black Box capture")?;
+    let body = body.map(|Json(v)| v).unwrap_or_default();
+    bpfd(Request::BlackBoxTrigger {
+        vm,
+        post_secs: body.post_secs,
+        reason: body.reason,
+    })
+    .await
+}
+
+async fn blackbox_clear(
+    Extension(actor): Extension<RequestActor>,
+    Path(vm): Path<String>,
+) -> Result<Json<Value>, AppError> {
+    require_admin(&actor, "Clearing a VM Black Box capture")?;
+    bpfd(Request::BlackBoxClear { vm }).await
+}
+
 /// After a VM lifecycle change, have bpfd re-follow VM taps and QEMU scopes
 /// now instead of on its next rescan. Best-effort: bpfd may not be running.
 pub fn notify_vm_lifecycle() {
@@ -615,6 +654,15 @@ pub fn bpf_routes() -> Router<LibvirtManager> {
         .route("/bpf/quic-lb", get(quic_lb_status).put(quic_lb_configure))
         .route("/bpf/afxdp", get(afxdp_status).put(afxdp_configure))
         .route("/bpf/scx", get(scx_status).put(scx_configure))
+        .route("/bpf/blackbox", get(blackbox_list))
+        .route(
+            "/bpf/blackbox/{vm}",
+            get(blackbox_get).delete(blackbox_clear),
+        )
+        .route(
+            "/bpf/blackbox/{vm}/trigger",
+            axum::routing::post(blackbox_trigger),
+        )
         .route("/bpf/tls", get(tls_status).put(tls_configure))
         .route("/bpf/tls/fingerprints", get(tls_fingerprints))
         .route("/bpf/tls/ssl", get(ssl_events))
