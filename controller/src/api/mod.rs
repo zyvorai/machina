@@ -488,6 +488,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/ai/incidents/analyze",
             get(ai::analyze_incident).post(ai::analyze_incident_post),
         )
+        .route("/api/v1/ai/interference/noisy-neighbors", get(ai::noisy_neighbors))
         .route("/api/v1/ai/incidents/active", get(ai::incidents_active))
         .route("/api/v1/ai/incidents/{id}/room", get(ai::incident_room))
         .route("/api/v1/ai/incidents/{id}/ack", post(ai::incident_ack))

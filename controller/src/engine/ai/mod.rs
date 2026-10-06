@@ -465,6 +465,7 @@ pub mod policy_export;
 pub mod predictions;
 pub mod remediate_hub;
 pub mod root_cause;
+pub mod noisy_neighbor;
 pub mod runbook;
 pub mod security;
 pub mod security_graph;

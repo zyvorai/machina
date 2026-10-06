@@ -706,6 +706,18 @@ pub async fn twin_impact(
         .map(Json)
 }
 
+pub async fn noisy_neighbors(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Query(q): Query<ai::noisy_neighbor::NoisyNeighborQuery>,
+) -> Result<Json<ai::noisy_neighbor::NoisyNeighborReport>, ApiError> {
+    require_operator(&actor)?;
+    ai::noisy_neighbor::analyze(&state.pool, &q)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
 pub async fn analyze_incident(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,
