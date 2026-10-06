@@ -120,12 +120,16 @@ pub fn exec(step: &Step) -> Result<(), String> {
 fn current_aliases() -> Vec<(String, String)> {
     let out = Command::new("ip").args(["-o", "-4", "addr", "show"]).output();
     let Ok(out) = out else { return Vec::new() };
-    String::from_utf8_lossy(&out.stdout)
-        .lines()
+    parse_aliases(&String::from_utf8_lossy(&out.stdout))
+}
+
+/// Parse `ip -o -4 addr show`. In one-line mode the label is the last bare token (`... scope global eno8303:eip`), not
+/// preceded by the word `label`, so match on the suffix; looking for the keyword never found an alias.
+fn parse_aliases(text: &str) -> Vec<(String, String)> {
+    text.lines()
         .filter_map(|l| {
             let f: Vec<&str> = l.split_whitespace().collect();
-            let label = f.iter().position(|x| *x == "label").and_then(|i| f.get(i + 1))?;
-            if !label.ends_with(ALIAS_LABEL_SUFFIX) {
+            if !f.iter().any(|x| x.trim_end_matches('\\').ends_with(ALIAS_LABEL_SUFFIX)) {
                 return None;
             }
             let addr = f.iter().position(|x| *x == "inet").and_then(|i| f.get(i + 1))?;
@@ -170,6 +174,15 @@ pub fn sync(payload: &Value) -> Result<usize, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn aliases_are_found_in_one_line_output() {
+        let text = "1: lo    inet 127.0.0.1/8 scope host lo\\       valid_lft forever preferred_lft forever\n\
+2: eno8303    inet 212.8.248.187/24 brd 212.8.248.255 scope global eno8303\\       valid_lft forever preferred_lft forever\n\
+2: eno8303    inet 198.18.0.1/32 scope global eno8303:eip\\       valid_lft forever preferred_lft forever\n";
+        assert_eq!(parse_aliases(text), vec![("eno8303".to_string(), "198.18.0.1".to_string())]);
+        assert!(parse_aliases("").is_empty());
+    }
 
     fn e(a: &str, p: &str) -> Entry {
         Entry { address: a.into(), private_ip: p.into(), interface: "eno1".into() }
