@@ -341,7 +341,7 @@ async fn power(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, String>,
         } else {
             crate::api::vms::stop_vm(State(state.clone()), Extension(actor.clone()), Path(i.id)).await
         };
-        r?;
+        let _ = r?;
         let (nc, nn) = if start { (0, "pending") } else { (64, "stopping") };
         items.push_str(&format!(
             "<item><instanceId>{want}</instanceId><currentState><code>{nc}</code><name>{nn}</name></currentState><previousState><code>{pc}</code><name>{pn}</name></previousState></item>"
@@ -480,7 +480,7 @@ async fn terminate(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, Stri
             continue;
         }
         // No `confirmed`: a cluster that requires approval for deletions keeps requiring it here.
-        crate::api::vms::delete_vm(State(state.clone()), Extension(actor.clone()), Path(i.id), None).await?;
+        let _ = crate::api::vms::delete_vm(State(state.clone()), Extension(actor.clone()), Path(i.id), None).await?;
         items.push_str(&format!(
             "<item><instanceId>{want}</instanceId><currentState><code>32</code><name>shutting-down</name></currentState><previousState><code>{pc}</code><name>{pn}</name></previousState></item>"
         ));

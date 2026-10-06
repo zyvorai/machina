@@ -159,7 +159,7 @@ pub async fn create_volume(state: &AppState, actor: &AuthUser, p: &Params) -> Re
 pub async fn delete_volume(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
     require_operator(actor)?;
     let id = resolve(state, Kind::Volume, &need(p, "VolumeId")?, "InvalidVolume.NotFound").await?;
-    crate::api::volumes::delete_volume(State(state.clone()), Extension(actor.clone()), Path(id)).await.map_err(api_err)?;
+    let _ = crate::api::volumes::delete_volume(State(state.clone()), Extension(actor.clone()), Path(id)).await.map_err(api_err)?;
     Ok("<return>true</return>".into())
 }
 
@@ -177,7 +177,7 @@ pub async fn attach_volume(state: &AppState, actor: &AuthUser, p: &Params) -> Re
     let dev = device_name(&need(p, "Device")?).ok_or_else(|| bad("InvalidParameterValue", "Device must look like /dev/vdb"))?;
     let body: crate::api::volumes::AttachVolumeBody =
         serde_json::from_value(json!({ "vm_id": vm, "target_dev": dev })).map_err(|e| bad("InvalidParameterValue", e.to_string()))?;
-    crate::api::volumes::attach_volume(State(state.clone()), Extension(actor.clone()), Path(vol), Json(body)).await.map_err(api_err)?;
+    let _ = crate::api::volumes::attach_volume(State(state.clone()), Extension(actor.clone()), Path(vol), Json(body)).await.map_err(api_err)?;
     Ok(format!(
         "<volumeId>{vol_s}</volumeId><instanceId>{}</instanceId><device>/dev/{dev}</device><status>attached</status>",
         ec2_id(Kind::Vm, vm)
@@ -188,7 +188,7 @@ pub async fn detach_volume(state: &AppState, actor: &AuthUser, p: &Params) -> Re
     require_operator(actor)?;
     let vol_s = need(p, "VolumeId")?;
     let vol = resolve(state, Kind::Volume, &vol_s, "InvalidVolume.NotFound").await?;
-    crate::api::volumes::detach_volume(State(state.clone()), Extension(actor.clone()), Path(vol)).await.map_err(api_err)?;
+    let _ = crate::api::volumes::detach_volume(State(state.clone()), Extension(actor.clone()), Path(vol)).await.map_err(api_err)?;
     Ok(format!("<volumeId>{vol_s}</volumeId><status>detaching</status>"))
 }
 
@@ -219,7 +219,7 @@ pub async fn delete_key_pair(state: &AppState, actor: &AuthUser, p: &Params) -> 
     };
     // EC2 answers success for a key that is already gone.
     if let Some(id) = id {
-        crate::api::keypairs::delete_keypair(State(state.clone()), Extension(actor.clone()), Path(id)).await.map_err(api_err)?;
+        let _ = crate::api::keypairs::delete_keypair(State(state.clone()), Extension(actor.clone()), Path(id)).await.map_err(api_err)?;
     }
     Ok("<return>true</return>".into())
 }
@@ -314,7 +314,7 @@ pub async fn create_security_group(state: &AppState, actor: &AuthUser, p: &Param
 pub async fn delete_security_group(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
     require_operator(actor)?;
     let id = resolve(state, Kind::SecurityGroup, &need(p, "GroupId")?, "InvalidGroup.NotFound").await?;
-    crate::api::networking::delete_security_group(State(state.clone()), Extension(actor.clone()), Path(id)).await.map_err(api_err)?;
+    let _ = crate::api::networking::delete_security_group(State(state.clone()), Extension(actor.clone()), Path(id)).await.map_err(api_err)?;
     Ok("<return>true</return>".into())
 }
 
@@ -381,14 +381,14 @@ pub async fn security_group_rules(state: &AppState, actor: &AuthUser, p: &Params
                 .fetch_optional(&state.pool)
                 .await?;
                 let id = id.ok_or_else(|| bad("InvalidPermission.NotFound", "The specified rule does not exist in this security group"))?;
-                crate::api::networking::delete_security_group_rule(State(state.clone()), Extension(actor.clone()), Path(id)).await.map_err(api_err)?;
+                let _ = crate::api::networking::delete_security_group_rule(State(state.clone()), Extension(actor.clone()), Path(id)).await.map_err(api_err)?;
             } else {
                 let body: crate::api::networking::CreateSecurityGroupRuleBody = serde_json::from_value(json!({
                     "direction": direction, "protocol": perm.protocol, "port_min": perm.from, "port_max": perm.to.or(perm.from),
                     "remote_cidr": cidr, "remote_sg_id": remote_sg,
                 }))
                 .map_err(|e| bad("InvalidParameterValue", e.to_string()))?;
-                crate::api::networking::create_security_group_rule(State(state.clone()), Extension(actor.clone()), Path(gid), Json(body))
+                let _ = crate::api::networking::create_security_group_rule(State(state.clone()), Extension(actor.clone()), Path(gid), Json(body))
                     .await
                     .map_err(api_err)?;
             }
@@ -518,7 +518,7 @@ pub async fn reboot_instances(state: &AppState, actor: &AuthUser, p: &Params) ->
     }
     for s in &ids {
         let id = resolve(state, Kind::Vm, s, "InvalidInstanceID.NotFound").await?;
-        crate::api::vms::reboot_vm(State(state.clone()), Extension(actor.clone()), Path(id), None).await.map_err(api_err)?;
+        let _ = crate::api::vms::reboot_vm(State(state.clone()), Extension(actor.clone()), Path(id), None).await.map_err(api_err)?;
     }
     Ok("<return>true</return>".into())
 }
@@ -531,7 +531,7 @@ pub async fn modify_instance_attribute(state: &AppState, actor: &AuthUser, p: &P
     };
     let flavor: Option<Uuid> = sqlx::query_scalar("SELECT id FROM flavors WHERE name = ?").bind(itype).fetch_optional(&state.pool).await?;
     let flavor = flavor.ok_or_else(|| bad("InvalidParameterValue", format!("Unknown instance type '{itype}'")))?;
-    crate::api::vms::change_vm_type(
+    let _ = crate::api::vms::change_vm_type(
         State(state.clone()),
         Extension(actor.clone()),
         Path(id),
