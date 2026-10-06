@@ -9,6 +9,7 @@ members = [
     "translate",
     "agent",
     "controller",
+    "dbtool",
     "vessel",
     "bpf/machina-bpf-common",
     "bpf/machina-bpf",

@@ -3718,6 +3718,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "machina-dbtool"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "futures-util",
+ "sqlx",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "machina-run-as-user-helper"
 version = "0.1.0"
 dependencies = [

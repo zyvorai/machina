@@ -2,6 +2,7 @@
 
 use crate::{PgTypeInfo, PgValueFormat, PgValueRef};
 use byteorder::{BigEndian, ByteOrder};
+#[cfg(feature = "chrono")]
 use chrono::{DateTime, NaiveDateTime};
 
 pub(crate) fn is_int(ty: &PgTypeInfo) -> bool {
@@ -40,6 +41,7 @@ pub(crate) fn numeric_to_i64(buf: &[u8]) -> Result<i64, String> {
     Ok(f as i64)
 }
 
+#[cfg(feature = "chrono")]
 /// A timestamp stored as TEXT: RFC 3339 (any offset, converted to UTC), `YYYY-MM-DD HH:MM:SS[.f]` (UTC), the ISO form with `T`
 /// and a trailing `Z`, optionally with a `+00` style suffix.
 pub(crate) fn parse_text_timestamp(s: &str) -> Result<NaiveDateTime, String> {
