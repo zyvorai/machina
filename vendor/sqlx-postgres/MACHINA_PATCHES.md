@@ -19,7 +19,7 @@ column is bound as (BOOLEAN, BIGINT, UUID, TEXT).
 | `types/bool.rs` | `bool` also reads integer columns |
 | `types/json.rs` | `Json<T>` / `serde_json::Value` read TEXT too, and are *written* as compact TEXT (not JSONB), matching what SQLite stores |
 | `types/uuid.rs` | `Uuid` also reads TEXT |
-| `types/chrono/datetime.rs` | `DateTime<Tz>` / `NaiveDateTime` also read TEXT timestamps (RFC 3339, `YYYY-MM-DD HH:MM:SS`, ISO with `Z`) |
+| `types/chrono/datetime.rs` | `DateTime<Tz>` / `NaiveDateTime` read TEXT timestamps (RFC 3339, `YYYY-MM-DD HH:MM:SS`, ISO with `Z`) and are *written* as TEXT (RFC 3339 / `%F %T%.f`) like SQLite's driver, since every timestamp column is TEXT and PostgreSQL will not compare TEXT with a timestamp parameter |
 | `types/lenient.rs` | new: shared helpers (NUMERIC to f64/i64, text timestamp parsing) |
 
 **On a sqlx upgrade:** re-apply these hunks to the new `sqlx-postgres` (they are small), bump the version here, and run the

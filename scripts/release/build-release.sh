@@ -46,6 +46,7 @@ rm -rf "$STAGE" && mkdir -p "$STAGE"/{bin,units,etc,doc,scripts,web,bundle}
 for b in machina-daemon machina-controller machina-agent machina-bpfd; do install -m 0755 "$BIN_DIR/$b" "$STAGE/bin/$b"; done
 install -m 0755 "$REPO/machinactl" "$STAGE/bin/machinactl"
 install -m 0755 "$REPO/scripts/db/machina-db.sh" "$STAGE/bin/machina-db"
+if [ -x "$BIN_DIR/machina-dbtool" ]; then install -m 0755 "$BIN_DIR/machina-dbtool" "$STAGE/bin/machina-dbtool"; HAVE_DBTOOL=1; else HAVE_DBTOOL=0; fi
 # the controller's PostgreSQL build ships next to the default one when it was built (make release-pg)
 HAVE_PG=0
 if [ -x "$BIN_DIR/machina-controller-pg" ]; then install -m 0755 "$BIN_DIR/machina-controller-pg" "$STAGE/bin/machina-controller-pg"; HAVE_PG=1; fi
@@ -82,6 +83,13 @@ export STAGE
 for n in machina machina-controller machina-agent; do
     # nfpm does not expand variables inside file paths, so render ${STAGE} ourselves (VERSION it expands itself).
     sed "s#\${STAGE}#$STAGE#g" "$REPO/packaging/nfpm/$n.yaml" >"$STAGE/nfpm-$n.yaml"
+    if [ "$n" = machina-controller ] && [ "$HAVE_DBTOOL" = 1 ]; then
+        sed -i.bak "/dst: \/usr\/bin\/machina-db\$/{n;a\\
+  - src: $STAGE/bin/machina-dbtool\\
+    dst: /usr/bin/machina-dbtool\\
+    file_info: { mode: 0755 }
+}" "$STAGE/nfpm-$n.yaml" && rm -f "$STAGE/nfpm-$n.yaml.bak"
+    fi
     if [ "$n" = machina-controller ] && [ "$HAVE_PG" = 1 ]; then
         # add the PostgreSQL build to the controller package's file list, right after the default binary
         sed -i.bak "/dst: \/usr\/bin\/machina-controller\$/{n;a\\

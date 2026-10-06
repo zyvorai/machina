@@ -102,6 +102,15 @@ jobs:
       - name: Test the controller on PostgreSQL
         working-directory: machina
         run: cargo test -p machina-controller --locked --no-default-features --features postgres
+      - name: Every literal SQL statement is accepted by PostgreSQL
+        # PREPAREs each statement the controller sends against the PostgreSQL schema (catches what SQLite tolerated: bare columns next
+        # to GROUP BY, boolean = integer, text = uuid, ...). See scripts/db/check_pg_sql.py.
+        working-directory: machina
+        run: |
+          sudo apt-get install -y postgresql-client
+          psql "$TEST_DATABASE_URL" -qc "DROP DATABASE IF EXISTS sqlcheck" -c "CREATE DATABASE sqlcheck"
+          psql "${TEST_DATABASE_URL%/*}/sqlcheck" -q -v ON_ERROR_STOP=1 -1 -f controller/migrations_pg/000_postgres_schema.sql
+          PGURL="${TEST_DATABASE_URL%/*}/sqlcheck" python3 scripts/db/check_pg_sql.py
 
   web:
     runs-on: ubuntu-latest

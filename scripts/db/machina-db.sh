@@ -4,9 +4,9 @@
 #
 # machina-db: choose, set up, inspect and back up the controller's database.
 #
-#   machina-db setup pod [--port 5432]          managed PostgreSQL in a Podman container (systemd quadlet), generated password
-#   machina-db setup package                    PostgreSQL from the distribution's packages (apt or dnf)
-#   machina-db setup external --url URL         use your own PostgreSQL server (RDS, Patroni, ...)
+#   machina-db setup pod [--port 5432] [--migrate]   managed PostgreSQL in a Podman container (systemd quadlet), generated password
+#   machina-db setup package [--migrate]             PostgreSQL from the distribution's packages (apt or dnf)
+#   machina-db setup external --url URL [--migrate]  use your own PostgreSQL server (RDS, Patroni, ...)
 #   machina-db setup sqlite                     the embedded default (what a fresh install uses)
 #   machina-db status                           backend, connection, size, controller view
 #   machina-db url                              the configured DATABASE_URL, password hidden
@@ -14,7 +14,9 @@
 #   machina-db restore FILE --yes               restore a PostgreSQL dump (stops the controller while it runs)
 #
 # `setup` writes DATABASE_URL into /etc/default/machina-platform and, for PostgreSQL, a systemd drop-in so the controller runs its
-# PostgreSQL build (machina-controller-pg). It never moves data: a PostgreSQL controller starts empty.
+# PostgreSQL build (machina-controller-pg). A PostgreSQL controller starts empty unless you pass --migrate: that stops the controller,
+# copies the current SQLite database into the new PostgreSQL one with machina-dbtool (row counts are compared), and starts the
+# controller on it. The SQLite file is left untouched, so going back is `machina-db setup sqlite`.
 #
 # To try it without touching a real install, put --sandbox DIR first: every file, the unit/container name and the port live under
 # DIR (or carry a zz- prefix) and the controller is never touched. Prefer it over the environment overrides below, which
@@ -147,6 +149,20 @@ url_port() { local p; p="$(sed -nE 's#^[a-z]+://([^@]*@)?[^:/?]+:([0-9]+).*#\2#p
 # ---- setup -----------------------------------------------------------------------------------------------------------------------
 announce() { say "machina-db: ${SANDBOX:+SANDBOX $SANDBOX: }env file $ENV_FILE, data under $STATE_DIR"; }
 
+# --migrate: copy the SQLite database the controller has been using into the (new, still empty) PostgreSQL database `$1`
+migrate_sqlite_into() {
+  local to="$1" from="$OLD_URL" tool
+  [[ "$(backend_of "$from")" == sqlite ]] || die "--migrate copies from SQLite, but the current database is $(redact_url "$from")"
+  local file="${from#sqlite://}"; file="${file%%\?*}"
+  [[ -f "$file" ]] || die "--migrate: no SQLite database at $file"
+  tool="$(command -v machina-dbtool 2>/dev/null || true)"
+  [[ -n "$tool" ]] || tool="$(dirname "$0")/../../target/release/machina-dbtool"
+  [[ -x "$tool" ]] || die "machina-dbtool not found (it ships with the controller package; from source: cargo build --release -p machina-dbtool)"
+  if [[ "${MACHINA_DB_NO_CONTROLLER:-0}" != 1 ]]; then systemctl stop machina-controller.service 2>/dev/null || true; fi
+  say "copying $file into PostgreSQL ..."
+  "$tool" copy --from "$from" --to "$to" --yes || die "the copy failed; the controller was NOT switched (still on SQLite, now stopped: systemctl start machina-controller)"
+}
+
 setup_sqlite() {
   need_root
   announce
@@ -159,9 +175,9 @@ setup_sqlite() {
 setup_pod() {
   need_root
   announce
-  local port=5432
+  local port=5432 migrate=0
   while [[ $# -gt 0 ]]; do
-    case "$1" in --port) port="${2:?}"; shift 2 ;; *) die "unknown option for setup pod: $1" ;; esac
+    case "$1" in --port) port="${2:?}"; shift 2 ;; --migrate) migrate=1; shift ;; *) die "unknown option for setup pod: $1" ;; esac
   done
   have podman || die "podman is required for the managed pod (apt install podman / dnf install podman), or use: setup package | setup external"
   local pw url
@@ -203,6 +219,7 @@ EOF
   systemctl start "$UNIT.service" || warn "systemctl start reported a problem; waiting to see whether PostgreSQL comes up anyway"
   wait_pg_pod || { journalctl -u "$UNIT.service" -n 20 --no-pager >&2 || true; die "PostgreSQL did not become ready; see: journalctl -u $UNIT"; }
   url="postgres://$DB_USER:$pw@127.0.0.1:$port/$DB_NAME"
+  if [[ $migrate == 1 ]]; then migrate_sqlite_into "$url"; fi
   set_env DATABASE_URL "$url"
   write_dropin "$UNIT.service"
   install_backup_timer
@@ -213,6 +230,8 @@ EOF
 setup_package() {
   need_root
   announce
+  local migrate=0
+  for a in "$@"; do [[ "$a" == --migrate ]] && migrate=1; done
   [[ -z "$SANDBOX" ]] || die "setup package installs system packages and cannot run in a sandbox"
   local pw url
   pw="$(ensure_pw)"
@@ -236,6 +255,7 @@ setup_package() {
   grep -q "machina-db" "$hba" || { printf '# machina-db\nhost %s %s 127.0.0.1/32 scram-sha-256\n' "$DB_NAME" "$DB_USER" | cat - "$hba" >"$hba.new" && cat "$hba.new" >"$hba" && rm -f "$hba.new"; }
   systemctl reload postgresql
   url="postgres://$DB_USER:$pw@127.0.0.1:5432/$DB_NAME"
+  if [[ $migrate == 1 ]]; then migrate_sqlite_into "$url"; fi
   set_env DATABASE_URL "$url"
   write_dropin "postgresql.service"
   install_backup_timer
@@ -246,9 +266,9 @@ setup_package() {
 setup_external() {
   need_root
   announce
-  local url=""
+  local url="" migrate=0
   while [[ $# -gt 0 ]]; do
-    case "$1" in --url) url="${2:?}"; shift 2 ;; *) die "unknown option for setup external: $1" ;; esac
+    case "$1" in --url) url="${2:?}"; shift 2 ;; --migrate) migrate=1; shift ;; *) die "unknown option for setup external: $1" ;; esac
   done
   [[ "$(backend_of "$url")" == postgres ]] || die "--url must be a postgres:// URL (postgres://user:password@host:5432/database)"
   local host port
@@ -259,6 +279,7 @@ setup_external() {
     tcp_open "$host" "$port" || die "cannot reach $host:$port"
     warn "psql is not installed, so only the connection to $host:$port was checked; the controller verifies the login when it starts"
   fi
+  if [[ $migrate == 1 ]]; then migrate_sqlite_into "$url"; fi
   set_env DATABASE_URL "$url"
   write_dropin ""
   restart_controller
@@ -403,4 +424,5 @@ main() {
   esac
 }
 
+OLD_URL="$(current_url)"   # the database in use before a setup changes it (the source for --migrate)
 main "$@"

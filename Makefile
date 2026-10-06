@@ -396,6 +396,7 @@ install: ## Install binaries, web UI, config, systemd unit, and mkosi workspace 
 		install -Dm755 target/release/machina-agent $(DESTDIR)$(BINDIR)/machina-agent; \
 		if [ -f target/release/machina-controller-pg ]; then install -Dm755 target/release/machina-controller-pg $(DESTDIR)$(BINDIR)/machina-controller-pg; fi; \
 		install -Dm755 scripts/db/machina-db.sh $(DESTDIR)$(BINDIR)/machina-db; \
+		if [ -f target/release/machina-dbtool ]; then install -Dm755 target/release/machina-dbtool $(DESTDIR)$(BINDIR)/machina-dbtool; fi; \
 		install -Dm644 contrib/machina-controller.service $(DESTDIR)$(UNITDIR)/machina-controller.service; \
 		install -Dm644 contrib/machina-agent.service $(DESTDIR)$(UNITDIR)/machina-agent.service; \
 		install -Dm644 contrib/machina-platform.env $(DESTDIR)/etc/default/machina-platform; \

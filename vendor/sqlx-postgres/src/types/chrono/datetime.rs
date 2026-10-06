@@ -9,8 +9,10 @@ use chrono::{
 use std::mem;
 
 impl Type<Postgres> for NaiveDateTime {
+    // machina: timestamps are TEXT columns in the controller's schema and are written as text, exactly as SQLite stores them
+    // (comparing a TEXT column with a real timestamp parameter is a PostgreSQL error)
     fn type_info() -> PgTypeInfo {
-        PgTypeInfo::TIMESTAMP
+        PgTypeInfo::TEXT
     }
 
     // machina: timestamps the controller keeps as TEXT decode too
@@ -21,7 +23,7 @@ impl Type<Postgres> for NaiveDateTime {
 
 impl<Tz: TimeZone> Type<Postgres> for DateTime<Tz> {
     fn type_info() -> PgTypeInfo {
-        PgTypeInfo::TIMESTAMPTZ
+        PgTypeInfo::TEXT
     }
 
     fn compatible(ty: &PgTypeInfo) -> bool {
@@ -42,17 +44,10 @@ impl<Tz: TimeZone> PgHasArrayType for DateTime<Tz> {
 }
 
 impl Encode<'_, Postgres> for NaiveDateTime {
+    // machina: `YYYY-MM-DD HH:MM:SS[.f]` text, the same as sqlx's SQLite driver writes
     fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
-        // TIMESTAMP is encoded as the microseconds since the epoch
-        let micros = (*self - postgres_epoch_datetime())
-            .num_microseconds()
-            .ok_or_else(|| format!("NaiveDateTime out of range for Postgres: {self:?}"))?;
-
-        Encode::<Postgres>::encode(micros, buf)
-    }
-
-    fn size_hint(&self) -> usize {
-        mem::size_of::<i64>()
+        buf.extend_from_slice(self.format("%F %T%.f").to_string().as_bytes());
+        Ok(IsNull::No)
     }
 }
 
@@ -87,12 +82,10 @@ impl<'r> Decode<'r, Postgres> for NaiveDateTime {
 }
 
 impl<Tz: TimeZone> Encode<'_, Postgres> for DateTime<Tz> {
+    // machina: RFC 3339 text, the same as sqlx's SQLite driver writes
     fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
-        Encode::<Postgres>::encode(self.naive_utc(), buf)
-    }
-
-    fn size_hint(&self) -> usize {
-        mem::size_of::<i64>()
+        buf.extend_from_slice(self.to_rfc3339_opts(chrono::SecondsFormat::AutoSi, false).as_bytes());
+        Ok(IsNull::No)
     }
 }
 

@@ -22,6 +22,7 @@ BIND_HOST="127.0.0.1"
 OPEN_FIREWALL=false
 DB_MODE=""   # sqlite (default) | pod | package | external; see scripts/db/machina-db.sh
 DB_URL=""
+DB_MIGRATE=false   # --database-migrate: copy the existing SQLite data into the new PostgreSQL database
 DISABLE_FIREWALL=false
 PUBLIC_URL=""
 # shellcheck source=lib/disable-firewalld.sh
@@ -39,7 +40,7 @@ log_cmd() { "$@" >>"$LOG_FILE" 2>&1; }
 usage() {
   cat <<'EOF'
 install-platform.sh [--bind ADDR] [--open-firewall|--disable-firewalld] [--public-url URL] [--require-auth]
-                    [--database sqlite|pod|package|external [--database-url postgres://...]]
+                    [--database sqlite|pod|package|external [--database-url postgres://...] [--database-migrate]]
 
 Installs machina-controller (:5093) and machina-agent (:50051).
 Controller binds 127.0.0.1 by default (UI uses the daemon proxy on :5092);
@@ -61,6 +62,7 @@ while [[ $# -gt 0 ]]; do
     --require-auth) SKIP_AUTH=0; shift ;;
     --database) DB_MODE="${2:?}"; shift 2 ;;
     --database-url) DB_URL="${2:?}"; shift 2 ;;
+    --database-migrate) DB_MIGRATE=true; shift ;;
     -h|--help) usage ;;
     *) warn "Unknown arg: $1"; shift ;;
   esac
@@ -139,6 +141,9 @@ install_pg_controller() {
     install -Dm755 "$pg" /usr/local/bin/machina-controller-pg
     ok "Installed machina-controller-pg (PostgreSQL build)"
   fi
+  if [[ -x "$INSTALLER_ROOT/target/release/machina-dbtool" ]]; then
+    install -Dm755 "$INSTALLER_ROOT/target/release/machina-dbtool" /usr/local/bin/machina-dbtool
+  fi
   if [[ -x "$INSTALLER_ROOT/scripts/db/machina-db.sh" ]]; then
     install -Dm755 "$INSTALLER_ROOT/scripts/db/machina-db.sh" /usr/local/bin/machina-db
   fi
@@ -151,6 +156,7 @@ setup_database() {
   step "Controller database: $DB_MODE"
   local args=("setup" "$DB_MODE")
   [[ "$DB_MODE" == external ]] && args+=("--url" "${DB_URL:?--database external needs --database-url postgres://...}")
+  [[ "$DB_MIGRATE" == true && "$DB_MODE" != sqlite ]] && args+=("--migrate")
   /usr/local/bin/machina-db "${args[@]}" 2>&1 | tee -a "$LOG_FILE" || fail "database setup failed — see $LOG_FILE"
 }
 
