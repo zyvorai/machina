@@ -25,7 +25,6 @@ pub struct RunbookExecutionRow {
     pub id: Uuid,
     pub incident: String,
     pub status: String,
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub steps_json: serde_json::Value,
     pub actor: Option<String>,
     pub summary: String,

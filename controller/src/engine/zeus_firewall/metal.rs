@@ -21,7 +21,6 @@ pub struct BaremetalFirewallRow {
     pub firewall_enabled: bool,
     pub bmc_vlan: String,
     pub pxe_vlan: String,
-    #[sqlx(try_from = "crate::db::JsonTextOpt")]
     pub posture_json: Option<serde_json::Value>,
 }
 

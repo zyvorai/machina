@@ -59,12 +59,10 @@ pub struct HostDetailRow {
     pub fenced: bool,
     pub notes: String,
     pub validation_status: String,
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub validation_report: serde_json::Value,
     // PATCH already writes this (as a JSON-string column, see patch_host below) but the detail
     // SELECT never read it back — the "Placement and capability tags" field on the host detail
     // page loaded empty every time and appeared to reset itself right after a successful save.
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub tags: serde_json::Value,
     pub last_heartbeat_at: Option<chrono::DateTime<chrono::Utc>>,
     pub site: String,

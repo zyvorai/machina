@@ -236,8 +236,8 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn a_unique_violation_is_a_409_on_the_embedded_database() {
-        let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+    async fn a_unique_violation_is_a_409() {
+        let pool = crate::db::testing::pool().await;
         crate::db::query("CREATE TABLE t (name TEXT UNIQUE)").execute(&pool).await.unwrap();
         crate::db::query("INSERT INTO t VALUES ('a')").execute(&pool).await.unwrap();
         let err = crate::db::query("INSERT INTO t VALUES ('a')").execute(&pool).await.unwrap_err();

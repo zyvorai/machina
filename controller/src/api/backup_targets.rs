@@ -17,7 +17,6 @@ pub struct BackupTargetRow {
     pub id: Uuid,
     pub name: String,
     pub kind: String,
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub config_json: serde_json::Value,
 }
 

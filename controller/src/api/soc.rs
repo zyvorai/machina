@@ -52,7 +52,6 @@ pub struct SocRuleRow {
     pub description: String,
     pub enabled: bool,
     pub severity: String,
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub query_json: Value,
     pub throttle_minutes: i32,
     pub builtin: bool,
@@ -525,7 +524,6 @@ struct IntegrationDbRow {
     integration_type: String,
     name: String,
     enabled: bool,
-    #[sqlx(try_from = "crate::db::JsonText")]
     config_json: Value,
     last_success_at: Option<DateTime<Utc>>,
     last_error: Option<String>,
@@ -537,9 +535,7 @@ pub struct PlaybookRow {
     pub name: String,
     pub description: String,
     pub enabled: bool,
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub trigger_json: Value,
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub steps_json: Value,
 }
 
@@ -584,7 +580,6 @@ pub struct SocEventDetailRow {
     pub category: String,
     pub severity: String,
     pub summary: String,
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub ecs_json: Value,
 }
 
@@ -600,9 +595,7 @@ struct AlertDetailDbRow {
     last_seen: DateTime<Utc>,
     event_count: i32,
     dedupe_key: String,
-    #[sqlx(try_from = "crate::db::JsonText")]
     event_ids: Value,
-    #[sqlx(try_from = "crate::db::JsonText")]
     detail_json: Value,
     rule_name: Option<String>,
 }
@@ -634,7 +627,6 @@ pub struct PlaybookRunDetailRow {
     pub status: String,
     pub started_at: DateTime<Utc>,
     pub finished_at: Option<DateTime<Utc>>,
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub step_results: Value,
     pub error: Option<String>,
 }

@@ -52,3 +52,8 @@ portable-pty = "0.9"
 uuid = { version = "1", features = ["v4", "serde"] }
 url = "2"
 aes-gcm = "0.10"
+
+# The PostgreSQL build of machina-controller reads columns SQLite stored loosely (integers of any width, JSON and timestamps as
+# TEXT); this copy of sqlx-postgres relaxes its read-side type checks. See vendor/sqlx-postgres/MACHINA_PATCHES.md.
+[patch.crates-io]
+sqlx-postgres = { path = "vendor/sqlx-postgres" }

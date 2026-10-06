@@ -26,7 +26,6 @@ pub struct Experiment {
     #[serde(skip)]
     spec_json: String,
     #[sqlx(skip)]
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub spec: Value,
     pub created_by: String,
     pub created_at: String,
@@ -54,7 +53,6 @@ pub struct Run {
     #[serde(skip)]
     report_json: String,
     #[sqlx(skip)]
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub report: Value,
 }
 

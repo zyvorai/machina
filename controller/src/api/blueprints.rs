@@ -17,7 +17,6 @@ pub struct BlueprintRow {
     pub id: Uuid,
     pub name: String,
     pub description: String,
-    #[sqlx(try_from = "crate::db::JsonText")]
     pub actions: serde_json::Value,
     pub vm_ids: crate::db::Json<Vec<Uuid>>,
     pub created_at: chrono::DateTime<chrono::Utc>,

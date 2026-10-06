@@ -39,7 +39,6 @@ pub struct SecurityGroupRow {
     pub enforced: bool,
     pub mode: String,
     #[sqlx(skip)]
-    #[sqlx(try_from = "crate::db::JsonTextOpt")]
     pub enforcement: Option<serde_json::Value>,
     #[sqlx(skip)]
     pub ec2_id: String,

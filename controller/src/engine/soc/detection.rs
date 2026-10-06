@@ -13,7 +13,6 @@ struct RuleRow {
     id: Uuid,
     name: String,
     severity: String,
-    #[sqlx(try_from = "crate::db::JsonText")]
     query_json: Value,
     throttle_minutes: i32,
 }
