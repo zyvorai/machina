@@ -26,6 +26,12 @@
 
 ## What's new
 
+**EC2-style Fleet Cloud.** Launch several instances at once with a key pair and first-boot user data, tag everything,
+firewall with **enforced security groups whose status tells the truth**, attach volumes with live I/O limits, scale groups from
+alarms, give a team a project-scoped API key, and drive it all from `awscli` or boto3 against the built-in EC2-compatible endpoint.
+Start with the [tutorials](docs/tutorials/README.md); every feature has a [guide](docs/guides/README.md), and
+[what is proven on a real host and what is not](docs/claims.md) is written down.
+
 VPC foundations and elastic compute are available as a first host-local backend.
 See [the operator guide](docs/cloud-vpc-elastic-compute.md) for isolation, deployment,
 CPU scaling, and the explicit routing/peering limitations.
@@ -62,6 +68,8 @@ CPU scaling, and the explicit routing/peering limitations.
 | Every console needs its own gateway | noVNC, SPICE, serial and SSH proxied by the daemon, with RBAC and audit |
 | Networking means Cilium + Tetragon + kube-proxy + a firewall agent | One eBPF service, `machina-bpfd`: load balancing, DDoS shield, VM isolation, flow visibility |
 | On-call means triaging the same incidents at 3 a.m. | Zyra AI diagnoses, correlates and proposes the fix, then waits for a human approval |
+
+**Evaluating?** [Why Machina](docs/buyers/why-machina.md) (five minutes) · [Alternatives](docs/buyers/machina-vs-alternatives.md) · [Security and compliance](docs/buyers/security-and-compliance.md) · [30-day evaluation plan](docs/buyers/evaluation-guide.md). **Using it?** [Tutorials](docs/tutorials/README.md) · [Cookbook](docs/users/cookbook.md).
 
 ![Capabilities at a glance: Run, Secure, Scale, Operate](docs/ux/readme-capabilities.jpg)
 
