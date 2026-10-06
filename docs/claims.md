@@ -22,11 +22,11 @@ Before you quote a claim, check its row. When a live run changes a status, updat
 | C10 | Private images can only be launched by their project or its shares | verified | Live: 403 `image_not_shared` |
 | C11 | awscli/boto3 work against `POST /ec2` (SigV4) | verified | Live boto3 RunInstances, DescribeInstances by tag, TerminateInstances |
 | C12 | Terminated instances stay visible for an hour | verified | Live |
-| C13 | Elastic IPs map a public address 1:1 to an instance | unit-tested | Live: allocate, associate, DNAT to the right guest and not the other, one per instance, release all passed once; a rerun failed at associate and the alias cleanup fix (#66) is not yet confirmed. Under investigation |
+| C13 | Elastic IPs map a public address 1:1 to an instance | verified | Live: allocate, associate (host confirms), DNAT reaches the right guest only, one per instance, release, and alias and rules removed after the pool is deleted (needed the alias-parse fix, #70) |
 | C14 | NAT gateway for private subnets | verified | Live: without NAT the guest cannot reach the uplink gateway; with it pings succeed and the masquerade counter moves; disabling removes the rule |
 | C15 | Instance metadata service at 169.254.169.254 | verified | Live: instance-id, hostname, local-ipv4, user-data, public key and the dated cirros path answer; an unknown address gets 404 |
 | C16 | Project-scoped API keys | verified | Live: scoped key lists only its projects, is refused on global APIs (403 `key_scope_forbidden`) and cannot create machines through the plain API |
-| C17 | Load balancer health checks take failing members out of rotation | unit-tested | Live run found a bug (results never saved, fixed in #66) and now shows healthy/unhealthy members; the full stop-and-recover flip is not yet confirmed live |
+| C17 | Load balancer health checks take failing members out of rotation | verified | Live: a member whose listener was gone turned `unhealthy` and left the rule set while the other stayed (needed the save fix, #66). Recovery back to healthy is unit-tested, not yet confirmed live |
 | C18 | Subnet and VPC delete with libvirt teardown | verified | Live: refused while in use, succeeds once empty, libvirt network gone, empty VPC deletes |
 | C19 | Pilot-ready for a guided single-site Linux KVM deployment | verified | `docs/CUSTOMER_SITE_READINESS.md` (full lab test-all, UI sweep 130/130) |
 | C20 | Four Rust services, embedded SQLite, no SQL cluster or message queue required | verified | Architecture in `CLAUDE.md`/README; NATS is optional |
