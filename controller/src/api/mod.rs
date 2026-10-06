@@ -1293,6 +1293,10 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/vms/{id}/migrate/precheck",
             post(vms::migrate_precheck),
         )
+        .route(
+            "/api/v1/vms/{id}/migration-oracle",
+            post(vms::migration_oracle),
+        )
         .route("/api/v1/vms/{id}/migrate", post(vms::migrate_vm))
         .route(
             "/api/v1/vms/{id}/ha",

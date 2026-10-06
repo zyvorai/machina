@@ -1079,6 +1079,21 @@ pub async fn migrate_precheck(
     Ok(Json(result))
 }
 
+/// `POST /api/v1/vms/{id}/migration-oracle`: predict whether live pre-copy converges and whether the destination is worth it.
+/// Read-only; the fail-closed `migrate/precheck` stays authoritative for whether a move may be attempted.
+pub async fn migration_oracle(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Path(id): Path<Uuid>,
+    Json(body): Json<crate::engine::migration_oracle::MigrationOracleRequest>,
+) -> Result<Json<crate::engine::migration_oracle::MigrationOracleReport>, ApiError> {
+    require_operator(&actor)?;
+    crate::engine::migration_oracle::predict(&state.pool, id, &body)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
 pub async fn start_vm(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,
