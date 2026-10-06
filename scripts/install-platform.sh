@@ -20,6 +20,8 @@ chmod 600 "$LOG_FILE"
 # reachable across the network.
 BIND_HOST="127.0.0.1"
 OPEN_FIREWALL=false
+DB_MODE=""   # sqlite (default) | pod | package | external; see scripts/db/machina-db.sh
+DB_URL=""
 DISABLE_FIREWALL=false
 PUBLIC_URL=""
 # shellcheck source=lib/disable-firewalld.sh
@@ -37,6 +39,7 @@ log_cmd() { "$@" >>"$LOG_FILE" 2>&1; }
 usage() {
   cat <<'EOF'
 install-platform.sh [--bind ADDR] [--open-firewall|--disable-firewalld] [--public-url URL] [--require-auth]
+                    [--database sqlite|pod|package|external [--database-url postgres://...]]
 
 Installs machina-controller (:5093) and machina-agent (:50051).
 Controller binds 127.0.0.1 by default (UI uses the daemon proxy on :5092);
@@ -56,6 +59,8 @@ while [[ $# -gt 0 ]]; do
     --disable-firewalld) DISABLE_FIREWALL=true; shift ;;
     --public-url) PUBLIC_URL="${2:?}"; shift 2 ;;
     --require-auth) SKIP_AUTH=0; shift ;;
+    --database) DB_MODE="${2:?}"; shift 2 ;;
+    --database-url) DB_URL="${2:?}"; shift 2 ;;
     -h|--help) usage ;;
     *) warn "Unknown arg: $1"; shift ;;
   esac
@@ -117,6 +122,36 @@ install_binaries() {
   install -Dm755 "$ctrl" /usr/local/bin/machina-controller
   install -Dm755 "$agent" /usr/local/bin/machina-agent
   ok "Installed machina-controller + machina-agent (previous kept as .prev for rollback)"
+  install_pg_controller
+}
+
+# The PostgreSQL build of the controller (machina-controller-pg). Installed whenever it is available so switching database later
+# is one command; built on the spot when a PostgreSQL database was asked for and no prebuilt binary exists.
+install_pg_controller() {
+  local pg="$INSTALLER_ROOT/target/release/machina-controller-pg"
+  if [[ ! -x "$pg" && -n "$DB_MODE" && "$DB_MODE" != sqlite ]]; then
+    step "Building the PostgreSQL build of the controller"
+    ( cd "$INSTALLER_ROOT" && cargo build --release -p machina-controller --no-default-features --features postgres \
+        --target-dir target/pg >>"$LOG_FILE" 2>&1 ) || fail "could not build the PostgreSQL controller — see $LOG_FILE"
+    install -Dm755 "$INSTALLER_ROOT/target/pg/release/machina-controller" "$pg"
+  fi
+  if [[ -x "$pg" ]]; then
+    install -Dm755 "$pg" /usr/local/bin/machina-controller-pg
+    ok "Installed machina-controller-pg (PostgreSQL build)"
+  fi
+  if [[ -x "$INSTALLER_ROOT/scripts/db/machina-db.sh" ]]; then
+    install -Dm755 "$INSTALLER_ROOT/scripts/db/machina-db.sh" /usr/local/bin/machina-db
+  fi
+}
+
+# --database pod|package|external|sqlite: choose the controller's database (see scripts/db/machina-db.sh). SQLite is the default
+# and needs nothing; the others set up PostgreSQL and point the controller at it before it first starts.
+setup_database() {
+  [[ -n "$DB_MODE" ]] || return 0
+  step "Controller database: $DB_MODE"
+  local args=("setup" "$DB_MODE")
+  [[ "$DB_MODE" == external ]] && args+=("--url" "${DB_URL:?--database external needs --database-url postgres://...}")
+  /usr/local/bin/machina-db "${args[@]}" 2>&1 | tee -a "$LOG_FILE" || fail "database setup failed — see $LOG_FILE"
 }
 
 ensure_platform_env_var() {
@@ -332,6 +367,7 @@ if $DISABLE_FIREWALL; then
 else
   open_firewall_port
 fi
+setup_database
 start_services
 wait_for_health
 

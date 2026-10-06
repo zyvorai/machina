@@ -998,6 +998,18 @@ cmd_vm() {
 }
 
 # ── help ────────────────────────────────────────────────────────────────
+# Controller database: machinactl db setup pod|package|external|sqlite, status, url, backup, restore
+cmd_db() {
+    local tool
+    tool="$(command -v machina-db 2>/dev/null || true)"
+    [[ -n "$tool" ]] || tool="$SCRIPT_DIR/scripts/db/machina-db.sh"
+    [[ -x "$tool" ]] || { err "machina-db not found (expected on PATH or at scripts/db/machina-db.sh)"; exit 1; }
+    case "${1:-}" in
+        setup|restore) exec sudo -E "$tool" "$@" ;;   # these write /etc and restart services
+        *) exec "$tool" "$@" ;;
+    esac
+}
+
 cmd_help() {
     echo ""
     echo "machinactl — machina management tool"
@@ -1022,6 +1034,12 @@ cmd_help() {
     echo "  restart           Restart the service"
     echo "  status            Show service status"
     echo "  logs              Follow service logs (journalctl)"
+    echo ""
+    echo "🗄️  Controller database (SQLite by default; PostgreSQL for large fleets):"
+    echo "  db status         Backend, connection and size"
+    echo "  db setup pod|package|external --url URL|sqlite   Choose and set up the database"
+    echo "  db backup         Dump the database (daily timer is installed with PostgreSQL)"
+    echo "  db restore FILE --yes   Restore a PostgreSQL dump"
     echo ""
     echo "💾 Backup:"
     echo "  backup now        Run VM backup immediately (auto-sudo)"
@@ -1112,6 +1130,7 @@ main() {
         status)     cmd_status "$@" ;;
         logs)       cmd_logs "$@" ;;
         doctor)     cmd_doctor "$@" ;;
+        db)         cmd_db "$@" ;;
         tls)        cmd_tls "$@" ;;
         demo)       cmd_demo "$@" ;;
         audit)

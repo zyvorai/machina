@@ -55,6 +55,9 @@ jobs:
       - name: Build (release)
         working-directory: machina
         run: cargo build --workspace --release --locked
+      - name: Build controller (PostgreSQL build)
+        working-directory: machina
+        run: make release-pg CARGO_FLAGS=--locked
       - name: eBPF programs are compiled into bpfd
         working-directory: machina
         run: ./target/release/machina-bpfd --probe
