@@ -43,7 +43,7 @@ fn validate_vm_port_forward_fields(
 }
 
 async fn vm_host_agent(state: &AppState, vm_id: Uuid) -> Result<(String, String), ApiError> {
-    let row: (String, Option<Uuid>, String, Option<String>) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String, Option<String>) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), guest_ip FROM vms WHERE id = ?",
     )
     .bind(vm_id)
@@ -159,7 +159,7 @@ pub async fn list_vm_port_forward_templates(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<PortForwardTemplateDto>>, ApiError> {
     require_operator(&actor)?;
-    let spec: serde_json::Value = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
+    let spec: serde_json::Value = crate::db::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await
@@ -180,7 +180,7 @@ pub async fn upsert_vm_port_forward_template(
     if body.vm_port <= 0 || body.host_port <= 0 {
         return Err(ApiError::bad_request("Ports must be positive"));
     }
-    let mut spec: serde_json::Value = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
+    let mut spec: serde_json::Value = crate::db::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await
@@ -201,7 +201,7 @@ pub async fn upsert_vm_port_forward_template(
         "port_forward_templates".into(),
         serde_json::to_value(&templates).map_err(|e| ApiError::internal(e.to_string()))?,
     );
-    sqlx::query("UPDATE vms SET spec_json = ?, updated_at = datetime('now') WHERE id = ?")
+    crate::db::query("UPDATE vms SET spec_json = ?, updated_at = datetime('now') WHERE id = ?")
         .bind(&spec)
         .bind(id)
         .execute(&state.pool)

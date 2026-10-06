@@ -3,13 +3,13 @@
 
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
 
 pub async fn ingest_recent(
-    pool: &SqlitePool,
+    pool: &DbPool,
     _cfg: &ControllerConfig,
 ) -> anyhow::Result<IngestStats> {
     let mut stats = IngestStats::default();
@@ -28,9 +28,9 @@ pub struct IngestStats {
     pub native_bpf: usize,
 }
 
-async fn watermark(pool: &SqlitePool, source: &str) -> anyhow::Result<DateTime<Utc>> {
+async fn watermark(pool: &DbPool, source: &str) -> anyhow::Result<DateTime<Utc>> {
     let ts: Option<DateTime<Utc>> =
-        sqlx::query_scalar("SELECT last_at FROM soc_ingest_watermarks WHERE source = ?")
+        crate::db::query_scalar("SELECT last_at FROM soc_ingest_watermarks WHERE source = ?")
             .bind(source)
             .fetch_optional(pool)
             .await?;
@@ -38,11 +38,11 @@ async fn watermark(pool: &SqlitePool, source: &str) -> anyhow::Result<DateTime<U
 }
 
 async fn advance_watermark(
-    pool: &SqlitePool,
+    pool: &DbPool,
     source: &str,
     ts: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    crate::db::query(
         "UPDATE soc_ingest_watermarks SET last_at = CASE WHEN last_at > ? THEN last_at ELSE ? END WHERE source = ?",
     )
     .bind(ts)
@@ -55,7 +55,7 @@ async fn advance_watermark(
 
 #[allow(clippy::too_many_arguments)]
 async fn insert_event(
-    pool: &SqlitePool,
+    pool: &DbPool,
     occurred_at: DateTime<Utc>,
     source: &str,
     category: &str,
@@ -68,7 +68,7 @@ async fn insert_event(
     raw_ref: Value,
     dedupe_key: Option<&str>,
 ) -> anyhow::Result<bool> {
-    let r = sqlx::query(
+    let r = crate::db::query(
         "INSERT INTO soc_events (id, occurred_at, source, category, severity, host_id, vm_id, actor, summary, ecs_json, raw_ref, dedupe_key)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL DO NOTHING",
@@ -90,7 +90,7 @@ async fn insert_event(
     Ok(r.rows_affected() > 0)
 }
 
-async fn ingest_firewall_timeline(pool: &SqlitePool) -> anyhow::Result<usize> {
+async fn ingest_firewall_timeline(pool: &DbPool) -> anyhow::Result<usize> {
     let since = watermark(pool, "firewall_timeline").await?;
     let rows: Vec<(
         String,
@@ -100,7 +100,7 @@ async fn ingest_firewall_timeline(pool: &SqlitePool) -> anyhow::Result<usize> {
         Option<String>,
         DateTime<Utc>,
         Value,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT target_kind, target_id, kind, summary, actor,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at, detail_json
          FROM firewall_timeline WHERE strftime('%Y-%m-%dT%H:%M:%SZ', created_at) > ? ORDER BY created_at ASC LIMIT 2000",
@@ -173,7 +173,7 @@ fn firewall_severity(kind: &str, detail: &Value) -> String {
     "low".into()
 }
 
-async fn ingest_audit_logs(pool: &SqlitePool) -> anyhow::Result<usize> {
+async fn ingest_audit_logs(pool: &DbPool) -> anyhow::Result<usize> {
     let since = watermark(pool, "audit_logs").await?;
     let rows: Vec<(
         Uuid,
@@ -183,7 +183,7 @@ async fn ingest_audit_logs(pool: &SqlitePool) -> anyhow::Result<usize> {
         Option<Uuid>,
         Value,
         DateTime<Utc>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, actor, action, resource_type,
                 CASE WHEN typeof(resource_id) = 'blob' AND length(resource_id) = 16 THEN resource_id END AS resource_id,
                 detail,
@@ -245,7 +245,7 @@ fn audit_severity(action: &str) -> String {
     }
 }
 
-async fn ingest_platform_events(pool: &SqlitePool) -> anyhow::Result<usize> {
+async fn ingest_platform_events(pool: &DbPool) -> anyhow::Result<usize> {
     let since = watermark(pool, "platform_events").await?;
     let rows: Vec<(
         Uuid,
@@ -255,7 +255,7 @@ async fn ingest_platform_events(pool: &SqlitePool) -> anyhow::Result<usize> {
         String,
         Value,
         DateTime<Utc>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, kind, resource_type,
                 CASE WHEN typeof(resource_id) = 'blob' AND length(resource_id) = 16 THEN resource_id END AS resource_id,
                 message, payload,
@@ -307,7 +307,7 @@ async fn ingest_platform_events(pool: &SqlitePool) -> anyhow::Result<usize> {
     Ok(n)
 }
 
-async fn ingest_bpf_anomalies(pool: &SqlitePool) -> anyhow::Result<usize> {
+async fn ingest_bpf_anomalies(pool: &DbPool) -> anyhow::Result<usize> {
     let since = watermark(pool, "machina-bpf").await?;
     let native = crate::engine::bpf::telemetry::anomalies(pool).await;
     let anomalies = native

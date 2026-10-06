@@ -59,7 +59,7 @@ fn tag_set(tags: &[(String, String)]) -> String {
 }
 
 async fn tags_of(state: &AppState) -> Result<BTreeMap<(String, String), Vec<(String, String)>>, Ec2Error> {
-    let rows: Vec<(String, String, String, String)> = sqlx::query_as("SELECT resource_type, resource_id, key, value FROM resource_tags")
+    let rows: Vec<(String, String, String, String)> = crate::db::query_as("SELECT resource_type, resource_id, key, value FROM resource_tags")
         .fetch_all(&state.pool)
         .await?;
     let mut out: BTreeMap<(String, String), Vec<(String, String)>> = BTreeMap::new();
@@ -89,7 +89,7 @@ pub async fn describe_volumes(state: &AppState, p: &Params) -> Result<String, Ec
     let filters = parse_filters(p);
     let tags = tags_of(state).await?;
     type Row = (Uuid, String, i64, String, Option<Uuid>, Option<String>, String);
-    let rows: Vec<Row> = sqlx::query_as("SELECT id, name, size_gib, status, attached_vm_id, attached_device, created_at FROM volumes ORDER BY name")
+    let rows: Vec<Row> = crate::db::query_as("SELECT id, name, size_gib, status, attached_vm_id, attached_device, created_at FROM volumes ORDER BY name")
         .fetch_all(&state.pool)
         .await?;
     for w in &wanted {
@@ -213,7 +213,7 @@ pub async fn import_key_pair(state: &AppState, actor: &AuthUser, p: &Params) -> 
 pub async fn delete_key_pair(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
     require_operator(actor)?;
     let id: Option<Uuid> = if let Some(n) = p.get("KeyName") {
-        sqlx::query_scalar("SELECT id FROM keypairs WHERE name = ?").bind(n).fetch_optional(&state.pool).await?
+        crate::db::query_scalar("SELECT id FROM keypairs WHERE name = ?").bind(n).fetch_optional(&state.pool).await?
     } else {
         Some(resolve(state, Kind::KeyPair, &need(p, "KeyPairId")?, "InvalidKeyPair.NotFound").await?)
     };
@@ -255,9 +255,9 @@ pub async fn describe_security_groups(state: &AppState, p: &Params) -> Result<St
     let names = indexed(p, "GroupName");
     let filters = parse_filters(p);
     let tags = tags_of(state).await?;
-    let groups: Vec<(Uuid, String, String)> = sqlx::query_as("SELECT id, name, description FROM security_groups ORDER BY name").fetch_all(&state.pool).await?;
+    let groups: Vec<(Uuid, String, String)> = crate::db::query_as("SELECT id, name, description FROM security_groups ORDER BY name").fetch_all(&state.pool).await?;
     type Rule = (Uuid, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>);
-    let rules: Vec<Rule> = sqlx::query_as("SELECT security_group_id, direction, protocol, port_min, port_max, remote_cidr, remote_sg_id FROM security_group_rules ORDER BY created_at, id")
+    let rules: Vec<Rule> = crate::db::query_as("SELECT security_group_id, direction, protocol, port_min, port_max, remote_cidr, remote_sg_id FROM security_group_rules ORDER BY created_at, id")
         .fetch_all(&state.pool)
         .await?;
     for w in &wanted {
@@ -367,7 +367,7 @@ pub async fn security_group_rules(state: &AppState, actor: &AuthUser, p: &Params
         }
         for (cidr, remote_sg) in peers {
             if revoke {
-                let id: Option<Uuid> = sqlx::query_scalar(
+                let id: Option<Uuid> = crate::db::query_scalar(
                     "SELECT id FROM security_group_rules WHERE security_group_id = ? AND direction = ? AND COALESCE(protocol,'') = ? \
                      AND COALESCE(port_min,-2) = ? AND COALESCE(port_max,-2) = ? AND COALESCE(remote_cidr,'') = ? AND COALESCE(remote_sg_id,'') = ? LIMIT 1",
                 )
@@ -404,7 +404,7 @@ pub async fn describe_images(state: &AppState, p: &Params) -> Result<String, Ec2
     let filters = parse_filters(p);
     let tags = tags_of(state).await?;
     type Row = (Uuid, String, String, Option<String>, String, String, String);
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows: Vec<Row> = crate::db::query_as(
         "SELECT id, name, version, os_family, description, COALESCE(visibility,'public'), COALESCE(project,'') FROM templates ORDER BY name, version",
     )
     .fetch_all(&state.pool)
@@ -441,7 +441,7 @@ pub async fn describe_images(state: &AppState, p: &Params) -> Result<String, Ec2
 pub async fn describe_vpcs(state: &AppState, p: &Params) -> Result<String, Ec2Error> {
     let wanted = indexed(p, "VpcId");
     let tags = tags_of(state).await?;
-    let rows: Vec<(Uuid, String, String)> = sqlx::query_as("SELECT id, name, cidr FROM cloud_vpcs ORDER BY name").fetch_all(&state.pool).await?;
+    let rows: Vec<(Uuid, String, String)> = crate::db::query_as("SELECT id, name, cidr FROM cloud_vpcs ORDER BY name").fetch_all(&state.pool).await?;
     let mut items = String::new();
     for (id, _name, cidr) in rows {
         let eid = ec2_id(Kind::Vpc, id);
@@ -461,7 +461,7 @@ pub async fn describe_vpcs(state: &AppState, p: &Params) -> Result<String, Ec2Er
 pub async fn describe_subnets(state: &AppState, p: &Params) -> Result<String, Ec2Error> {
     let wanted = indexed(p, "SubnetId");
     let tags = tags_of(state).await?;
-    let rows: Vec<(Uuid, Uuid, String, String)> = sqlx::query_as("SELECT id, vpc_id, cidr, status FROM cloud_subnets ORDER BY name").fetch_all(&state.pool).await?;
+    let rows: Vec<(Uuid, Uuid, String, String)> = crate::db::query_as("SELECT id, vpc_id, cidr, status FROM cloud_subnets ORDER BY name").fetch_all(&state.pool).await?;
     let mut items = String::new();
     for (id, vpc, cidr, status) in rows {
         let eid = ec2_id(Kind::Subnet, id);
@@ -484,7 +484,7 @@ pub async fn describe_network_interfaces(state: &AppState, p: &Params) -> Result
     let wanted = indexed(p, "NetworkInterfaceId");
     let tags = tags_of(state).await?;
     type Row = (Uuid, Option<String>, Option<String>, Option<String>, Option<Uuid>, String, Option<String>);
-    let rows: Vec<Row> = sqlx::query_as("SELECT id, subnet_id, mac_address, private_ip, vm_id, status, description FROM ports ORDER BY created_at")
+    let rows: Vec<Row> = crate::db::query_as("SELECT id, subnet_id, mac_address, private_ip, vm_id, status, description FROM ports ORDER BY created_at")
         .fetch_all(&state.pool)
         .await?;
     let mut items = String::new();
@@ -529,7 +529,7 @@ pub async fn modify_instance_attribute(state: &AppState, actor: &AuthUser, p: &P
     let Some(itype) = p.get("InstanceType.Value").or_else(|| p.get("Value")) else {
         return Err(bad("InvalidParameterValue", "only InstanceType.Value can be modified"));
     };
-    let flavor: Option<Uuid> = sqlx::query_scalar("SELECT id FROM flavors WHERE name = ?").bind(itype).fetch_optional(&state.pool).await?;
+    let flavor: Option<Uuid> = crate::db::query_scalar("SELECT id FROM flavors WHERE name = ?").bind(itype).fetch_optional(&state.pool).await?;
     let flavor = flavor.ok_or_else(|| bad("InvalidParameterValue", format!("Unknown instance type '{itype}'")))?;
     let _ = crate::api::vms::change_vm_type(
         State(state.clone()),

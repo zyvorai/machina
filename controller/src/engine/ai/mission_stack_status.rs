@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct StackVmStatus {
@@ -21,8 +21,8 @@ pub struct MissionStackStatus {
     pub summary: String,
 }
 
-pub async fn status(pool: &SqlitePool) -> anyhow::Result<MissionStackStatus> {
-    let raw_rows: Vec<(String, String, Option<String>, String)> = sqlx::query_as(
+pub async fn status(pool: &DbPool) -> anyhow::Result<MissionStackStatus> {
+    let raw_rows: Vec<(String, String, Option<String>, String)> = crate::db::query_as(
         "SELECT v.name, v.observed_state, h.hostname, COALESCE(v.tags, '[]')
          FROM vms v
          LEFT JOIN hosts h ON h.id = v.host_id

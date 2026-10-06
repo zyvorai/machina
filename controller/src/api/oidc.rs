@@ -66,7 +66,7 @@ pub async fn patch_oidc_settings(
 ) -> Result<Json<OidcSettings>, ApiError> {
     require_admin(&actor)?;
     if let Some(v) = body.enabled {
-        sqlx::query("UPDATE clusters SET oidc_enabled = ?")
+        crate::db::query("UPDATE clusters SET oidc_enabled = ?")
             .bind(v)
             .execute(&state.pool)
             .await?;
@@ -75,27 +75,27 @@ pub async fn patch_oidc_settings(
         if !v.is_empty() && !v.starts_with("https://") {
             return Err(ApiError::bad_request("OIDC issuer must use HTTPS"));
         }
-        sqlx::query("UPDATE clusters SET oidc_issuer = ?")
+        crate::db::query("UPDATE clusters SET oidc_issuer = ?")
             .bind(v)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = &body.client_id {
-        sqlx::query("UPDATE clusters SET oidc_client_id = ?")
+        crate::db::query("UPDATE clusters SET oidc_client_id = ?")
             .bind(v)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = &body.client_secret {
         if !v.is_empty() && v != "***" {
-            sqlx::query("UPDATE clusters SET oidc_client_secret = ?")
+            crate::db::query("UPDATE clusters SET oidc_client_secret = ?")
                 .bind(v)
                 .execute(&state.pool)
                 .await?;
         }
     }
     if let Some(v) = &body.redirect_uri {
-        sqlx::query("UPDATE clusters SET oidc_redirect_uri = ?")
+        crate::db::query("UPDATE clusters SET oidc_redirect_uri = ?")
             .bind(v)
             .execute(&state.pool)
             .await?;

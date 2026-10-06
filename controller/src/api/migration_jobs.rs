@@ -43,7 +43,7 @@ pub async fn list_migration_jobs(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<MigrationJobRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, MigrationJobRow>(&format!(
+    let rows = crate::db::query_as::<_, MigrationJobRow>(&format!(
         "{MIGRATION_JOB_SELECT} ORDER BY mj.created_at DESC LIMIT 100"
     ))
     .fetch_all(&state.pool)
@@ -57,7 +57,7 @@ pub async fn list_vm_migration_jobs(
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<Vec<MigrationJobRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, MigrationJobRow>(&format!(
+    let rows = crate::db::query_as::<_, MigrationJobRow>(&format!(
         "{MIGRATION_JOB_SELECT} WHERE mj.vm_id = ? ORDER BY mj.created_at DESC LIMIT 50"
     ))
     .bind(vm_id)

@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -66,8 +66,8 @@ pub fn validate(c: &Check) -> Result<(), String> {
 
 type LbRow = (Uuid, Uuid, String, Option<i64>, String, i64, i64, i64, i64, i64);
 
-async fn due(pool: &SqlitePool) -> anyhow::Result<Vec<LbRow>> {
-    Ok(sqlx::query_as(
+async fn due(pool: &DbPool) -> anyhow::Result<Vec<LbRow>> {
+    Ok(crate::db::query_as(
         "SELECT id, host_id, hc_protocol, hc_port, hc_path, hc_interval_secs, hc_timeout_secs, hc_healthy_threshold, hc_unhealthy_threshold, listener_port \
          FROM load_balancers WHERE hc_protocol <> 'none' \
          AND (hc_last_run IS NULL OR CAST(strftime('%s','now') AS INTEGER) - CAST(strftime('%s', hc_last_run) AS INTEGER) >= hc_interval_secs)",
@@ -78,9 +78,9 @@ async fn due(pool: &SqlitePool) -> anyhow::Result<Vec<LbRow>> {
 
 async fn run_one(state: &AppState, lb: LbRow) -> anyhow::Result<()> {
     let (id, host, protocol, port, path, _interval, timeout, healthy_t, unhealthy_t, _listener) = lb;
-    sqlx::query("UPDATE load_balancers SET hc_last_run = CURRENT_TIMESTAMP WHERE id = ?").bind(id).execute(&state.pool).await?;
+    crate::db::query("UPDATE load_balancers SET hc_last_run = CURRENT_TIMESTAMP WHERE id = ?").bind(id).execute(&state.pool).await?;
     type M = (Uuid, String, i64, String, i64, i64);
-    let members: Vec<M> = sqlx::query_as(
+    let members: Vec<M> = crate::db::query_as(
         "SELECT m.id, v.guest_ip, m.port, m.health, m.health_ok, m.health_fail FROM lb_members m JOIN vms v ON v.id = m.vm_id \
          WHERE m.load_balancer_id = ? AND m.enabled = 1 AND COALESCE(v.guest_ip, '') <> ''",
     )
@@ -90,7 +90,7 @@ async fn run_one(state: &AppState, lb: LbRow) -> anyhow::Result<()> {
     if members.is_empty() {
         return Ok(());
     }
-    let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ? AND state = 'online'").bind(host).fetch_one(&state.pool).await?;
+    let addr: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ? AND state = 'online'").bind(host).fetch_one(&state.pool).await?;
     let targets: Vec<Value> = members
         .iter()
         .map(|(mid, ip, mport, ..)| {
@@ -117,8 +117,8 @@ async fn run_one(state: &AppState, lb: LbRow) -> anyhow::Result<()> {
 }
 
 /// Save one member's probe outcome; `health_changed_at` moves only when the state does.
-async fn record(pool: &SqlitePool, member: Uuid, state_now: &str, ok: i64, fail: i64, detail: &str) -> Result<(), sqlx::Error> {
-    sqlx::query(
+async fn record(pool: &DbPool, member: Uuid, state_now: &str, ok: i64, fail: i64, detail: &str) -> Result<(), sqlx::Error> {
+    crate::db::query(
         "UPDATE lb_members SET health = ?, health_ok = ?, health_fail = ?, health_detail = ?, \
          health_changed_at = CASE WHEN health <> ? THEN CURRENT_TIMESTAMP ELSE health_changed_at END WHERE id = ?",
     )
@@ -159,7 +159,7 @@ mod tests {
     /// invisibly, because the error was only logged at debug level.
     #[tokio::test]
     async fn a_probe_result_can_be_saved_against_the_migrated_schema() {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool = crate::db::DbPool::connect("sqlite::memory:").await.unwrap();
         sqlx::migrate!().run(&pool).await.unwrap();
         record(&pool, Uuid::new_v4(), "healthy", 2, 0, "ok").await.unwrap();
     }

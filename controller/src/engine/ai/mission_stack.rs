@@ -133,7 +133,7 @@ pub async fn execute_stack(
     actor: &AuthUser,
     body: &MissionStackExecuteBody,
 ) -> Result<MissionStackExecuteResult, ApiError> {
-    let rates: (f64, f64) = sqlx::query_as(
+    let rates: (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(&state.pool)
@@ -153,7 +153,7 @@ pub async fn execute_stack(
         .await
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-        let hostname: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
+        let hostname: String = crate::db::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_one(&state.pool)
             .await
@@ -170,7 +170,7 @@ pub async fn execute_stack(
 
         crate::auth::require_admin(actor)?;
 
-        let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
+        let cluster_id: Uuid = crate::db::query_scalar("SELECT id FROM clusters LIMIT 1")
             .fetch_one(&state.pool)
             .await
             .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -185,7 +185,7 @@ pub async fn execute_stack(
             .begin()
             .await
             .map_err(|e| ApiError::internal(e.to_string()))?;
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vms (id, cluster_id, host_id, name, project, spec_json, desired_state, lifecycle_phase, vcpus, memory_mib, tags)
              VALUES (?, ?, ?, ?, 'mission-stack', ?, 'running', 'creating', 16, 65536, ?)",
         )
@@ -199,7 +199,7 @@ pub async fn execute_stack(
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class) VALUES (?, ?, 'root', 100, 'silver')",
         )
         .bind(Uuid::new_v4())

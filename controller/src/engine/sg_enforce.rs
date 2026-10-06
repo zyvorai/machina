@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use machina_bpf::netpol::VmNetworkPolicy;
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 pub const MANAGED_LABEL: &str = "machina.io/managed-by";
 pub const MANAGED_VALUE: &str = "security-group";
@@ -38,21 +38,21 @@ pub struct Model {
     pub attached: BTreeMap<String, BTreeSet<String>>,
 }
 
-pub async fn load(pool: &SqlitePool) -> Model {
+pub async fn load(pool: &DbPool) -> Model {
     let mut m = Model::default();
-    let sgs: Vec<(String, String)> = sqlx::query_as("SELECT lower(hex(id)), mode FROM security_groups")
+    let sgs: Vec<(String, String)> = crate::db::query_as("SELECT lower(hex(id)), mode FROM security_groups")
         .fetch_all(pool)
         .await
         .unwrap_or_default();
     m.modes = sgs.into_iter().collect();
-    m.rules = sqlx::query_as(
+    m.rules = crate::db::query_as(
         "SELECT lower(hex(security_group_id)) AS security_group_id, direction, protocol, port_min, port_max, remote_cidr, remote_sg_id \
          FROM security_group_rules ORDER BY created_at, id",
     )
     .fetch_all(pool)
     .await
     .unwrap_or_default();
-    let att: Vec<(String, String)> = sqlx::query_as(
+    let att: Vec<(String, String)> = crate::db::query_as(
         "SELECT v.name, lower(hex(i.sg_id)) FROM instance_security_groups i \
          JOIN vms v ON v.id = i.vm_id",
     )
@@ -240,8 +240,8 @@ fn allows_port(rules: &[Value], port: u16) -> bool {
 }
 
 /// host id → VM names with an enforcing group on that host.
-async fn enforcing_hosts(pool: &SqlitePool) -> BTreeMap<String, Vec<String>> {
-    let rows: Vec<(String, String)> = sqlx::query_as(
+async fn enforcing_hosts(pool: &DbPool) -> BTreeMap<String, Vec<String>> {
+    let rows: Vec<(String, String)> = crate::db::query_as(
         "SELECT DISTINCT COALESCE(lower(hex(v.host_id)), ''), v.name FROM instance_security_groups i \
          JOIN security_groups g ON g.id = i.sg_id AND g.mode = 'enforce' \
          JOIN vms v ON v.id = i.vm_id",
@@ -282,16 +282,16 @@ pub async fn renew(state: &crate::state::AppState) {
 /// `sg_id` is the group's UUID as simple hex.
 /// Honest per-group state from what each host's VM edge reports.
 /// `advisory` (audit mode), `pending` (nothing attached), `enforced`, `auditing` (edge not enforcing), `failed` (host unreachable).
-pub async fn enforcement(pool: &SqlitePool, sg_id: &str) -> Value {
+pub async fn enforcement(pool: &DbPool, sg_id: &str) -> Value {
     use super::bpf;
     use machina_bpf::api::{Request, VmEdgeStatus};
-    let mode: Option<String> = sqlx::query_scalar("SELECT mode FROM security_groups WHERE lower(hex(id)) = ?")
+    let mode: Option<String> = crate::db::query_scalar("SELECT mode FROM security_groups WHERE lower(hex(id)) = ?")
         .bind(sg_id)
         .fetch_optional(pool)
         .await
         .ok()
         .flatten();
-    let vms: Vec<(String, Option<String>)> = sqlx::query_as(
+    let vms: Vec<(String, Option<String>)> = crate::db::query_as(
         "SELECT v.name, lower(hex(v.host_id)) FROM instance_security_groups i \
          JOIN vms v ON v.id = i.vm_id WHERE lower(hex(i.sg_id)) = ?",
     )

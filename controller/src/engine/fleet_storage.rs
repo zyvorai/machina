@@ -4,7 +4,7 @@
 // Fleet Disk Utility rollup — pools + SMART (Phase 41).
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -48,7 +48,7 @@ pub struct FleetStorageOverview {
 }
 
 pub async fn overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FleetStorageOverview> {
     let tiers = storage_tiers::tiers_overview(pool)
@@ -70,14 +70,14 @@ pub async fn overview(
         })
     };
 
-    let rows: Vec<(Uuid, String, String, i64, i64, Option<Uuid>)> = match sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, i64, i64, Option<Uuid>)> = match crate::db::query_as(
         "SELECT id, name, storage_class, used_gib, capacity_gib, tier_id FROM storage_pools ORDER BY name",
     )
     .fetch_all(pool)
     .await
     {
         Ok(r) => r,
-        Err(_) => sqlx::query_as(
+        Err(_) => crate::db::query_as(
             "SELECT id, name, storage_class, used_gib, capacity_gib, NULL FROM storage_pools ORDER BY name",
         )
         .fetch_all(pool)
@@ -118,7 +118,7 @@ pub async fn overview(
         });
     }
 
-    let host_rows: Vec<(Uuid, String)> = sqlx::query_as(
+    let host_rows: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT id, hostname FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 12",
     )
     .fetch_all(pool)

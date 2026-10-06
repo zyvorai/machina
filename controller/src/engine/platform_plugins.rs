@@ -4,7 +4,7 @@
 // Platform plugin marketplace — catalog inventory and install stubs.
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -38,10 +38,10 @@ pub struct PluginInstallResult {
 }
 
 pub async fn marketplace_overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     _cfg: &ControllerConfig,
 ) -> anyhow::Result<MarketplaceOverview> {
-    let mut plugins: Vec<PluginRow> = sqlx::query_as(
+    let mut plugins: Vec<PluginRow> = crate::db::query_as(
         "SELECT id, slug, name, category, description, version, author, featured, installed
          FROM platform_plugins ORDER BY featured DESC, category, name",
     )
@@ -68,13 +68,13 @@ pub async fn marketplace_overview(
     })
 }
 
-pub async fn install_plugin(pool: &SqlitePool, slug: &str) -> anyhow::Result<PluginInstallResult> {
+pub async fn install_plugin(pool: &DbPool, slug: &str) -> anyhow::Result<PluginInstallResult> {
     let slug = slug.trim();
     if slug.is_empty() {
         anyhow::bail!("slug required");
     }
 
-    let row: PluginRow = sqlx::query_as(
+    let row: PluginRow = crate::db::query_as(
         "SELECT id, slug, name, category, description, version, author, featured, installed
          FROM platform_plugins WHERE slug = ?",
     )
@@ -83,7 +83,7 @@ pub async fn install_plugin(pool: &SqlitePool, slug: &str) -> anyhow::Result<Plu
     .await?
     .ok_or_else(|| anyhow::anyhow!("plugin not found: {slug}"))?;
 
-    sqlx::query("UPDATE platform_plugins SET installed = TRUE WHERE slug = ?")
+    crate::db::query("UPDATE platform_plugins SET installed = TRUE WHERE slug = ?")
         .bind(slug)
         .execute(pool)
         .await?;
@@ -100,11 +100,11 @@ pub async fn install_plugin(pool: &SqlitePool, slug: &str) -> anyhow::Result<Plu
 }
 
 pub async fn uninstall_plugin(
-    pool: &SqlitePool,
+    pool: &DbPool,
     slug: &str,
 ) -> anyhow::Result<PluginInstallResult> {
     let slug = slug.trim();
-    let row: PluginRow = sqlx::query_as(
+    let row: PluginRow = crate::db::query_as(
         "SELECT id, slug, name, category, description, version, author, featured, installed
          FROM platform_plugins WHERE slug = ?",
     )
@@ -117,7 +117,7 @@ pub async fn uninstall_plugin(
         anyhow::bail!("zeus-firewall is a core platform plugin and cannot be uninstalled");
     }
 
-    sqlx::query("UPDATE platform_plugins SET installed = FALSE WHERE slug = ?")
+    crate::db::query("UPDATE platform_plugins SET installed = FALSE WHERE slug = ?")
         .bind(slug)
         .execute(pool)
         .await?;
@@ -148,12 +148,12 @@ fn default_author() -> String {
 }
 
 pub async fn publish_plugin(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: &PluginPublishRequest,
 ) -> anyhow::Result<PluginRow> {
     machina_spec::validate_name(&req.slug).map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, FALSE)
          ON CONFLICT (slug) DO UPDATE SET
@@ -175,7 +175,7 @@ pub async fn publish_plugin(
     .execute(pool)
     .await?;
 
-    sqlx::query_as(
+    crate::db::query_as(
         "SELECT id, slug, name, category, description, version, author, featured, installed
          FROM platform_plugins WHERE slug = ?",
     )

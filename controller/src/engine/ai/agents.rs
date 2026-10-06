@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::context::AssembledContext;
@@ -201,7 +201,7 @@ pub struct ZyraChatResponse {
 }
 
 pub async fn chat(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &crate::config::ControllerConfig,
     body: &ZyraChatBody,
     user_id: Option<&str>,
@@ -260,11 +260,11 @@ pub async fn chat(
 }
 
 pub async fn save_preference(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
     agent_id: &str,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO ai_user_preferences (user_id, default_agent, updated_at)
          VALUES (?, ?, datetime('now'))
          ON CONFLICT (user_id) DO UPDATE SET default_agent = EXCLUDED.default_agent, updated_at = datetime('now')",
@@ -276,9 +276,9 @@ pub async fn save_preference(
     Ok(())
 }
 
-pub async fn get_preference(pool: &SqlitePool, user_id: &str) -> anyhow::Result<String> {
+pub async fn get_preference(pool: &DbPool, user_id: &str) -> anyhow::Result<String> {
     let agent: Option<String> =
-        sqlx::query_scalar("SELECT default_agent FROM ai_user_preferences WHERE user_id = ?")
+        crate::db::query_scalar("SELECT default_agent FROM ai_user_preferences WHERE user_id = ?")
             .bind(user_id)
             .fetch_optional(pool)
             .await?;

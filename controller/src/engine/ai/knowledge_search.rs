@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct KnowledgeHit {
@@ -27,7 +27,7 @@ fn escape_like(s: &str) -> String {
         .replace('_', "\\_")
 }
 
-pub async fn search(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeSearchResult> {
+pub async fn search(pool: &DbPool, query: &str) -> anyhow::Result<KnowledgeSearchResult> {
     let q = query.trim();
     let mut hits = Vec::new();
     if q.is_empty() {
@@ -39,7 +39,7 @@ pub async fn search(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeS
 
     let pattern = format!("%{}%", escape_like(q));
 
-    let vms: Vec<(uuid::Uuid, String, String)> = sqlx::query_as(
+    let vms: Vec<(uuid::Uuid, String, String)> = crate::db::query_as(
         "SELECT id, name, observed_state FROM vms WHERE name LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value = ?) LIMIT 12",
     )
     .bind(&pattern)
@@ -57,7 +57,7 @@ pub async fn search(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeS
         });
     }
 
-    let hosts: Vec<(uuid::Uuid, String, String)> = sqlx::query_as(
+    let hosts: Vec<(uuid::Uuid, String, String)> = crate::db::query_as(
         "SELECT id, hostname, state FROM hosts WHERE hostname LIKE ? ESCAPE '\\' LIMIT 8",
     )
     .bind(&pattern)
@@ -74,7 +74,7 @@ pub async fn search(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeS
         });
     }
 
-    let apps: Vec<(uuid::Uuid, String)> = sqlx::query_as(
+    let apps: Vec<(uuid::Uuid, String)> = crate::db::query_as(
         "SELECT id, name FROM application_groups WHERE name LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\' LIMIT 8",
     )
     .bind(&pattern)
@@ -92,7 +92,7 @@ pub async fn search(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeS
         });
     }
 
-    let tasks: Vec<(uuid::Uuid, String, String)> = sqlx::query_as(
+    let tasks: Vec<(uuid::Uuid, String, String)> = crate::db::query_as(
         "SELECT id, operation, status FROM tasks WHERE operation LIKE ? ESCAPE '\\' OR status LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 8",
     )
     .bind(&pattern)
@@ -110,7 +110,7 @@ pub async fn search(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeS
         });
     }
 
-    let events: Vec<(String, String)> = sqlx::query_as(
+    let events: Vec<(String, String)> = crate::db::query_as(
         "SELECT kind, message FROM events WHERE kind LIKE ? ESCAPE '\\' OR message LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 8",
     )
     .bind(&pattern)
@@ -128,7 +128,7 @@ pub async fn search(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeS
         });
     }
 
-    let audits: Vec<(String, String)> = sqlx::query_as(
+    let audits: Vec<(String, String)> = crate::db::query_as(
         "SELECT action, actor FROM audit_logs WHERE action LIKE ? ESCAPE '\\' OR actor LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT 6",
     )
     .bind(&pattern)

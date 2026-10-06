@@ -74,7 +74,7 @@ pub async fn propose_resize(
         }
         (v, m) => {
             let (_, _, cv, cm): (String, Option<Uuid>, i64, i64) =
-                sqlx::query_as("SELECT name, host_id, vcpus, memory_mib FROM vms WHERE id = ?")
+                crate::db::query_as("SELECT name, host_id, vcpus, memory_mib FROM vms WHERE id = ?")
                     .bind(body.vm_id)
                     .fetch_optional(&state.pool)
                     .await?

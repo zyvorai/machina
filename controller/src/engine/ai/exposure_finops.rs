@@ -4,7 +4,7 @@
 // Security waste + SRE×FinOps joint remediate items (Phase 22).
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::config::ControllerConfig;
 
@@ -26,7 +26,7 @@ pub struct ExposureWasteProposal {
 }
 
 pub async fn propose_waste(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<ExposureWasteProposal> {
     let report = crate::engine::zeus_firewall::finops::exposure_rollup(pool, cfg).await?;
@@ -109,7 +109,7 @@ pub async fn propose_waste(
 }
 
 pub async fn joint_sre_finops(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<Vec<ExposureWasteItem>> {
     let waste = propose_waste(pool, cfg).await?;

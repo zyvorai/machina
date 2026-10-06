@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -38,7 +38,7 @@ pub struct GuestAiInsightsReport {
 }
 
 pub async fn generate_insights(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     vm_id: Uuid,
     refresh: bool,

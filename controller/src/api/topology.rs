@@ -60,14 +60,14 @@ pub async fn vm_topology(
 }
 
 pub(crate) async fn build_topology(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     vm_filter: Option<Uuid>,
 ) -> Result<TopologyGraph, ApiError> {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
     let mut warnings = Vec::new();
 
-    let cluster_name: String = sqlx::query_scalar("SELECT name FROM clusters LIMIT 1")
+    let cluster_name: String = crate::db::query_scalar("SELECT name FROM clusters LIMIT 1")
         .fetch_one(pool)
         .await
         .unwrap_or_else(|_| "default".into());
@@ -79,7 +79,7 @@ pub(crate) async fn build_topology(
     });
 
     let hosts: Vec<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, hostname, state FROM hosts ORDER BY hostname")
+        crate::db::query_as("SELECT id, hostname, state FROM hosts ORDER BY hostname")
             .fetch_all(pool)
             .await?;
 
@@ -104,14 +104,14 @@ pub(crate) async fn build_topology(
         String,
         sqlx::types::Json<Vec<String>>,
     )> = if let Some(vid) = vm_filter {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, name, host_id, observed_state, COALESCE(tags, '[]') FROM vms WHERE id = ?",
         )
         .bind(vid)
         .fetch_all(pool)
         .await?
     } else {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, name, host_id, observed_state, COALESCE(tags, '[]') FROM vms ORDER BY name LIMIT 100",
         )
         .fetch_all(pool)
@@ -171,7 +171,7 @@ pub(crate) async fn build_topology(
     }
 
     let segments: Vec<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, name, tier FROM network_segments ORDER BY name")
+        crate::db::query_as("SELECT id, name, tier FROM network_segments ORDER BY name")
             .fetch_all(pool)
             .await
             .unwrap_or_default();
@@ -191,7 +191,7 @@ pub(crate) async fn build_topology(
         });
 
         let bound: Vec<(Uuid, String)> =
-            sqlx::query_as("SELECT id, name FROM networks WHERE segment_id = ?")
+            crate::db::query_as("SELECT id, name FROM networks WHERE segment_id = ?")
                 .bind(sid)
                 .fetch_all(pool)
                 .await
@@ -219,7 +219,7 @@ pub(crate) async fn build_topology(
         }
     }
 
-    let online_hosts: Vec<(Uuid, String, String)> = sqlx::query_as(
+    let online_hosts: Vec<(Uuid, String, String)> = crate::db::query_as(
         "SELECT id, hostname, COALESCE(NULLIF(agent_console_addr, ''), agent_grpc_addr)
          FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 20",
     )

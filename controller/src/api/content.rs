@@ -73,14 +73,14 @@ pub async fn list_content_images(
 ) -> Result<Json<Vec<ContentImageRow>>, ApiError> {
     require_operator(&actor)?;
     let rows = if let Some(ref status) = q.status {
-        sqlx::query_as::<_, ContentImageRow>(&format!(
+        crate::db::query_as::<_, ContentImageRow>(&format!(
             "{CONTENT_SELECT} WHERE status = ? ORDER BY name"
         ))
         .bind(status)
         .fetch_all(&state.pool)
         .await?
     } else {
-        sqlx::query_as::<_, ContentImageRow>(&format!("{CONTENT_SELECT} ORDER BY name"))
+        crate::db::query_as::<_, ContentImageRow>(&format!("{CONTENT_SELECT} ORDER BY name"))
             .fetch_all(&state.pool)
             .await?
     };
@@ -94,11 +94,11 @@ pub async fn create_content_image(
 ) -> Result<Json<ContentImageRow>, ApiError> {
     require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
+    let cluster_id: Uuid = crate::db::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_one(&state.pool)
         .await?;
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO content_images (id, cluster_id, name, kind, path, size_gib, status, category, description, submitted_by, checksum)
          VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)",
     )
@@ -124,7 +124,7 @@ pub async fn approve_content_image(
 ) -> Result<Json<ContentImageRow>, ApiError> {
     require_operator(&actor)?;
     let now = Utc::now();
-    let updated = sqlx::query(
+    let updated = crate::db::query(
         "UPDATE content_images SET status = 'available', approved_by = ?, approved_at = ?, rejected_reason = NULL
          WHERE id = ? AND status IN ('pending', 'rejected')",
     )
@@ -152,7 +152,7 @@ pub async fn reject_content_image(
         .reason
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| "Rejected by administrator".into());
-    let updated = sqlx::query(
+    let updated = crate::db::query(
         "UPDATE content_images SET status = 'rejected', approved_by = NULL, approved_at = NULL, rejected_reason = ?
          WHERE id = ? AND status = 'pending'",
     )
@@ -174,7 +174,7 @@ pub async fn delete_content_image(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let res = sqlx::query("DELETE FROM content_images WHERE id = ?")
+    let res = crate::db::query("DELETE FROM content_images WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -185,7 +185,7 @@ pub async fn delete_content_image(
 }
 
 async fn fetch_content_row(state: &AppState, id: Uuid) -> Result<Json<ContentImageRow>, ApiError> {
-    let row = sqlx::query_as::<_, ContentImageRow>(&format!("{CONTENT_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, ContentImageRow>(&format!("{CONTENT_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Deserialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -28,8 +28,8 @@ struct UserInfo {
     name: Option<String>,
 }
 
-pub async fn load_config(pool: &SqlitePool, fallback_redirect: &str) -> anyhow::Result<OidcConfig> {
-    let row: (bool, String, String, String, String) = sqlx::query_as(
+pub async fn load_config(pool: &DbPool, fallback_redirect: &str) -> anyhow::Result<OidcConfig> {
+    let row: (bool, String, String, String, String) = crate::db::query_as(
         "SELECT oidc_enabled, oidc_issuer, oidc_client_id, oidc_client_secret,
                 COALESCE(NULLIF(oidc_redirect_uri, ''), ?)
          FROM clusters ORDER BY created_at LIMIT 1",
@@ -47,11 +47,11 @@ pub async fn load_config(pool: &SqlitePool, fallback_redirect: &str) -> anyhow::
     })
 }
 
-pub async fn begin_login(pool: &SqlitePool, cfg: &OidcConfig) -> anyhow::Result<(String, String)> {
+pub async fn begin_login(pool: &DbPool, cfg: &OidcConfig) -> anyhow::Result<(String, String)> {
     let discovery = fetch_discovery(&cfg.issuer).await?;
     let state = Uuid::new_v4().to_string();
     let nonce = Uuid::new_v4().to_string();
-    sqlx::query("INSERT INTO oidc_states (state, nonce) VALUES (?, ?)")
+    crate::db::query("INSERT INTO oidc_states (state, nonce) VALUES (?, ?)")
         .bind(&state)
         .bind(&nonce)
         .execute(pool)
@@ -68,7 +68,7 @@ pub async fn begin_login(pool: &SqlitePool, cfg: &OidcConfig) -> anyhow::Result<
 }
 
 pub async fn complete_login(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &OidcConfig,
     jwt_secret: &str,
     code: &str,
@@ -77,7 +77,7 @@ pub async fn complete_login(
     // Fetch nonce alongside state validation; None means state not found or expired.
     // 5-minute window — converged with the daemon's OIDC_STATE_TTL_SECS (this was
     // 10 minutes before unifying the two OIDC implementations' state/nonce TTLs).
-    let stored_nonce: Option<Option<String>> = sqlx::query_scalar(
+    let stored_nonce: Option<Option<String>> = crate::db::query_scalar(
         "SELECT nonce FROM oidc_states WHERE state = ? AND created_at > datetime('now', '-5 minutes')",
     )
     .bind(state)
@@ -86,7 +86,7 @@ pub async fn complete_login(
     let Some(nonce) = stored_nonce else {
         anyhow::bail!("invalid or expired OIDC state");
     };
-    sqlx::query("DELETE FROM oidc_states WHERE state = ?")
+    crate::db::query("DELETE FROM oidc_states WHERE state = ?")
         .bind(state)
         .execute(pool)
         .await?;
@@ -154,7 +154,7 @@ pub async fn complete_login(
         )
     };
 
-    let role: String = match sqlx::query_scalar("SELECT role FROM users WHERE username = ?")
+    let role: String = match crate::db::query_scalar("SELECT role FROM users WHERE username = ?")
         .bind(&username)
         .fetch_optional(pool)
         .await?
@@ -162,7 +162,7 @@ pub async fn complete_login(
         Some(r) => r,
         None => {
             let role = "viewer".to_string();
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
             )
             .bind(Uuid::new_v4())

@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -34,11 +34,11 @@ pub struct CreateActionBody {
     pub source: String,
 }
 
-pub async fn list_pending(pool: &SqlitePool) -> anyhow::Result<Vec<ZyraActionRow>> {
+pub async fn list_pending(pool: &DbPool) -> anyhow::Result<Vec<ZyraActionRow>> {
     list_by_status(pool, "pending").await
 }
 
-pub async fn list_by_status(pool: &SqlitePool, status: &str) -> anyhow::Result<Vec<ZyraActionRow>> {
+pub async fn list_by_status(pool: &DbPool, status: &str) -> anyhow::Result<Vec<ZyraActionRow>> {
     let rows: Vec<(
         Uuid,
         String,
@@ -50,7 +50,7 @@ pub async fn list_by_status(pool: &SqlitePool, status: &str) -> anyhow::Result<V
         String,
         String,
         DateTime<Utc>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, source, action_type, label, review, risk, object_ref, status, requested_by,
                     strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
              FROM ai_actions WHERE status = ? ORDER BY created_at DESC LIMIT 100",
@@ -90,11 +90,11 @@ fn map_row(
 }
 
 pub async fn create_action(
-    pool: &SqlitePool,
+    pool: &DbPool,
     body: &CreateActionBody,
     requested_by: &str,
 ) -> anyhow::Result<ZyraActionRow> {
-    let id: Uuid = sqlx::query_scalar(
+    let id: Uuid = crate::db::query_scalar(
         "INSERT INTO ai_actions (id, source, action_type, label, review, risk, object_ref, requested_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(uuid::Uuid::new_v4())
@@ -116,7 +116,7 @@ pub async fn create_action(
         .ok_or_else(|| anyhow::anyhow!("action missing"))
 }
 
-pub async fn get_action(pool: &SqlitePool, id: Uuid) -> anyhow::Result<Option<ZyraActionRow>> {
+pub async fn get_action(pool: &DbPool, id: Uuid) -> anyhow::Result<Option<ZyraActionRow>> {
     let row: Option<(
         Uuid,
         String,
@@ -128,7 +128,7 @@ pub async fn get_action(pool: &SqlitePool, id: Uuid) -> anyhow::Result<Option<Zy
         String,
         String,
         DateTime<Utc>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, source, action_type, label, review, risk, object_ref, status, requested_by,
                     strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
              FROM ai_actions WHERE id = ?",
@@ -172,7 +172,7 @@ pub async fn approve_and_execute(
             ));
         }
     }
-    let updated = sqlx::query(
+    let updated = crate::db::query(
         "UPDATE ai_actions SET status = 'approved', approved_by = ? WHERE id = ? AND status = 'pending'",
     )
     .bind(&actor.username)
@@ -423,7 +423,7 @@ pub async fn approve_and_execute(
                 .and_then(|v| v.as_str())
                 .and_then(|s| Uuid::parse_str(s).ok())
                 .ok_or_else(|| anyhow::anyhow!("vm_id missing"))?;
-            let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .fetch_optional(&state.pool)
                 .await?;
@@ -476,13 +476,13 @@ pub async fn approve_and_execute(
     match &result {
         Ok(msg) => {
             let mut tx = state.pool.begin().await?;
-            sqlx::query(
+            crate::db::query(
                 "UPDATE ai_actions SET status = 'executed', executed_at = datetime('now') WHERE id = ?",
             )
             .bind(id)
             .execute(&mut *tx)
             .await?;
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail) VALUES (?, ?, ?, ?, ?, ?)",
             )
             .bind(Uuid::new_v4())
@@ -500,7 +500,7 @@ pub async fn approve_and_execute(
             state.emit_event("audit", format!("{} zyra.action.execute", actor.username));
         }
         Err(_) => {
-            sqlx::query("UPDATE ai_actions SET status = 'failed' WHERE id = ?")
+            crate::db::query("UPDATE ai_actions SET status = 'failed' WHERE id = ?")
                 .bind(id)
                 .execute(&state.pool)
                 .await?;
@@ -509,8 +509,8 @@ pub async fn approve_and_execute(
     result
 }
 
-pub async fn reject(pool: &SqlitePool, id: Uuid, actor: &str) -> anyhow::Result<bool> {
-    let r = sqlx::query(
+pub async fn reject(pool: &DbPool, id: Uuid, actor: &str) -> anyhow::Result<bool> {
+    let r = crate::db::query(
         "UPDATE ai_actions SET status = 'rejected', approved_by = ? WHERE id = ? AND status = 'pending'",
     )
     .bind(actor)
@@ -520,10 +520,10 @@ pub async fn reject(pool: &SqlitePool, id: Uuid, actor: &str) -> anyhow::Result<
     Ok(r.rows_affected() > 0)
 }
 
-pub async fn approval_hub(pool: &SqlitePool) -> anyhow::Result<serde_json::Value> {
+pub async fn approval_hub(pool: &DbPool) -> anyhow::Result<serde_json::Value> {
     let zyra = list_pending(pool).await?;
     let firewall_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM firewall_approvals WHERE status = 'pending'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM firewall_approvals WHERE status = 'pending'")
             .fetch_one(pool)
             .await
             .unwrap_or(0);

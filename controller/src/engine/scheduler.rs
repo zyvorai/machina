@@ -24,7 +24,7 @@ pub fn spawn(state: AppState) {
 }
 
 async fn run_due(state: &AppState) -> anyhow::Result<()> {
-    let due: Vec<(Uuid, Uuid, String, bool)> = sqlx::query_as(
+    let due: Vec<(Uuid, Uuid, String, bool)> = crate::db::query_as(
         "SELECT id, host_id, action, evacuate FROM maintenance_schedules
          WHERE status = 'pending' AND run_at <= datetime('now') LIMIT 100",
     )
@@ -47,7 +47,7 @@ async fn run_due(state: &AppState) -> anyhow::Result<()> {
         .await
         {
             Ok(_) => {
-                sqlx::query("UPDATE maintenance_schedules SET status = 'queued' WHERE id = ?")
+                crate::db::query("UPDATE maintenance_schedules SET status = 'queued' WHERE id = ?")
                     .bind(id)
                     .execute(&state.pool)
                     .await?;
@@ -70,7 +70,7 @@ mod tests {
     async fn seed_schedule(state: &AppState, run_at_offset: &str) -> (Uuid, Uuid) {
         let host_id = seed_host(&state.pool, Uuid::from_u128(20)).await;
         let sched_id = Uuid::from_u128(21);
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO maintenance_schedules (id, host_id, action, evacuate, run_at, status)
              VALUES (?, ?, 'enter', 1, datetime('now', ?), 'pending')",
         )
@@ -84,7 +84,7 @@ mod tests {
     }
 
     async fn schedule_status(state: &AppState, id: Uuid) -> String {
-        sqlx::query_scalar("SELECT status FROM maintenance_schedules WHERE id = ?")
+        crate::db::query_scalar("SELECT status FROM maintenance_schedules WHERE id = ?")
             .bind(id)
             .fetch_one(&state.pool)
             .await
@@ -92,7 +92,7 @@ mod tests {
     }
 
     async fn maintenance_task_count(state: &AppState, host_id: Uuid) -> i64 {
-        sqlx::query_scalar(
+        crate::db::query_scalar(
             "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'host.maintenance'",
         )
         .bind(host_id)

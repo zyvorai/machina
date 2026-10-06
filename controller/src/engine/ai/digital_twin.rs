@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,11 +69,11 @@ pub struct SimulateResult {
     pub results: Vec<SimulatedImpact>,
 }
 
-pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<DigitalTwinGraph> {
+pub async fn build_graph(pool: &DbPool) -> anyhow::Result<DigitalTwinGraph> {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
-    let cluster_name: String = sqlx::query_scalar("SELECT name FROM clusters LIMIT 1")
+    let cluster_name: String = crate::db::query_scalar("SELECT name FROM clusters LIMIT 1")
         .fetch_one(pool)
         .await
         .unwrap_or_else(|_| "default".into());
@@ -85,7 +85,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<DigitalTwinGraph> 
     });
 
     let hosts: Vec<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, hostname, state FROM hosts ORDER BY hostname")
+        crate::db::query_as("SELECT id, hostname, state FROM hosts ORDER BY hostname")
             .fetch_all(pool)
             .await?;
     for (hid, name, st) in &hosts {
@@ -104,7 +104,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<DigitalTwinGraph> 
     }
 
     let vms: Vec<(Uuid, String, Option<Uuid>, String)> =
-        sqlx::query_as("SELECT id, name, host_id, observed_state FROM vms ORDER BY name LIMIT 200")
+        crate::db::query_as("SELECT id, name, host_id, observed_state FROM vms ORDER BY name LIMIT 200")
             .fetch_all(pool)
             .await?;
     for (vid, name, host_id, st) in vms {
@@ -125,7 +125,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<DigitalTwinGraph> 
     }
 
     let pools: Vec<(Uuid, String)> =
-        sqlx::query_as("SELECT id, name FROM storage_pools ORDER BY name")
+        crate::db::query_as("SELECT id, name FROM storage_pools ORDER BY name")
             .fetch_all(pool)
             .await?;
     for (pid, name) in pools {
@@ -144,7 +144,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<DigitalTwinGraph> 
     }
 
     let networks: Vec<(Uuid, String)> =
-        sqlx::query_as("SELECT id, name FROM networks ORDER BY name")
+        crate::db::query_as("SELECT id, name FROM networks ORDER BY name")
             .fetch_all(pool)
             .await?;
     for (nid, name) in networks {
@@ -163,7 +163,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<DigitalTwinGraph> 
     }
 
     let segments: Vec<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, name, tier FROM network_segments ORDER BY name")
+        crate::db::query_as("SELECT id, name, tier FROM network_segments ORDER BY name")
             .fetch_all(pool)
             .await
             .unwrap_or_default();
@@ -213,7 +213,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<DigitalTwinGraph> 
 }
 
 pub async fn analyze_impact(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: &ImpactRequest,
 ) -> anyhow::Result<ImpactAnalysis> {
     let action = req.action.to_lowercase();
@@ -258,17 +258,17 @@ pub async fn analyze_impact(
 }
 
 async fn storage_shutdown_impact(
-    pool: &SqlitePool,
+    pool: &DbPool,
     target: &str,
 ) -> anyhow::Result<ImpactAnalysis> {
     let pool_id = resolve_storage(pool, target).await?;
     let (name, capacity_gib, used_gib): (String, i64, i64) =
-        sqlx::query_as("SELECT name, capacity_gib, used_gib FROM storage_pools WHERE id = ?")
+        crate::db::query_as("SELECT name, capacity_gib, used_gib FROM storage_pools WHERE id = ?")
             .bind(pool_id)
             .fetch_one(pool)
             .await?;
 
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
@@ -308,20 +308,20 @@ async fn storage_shutdown_impact(
     })
 }
 
-async fn resolve_storage(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_storage(pool: &DbPool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM storage_pools WHERE name = ?")
+    let id: Option<Uuid> = crate::db::query_scalar("SELECT id FROM storage_pools WHERE name = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
     id.ok_or_else(|| anyhow::anyhow!("storage pool not found: {target}"))
 }
 
-async fn host_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn host_shutdown_impact(pool: &DbPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let host_id = resolve_host(pool, target).await?;
-    let vms: Vec<(Uuid, String, String)> = sqlx::query_as(
+    let vms: Vec<(Uuid, String, String)> = crate::db::query_as(
         "SELECT id, name, observed_state FROM vms WHERE host_id = ? ORDER BY name LIMIT 500",
     )
     .bind(host_id)
@@ -333,7 +333,7 @@ async fn host_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result
 
     let mut affected_apps = Vec::new();
     for (vid, name, _) in &vms {
-        let apps: Vec<String> = sqlx::query_scalar(
+        let apps: Vec<String> = crate::db::query_scalar(
             "SELECT ag.name FROM application_group_vms agv
              JOIN application_groups ag ON ag.id = agv.group_id
              WHERE agv.vm_id = ?",
@@ -350,7 +350,7 @@ async fn host_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result
         let _ = name;
     }
 
-    let host_name: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
+    let host_name: String = crate::db::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;
@@ -394,15 +394,15 @@ async fn host_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result
     })
 }
 
-async fn vm_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn vm_shutdown_impact(pool: &DbPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let vm_id = resolve_vm(pool, target).await?;
     let (name, host_id, state): (String, Option<Uuid>, String) =
-        sqlx::query_as("SELECT name, host_id, observed_state FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, host_id, observed_state FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_one(pool)
             .await?;
 
-    let apps: Vec<String> = sqlx::query_scalar(
+    let apps: Vec<String> = crate::db::query_scalar(
         "SELECT ag.name FROM application_group_vms agv
          JOIN application_groups ag ON ag.id = agv.group_id
          WHERE agv.vm_id = ?",
@@ -413,7 +413,7 @@ async fn vm_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<I
     .unwrap_or_default();
 
     let host_name = if let Some(h) = host_id {
-        sqlx::query_scalar::<_, String>("SELECT hostname FROM hosts WHERE id = ?")
+        crate::db::query_scalar::<_, String>("SELECT hostname FROM hosts WHERE id = ?")
             .bind(h)
             .fetch_optional(pool)
             .await?
@@ -446,14 +446,14 @@ async fn vm_shutdown_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<I
     })
 }
 
-async fn host_migrate_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn host_migrate_impact(pool: &DbPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let host_id = resolve_host(pool, target).await?;
-    let host_name: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
+    let host_name: String = crate::db::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;
 
-    let vms: Vec<(Uuid, String, String)> = sqlx::query_as(
+    let vms: Vec<(Uuid, String, String)> = crate::db::query_as(
         "SELECT id, name, observed_state FROM vms WHERE host_id = ? ORDER BY name LIMIT 500",
     )
     .bind(host_id)
@@ -517,14 +517,14 @@ async fn host_migrate_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<
     })
 }
 
-async fn network_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn network_isolate_impact(pool: &DbPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let network_id = resolve_network(pool, target).await?;
-    let net_name: String = sqlx::query_scalar("SELECT name FROM networks WHERE id = ?")
+    let net_name: String = crate::db::query_scalar("SELECT name FROM networks WHERE id = ?")
         .bind(network_id)
         .fetch_one(pool)
         .await?;
 
-    let vms: Vec<String> = sqlx::query_scalar(
+    let vms: Vec<String> = crate::db::query_scalar(
         "SELECT DISTINCT v.name FROM network_reservations nr
          JOIN vms v ON v.id = nr.vm_id
          WHERE nr.network_id = ? ORDER BY v.name",
@@ -571,15 +571,15 @@ async fn network_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Resu
     })
 }
 
-async fn segment_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn segment_isolate_impact(pool: &DbPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let segment_id = resolve_segment(pool, target).await?;
     let (name, east_west): (String, String) =
-        sqlx::query_as("SELECT name, east_west_default FROM network_segments WHERE id = ?")
+        crate::db::query_as("SELECT name, east_west_default FROM network_segments WHERE id = ?")
             .bind(segment_id)
             .fetch_one(pool)
             .await?;
 
-    let vms: Vec<String> = sqlx::query_scalar(
+    let vms: Vec<String> = crate::db::query_scalar(
         "SELECT DISTINCT v.name FROM network_reservations nr
          JOIN networks n ON n.id = nr.network_id
          JOIN vms v ON v.id = nr.vm_id
@@ -591,7 +591,7 @@ async fn segment_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Resu
     .unwrap_or_default();
 
     let network_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM networks WHERE segment_id = ?")
+        crate::db::query_scalar("SELECT COUNT(*) FROM networks WHERE segment_id = ?")
             .bind(segment_id)
             .fetch_one(pool)
             .await?;
@@ -634,7 +634,7 @@ async fn segment_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Resu
     })
 }
 
-async fn switch_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Result<ImpactAnalysis> {
+async fn switch_isolate_impact(pool: &DbPool, target: &str) -> anyhow::Result<ImpactAnalysis> {
     let switch_id = target.strip_prefix("switch-").unwrap_or(target);
     // Escape LIKE wildcards in the user-supplied switch id: an unescaped `%`/`_`
     // (e.g. `switch-%`) would match every host's LLDP cache and report the entire
@@ -643,7 +643,7 @@ async fn switch_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Resul
         .replace('\\', "\\\\")
         .replace('%', "\\%")
         .replace('_', "\\_");
-    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT c.host_id, h.hostname
          FROM host_lldp_cache c
          JOIN hosts h ON h.id = c.host_id
@@ -665,7 +665,7 @@ async fn switch_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Resul
         let sql = format!(
             "SELECT name FROM vms WHERE host_id IN ({placeholders}) ORDER BY name LIMIT 50"
         );
-        let mut q = sqlx::query_scalar::<_, String>(&sql);
+        let mut q = crate::db::query_scalar::<_, String>(&sql);
         for (id, _) in &rows {
             q = q.bind(id);
         }
@@ -707,44 +707,44 @@ async fn switch_isolate_impact(pool: &SqlitePool, target: &str) -> anyhow::Resul
     })
 }
 
-async fn resolve_segment(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_segment(pool: &DbPool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM network_segments WHERE name = ?")
+    let id: Option<Uuid> = crate::db::query_scalar("SELECT id FROM network_segments WHERE name = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
     id.ok_or_else(|| anyhow::anyhow!("segment not found: {target}"))
 }
 
-async fn resolve_network(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_network(pool: &DbPool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM networks WHERE name = ?")
+    let id: Option<Uuid> = crate::db::query_scalar("SELECT id FROM networks WHERE name = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
     id.ok_or_else(|| anyhow::anyhow!("network not found: {target}"))
 }
 
-async fn resolve_host(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_host(pool: &DbPool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM hosts WHERE hostname = ?")
+    let id: Option<Uuid> = crate::db::query_scalar("SELECT id FROM hosts WHERE hostname = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
     id.ok_or_else(|| anyhow::anyhow!("host not found: {target}"))
 }
 
-async fn resolve_vm(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
+async fn resolve_vm(pool: &DbPool, target: &str) -> anyhow::Result<Uuid> {
     if let Ok(id) = Uuid::parse_str(target) {
         return Ok(id);
     }
-    let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM vms WHERE name = ?")
+    let id: Option<Uuid> = crate::db::query_scalar("SELECT id FROM vms WHERE name = ?")
         .bind(target)
         .fetch_optional(pool)
         .await?;
@@ -752,7 +752,7 @@ async fn resolve_vm(pool: &SqlitePool, target: &str) -> anyhow::Result<Uuid> {
 }
 
 pub async fn simulate_batch(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: &SimulateRequest,
 ) -> anyhow::Result<SimulateResult> {
     let mut results = Vec::new();
@@ -767,7 +767,7 @@ pub async fn simulate_batch(
         let storage_unavailable_gib =
             if scenario.target_kind == "storage" || !impact.storage_risks.is_empty() {
                 let used: i64 =
-                    sqlx::query_scalar("SELECT COALESCE(SUM(used_gib), 0) FROM storage_pools")
+                    crate::db::query_scalar("SELECT COALESCE(SUM(used_gib), 0) FROM storage_pools")
                         .fetch_one(pool)
                         .await
                         .unwrap_or(0);

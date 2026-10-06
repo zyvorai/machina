@@ -78,12 +78,12 @@ pub(crate) fn validate_pool(b: &CreatePool) -> Result<(), String> {
 pub async fn create_pool(State(state): State<AppState>, Extension(actor): Extension<AuthUser>, Json(b): Json<CreatePool>) -> Result<Json<PoolRow>, ApiError> {
     require_admin(&actor)?;
     validate_pool(&b).map_err(ApiError::bad_request)?;
-    let host: Option<String> = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?").bind(b.host_id).fetch_optional(&state.pool).await?;
+    let host: Option<String> = crate::db::query_scalar("SELECT hostname FROM hosts WHERE id = ?").bind(b.host_id).fetch_optional(&state.pool).await?;
     if host.is_none() {
         return Err(ApiError::bad_request("no such host"));
     }
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO eip_pools (id, name, cidr, host_id, interface) VALUES (?, ?, ?, ?, ?)")
+    crate::db::query("INSERT INTO eip_pools (id, name, cidr, host_id, interface) VALUES (?, ?, ?, ?, ?)")
         .bind(id)
         .bind(&b.name)
         .bind(&b.cidr)
@@ -100,17 +100,17 @@ pub async fn create_pool(State(state): State<AppState>, Extension(actor): Extens
 
 pub async fn list_pools(State(state): State<AppState>, Extension(actor): Extension<AuthUser>) -> Result<Json<Vec<PoolRow>>, ApiError> {
     require_operator(&actor)?;
-    Ok(Json(sqlx::query_as("SELECT id, name, cidr, host_id, interface FROM eip_pools ORDER BY name").fetch_all(&state.pool).await?))
+    Ok(Json(crate::db::query_as("SELECT id, name, cidr, host_id, interface FROM eip_pools ORDER BY name").fetch_all(&state.pool).await?))
 }
 
 pub async fn delete_pool(State(state): State<AppState>, Extension(actor): Extension<AuthUser>, Path(id): Path<Uuid>) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    let used: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM elastic_ips WHERE pool_id = ?").bind(id).fetch_one(&state.pool).await?;
+    let used: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM elastic_ips WHERE pool_id = ?").bind(id).fetch_one(&state.pool).await?;
     if used > 0 {
         return Err(ApiError::conflict(format!("{used} address(es) are still allocated from this pool"), "release them first"));
     }
-    let host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM eip_pools WHERE id = ?").bind(id).fetch_optional(&state.pool).await?;
-    let r = sqlx::query("DELETE FROM eip_pools WHERE id = ?").bind(id).execute(&state.pool).await?;
+    let host: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM eip_pools WHERE id = ?").bind(id).fetch_optional(&state.pool).await?;
+    let r = crate::db::query("DELETE FROM eip_pools WHERE id = ?").bind(id).execute(&state.pool).await?;
     if r.rows_affected() == 0 {
         return Err(ApiError::not_found("pool not found"));
     }
@@ -134,18 +134,18 @@ pub async fn allocate(State(state): State<AppState>, Extension(actor): Extension
     require_operator(&actor)?;
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let pools: Vec<PoolRow> = match &b.pool {
-        Some(n) => sqlx::query_as("SELECT id, name, cidr, host_id, interface FROM eip_pools WHERE name = ?").bind(n).fetch_all(&mut *tx).await?,
-        None => sqlx::query_as("SELECT id, name, cidr, host_id, interface FROM eip_pools ORDER BY name").fetch_all(&mut *tx).await?,
+        Some(n) => crate::db::query_as("SELECT id, name, cidr, host_id, interface FROM eip_pools WHERE name = ?").bind(n).fetch_all(&mut *tx).await?,
+        None => crate::db::query_as("SELECT id, name, cidr, host_id, interface FROM eip_pools ORDER BY name").fetch_all(&mut *tx).await?,
     };
     let pool = match pools.as_slice() {
         [] => return Err(ApiError::bad_request("no elastic IP pool is defined")),
         [p] => p,
         _ => return Err(ApiError::bad_request("several pools exist; name one with `pool`")),
     };
-    let used: HashSet<String> = sqlx::query_scalar("SELECT address FROM elastic_ips WHERE pool_id = ?").bind(pool.id).fetch_all(&mut *tx).await?.into_iter().collect();
+    let used: HashSet<String> = crate::db::query_scalar("SELECT address FROM elastic_ips WHERE pool_id = ?").bind(pool.id).fetch_all(&mut *tx).await?.into_iter().collect();
     let address = next_free(&pool.cidr, &used).ok_or_else(|| ApiError::conflict("the pool has no free address", "release one or add a pool"))?;
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO elastic_ips (id, pool_id, address, allocated_by) VALUES (?, ?, ?, ?)")
+    crate::db::query("INSERT INTO elastic_ips (id, pool_id, address, allocated_by) VALUES (?, ?, ?, ?)")
         .bind(id)
         .bind(pool.id)
         .bind(&address)
@@ -158,24 +158,24 @@ pub async fn allocate(State(state): State<AppState>, Extension(actor): Extension
 
 pub async fn list(State(state): State<AppState>, Extension(actor): Extension<AuthUser>) -> Result<Json<Vec<EipRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows: Vec<EipRow> = sqlx::query_as(&format!("{EIP_SELECT} ORDER BY address")).fetch_all(&state.pool).await?;
+    let rows: Vec<EipRow> = crate::db::query_as(&format!("{EIP_SELECT} ORDER BY address")).fetch_all(&state.pool).await?;
     Ok(Json(rows.into_iter().map(with_id).collect()))
 }
 
 /// An elastic IP by UUID, `eipalloc-…` id or address.
-pub(crate) async fn find(pool: &sqlx::SqlitePool, reference: &str) -> Result<EipRow, ApiError> {
+pub(crate) async fn find(pool: &crate::db::DbPool, reference: &str) -> Result<EipRow, ApiError> {
     let row: Option<EipRow> = if let Ok(u) = Uuid::parse_str(reference) {
-        sqlx::query_as(&format!("{EIP_SELECT} WHERE id = ?")).bind(u).fetch_optional(pool).await?
+        crate::db::query_as(&format!("{EIP_SELECT} WHERE id = ?")).bind(u).fetch_optional(pool).await?
     } else if let Some(hex) = reference.strip_prefix("eipalloc-") {
-        sqlx::query_as(&format!("{EIP_SELECT} WHERE lower(hex(id)) LIKE ?")).bind(format!("{}%", hex.to_ascii_lowercase())).fetch_optional(pool).await?
+        crate::db::query_as(&format!("{EIP_SELECT} WHERE lower(hex(id)) LIKE ?")).bind(format!("{}%", hex.to_ascii_lowercase())).fetch_optional(pool).await?
     } else {
-        sqlx::query_as(&format!("{EIP_SELECT} WHERE address = ?")).bind(reference).fetch_optional(pool).await?
+        crate::db::query_as(&format!("{EIP_SELECT} WHERE address = ?")).bind(reference).fetch_optional(pool).await?
     };
     row.map(with_id).ok_or_else(|| ApiError::not_found("elastic IP not found"))
 }
 
-async fn host_of(pool: &sqlx::SqlitePool, eip: &EipRow) -> Result<Uuid, ApiError> {
-    Ok(sqlx::query_scalar("SELECT host_id FROM eip_pools WHERE id = ?").bind(eip.pool_id).fetch_one(pool).await?)
+async fn host_of(pool: &crate::db::DbPool, eip: &EipRow) -> Result<Uuid, ApiError> {
+    Ok(crate::db::query_scalar("SELECT host_id FROM eip_pools WHERE id = ?").bind(eip.pool_id).fetch_one(pool).await?)
 }
 
 async fn applied(state: &AppState, host: Uuid, mut r: EipRow) -> EipRow {
@@ -199,7 +199,7 @@ pub async fn associate(State(state): State<AppState>, Extension(actor): Extensio
     let eip = find(&state.pool, &reference).await?;
     let host = host_of(&state.pool, &eip).await?;
     let vm: Option<(Option<Uuid>, Option<String>, Option<String>)> =
-        sqlx::query_as("SELECT host_id, guest_ip, guest_ips FROM vms WHERE id = ?").bind(b.vm_id).fetch_optional(&state.pool).await?;
+        crate::db::query_as("SELECT host_id, guest_ip, guest_ips FROM vms WHERE id = ?").bind(b.vm_id).fetch_optional(&state.pool).await?;
     let (vm_host, ip, ips) = vm.ok_or_else(|| ApiError::not_found("instance not found"))?;
     if vm_host != Some(host) {
         return Err(ApiError::conflict("the instance is not on the host that holds this pool", "elastic IPs are host-local"));
@@ -209,15 +209,15 @@ pub async fn associate(State(state): State<AppState>, Extension(actor): Extensio
         return Err(ApiError::conflict("the instance has no known address yet", "wait for its DHCP lease or guest agent"));
     }
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
-    let current: Option<Uuid> = sqlx::query_scalar("SELECT vm_id FROM elastic_ips WHERE id = ?").bind(eip.id).fetch_one(&mut *tx).await?;
+    let current: Option<Uuid> = crate::db::query_scalar("SELECT vm_id FROM elastic_ips WHERE id = ?").bind(eip.id).fetch_one(&mut *tx).await?;
     if current.is_some() && current != Some(b.vm_id) {
         return Err(ApiError::conflict("the address is already associated with another instance", "disassociate it first"));
     }
-    let other: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM elastic_ips WHERE vm_id = ? AND id <> ?").bind(b.vm_id).bind(eip.id).fetch_one(&mut *tx).await?;
+    let other: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM elastic_ips WHERE vm_id = ? AND id <> ?").bind(b.vm_id).bind(eip.id).fetch_one(&mut *tx).await?;
     if other > 0 {
         return Err(ApiError::conflict("the instance already has an elastic IP", "an instance has at most one"));
     }
-    sqlx::query("UPDATE elastic_ips SET vm_id = ?, associated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(b.vm_id).bind(eip.id).execute(&mut *tx).await?;
+    crate::db::query("UPDATE elastic_ips SET vm_id = ?, associated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(b.vm_id).bind(eip.id).execute(&mut *tx).await?;
     tx.commit().await?;
     let row = find(&state.pool, &eip.id.to_string()).await?;
     Ok(Json(applied(&state, host, row).await))
@@ -227,7 +227,7 @@ pub async fn disassociate(State(state): State<AppState>, Extension(actor): Exten
     require_operator(&actor)?;
     let eip = find(&state.pool, &reference).await?;
     let host = host_of(&state.pool, &eip).await?;
-    sqlx::query("UPDATE elastic_ips SET vm_id = NULL, associated_at = NULL WHERE id = ?").bind(eip.id).execute(&state.pool).await?;
+    crate::db::query("UPDATE elastic_ips SET vm_id = NULL, associated_at = NULL WHERE id = ?").bind(eip.id).execute(&state.pool).await?;
     let row = find(&state.pool, &eip.id.to_string()).await?;
     Ok(Json(applied(&state, host, row).await))
 }
@@ -238,7 +238,7 @@ pub async fn release(State(state): State<AppState>, Extension(actor): Extension<
     if eip.vm_id.is_some() {
         return Err(ApiError::conflict("the address is still associated with an instance", "disassociate it first"));
     }
-    sqlx::query("DELETE FROM elastic_ips WHERE id = ?").bind(eip.id).execute(&state.pool).await?;
+    crate::db::query("DELETE FROM elastic_ips WHERE id = ?").bind(eip.id).execute(&state.pool).await?;
     Ok(Json(serde_json::json!({ "released": eip.address })))
 }
 

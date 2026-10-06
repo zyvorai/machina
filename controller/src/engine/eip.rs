@@ -7,7 +7,7 @@ use std::net::Ipv4Addr;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -41,8 +41,8 @@ pub fn in_cidr(cidr: &str, address: &str) -> bool {
     u32::from(net) & mask == u32::from(ip) & mask
 }
 
-pub async fn entries_for_host(pool: &SqlitePool, host: Uuid) -> anyhow::Result<Vec<Value>> {
-    let rows: Vec<(String, Option<String>, Option<String>, String)> = sqlx::query_as(
+pub async fn entries_for_host(pool: &DbPool, host: Uuid) -> anyhow::Result<Vec<Value>> {
+    let rows: Vec<(String, Option<String>, Option<String>, String)> = crate::db::query_as(
         "SELECT e.address, v.guest_ip, v.guest_ips, p.interface FROM elastic_ips e \
          JOIN eip_pools p ON p.id = e.pool_id JOIN vms v ON v.id = e.vm_id WHERE p.host_id = ? AND e.vm_id IS NOT NULL",
     )
@@ -61,8 +61,8 @@ pub async fn entries_for_host(pool: &SqlitePool, host: Uuid) -> anyhow::Result<V
 }
 
 /// Push the current table to one host's agent.
-pub async fn push_host(pool: &SqlitePool, host: Uuid) -> anyhow::Result<()> {
-    let addr: Option<String> = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ? AND state = 'online'").bind(host).fetch_optional(pool).await?;
+pub async fn push_host(pool: &DbPool, host: Uuid) -> anyhow::Result<()> {
+    let addr: Option<String> = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ? AND state = 'online'").bind(host).fetch_optional(pool).await?;
     let addr = addr.ok_or_else(|| anyhow::anyhow!("the host is not online"))?;
     let entries = entries_for_host(pool, host).await?;
     let mut client = crate::agent_client::connect(&addr).await?;
@@ -79,7 +79,7 @@ pub fn spawn(state: AppState) {
             if !state.leader.is_leader() {
                 continue;
             }
-            let hosts: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT host_id FROM eip_pools").fetch_all(&state.pool).await.unwrap_or_default();
+            let hosts: Vec<Uuid> = crate::db::query_scalar("SELECT DISTINCT host_id FROM eip_pools").fetch_all(&state.pool).await.unwrap_or_default();
             for h in hosts {
                 if let Err(e) = push_host(&state.pool, h).await {
                     tracing::debug!(host = %h, "elastic ip sync: {e:#}");

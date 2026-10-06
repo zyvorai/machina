@@ -177,30 +177,30 @@ fn instance_item(i: &Inst) -> String {
 
 async fn load_instances(state: &AppState) -> Result<Vec<Inst>, Ec2Error> {
     type Row = (Uuid, String, String, i64, i64, Option<String>, Option<String>, String);
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows: Vec<Row> = crate::db::query_as(
         "SELECT v.id, v.name, v.observed_state, v.vcpus, v.memory_mib, f.name, v.guest_ip, v.created_at \
          FROM vms v LEFT JOIN flavors f ON f.id = v.flavor_id WHERE COALESCE(v.inventory_source, 'libvirt') != 'kubevirt' ORDER BY v.name",
     )
     .fetch_all(&state.pool)
     .await?;
     // Terminated instances stay visible for an hour; then the tombstone and its tags go.
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "DELETE FROM resource_tags WHERE resource_type = 'vm' AND resource_id IN \
          (SELECT lower(hex(id)) FROM terminated_instances WHERE terminated_at < datetime('now', '-1 hour'))",
     )
     .execute(&state.pool)
     .await;
-    let _ = sqlx::query("DELETE FROM terminated_instances WHERE terminated_at < datetime('now', '-1 hour')")
+    let _ = crate::db::query("DELETE FROM terminated_instances WHERE terminated_at < datetime('now', '-1 hour')")
         .execute(&state.pool)
         .await;
-    let gone: Vec<(Uuid, String, Option<String>, i64, i64, String)> = sqlx::query_as(
+    let gone: Vec<(Uuid, String, Option<String>, i64, i64, String)> = crate::db::query_as(
         "SELECT id, name, instance_type, vcpus, memory_mib, terminated_at FROM terminated_instances \
          WHERE id NOT IN (SELECT id FROM vms) ORDER BY name",
     )
     .fetch_all(&state.pool)
     .await?;
     let tags: Vec<(String, String, String)> =
-        sqlx::query_as("SELECT resource_id, key, value FROM resource_tags WHERE resource_type = 'vm'")
+        crate::db::query_as("SELECT resource_id, key, value FROM resource_tags WHERE resource_type = 'vm'")
             .fetch_all(&state.pool)
             .await?;
     let mut out: Vec<Inst> = rows
@@ -253,7 +253,7 @@ async fn describe_instances(state: &AppState, p: &BTreeMap<String, String>) -> R
 
 async fn describe_instance_types(state: &AppState, p: &BTreeMap<String, String>) -> Result<String, Ec2Error> {
     let wanted = indexed(p, "InstanceType");
-    let rows: Vec<(String, i64, i64)> = sqlx::query_as("SELECT name, vcpus, memory_mib FROM flavors ORDER BY name")
+    let rows: Vec<(String, i64, i64)> = crate::db::query_as("SELECT name, vcpus, memory_mib FROM flavors ORDER BY name")
         .fetch_all(&state.pool)
         .await?;
     let items: String = rows
@@ -272,7 +272,7 @@ async fn describe_instance_types(state: &AppState, p: &BTreeMap<String, String>)
 async fn describe_tags(state: &AppState, p: &BTreeMap<String, String>) -> Result<String, Ec2Error> {
     let filters = parse_filters(p);
     let rows: Vec<(String, String, String, String)> =
-        sqlx::query_as("SELECT resource_type, resource_id, key, value FROM resource_tags ORDER BY resource_type, resource_id, key")
+        crate::db::query_as("SELECT resource_type, resource_id, key, value FROM resource_tags ORDER BY resource_type, resource_id, key")
             .fetch_all(&state.pool)
             .await?;
     let mut items = String::new();
@@ -301,7 +301,7 @@ async fn describe_tags(state: &AppState, p: &BTreeMap<String, String>) -> Result
 
 async fn describe_key_pairs(state: &AppState, p: &BTreeMap<String, String>) -> Result<String, Ec2Error> {
     let wanted = indexed(p, "KeyName");
-    let rows: Vec<(Uuid, String, String)> = sqlx::query_as("SELECT id, name, fingerprint FROM keypairs ORDER BY name")
+    let rows: Vec<(Uuid, String, String)> = crate::db::query_as("SELECT id, name, fingerprint FROM keypairs ORDER BY name")
         .fetch_all(&state.pool)
         .await?;
     let items: String = rows
@@ -384,7 +384,7 @@ pub(crate) fn decode_user_data(b64: &str) -> Result<String, String> {
 
 async fn wait_for_vm(state: &AppState, name: &str) -> Option<Uuid> {
     for _ in 0..40 {
-        if let Ok(Some(id)) = sqlx::query_scalar::<_, Uuid>("SELECT id FROM vms WHERE name = ?")
+        if let Ok(Some(id)) = crate::db::query_scalar::<_, Uuid>("SELECT id FROM vms WHERE name = ?")
             .bind(name)
             .fetch_optional(&state.pool)
             .await
@@ -407,7 +407,7 @@ async fn run_instances(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, 
     let template_ref: String = if let Some((Kind::Image, hex)) = crate::resource_ids::parse(&image) {
         let mut conn = state.pool.acquire().await?;
         match crate::resource_ids::resolve(&mut conn, Kind::Image, &hex).await? {
-            crate::resource_ids::Lookup::Found(id) => sqlx::query_scalar("SELECT name FROM templates WHERE id = ?").bind(id).fetch_one(&mut *conn).await?,
+            crate::resource_ids::Lookup::Found(id) => crate::db::query_scalar("SELECT name FROM templates WHERE id = ?").bind(id).fetch_one(&mut *conn).await?,
             _ => return Err(Ec2Error::bad("InvalidAMIID.NotFound", format!("The image id '{image}' does not exist"))),
         }
     } else {
@@ -415,7 +415,7 @@ async fn run_instances(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, 
     };
     let flavor: Option<Uuid> = match p.get("InstanceType") {
         Some(t) => Some(
-            sqlx::query_scalar("SELECT id FROM flavors WHERE name = ?")
+            crate::db::query_scalar("SELECT id FROM flavors WHERE name = ?")
                 .bind(t)
                 .fetch_optional(&state.pool)
                 .await?
@@ -544,7 +544,7 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
     if auth.service != "ec2" {
         return Err(denied("the credential scope must be for the ec2 service"));
     }
-    let key: Option<(String, String, String, bool)> = sqlx::query_as(
+    let key: Option<(String, String, String, bool)> = crate::db::query_as(
         "SELECT secret_enc, username, role, revoked FROM ec2_access_keys WHERE access_key_id = ?",
     )
     .bind(&auth.access_key)
@@ -569,7 +569,7 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
         }
         Err(_) => return Err(denied("the request signature we calculated does not match the signature you provided")),
     }
-    let _ = sqlx::query("UPDATE ec2_access_keys SET last_used_at = CURRENT_TIMESTAMP WHERE access_key_id = ?")
+    let _ = crate::db::query("UPDATE ec2_access_keys SET last_used_at = CURRENT_TIMESTAMP WHERE access_key_id = ?")
         .bind(&auth.access_key)
         .execute(&state.pool)
         .await;
@@ -652,7 +652,7 @@ pub async fn create_access_key(
     let id = format!("MCAK{}", random_string(16).to_ascii_uppercase());
     let secret = random_string(40);
     let stored = crate::engine::ai::crypto::store_api_key(&secret).map_err(|e| ApiError::internal(e.to_string()))?;
-    sqlx::query("INSERT INTO ec2_access_keys (access_key_id, secret_enc, username, role, description) VALUES (?, ?, ?, ?, ?)")
+    crate::db::query("INSERT INTO ec2_access_keys (access_key_id, secret_enc, username, role, description) VALUES (?, ?, ?, ?, ?)")
         .bind(&id)
         .bind(stored)
         .bind(&actor.username)
@@ -674,7 +674,7 @@ pub async fn list_access_keys(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<AccessKeyRow>>, ApiError> {
     require_admin(&actor)?;
-    let rows: Vec<(String, String, String, String, String, Option<String>, bool)> = sqlx::query_as(
+    let rows: Vec<(String, String, String, String, String, Option<String>, bool)> = crate::db::query_as(
         "SELECT access_key_id, username, role, description, created_at, last_used_at, revoked FROM ec2_access_keys ORDER BY created_at DESC",
     )
     .fetch_all(&state.pool)
@@ -694,7 +694,7 @@ pub async fn revoke_access_key(
     Path(id): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    let r = sqlx::query("UPDATE ec2_access_keys SET revoked = 1 WHERE access_key_id = ?")
+    let r = crate::db::query("UPDATE ec2_access_keys SET revoked = 1 WHERE access_key_id = ?")
         .bind(&id)
         .execute(&state.pool)
         .await?;

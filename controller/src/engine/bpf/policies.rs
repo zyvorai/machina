@@ -8,7 +8,7 @@
 use futures_util::future::join_all;
 use machina_bpf::api::{Mode, Policy, Request, Scope, POLICY_KINDS};
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::{call, online_hosts, HostRef, OWNED_PREFIX};
 use crate::agent_client;
@@ -71,8 +71,8 @@ pub fn to_json(p: &StoredPolicy) -> Value {
     })
 }
 
-pub async fn list(pool: &SqlitePool) -> anyhow::Result<Vec<StoredPolicy>> {
-    let rows: Vec<Row> = sqlx::query_as(&format!(
+pub async fn list(pool: &DbPool) -> anyhow::Result<Vec<StoredPolicy>> {
+    let rows: Vec<Row> = crate::db::query_as(&format!(
         "SELECT {COLUMNS} FROM bpf_policies ORDER BY created_at, id"
     ))
     .fetch_all(pool)
@@ -80,9 +80,9 @@ pub async fn list(pool: &SqlitePool) -> anyhow::Result<Vec<StoredPolicy>> {
     Ok(rows.into_iter().map(from_row).collect())
 }
 
-pub async fn get(pool: &SqlitePool, id: &str) -> anyhow::Result<Option<StoredPolicy>> {
+pub async fn get(pool: &DbPool, id: &str) -> anyhow::Result<Option<StoredPolicy>> {
     let row: Option<Row> =
-        sqlx::query_as(&format!("SELECT {COLUMNS} FROM bpf_policies WHERE id = ?"))
+        crate::db::query_as(&format!("SELECT {COLUMNS} FROM bpf_policies WHERE id = ?"))
             .bind(id)
             .fetch_optional(pool)
             .await?;
@@ -157,7 +157,7 @@ async fn sync_one(host: &HostRef, desired: &[Policy]) -> anyhow::Result<Value> {
 }
 
 /// Reconcile every online host (or just `only`) with the stored policy set.
-pub async fn sync_hosts(pool: &SqlitePool, only: Option<&[String]>) -> anyhow::Result<Vec<Value>> {
+pub async fn sync_hosts(pool: &DbPool, only: Option<&[String]>) -> anyhow::Result<Vec<Value>> {
     let all = list(pool).await?;
     let hosts: Vec<HostRef> = online_hosts(pool)
         .await
@@ -186,7 +186,7 @@ fn ok_count(results: &[Value]) -> usize {
 }
 
 async fn set_mode(
-    pool: &SqlitePool,
+    pool: &DbPool,
     host_ids: &[String],
     mode: Mode,
     lease_secs: Option<u64>,
@@ -217,7 +217,7 @@ async fn set_mode(
 // /zeus-security/enforcement/* operations
 // ---------------------------------------------------------------------------
 
-pub async fn enforcement_status(pool: &SqlitePool) -> Value {
+pub async fn enforcement_status(pool: &DbPool) -> Value {
     let policies = list(pool).await.unwrap_or_default();
     let statuses = super::host_statuses(pool).await;
     let mut applied: Vec<String> = policies
@@ -275,7 +275,7 @@ pub async fn enforcement_status(pool: &SqlitePool) -> Value {
     })
 }
 
-pub async fn enforcement_policies(pool: &SqlitePool) -> Value {
+pub async fn enforcement_policies(pool: &DbPool) -> Value {
     let policies = list(pool).await.unwrap_or_default();
     json!({
         "policies": policies.iter().map(to_json).collect::<Vec<_>>(),
@@ -284,7 +284,7 @@ pub async fn enforcement_policies(pool: &SqlitePool) -> Value {
     })
 }
 
-pub async fn create_enforcement_policy(pool: &SqlitePool, body: &Value) -> Value {
+pub async fn create_enforcement_policy(pool: &DbPool, body: &Value) -> Value {
     let s = |k: &str, d: &str| {
         body.get(k)
             .and_then(|v| v.as_str())
@@ -316,7 +316,7 @@ pub async fn create_enforcement_policy(pool: &SqlitePool, body: &Value) -> Value
         return json!({ "ok": false, "error": e, "api_mode": "native" });
     }
     let id = uuid::Uuid::new_v4().to_string();
-    let res = sqlx::query(
+    let res = crate::db::query(
         "INSERT INTO bpf_policies (id, name, kind, match_value, enabled, scope, description)
          VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -347,7 +347,7 @@ pub async fn create_enforcement_policy(pool: &SqlitePool, body: &Value) -> Value
 }
 
 pub async fn apply_enforcement_policy(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     policy_id: &str,
     host_ids: &[String],
@@ -375,7 +375,7 @@ pub async fn apply_enforcement_policy(
             applied.push(h.clone());
         }
     }
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "UPDATE bpf_policies SET applied_hosts = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     )
     .bind(serde_json::to_string(&applied).unwrap_or_else(|_| "[]".into()))
@@ -402,7 +402,7 @@ pub async fn apply_enforcement_policy(
     })
 }
 
-pub async fn patch_enforcement_policy(pool: &SqlitePool, policy_id: &str, body: &Value) -> Value {
+pub async fn patch_enforcement_policy(pool: &DbPool, policy_id: &str, body: &Value) -> Value {
     let Some(mut p) = get(pool, policy_id).await.ok().flatten() else {
         return json!({ "ok": false, "error": "policy not found", "api_mode": "native" });
     };
@@ -418,7 +418,7 @@ pub async fn patch_enforcement_policy(pool: &SqlitePool, policy_id: &str, body: 
     if let Err(e) = validate(&p.kind, &p.match_value, &p.scope) {
         return json!({ "ok": false, "error": e, "api_mode": "native" });
     }
-    if let Err(e) = sqlx::query(
+    if let Err(e) = crate::db::query(
         "UPDATE bpf_policies SET enabled = ?, match_value = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     )
     .bind(p.enabled)
@@ -439,11 +439,11 @@ pub async fn patch_enforcement_policy(pool: &SqlitePool, policy_id: &str, body: 
     })
 }
 
-pub async fn delete_enforcement_policy(pool: &SqlitePool, policy_id: &str) -> Value {
+pub async fn delete_enforcement_policy(pool: &DbPool, policy_id: &str) -> Value {
     let Some(p) = get(pool, policy_id).await.ok().flatten() else {
         return json!({ "ok": false, "error": "policy not found", "api_mode": "native" });
     };
-    if let Err(e) = sqlx::query("DELETE FROM bpf_policies WHERE id = ?")
+    if let Err(e) = crate::db::query("DELETE FROM bpf_policies WHERE id = ?")
         .bind(policy_id)
         .execute(pool)
         .await
@@ -460,7 +460,7 @@ pub async fn delete_enforcement_policy(pool: &SqlitePool, policy_id: &str) -> Va
 }
 
 /// The compiled per-host form of a policy (replaces the TracingPolicy view).
-pub async fn policy_document(pool: &SqlitePool, policy_id: &str) -> Value {
+pub async fn policy_document(pool: &DbPool, policy_id: &str) -> Value {
     let Some(p) = get(pool, policy_id).await.ok().flatten() else {
         return json!({ "ok": false, "error": "policy not found", "api_mode": "native" });
     };
@@ -478,7 +478,7 @@ pub async fn policy_document(pool: &SqlitePool, policy_id: &str) -> Value {
     })
 }
 
-pub async fn attach_enforcement(pool: &SqlitePool, cfg: &ControllerConfig) -> Value {
+pub async fn attach_enforcement(pool: &DbPool, cfg: &ControllerConfig) -> Value {
     let modes = set_mode(pool, &[], Mode::Enforce, Some(cfg.bpf_enforce_lease_secs)).await;
     let ok = !modes.is_empty() && ok_count(&modes) == modes.len();
     json!({
@@ -490,7 +490,7 @@ pub async fn attach_enforcement(pool: &SqlitePool, cfg: &ControllerConfig) -> Va
     })
 }
 
-pub async fn detach_enforcement(pool: &SqlitePool) -> Value {
+pub async fn detach_enforcement(pool: &DbPool) -> Value {
     let modes = set_mode(pool, &[], Mode::Observe, None).await;
     json!({
         "ok": ok_count(&modes) == modes.len(),
@@ -501,7 +501,7 @@ pub async fn detach_enforcement(pool: &SqlitePool) -> Value {
     })
 }
 
-pub async fn sync_enforcement(pool: &SqlitePool) -> Value {
+pub async fn sync_enforcement(pool: &DbPool) -> Value {
     let sync = sync_hosts(pool, None).await.unwrap_or_default();
     json!({
         "ok": ok_count(&sync) == sync.len(),
@@ -511,7 +511,7 @@ pub async fn sync_enforcement(pool: &SqlitePool) -> Value {
     })
 }
 
-pub async fn host_enforcement(pool: &SqlitePool, host_id: &str) -> Value {
+pub async fn host_enforcement(pool: &DbPool, host_id: &str) -> Value {
     let all = list(pool).await.unwrap_or_default();
     let desired: Vec<Value> = all
         .iter()

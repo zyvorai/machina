@@ -11,7 +11,7 @@ use std::time::Duration;
 use std::collections::BTreeMap;
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::state::AppState;
 
@@ -37,9 +37,9 @@ pub fn spawn(state: AppState) {
     });
 }
 
-pub async fn record_samples(pool: &SqlitePool) -> anyhow::Result<()> {
+pub async fn record_samples(pool: &DbPool) -> anyhow::Result<()> {
     let now = chrono::Utc::now().timestamp();
-    sqlx::query(
+    crate::db::query(
         "INSERT OR IGNORE INTO metric_samples (subject, metric, ts, value)
          SELECT v.id, 'mem_ratio', ?, m.memory_used_mib * 1.0 / v.memory_mib
          FROM vms v JOIN vm_metrics m ON m.vm_id = v.id
@@ -48,7 +48,7 @@ pub async fn record_samples(pool: &SqlitePool) -> anyhow::Result<()> {
     .bind(now)
     .execute(pool)
     .await?;
-    sqlx::query(
+    crate::db::query(
         "INSERT OR IGNORE INTO metric_samples (subject, metric, ts, value)
          SELECT v.id, 'cpu_percent', ?, m.cpu_percent
          FROM vms v JOIN vm_metrics m ON m.vm_id = v.id
@@ -57,7 +57,7 @@ pub async fn record_samples(pool: &SqlitePool) -> anyhow::Result<()> {
     .bind(now)
     .execute(pool)
     .await?;
-    sqlx::query(
+    crate::db::query(
         "INSERT OR IGNORE INTO metric_samples (subject, metric, ts, value)
          SELECT 'pool:' || id, 'pool_used_ratio', ?, used_gib * 1.0 / capacity_gib
          FROM storage_pools WHERE capacity_gib > 0",
@@ -65,7 +65,7 @@ pub async fn record_samples(pool: &SqlitePool) -> anyhow::Result<()> {
     .bind(now)
     .execute(pool)
     .await?;
-    sqlx::query(
+    crate::db::query(
         "INSERT OR IGNORE INTO metric_samples (subject, metric, ts, value)
          SELECT v.id, 'disk_iops', ?, m.disk_read_iops + m.disk_write_iops
          FROM vms v JOIN vm_metrics m ON m.vm_id = v.id
@@ -74,7 +74,7 @@ pub async fn record_samples(pool: &SqlitePool) -> anyhow::Result<()> {
     .bind(now)
     .execute(pool)
     .await?;
-    sqlx::query(
+    crate::db::query(
         "INSERT OR IGNORE INTO metric_samples (subject, metric, ts, value)
          SELECT v.id, 'net_bytes', ?, m.net_bytes
          FROM vms v JOIN vm_metrics m ON m.vm_id = v.id
@@ -85,7 +85,7 @@ pub async fn record_samples(pool: &SqlitePool) -> anyhow::Result<()> {
     .await?;
     // A group's demand: CPU percent summed over its running members, in
     // "instances' worth" once divided by the target.
-    sqlx::query(
+    crate::db::query(
         "INSERT OR IGNORE INTO metric_samples (subject, metric, ts, value)
          SELECT 'group:' || lower(hex(gm.group_id)), 'cpu_sum', ?, SUM(m.cpu_percent)
          FROM cloud_group_members gm
@@ -97,7 +97,7 @@ pub async fn record_samples(pool: &SqlitePool) -> anyhow::Result<()> {
     .bind(now)
     .execute(pool)
     .await?;
-    sqlx::query("DELETE FROM metric_samples WHERE ts < ?")
+    crate::db::query("DELETE FROM metric_samples WHERE ts < ?")
         .bind(now - KEEP_SECS)
         .execute(pool)
         .await?;
@@ -118,10 +118,10 @@ pub fn group_subject(id: uuid::Uuid) -> String {
 
 /// Rolls the last two days of raw samples up into `metric_hourly` (complete
 /// hours only), turning the cumulative `net_bytes` counter into `net_bps`.
-pub async fn rollup_hourly(pool: &SqlitePool, now: i64) -> anyhow::Result<()> {
+pub async fn rollup_hourly(pool: &DbPool, now: i64) -> anyhow::Result<()> {
     let end = now / HOUR * HOUR;
     let start = end - 2 * DAY;
-    sqlx::query(
+    crate::db::query(
         "INSERT OR REPLACE INTO metric_hourly (subject, metric, hour, avg, max, n)
          SELECT subject, metric, ts / 3600 * 3600 AS h, AVG(value), MAX(value), COUNT(*)
          FROM metric_samples
@@ -132,7 +132,7 @@ pub async fn rollup_hourly(pool: &SqlitePool, now: i64) -> anyhow::Result<()> {
     .bind(end)
     .execute(pool)
     .await?;
-    sqlx::query(
+    crate::db::query(
         "INSERT OR REPLACE INTO metric_hourly (subject, metric, hour, avg, max, n)
          SELECT subject, 'net_bps', ts / 3600 * 3600 AS h,
                 max(0.0, (MAX(value) - MIN(value)) * 1.0 / max(1, MAX(ts) - MIN(ts))),
@@ -147,7 +147,7 @@ pub async fn rollup_hourly(pool: &SqlitePool, now: i64) -> anyhow::Result<()> {
     .bind(end)
     .execute(pool)
     .await?;
-    sqlx::query("DELETE FROM metric_hourly WHERE hour < ?")
+    crate::db::query("DELETE FROM metric_hourly WHERE hour < ?")
         .bind(now - KEEP_HOURLY_SECS)
         .execute(pool)
         .await?;
@@ -156,14 +156,14 @@ pub async fn rollup_hourly(pool: &SqlitePool, now: i64) -> anyhow::Result<()> {
 
 /// Hourly history for one subject+metric: hour start -> average (or peak).
 pub async fn hourly(
-    pool: &SqlitePool,
+    pool: &DbPool,
     subject: &str,
     metric: &str,
     days: i64,
     peak: bool,
 ) -> anyhow::Result<BTreeMap<i64, f64>> {
     let since = chrono::Utc::now().timestamp() - days * DAY;
-    let rows: Vec<(i64, f64, f64)> = sqlx::query_as(
+    let rows: Vec<(i64, f64, f64)> = crate::db::query_as(
         "SELECT hour, avg, max FROM metric_hourly WHERE subject = ? AND metric = ? AND hour >= ?",
     )
     .bind(subject)
@@ -179,14 +179,14 @@ pub async fn hourly(
 
 /// [`hourly`] for a VM, whose samples are keyed by its id as stored in `vms`.
 pub async fn hourly_vm(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm: uuid::Uuid,
     metric: &str,
     days: i64,
     peak: bool,
 ) -> anyhow::Result<BTreeMap<i64, f64>> {
     let since = chrono::Utc::now().timestamp() - days * DAY;
-    let rows: Vec<(i64, f64, f64)> = sqlx::query_as(
+    let rows: Vec<(i64, f64, f64)> = crate::db::query_as(
         "SELECT hour, avg, max FROM metric_hourly WHERE subject = ? AND metric = ? AND hour >= ?",
     )
     .bind(vm)
@@ -248,7 +248,7 @@ pub fn seasonal_peak(hourly: &BTreeMap<i64, f64>, now: i64, hours: i64) -> Optio
 
 /// Expected peak demand (summed CPU percent) for a scaling group over the
 /// next hour, from the hourly peaks of its history.
-pub async fn group_demand_peak(pool: &SqlitePool, group: uuid::Uuid) -> Option<f64> {
+pub async fn group_demand_peak(pool: &DbPool, group: uuid::Uuid) -> Option<f64> {
     let h = hourly(pool, &group_subject(group), "cpu_sum", 35, true)
         .await
         .ok()?;
@@ -257,13 +257,13 @@ pub async fn group_demand_peak(pool: &SqlitePool, group: uuid::Uuid) -> Option<f
 
 /// Recent samples for one subject+metric as (epoch seconds, value), oldest first.
 pub async fn series(
-    pool: &SqlitePool,
+    pool: &DbPool,
     subject: &str,
     metric: &str,
     window_hours: i64,
 ) -> anyhow::Result<Vec<(i64, f64)>> {
     let since = chrono::Utc::now().timestamp() - window_hours * 3600;
-    Ok(sqlx::query_as(
+    Ok(crate::db::query_as(
         "SELECT ts, value FROM metric_samples WHERE subject = ? AND metric = ? AND ts >= ? ORDER BY ts",
     )
     .bind(subject)

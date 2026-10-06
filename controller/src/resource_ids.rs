@@ -8,7 +8,7 @@
 //! resource scans the resource's table for that hex prefix; tables are small and a clash among 68 bits is negligible, but an
 //! ambiguous prefix is reported rather than guessed.
 
-use sqlx::SqliteConnection;
+use crate::db::DbConn;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -134,11 +134,11 @@ pub enum Lookup {
 
 /// Resolve an EC2-style id of a known kind to the resource's UUID.
 pub async fn resolve(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     kind: Kind,
     hex_prefix: &str,
 ) -> Result<Lookup, sqlx::Error> {
-    let rows: Vec<Uuid> = sqlx::query_scalar(&format!(
+    let rows: Vec<Uuid> = crate::db::query_scalar(&format!(
         "SELECT id FROM {} WHERE lower(hex(id)) LIKE ? LIMIT 2",
         kind.table()
     ))
@@ -154,13 +154,13 @@ pub async fn resolve(
 
 /// Accept either a UUID or an EC2-style id for `kind`, and return the UUID if the resource exists.
 pub async fn locate(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     kind: Kind,
     id: &str,
 ) -> Result<Lookup, sqlx::Error> {
     if let Ok(u) = Uuid::parse_str(id) {
         let found: Option<i64> =
-            sqlx::query_scalar(&format!("SELECT 1 FROM {} WHERE id = ?", kind.table()))
+            crate::db::query_scalar(&format!("SELECT 1 FROM {} WHERE id = ?", kind.table()))
                 .bind(u)
                 .fetch_optional(&mut *conn)
                 .await?;

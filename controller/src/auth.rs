@@ -43,12 +43,12 @@ pub fn require_operator(user: &AuthUser) -> Result<(), crate::api::ApiError> {
 const DUMMY_BCRYPT_HASH: &str = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
 pub async fn authenticate(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     username: &str,
     password: &str,
 ) -> anyhow::Result<Option<AuthUser>> {
     let row: Option<(String, String)> =
-        sqlx::query_as("SELECT password_hash, role FROM users WHERE username = ?")
+        crate::db::query_as("SELECT password_hash, role FROM users WHERE username = ?")
             .bind(username)
             .fetch_optional(pool)
             .await?;

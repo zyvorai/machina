@@ -52,7 +52,7 @@ pub async fn list_project_quotas(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ProjectQuotaRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, ProjectQuotaRow>(
+    let rows = crate::db::query_as::<_, ProjectQuotaRow>(
         "SELECT project, max_vms, max_vcpu, max_memory_mib, max_storage_gib FROM project_quotas ORDER BY project LIMIT 500",
     )
     .fetch_all(&state.pool)

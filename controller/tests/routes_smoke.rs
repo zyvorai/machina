@@ -23,11 +23,11 @@ async fn build_app() -> axum::Router {
     build_app_with_pool().await.0
 }
 
-async fn build_app_with_pool() -> (axum::Router, sqlx::SqlitePool) {
+async fn build_app_with_pool() -> (axum::Router, machina_controller::db::DbPool) {
     // Disable JWT auth so routes respond without a token.
     std::env::set_var("MACHINA_SKIP_AUTH", "1");
 
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let pool = machina_controller::db::DbPool::connect("sqlite::memory:").await.unwrap();
     db::migrate(&pool).await.expect("migrate failed");
     db::ensure_bootstrap(&pool, "admin", "admin")
         .await
@@ -82,7 +82,7 @@ async fn delete(app: &axum::Router, path: &str) -> StatusCode {
 
 #[tokio::test]
 async fn migrate_creates_all_tables() {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let pool = machina_controller::db::DbPool::connect("sqlite::memory:").await.unwrap();
     db::migrate(&pool).await.expect("migrate must succeed");
 
     let tables = [
@@ -112,7 +112,7 @@ async fn migrate_creates_all_tables() {
         "maintenance_schedules",
     ];
     for table in tables {
-        let count: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+        let count: i64 = machina_controller::db::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
             .fetch_one(&pool)
             .await
             .unwrap_or_else(|e| panic!("table '{table}' missing or unreadable: {e}"));
@@ -122,32 +122,32 @@ async fn migrate_creates_all_tables() {
 
 #[tokio::test]
 async fn bootstrap_creates_default_rows() {
-    let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+    let pool = machina_controller::db::DbPool::connect("sqlite::memory:").await.unwrap();
     db::migrate(&pool).await.unwrap();
     db::ensure_bootstrap(&pool, "admin", "s3cret")
         .await
         .unwrap();
 
-    let clusters: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clusters")
+    let clusters: i64 = machina_controller::db::query_scalar("SELECT COUNT(*) FROM clusters")
         .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(clusters, 1, "should have exactly 1 default cluster");
 
-    let users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+    let users: i64 = machina_controller::db::query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(users, 1, "should have exactly 1 admin user");
 
-    let hosts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+    let hosts: i64 = machina_controller::db::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(&pool)
         .await
         .unwrap();
     assert_eq!(hosts, 1, "should have exactly 1 default localhost host");
 
     // Verify UUID PKs are 16-byte BLOBs, not text strings.
-    let bad_ids: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clusters WHERE length(id) != 16")
+    let bad_ids: i64 = machina_controller::db::query_scalar("SELECT COUNT(*) FROM clusters WHERE length(id) != 16")
         .fetch_one(&pool)
         .await
         .unwrap();
@@ -233,9 +233,9 @@ async fn smoke_post_routes() {
 
 // ─── vm_schedules route coverage ────────────────────────────────────────────
 
-async fn seed_vm(pool: &sqlx::SqlitePool) -> uuid::Uuid {
+async fn seed_vm(pool: &machina_controller::db::DbPool) -> uuid::Uuid {
     let vm_id = uuid::Uuid::new_v4();
-    sqlx::query("INSERT INTO vms (id, name, spec_json) VALUES (?, ?, '{}')")
+    machina_controller::db::query("INSERT INTO vms (id, name, spec_json) VALUES (?, ?, '{}')")
         .bind(vm_id)
         .bind("smoke-vm")
         .execute(pool)

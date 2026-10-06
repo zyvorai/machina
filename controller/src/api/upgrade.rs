@@ -51,7 +51,7 @@ pub async fn upgrade_matrix(
     State(state): State<AppState>,
 ) -> Result<Json<AgentUpgradeMatrix>, ApiError> {
     let controller = env!("CARGO_PKG_VERSION");
-    let rows: Vec<(Uuid, String, String, bool, i64)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, bool, i64)> = crate::db::query_as(
         "SELECT h.id, h.hostname, COALESCE(h.agent_version, ''), COALESCE(h.maintenance_mode, FALSE),
                 (SELECT COUNT(*) FROM vms v WHERE v.host_id = h.id AND v.observed_state = 'running')
          FROM hosts h ORDER BY h.hostname",
@@ -101,7 +101,7 @@ pub async fn upgrade_host_agent(
     Json(body): Json<UpgradeHostBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_admin(&actor)?;
-    let (maintenance, running): (bool, i64) = sqlx::query_as(
+    let (maintenance, running): (bool, i64) = crate::db::query_as(
         "SELECT COALESCE(h.maintenance_mode, FALSE),
                 (SELECT COUNT(*) FROM vms v WHERE v.host_id = h.id AND v.observed_state = 'running')
          FROM hosts h WHERE h.id = ?",

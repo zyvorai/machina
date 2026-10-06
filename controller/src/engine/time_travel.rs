@@ -14,7 +14,7 @@ use machina_agent::pb::{
     RestorePointMergeRequest, RestorePointRewindRequest,
 };
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -116,9 +116,9 @@ pub fn prune_plan(oldest_first: &[Uuid], keep: usize, pinned: bool) -> Vec<(Uuid
         .collect()
 }
 
-async fn vm_host(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<(String, Uuid)> {
+async fn vm_host(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<(String, Uuid)> {
     let (name, host): (String, Option<Uuid>) =
-        sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(pool)
             .await?
@@ -134,8 +134,8 @@ async fn client_for(state: &AppState, host: Uuid) -> anyhow::Result<agent_client
     agent_client::connect(&addr).await
 }
 
-async fn points(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Vec<(Uuid, Vec<LayerRef>)>> {
-    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+async fn points(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<Vec<(Uuid, Vec<LayerRef>)>> {
+    let rows: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT id, layers FROM vm_restore_points WHERE vm_id = ? ORDER BY created_at, rowid",
     )
     .bind(vm_id)
@@ -147,8 +147,8 @@ async fn points(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Vec<(Uuid, Vec
         .collect())
 }
 
-async fn has_forks(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<bool> {
-    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vm_forks WHERE source_vm_id = ?")
+async fn has_forks(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<bool> {
+    let n: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vm_forks WHERE source_vm_id = ?")
         .bind(vm_id)
         .fetch_one(pool)
         .await?;
@@ -156,7 +156,7 @@ async fn has_forks(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<bool> {
 }
 
 async fn insert_point(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Uuid,
     label: &str,
     kind: &str,
@@ -165,7 +165,7 @@ async fn insert_point(
     quiesced: bool,
 ) -> anyhow::Result<Uuid> {
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vm_restore_points (id, vm_id, label, kind, note, layers, quiesced)
          VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -184,7 +184,7 @@ async fn insert_point(
 /// Merge away the oldest points beyond the VM's `keep`. Errors stop pruning
 /// (the chain is only longer, never wrong) and are logged.
 async fn prune(state: &AppState, vm_id: Uuid, name: &str, host: Uuid) -> anyhow::Result<usize> {
-    let keep: Option<i64> = sqlx::query_scalar("SELECT restore_point_keep FROM vms WHERE id = ?")
+    let keep: Option<i64> = crate::db::query_scalar("SELECT restore_point_keep FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -234,12 +234,12 @@ async fn prune(state: &AppState, vm_id: Uuid, name: &str, host: Uuid) -> anyhow:
             }
         }
         let mut tx = state.pool.begin().await?;
-        sqlx::query("UPDATE vm_restore_points SET layers = ? WHERE id = ?")
+        crate::db::query("UPDATE vm_restore_points SET layers = ? WHERE id = ?")
             .bind(serde_json::to_string(&base)?)
             .bind(next_id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query("DELETE FROM vm_restore_points WHERE id = ?")
+        crate::db::query("DELETE FROM vm_restore_points WHERE id = ?")
             .bind(drop_id)
             .execute(&mut *tx)
             .await?;
@@ -296,11 +296,11 @@ pub async fn task_restore_point(state: &AppState, msg: &TaskMessage) -> anyhow::
 
 /// Forks pinned to points created after `point`, which a rewind would break.
 pub async fn forks_after(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Uuid,
     point: Uuid,
 ) -> anyhow::Result<Vec<String>> {
-    Ok(sqlx::query_scalar(
+    Ok(crate::db::query_scalar(
         "SELECT COALESCE(v.name, f.fork_vm_id) FROM vm_forks f
          JOIN vm_restore_points p ON p.id = f.restore_point_id
          LEFT JOIN vms v ON v.id = f.fork_vm_id
@@ -350,12 +350,12 @@ pub async fn task_rewind(state: &AppState, msg: &TaskMessage) -> anyhow::Result<
         .into_inner();
     let mut tx = state.pool.begin().await?;
     for id in &newer {
-        sqlx::query("DELETE FROM vm_restore_points WHERE id = ?")
+        crate::db::query("DELETE FROM vm_restore_points WHERE id = ?")
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET desired_state = 'stopped', slept_at = NULL
          WHERE id = ? AND desired_state = 'sleeping'",
     )
@@ -403,7 +403,7 @@ pub async fn task_fork(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()
         i64,
         Option<String>,
         String,
-    ) = sqlx::query_as(
+    ) = crate::db::query_as(
         "SELECT name, host_id, cluster_id, spec_json, vcpus, memory_mib, project, COALESCE(labels, '{}')
          FROM vms WHERE id = ?",
     )
@@ -416,7 +416,7 @@ pub async fn task_fork(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()
         .ok_or_else(|| anyhow::anyhow!("vm {vm_id} has no host"))?;
     let layers = match point {
         Some(p) => {
-            let l: String = sqlx::query_scalar(
+            let l: String = crate::db::query_scalar(
                 "SELECT layers FROM vm_restore_points WHERE id = ? AND vm_id = ?",
             )
             .bind(p)
@@ -430,7 +430,7 @@ pub async fn task_fork(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()
     };
 
     let new_id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vms (id, cluster_id, host_id, name, project, labels, spec_json, desired_state, observed_state, vcpus, memory_mib)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?)",
     )
@@ -469,7 +469,7 @@ pub async fn task_fork(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()
     {
         Ok(r) => r,
         Err(e) => {
-            let _ = sqlx::query("DELETE FROM vms WHERE id = ? AND observed_state = 'creating'")
+            let _ = crate::db::query("DELETE FROM vms WHERE id = ? AND observed_state = 'creating'")
                 .bind(new_id)
                 .execute(&state.pool)
                 .await;
@@ -493,14 +493,14 @@ pub async fn task_fork(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()
         }
     };
     let mut tx = state.pool.begin().await?;
-    sqlx::query("UPDATE vms SET uuid = ?, observed_state = ?, desired_state = ? WHERE id = ?")
+    crate::db::query("UPDATE vms SET uuid = ?, observed_state = ?, desired_state = ? WHERE id = ?")
         .bind(&resp.uuid)
         .bind(if resp.running { "running" } else { "shutoff" })
         .bind(if resp.running { "running" } else { "stopped" })
         .bind(new_id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vm_forks (fork_vm_id, source_vm_id, restore_point_id, memory, isolated)
          VALUES (?, ?, ?, ?, ?)",
     )
@@ -538,7 +538,7 @@ pub async fn task_detach(state: &AppState, msg: &TaskMessage) -> anyhow::Result<
         })
         .await
         .map_err(|e| anyhow::anyhow!("detach: {}", e.message()))?;
-    sqlx::query("DELETE FROM vm_forks WHERE fork_vm_id = ?")
+    crate::db::query("DELETE FROM vm_forks WHERE fork_vm_id = ?")
         .bind(vm_id)
         .execute(&state.pool)
         .await?;
@@ -557,9 +557,9 @@ fn payload_vm(msg: &TaskMessage) -> anyhow::Result<Uuid> {
         .ok_or_else(|| anyhow::anyhow!("vm_id missing"))
 }
 
-pub async fn view(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Option<TimeTravelView>> {
+pub async fn view(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<Option<TimeTravelView>> {
     let row: Option<(Option<i64>, Option<i64>)> =
-        sqlx::query_as("SELECT restore_point_minutes, restore_point_keep FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT restore_point_minutes, restore_point_keep FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(pool)
             .await?;
@@ -567,14 +567,14 @@ pub async fn view(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Option<TimeT
         return Ok(None);
     };
     #[allow(clippy::type_complexity)]
-    let rows: Vec<(Uuid, String, String, Option<String>, bool, String, String)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, Option<String>, bool, String, String)> = crate::db::query_as(
         "SELECT id, label, kind, note, quiesced, created_at, layers FROM vm_restore_points
          WHERE vm_id = ? ORDER BY created_at, rowid",
     )
     .bind(vm_id)
     .fetch_all(pool)
     .await?;
-    let forks: Vec<(Uuid, Option<String>, Option<Uuid>, bool, bool, String)> = sqlx::query_as(
+    let forks: Vec<(Uuid, Option<String>, Option<Uuid>, bool, bool, String)> = crate::db::query_as(
         "SELECT f.fork_vm_id, v.name, f.restore_point_id, f.memory, f.isolated, f.created_at
          FROM vm_forks f LEFT JOIN vms v ON v.id = f.fork_vm_id
          WHERE f.source_vm_id = ? ORDER BY f.created_at",
@@ -582,7 +582,7 @@ pub async fn view(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Option<TimeT
     .bind(vm_id)
     .fetch_all(pool)
     .await?;
-    let fork_of: Option<(Uuid, Option<String>, Option<Uuid>, bool, bool)> = sqlx::query_as(
+    let fork_of: Option<(Uuid, Option<String>, Option<Uuid>, bool, bool)> = crate::db::query_as(
         "SELECT f.source_vm_id, v.name, f.restore_point_id, f.memory, f.isolated
          FROM vm_forks f LEFT JOIN vms v ON v.id = f.source_vm_id WHERE f.fork_vm_id = ?",
     )
@@ -636,8 +636,8 @@ pub async fn view(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Option<TimeT
 }
 
 /// VMs whose newest restore point is older than their interval.
-pub async fn due(pool: &SqlitePool) -> anyhow::Result<Vec<(Uuid, Option<Uuid>)>> {
-    Ok(sqlx::query_as(
+pub async fn due(pool: &DbPool) -> anyhow::Result<Vec<(Uuid, Option<Uuid>)>> {
+    Ok(crate::db::query_as(
         "SELECT v.id, v.host_id FROM vms v
          WHERE COALESCE(v.restore_point_minutes, 0) > 0
            AND v.desired_state = 'running' AND v.observed_state = 'running'
@@ -716,9 +716,9 @@ mod tests {
         assert!(l.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'));
     }
 
-    async fn seed_vm(pool: &SqlitePool, host: Uuid, id: u128, every: Option<i64>) -> Uuid {
+    async fn seed_vm(pool: &DbPool, host: Uuid, id: u128, every: Option<i64>) -> Uuid {
         let vm = Uuid::from_u128(id);
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vms (id, host_id, name, desired_state, observed_state, restore_point_minutes)
              VALUES (?, ?, ?, 'running', 'running', ?)",
         )
@@ -742,7 +742,7 @@ mod tests {
         insert_point(&state.pool, fresh, "rp-x", "scheduled", None, &[], false)
             .await
             .unwrap();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vm_restore_points (id, vm_id, label, kind, layers, created_at)
              VALUES (?, ?, 'rp-old', 'scheduled', '[]', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-20 minutes'))",
         )
@@ -772,7 +772,7 @@ mod tests {
         let mut pts = Vec::new();
         for (i, ago) in [30, 20, 10].iter().enumerate() {
             let id = Uuid::from_u128(100 + i as u128);
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO vm_restore_points (id, vm_id, label, kind, layers, created_at)
                  VALUES (?, ?, ?, 'manual', '[]', strftime('%Y-%m-%dT%H:%M:%fZ', 'now', ?))",
             )
@@ -785,7 +785,7 @@ mod tests {
             .unwrap();
             pts.push(id);
         }
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vm_forks (fork_vm_id, source_vm_id, restore_point_id) VALUES (?, ?, ?)",
         )
         .bind(fork)

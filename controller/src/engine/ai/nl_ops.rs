@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::actions::{self, CreateActionBody};
@@ -43,7 +43,7 @@ pub struct NlOpsPlan {
 }
 
 pub async fn execute(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: &NlOpsRequest,
     actor: &str,
 ) -> anyhow::Result<NlOpsPlan> {
@@ -159,7 +159,7 @@ pub async fn execute(
     // Create VMs — checked after the more specific volume/security-group intents above.
     if ql.contains("create") && (ql.contains("vm") || ql.contains("ubuntu")) {
         let count = extract_count(&ql).unwrap_or(1);
-        let rates: (f64, f64) = sqlx::query_as(
+        let rates: (f64, f64) = crate::db::query_as(
             "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
         )
         .fetch_one(pool)
@@ -214,7 +214,7 @@ pub async fn execute(
                 .replace('\\', "\\\\")
                 .replace('%', "\\%")
                 .replace('_', "\\_");
-            sqlx::query_as(
+            crate::db::query_as(
                 "SELECT v.id, v.name FROM vms v JOIN hosts h ON h.id = v.host_id
                  WHERE h.hostname LIKE ? ESCAPE '\\'",
             )
@@ -222,7 +222,7 @@ pub async fn execute(
             .fetch_all(pool)
             .await?
         } else {
-            sqlx::query_as("SELECT id, name FROM vms WHERE observed_state = 'running' LIMIT 10")
+            crate::db::query_as("SELECT id, name FROM vms WHERE observed_state = 'running' LIMIT 10")
                 .fetch_all(pool)
                 .await?
         };

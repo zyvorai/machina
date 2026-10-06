@@ -11,7 +11,7 @@ use futures_util::future::join_all;
 use machina_bpf::api::{BpfStatus, Request};
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -50,9 +50,9 @@ fn local_host() -> HostRef {
 
 /// Registered hosts (all states). Falls back to the local bpfd socket when
 /// no host is registered and the socket exists.
-pub async fn hosts(pool: &SqlitePool) -> Vec<HostRef> {
+pub async fn hosts(pool: &DbPool) -> Vec<HostRef> {
     let rows: Vec<(Uuid, String, String, String)> =
-        sqlx::query_as("SELECT id, hostname, agent_grpc_addr, state FROM hosts ORDER BY hostname")
+        crate::db::query_as("SELECT id, hostname, agent_grpc_addr, state FROM hosts ORDER BY hostname")
             .fetch_all(pool)
             .await
             .unwrap_or_default();
@@ -71,7 +71,7 @@ pub async fn hosts(pool: &SqlitePool) -> Vec<HostRef> {
     out
 }
 
-pub async fn online_hosts(pool: &SqlitePool) -> Vec<HostRef> {
+pub async fn online_hosts(pool: &DbPool) -> Vec<HostRef> {
     hosts(pool)
         .await
         .into_iter()
@@ -79,7 +79,7 @@ pub async fn online_hosts(pool: &SqlitePool) -> Vec<HostRef> {
         .collect()
 }
 
-pub async fn host(pool: &SqlitePool, host_id: &str) -> Option<HostRef> {
+pub async fn host(pool: &DbPool, host_id: &str) -> Option<HostRef> {
     hosts(pool).await.into_iter().find(|h| h.id == host_id)
 }
 
@@ -92,14 +92,14 @@ pub async fn call(host: &HostRef, req: &Request) -> anyhow::Result<Value> {
 }
 
 /// The same request on every online host, concurrently.
-pub async fn fan_out(pool: &SqlitePool, req: &Request) -> Vec<(HostRef, anyhow::Result<Value>)> {
+pub async fn fan_out(pool: &DbPool, req: &Request) -> Vec<(HostRef, anyhow::Result<Value>)> {
     let hosts = online_hosts(pool).await;
     let results = join_all(hosts.iter().map(|h| call(h, req))).await;
     hosts.into_iter().zip(results).collect()
 }
 
 /// Successful results only, each JSON array item tagged with its host.
-pub async fn fan_out_items(pool: &SqlitePool, req: &Request) -> Vec<Value> {
+pub async fn fan_out_items(pool: &DbPool, req: &Request) -> Vec<Value> {
     let mut out = Vec::new();
     for (host, res) in fan_out(pool, req).await {
         let Ok(Value::Array(items)) = res else {
@@ -125,7 +125,7 @@ pub struct HostBpfStatus {
     pub status: Option<BpfStatus>,
 }
 
-pub async fn host_statuses(pool: &SqlitePool) -> Vec<HostBpfStatus> {
+pub async fn host_statuses(pool: &DbPool) -> Vec<HostBpfStatus> {
     fan_out(pool, &Request::Status)
         .await
         .into_iter()
@@ -158,7 +158,7 @@ pub struct FleetBpfStatus {
     pub summary: String,
 }
 
-pub async fn fleet_status(pool: &SqlitePool) -> FleetBpfStatus {
+pub async fn fleet_status(pool: &DbPool) -> FleetBpfStatus {
     let statuses = host_statuses(pool).await;
     let reachable = statuses.iter().filter(|s| s.reachable).count();
     let enforcing = statuses

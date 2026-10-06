@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -21,14 +21,14 @@ pub struct MigratePrecheckResult {
 }
 
 pub async fn run_migrate_precheck(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Uuid,
     dest_host_id: Uuid,
     live: bool,
 ) -> anyhow::Result<MigratePrecheckResult> {
     let mut checks = Vec::new();
 
-    let vm_row: Option<(String, Option<Uuid>, i64, i32, String)> = sqlx::query_as(
+    let vm_row: Option<(String, Option<Uuid>, i64, i32, String)> = crate::db::query_as(
         "SELECT name, host_id, memory_mib, vcpus, desired_state FROM vms WHERE id = ?",
     )
     .bind(vm_id)
@@ -67,7 +67,7 @@ pub async fn run_migrate_precheck(
         checks.push(pass("different_host", "Destination is a different host"));
     }
 
-    let dest: Option<(String, String, bool, i64, i64, f32)> = sqlx::query_as(
+    let dest: Option<(String, String, bool, i64, i64, f32)> = crate::db::query_as(
         "SELECT hostname, state, maintenance_mode, memory_total_mib, memory_used_mib, cpu_percent
          FROM hosts WHERE id = ?",
     )
@@ -132,7 +132,7 @@ pub async fn run_migrate_precheck(
     }
 
     let dest_uri: Option<String> =
-        sqlx::query_scalar("SELECT COALESCE(NULLIF(libvirt_uri, ''), '') FROM hosts WHERE id = ?")
+        crate::db::query_scalar("SELECT COALESCE(NULLIF(libvirt_uri, ''), '') FROM hosts WHERE id = ?")
             .bind(dest_host_id)
             .fetch_optional(pool)
             .await?;
@@ -169,7 +169,7 @@ pub async fn run_migrate_precheck(
             // string previously made `cpu_compatible` auto-pass (it treats an empty
             // source model as always compatible) — i.e. the exact fail-open bug this
             // function was fixed to close, just one query deeper.
-            match sqlx::query_scalar::<_, String>(
+            match crate::db::query_scalar::<_, String>(
                 "SELECT COALESCE(cpu_model, '') FROM hosts WHERE id = ?",
             )
             .bind(source_host_id)
@@ -177,7 +177,7 @@ pub async fn run_migrate_precheck(
             .await
             {
                 Ok(source_cpu) => {
-                    let matrix: serde_json::Value = sqlx::query_scalar(
+                    let matrix: serde_json::Value = crate::db::query_scalar(
                         "SELECT cpu_compat_matrix FROM clusters ORDER BY created_at LIMIT 1",
                     )
                     .fetch_one(pool)
@@ -270,15 +270,15 @@ pub async fn run_migrate_precheck(
 }
 
 async fn host_addrs_for_precheck(
-    pool: &SqlitePool,
+    pool: &DbPool,
     source_host_id: Uuid,
     dest_host_id: Uuid,
 ) -> anyhow::Result<(String, String, String)> {
-    let source: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+    let source: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(source_host_id)
         .fetch_one(pool)
         .await?;
-    let dest: (String, String) = sqlx::query_as(
+    let dest: (String, String) = crate::db::query_as(
         "SELECT COALESCE(cpu_model, ''), COALESCE(libvirt_version, '') FROM hosts WHERE id = ?",
     )
     .bind(dest_host_id)

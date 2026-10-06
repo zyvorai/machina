@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::api::ApiError;
@@ -113,8 +113,8 @@ pub struct Recommendation {
     pub pending_action: Option<Uuid>,
 }
 
-pub async fn rates(pool: &SqlitePool) -> (f64, f64) {
-    sqlx::query_as(
+pub async fn rates(pool: &DbPool) -> (f64, f64) {
+    crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(pool)
@@ -124,9 +124,9 @@ pub async fn rates(pool: &SqlitePool) -> (f64, f64) {
     .unwrap_or((0.02, 0.005))
 }
 
-pub async fn recommend(pool: &SqlitePool) -> anyhow::Result<Vec<Recommendation>> {
+pub async fn recommend(pool: &DbPool) -> anyhow::Result<Vec<Recommendation>> {
     let (vcpu_rate, gib_rate) = rates(pool).await;
-    let vms: Vec<(Uuid, String, String, i64, i64)> = sqlx::query_as(
+    let vms: Vec<(Uuid, String, String, i64, i64)> = crate::db::query_as(
         "SELECT id, name, COALESCE(project, 'default'), vcpus, memory_mib FROM vms
          WHERE observed_state = 'running' AND vcpus > 0 AND memory_mib > 0
          ORDER BY name LIMIT 500",
@@ -137,7 +137,7 @@ pub async fn recommend(pool: &SqlitePool) -> anyhow::Result<Vec<Recommendation>>
     for (id, name, project, vcpus, memory_mib) in vms {
         // History from before a resize doesn't describe the new size, and a
         // size the guest couldn't take live only shows after its next restart.
-        let resized: i64 = sqlx::query_scalar(
+        let resized: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM ai_actions WHERE action_type = ? AND status = 'executed'
              AND undone_at IS NULL AND executed_at > datetime('now', ?)
              AND json_extract(object_ref, '$.vm_id') = ?",
@@ -169,7 +169,7 @@ pub async fn recommend(pool: &SqlitePool) -> anyhow::Result<Vec<Recommendation>>
         let Some(s) = suggest(vcpus, memory_mib, cpu_p95, mem_p95) else {
             continue;
         };
-        let pending: Option<Uuid> = sqlx::query_scalar(
+        let pending: Option<Uuid> = crate::db::query_scalar(
             "SELECT id FROM ai_actions WHERE action_type = ? AND status = 'pending'
              AND json_extract(object_ref, '$.vm_id') = ? LIMIT 1",
         )
@@ -214,7 +214,7 @@ fn bad_ref(e: impl std::fmt::Display) -> ApiError {
 }
 
 async fn current(state: &AppState, vm: Uuid) -> Result<(String, Option<Uuid>, i64, i64), ApiError> {
-    sqlx::query_as("SELECT name, host_id, vcpus, memory_mib FROM vms WHERE id = ?")
+    crate::db::query_as("SELECT name, host_id, vcpus, memory_mib FROM vms WHERE id = ?")
         .bind(vm)
         .fetch_optional(&state.pool)
         .await?
@@ -373,7 +373,7 @@ mod tests {
         let (state, _rx) = crate::engine::test_support::test_state().await;
         let host = crate::engine::test_support::seed_host(&state.pool, Uuid::from_u128(1)).await;
         let vm = Uuid::from_u128(2);
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vms (id, host_id, name, desired_state, observed_state, vcpus, memory_mib)
              VALUES (?, ?, 'fat', 'running', 'running', 8, 16384)",
         )
@@ -385,7 +385,7 @@ mod tests {
         let now = chrono::Utc::now().timestamp() / 3600 * 3600;
         for h in 1..=80 {
             for (metric, max) in [("cpu_percent", 15.0), ("mem_ratio", 0.2)] {
-                sqlx::query("INSERT INTO metric_hourly (subject, metric, hour, avg, max, n) VALUES (?, ?, ?, ?, ?, 12)")
+                crate::db::query("INSERT INTO metric_hourly (subject, metric, hour, avg, max, n) VALUES (?, ?, ?, ?, ?, 12)")
                     .bind(vm)
                     .bind(metric)
                     .bind(now - h * 3600)
@@ -417,14 +417,14 @@ mod tests {
         let out = execute(&state, &object_ref).await.unwrap();
         assert_eq!(out["task_ids"].as_array().unwrap().len(), 2);
         assert_eq!(check(&state, &object_ref).await.0, "pending");
-        sqlx::query("UPDATE vms SET vcpus = 2, memory_mib = 4352 WHERE id = ?")
+        crate::db::query("UPDATE vms SET vcpus = 2, memory_mib = 4352 WHERE id = ?")
             .bind(vm)
             .execute(&state.pool)
             .await
             .unwrap();
         assert_eq!(check(&state, &object_ref).await.0, "ok");
         undo(&state, &snap).await.unwrap();
-        let back: Vec<(String,)> = sqlx::query_as(
+        let back: Vec<(String,)> = crate::db::query_as(
             "SELECT payload FROM tasks WHERE operation = 'vm.resize' ORDER BY created_at DESC, rowid DESC LIMIT 2",
         )
         .fetch_all(&state.pool)
@@ -436,7 +436,7 @@ mod tests {
             "{joined}"
         );
 
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO ai_actions (id, source, action_type, label, review, risk, object_ref, status, requested_by, executed_at)
              VALUES (?, 'rightsizing', ?, 'r', '', '', ?, 'executed', 't', datetime('now'))",
         )

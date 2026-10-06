@@ -46,7 +46,7 @@ pub async fn list_channels(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ChannelRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, ChannelRow>(
+    let rows = crate::db::query_as::<_, ChannelRow>(
         "SELECT id, name, kind, target, events, enabled, created_at
          FROM notification_channels ORDER BY created_at DESC LIMIT 500",
     )
@@ -89,7 +89,7 @@ pub async fn create_channel(
     let events = body.events.unwrap_or_else(|| vec!["alert.*".to_string()]);
     let events_json = serde_json::to_string(&events).unwrap_or_else(|_| "[\"alert.*\"]".into());
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO notification_channels (id, name, kind, target, events, enabled)
          VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -101,7 +101,7 @@ pub async fn create_channel(
     .bind(body.enabled)
     .execute(&state.pool)
     .await?;
-    let row = sqlx::query_as::<_, ChannelRow>(
+    let row = crate::db::query_as::<_, ChannelRow>(
         "SELECT id, name, kind, target, events, enabled, created_at FROM notification_channels WHERE id = ?",
     )
     .bind(id)
@@ -116,7 +116,7 @@ pub async fn delete_channel(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let deleted = sqlx::query("DELETE FROM notification_channels WHERE id = ?")
+    let deleted = crate::db::query("DELETE FROM notification_channels WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?
@@ -134,7 +134,7 @@ pub async fn test_channel(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let ch = sqlx::query_as::<_, (String, String)>(
+    let ch = crate::db::query_as::<_, (String, String)>(
         "SELECT kind, target FROM notification_channels WHERE id = ?",
     )
     .bind(id)
@@ -143,7 +143,7 @@ pub async fn test_channel(
     let Some((kind, target)) = ch else {
         return Err(ApiError::not_found("channel not found"));
     };
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO channel_deliveries (id, channel_id, kind, target, subject, body, event_kind)
          VALUES (?, ?, ?, ?, ?, ?, 'test')",
     )

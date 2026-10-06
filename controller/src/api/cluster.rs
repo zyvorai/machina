@@ -5,7 +5,7 @@ use axum::extract::State;
 use axum::Extension;
 use axum::Json;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::engine::drs::{self, ClusterSettings, ClusterSettingsPatch};
@@ -52,7 +52,7 @@ pub async fn get_leadership(
     State(state): State<AppState>,
 ) -> Result<Json<LeadershipStatus>, ApiError> {
     let row: (String, chrono::DateTime<chrono::Utc>) =
-        sqlx::query_as("SELECT holder_id, lease_until FROM controller_leadership WHERE id = 1")
+        crate::db::query_as("SELECT holder_id, lease_until FROM controller_leadership WHERE id = 1")
             .fetch_one(&state.pool)
             .await?;
     Ok(Json(LeadershipStatus {
@@ -90,25 +90,25 @@ pub async fn patch_settings(
 }
 
 async fn build_cluster_summary(
-    pool: &SqlitePool,
+    pool: &DbPool,
     include_settings: bool,
 ) -> Result<ClusterSummary, ApiError> {
     let row: (uuid::Uuid, String) =
-        sqlx::query_as("SELECT id, name FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_as("SELECT id, name FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_one(pool)
             .await?;
-    let host_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+    let host_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await?;
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
         .await?;
     let running_vms: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
             .fetch_one(pool)
             .await?;
     let offline_hosts: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
             .fetch_one(pool)
             .await?;
     let settings = if include_settings {
@@ -143,7 +143,7 @@ pub async fn patch_cluster(
 ) -> Result<Json<ClusterSummary>, ApiError> {
     crate::auth::require_admin(&actor)?;
     if let Some(name) = &body.name {
-        sqlx::query("UPDATE clusters SET name = ?")
+        crate::db::query("UPDATE clusters SET name = ?")
             .bind(name)
             .execute(&state.pool)
             .await?;

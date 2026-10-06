@@ -40,7 +40,7 @@ pub async fn list_flavors(
 ) -> Result<Json<Vec<FlavorRow>>, ApiError> {
     require_operator(&actor)?;
     let rows =
-        sqlx::query_as::<_, FlavorRow>(&format!("{FLAVOR_SELECT} ORDER BY memory_mib, vcpus"))
+        crate::db::query_as::<_, FlavorRow>(&format!("{FLAVOR_SELECT} ORDER BY memory_mib, vcpus"))
             .fetch_all(&state.pool)
             .await?;
     Ok(Json(rows))
@@ -52,7 +52,7 @@ pub async fn get_flavor(
     Path(id): Path<Uuid>,
 ) -> Result<Json<FlavorRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, FlavorRow>(&format!("{FLAVOR_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, FlavorRow>(&format!("{FLAVOR_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -95,7 +95,7 @@ pub async fn create_flavor(
         return Err(ApiError::bad_request("disk_gib must be at least 1"));
     }
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO flavors (id, name, vcpus, memory_mib, disk_gib, description, is_public) \
          VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -125,7 +125,7 @@ pub async fn delete_flavor(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    sqlx::query("DELETE FROM flavors WHERE id = ?")
+    crate::db::query("DELETE FROM flavors WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;

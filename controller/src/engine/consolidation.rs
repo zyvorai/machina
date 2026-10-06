@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::api::ApiError;
@@ -136,8 +136,8 @@ pub fn plan(hosts: &[HostLoad], vms: &[VmLoad]) -> Plan {
     out
 }
 
-pub async fn load(pool: &SqlitePool) -> anyhow::Result<(Vec<HostLoad>, Vec<VmLoad>)> {
-    let hosts: Vec<(Uuid, String, i64, i64)> = sqlx::query_as(
+pub async fn load(pool: &DbPool) -> anyhow::Result<(Vec<HostLoad>, Vec<VmLoad>)> {
+    let hosts: Vec<(Uuid, String, i64, i64)> = crate::db::query_as(
         "SELECT id, hostname, memory_total_mib, memory_used_mib FROM hosts
          WHERE state = 'online' AND maintenance_mode = 0 AND schedulable = 1
          ORDER BY hostname",
@@ -153,7 +153,7 @@ pub async fn load(pool: &SqlitePool) -> anyhow::Result<(Vec<HostLoad>, Vec<VmLoa
             memory_used_mib: used,
         })
         .collect();
-    let rows: Vec<(Uuid, String, Uuid, i64)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, Uuid, i64)> = crate::db::query_as(
         "SELECT id, name, host_id, memory_mib FROM vms
          WHERE host_id IS NOT NULL AND observed_state = 'running' AND inventory_source = 'libvirt'",
     )
@@ -178,7 +178,7 @@ pub async fn load(pool: &SqlitePool) -> anyhow::Result<(Vec<HostLoad>, Vec<VmLoa
     Ok((hosts, vms))
 }
 
-pub async fn current(pool: &SqlitePool) -> anyhow::Result<Plan> {
+pub async fn current(pool: &DbPool) -> anyhow::Result<Plan> {
     let (hosts, vms) = load(pool).await?;
     Ok(plan(&hosts, &vms))
 }
@@ -195,7 +195,7 @@ pub async fn execute(state: &AppState, object_ref: &Value) -> Result<Value, ApiE
     let mut queued = Vec::new();
     let mut skipped = Vec::new();
     for m in &r.moves {
-        let host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+        let host: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
             .bind(m.vm_id)
             .fetch_optional(&state.pool)
             .await?
@@ -244,7 +244,7 @@ pub async fn check(state: &AppState, object_ref: &Value) -> (&'static str, Strin
     };
     let mut done = 0;
     for m in &r.moves {
-        let host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+        let host: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
             .bind(m.vm_id)
             .fetch_optional(&state.pool)
             .await

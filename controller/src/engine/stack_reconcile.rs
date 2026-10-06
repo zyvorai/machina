@@ -15,7 +15,7 @@ use crate::state::AppState;
 const TICK: Duration = Duration::from_secs(60);
 
 pub async fn tick(state: &AppState) -> anyhow::Result<usize> {
-    let rows: Vec<(Uuid, bool)> = sqlx::query_as(
+    let rows: Vec<(Uuid, bool)> = crate::db::query_as(
         "SELECT id, auto_heal FROM stacks WHERE status = 'created' ORDER BY created_at",
     )
     .fetch_all(&state.pool)

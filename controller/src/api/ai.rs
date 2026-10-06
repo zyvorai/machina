@@ -60,7 +60,7 @@ pub async fn spotlight(
             "spotlight query too long (max 32768 bytes)",
         ));
     }
-    let online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+    let online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -68,7 +68,7 @@ pub async fn spotlight(
     let q = body.query.trim();
     let mut hits = Vec::new();
     if !q.is_empty() {
-        let vms: Vec<(Uuid, String, String)> = sqlx::query_as(
+        let vms: Vec<(Uuid, String, String)> = crate::db::query_as(
             "SELECT id, name, observed_state FROM vms WHERE name LIKE ? ORDER BY name LIMIT 12",
         )
         .bind(format!("%{q}%"))
@@ -97,7 +97,7 @@ pub async fn jarvis_landing(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<ai::SpotlightResult>, ApiError> {
     require_operator(&actor)?;
-    let online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+    let online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
@@ -737,7 +737,7 @@ pub async fn intent_environment(
     Json(body): Json<EnvironmentIntentBody>,
 ) -> Result<Json<ai::environment_intent::EnvironmentResourcePlan>, ApiError> {
     require_operator(&actor)?;
-    let rates: (f64, f64) = sqlx::query_as(
+    let rates: (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(&state.pool)
@@ -967,7 +967,7 @@ pub async fn mission_stack(
     Json(body): Json<MissionStackBody>,
 ) -> Result<Json<ai::mission_stack::MissionStackPlan>, ApiError> {
     require_operator(&actor)?;
-    let rates: (f64, f64) = sqlx::query_as(
+    let rates: (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(&state.pool)

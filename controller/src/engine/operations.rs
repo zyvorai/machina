@@ -4,7 +4,7 @@
 // Operations — runbook catalog, execution history, compliance showback (Phase 29).
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -73,22 +73,22 @@ pub struct ExecuteRunbookRequest {
     pub context: serde_json::Value,
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<OperationsOverview> {
+pub async fn overview(pool: &DbPool) -> anyhow::Result<OperationsOverview> {
     ensure_showback_snapshots(pool).await?;
 
     let runbook_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM ops_runbook_catalog WHERE enabled = true")
+        crate::db::query_scalar("SELECT COUNT(*) FROM ops_runbook_catalog WHERE enabled = true")
             .fetch_one(pool)
             .await?;
 
-    let executions_24h: i64 = sqlx::query_scalar(
+    let executions_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM ops_runbook_executions WHERE created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await?;
 
     let showback_projects: i64 =
-        sqlx::query_scalar("SELECT COUNT(DISTINCT project_name) FROM ops_showback_snapshots")
+        crate::db::query_scalar("SELECT COUNT(DISTINCT project_name) FROM ops_showback_snapshots")
             .fetch_one(pool)
             .await?;
 
@@ -107,8 +107,8 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<OperationsOverview> {
     })
 }
 
-pub async fn list_catalog(pool: &SqlitePool) -> anyhow::Result<Vec<RunbookCatalogRow>> {
-    sqlx::query_as(
+pub async fn list_catalog(pool: &DbPool) -> anyhow::Result<Vec<RunbookCatalogRow>> {
+    crate::db::query_as(
         "SELECT id, incident, title, category, severity, auto_trigger, enabled
          FROM ops_runbook_catalog WHERE enabled = true ORDER BY category, title",
     )
@@ -118,10 +118,10 @@ pub async fn list_catalog(pool: &SqlitePool) -> anyhow::Result<Vec<RunbookCatalo
 }
 
 pub async fn list_executions(
-    pool: &SqlitePool,
+    pool: &DbPool,
     limit: i64,
 ) -> anyhow::Result<Vec<RunbookExecutionRow>> {
-    sqlx::query_as(
+    crate::db::query_as(
         "SELECT id, incident, status, steps_json, actor, summary, created_at
          FROM ops_runbook_executions ORDER BY created_at DESC LIMIT ?",
     )
@@ -132,12 +132,12 @@ pub async fn list_executions(
 }
 
 pub async fn execute_runbook(
-    pool: &SqlitePool,
+    pool: &DbPool,
     incident: &str,
     actor: &str,
     context: &serde_json::Value,
 ) -> anyhow::Result<RunbookExecuteResult> {
-    let catalog: Option<(String,)> = sqlx::query_as(
+    let catalog: Option<(String,)> = crate::db::query_as(
         "SELECT title FROM ops_runbook_catalog WHERE incident = ? AND enabled = true",
     )
     .bind(incident)
@@ -148,7 +148,7 @@ pub async fn execute_runbook(
     let execution_id = Uuid::new_v4();
     let steps_json = serde_json::to_value(&rb.steps)?;
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO ops_runbook_executions (id, incident, status, steps_json, actor, summary)
          VALUES (?, ?, 'completed', ?, ?, ?)",
     )
@@ -175,12 +175,12 @@ pub async fn execute_runbook(
 }
 
 pub async fn showback_overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     _cfg: &ControllerConfig,
 ) -> anyhow::Result<ShowbackOverview> {
     ensure_showback_snapshots(pool).await?;
 
-    let rows: Vec<(String, f64, String, i32)> = sqlx::query_as(
+    let rows: Vec<(String, f64, String, i32)> = crate::db::query_as(
         "SELECT s.project_name, s.cost_usd, s.compliance_grade, s.vm_count
          FROM ops_showback_snapshots s
          WHERE s.captured_at = (
@@ -236,8 +236,8 @@ pub async fn showback_overview(
     })
 }
 
-async fn ensure_showback_snapshots(pool: &SqlitePool) -> anyhow::Result<()> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ops_showback_snapshots")
+async fn ensure_showback_snapshots(pool: &DbPool) -> anyhow::Result<()> {
+    let count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM ops_showback_snapshots")
         .fetch_one(pool)
         .await?;
     if count > 0 {
@@ -245,17 +245,17 @@ async fn ensure_showback_snapshots(pool: &SqlitePool) -> anyhow::Result<()> {
     }
 
     let projects: Vec<(String,)> =
-        sqlx::query_as("SELECT DISTINCT COALESCE(NULLIF(TRIM(project), ''), 'default') FROM vms ORDER BY 1 LIMIT 20")
+        crate::db::query_as("SELECT DISTINCT COALESCE(NULLIF(TRIM(project), ''), 'default') FROM vms ORDER BY 1 LIMIT 20")
             .fetch_all(pool)
             .await
             .unwrap_or_default();
 
     if projects.is_empty() {
-        let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+        let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
             .fetch_one(pool)
             .await
             .unwrap_or(0);
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO ops_showback_snapshots (id, project_name, cost_usd, compliance_grade, vm_count)
              VALUES (?, 'default', ?, 'B', ?)",
         )
@@ -275,7 +275,7 @@ async fn ensure_showback_snapshots(pool: &SqlitePool) -> anyhow::Result<()> {
 
     let mut tx = pool.begin().await?;
     for (name,) in projects {
-        let vm_count: i64 = sqlx::query_scalar(
+        let vm_count: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM vms WHERE COALESCE(NULLIF(TRIM(project), ''), 'default') = ?",
         )
         .bind(&name)
@@ -284,7 +284,7 @@ async fn ensure_showback_snapshots(pool: &SqlitePool) -> anyhow::Result<()> {
         .unwrap_or(0);
 
         let cost = (vm_count as f64) * 18.5 + 25.0;
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO ops_showback_snapshots (id, project_name, cost_usd, compliance_grade, vm_count)
              VALUES (?, ?, ?, ?, ?)",
         )

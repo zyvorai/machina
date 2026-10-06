@@ -12,7 +12,7 @@ use guestkit_job_spec::builder::JobBuilder;
 use guestkit_job_spec::operations::GUESTKIT_INSPECT;
 use guestkit_job_spec::JobDocument;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -172,7 +172,7 @@ pub async fn migrate_plan_disk(
 
 pub async fn doctor_vm(
     cfg: &ControllerConfig,
-    pool: &SqlitePool,
+    pool: &DbPool,
     disk_dir: &Path,
     vm_id: Uuid,
     target: &str,
@@ -184,7 +184,7 @@ pub async fn doctor_vm(
 
 pub async fn migrate_plan_vm(
     cfg: &ControllerConfig,
-    pool: &SqlitePool,
+    pool: &DbPool,
     disk_dir: &Path,
     vm_id: Uuid,
     target: &str,
@@ -194,17 +194,17 @@ pub async fn migrate_plan_vm(
 }
 
 pub async fn resolve_vm_disk_path(
-    pool: &SqlitePool,
+    pool: &DbPool,
     disk_dir: &Path,
     vm_id: Uuid,
 ) -> anyhow::Result<PathBuf> {
-    let (name,): (String,) = sqlx::query_as("SELECT name FROM vms WHERE id = ?")
+    let (name,): (String,) = crate::db::query_as("SELECT name FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| anyhow::anyhow!("vm not found"))?;
 
-    let disk_path: Option<String> = sqlx::query_scalar(
+    let disk_path: Option<String> = crate::db::query_scalar(
         "SELECT path FROM vm_disks WHERE vm_id = ? AND path IS NOT NULL AND path != '' ORDER BY name LIMIT 1",
     )
     .bind(vm_id)

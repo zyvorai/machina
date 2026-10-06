@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::forecast as trend;
@@ -23,8 +23,8 @@ pub struct SreForecastReport {
     pub forecasts: Vec<ResourceExhaustionForecast>,
 }
 
-pub async fn forecast(pool: &SqlitePool) -> anyhow::Result<SreForecastReport> {
-    let rows: Vec<(Uuid, String, i64, i64, f64)> = sqlx::query_as(
+pub async fn forecast(pool: &DbPool) -> anyhow::Result<SreForecastReport> {
+    let rows: Vec<(Uuid, String, i64, i64, f64)> = crate::db::query_as(
         "SELECT v.id, v.name, v.memory_mib, m.memory_used_mib, m.cpu_percent
          FROM vms v
          JOIN vm_metrics m ON m.vm_id = v.id
@@ -87,7 +87,7 @@ pub async fn forecast(pool: &SqlitePool) -> anyhow::Result<SreForecastReport> {
         }
     }
 
-    let pools: Vec<(Uuid, String, f64)> = sqlx::query_as(
+    let pools: Vec<(Uuid, String, f64)> = crate::db::query_as(
         "SELECT id, name, used_gib * 1.0 / capacity_gib FROM storage_pools WHERE capacity_gib > 0",
     )
     .fetch_all(pool)

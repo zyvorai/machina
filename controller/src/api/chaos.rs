@@ -87,7 +87,7 @@ pub struct ExperimentBody {
 
 async fn check_targets(state: &AppState, spec: &ExperimentSpec) -> Result<(), ApiError> {
     for id in &spec.targets {
-        let tags: Option<Option<String>> = sqlx::query_scalar("SELECT tags FROM vms WHERE id = ?")
+        let tags: Option<Option<String>> = crate::db::query_scalar("SELECT tags FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -118,7 +118,7 @@ fn validate_body(b: &ExperimentBody) -> Result<(), ApiError> {
 }
 
 async fn experiment(state: &AppState, id: Uuid) -> Result<Experiment, ApiError> {
-    let e: Experiment = sqlx::query_as(&format!("{EXPERIMENTS} WHERE e.id = ?"))
+    let e: Experiment = crate::db::query_as(&format!("{EXPERIMENTS} WHERE e.id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -126,7 +126,7 @@ async fn experiment(state: &AppState, id: Uuid) -> Result<Experiment, ApiError> 
 }
 
 async fn running(state: &AppState, id: Uuid) -> Result<bool, ApiError> {
-    Ok(sqlx::query_scalar(
+    Ok(crate::db::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM chaos_runs WHERE experiment_id = ? AND status = 'running')",
     )
     .bind(id)
@@ -137,7 +137,7 @@ async fn running(state: &AppState, id: Uuid) -> Result<bool, ApiError> {
 pub async fn list_experiments(
     State(state): State<AppState>,
 ) -> Result<Json<Vec<Experiment>>, ApiError> {
-    let rows: Vec<Experiment> = sqlx::query_as(&format!("{EXPERIMENTS} ORDER BY e.name LIMIT 500"))
+    let rows: Vec<Experiment> = crate::db::query_as(&format!("{EXPERIMENTS} ORDER BY e.name LIMIT 500"))
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(rows.into_iter().map(Experiment::parsed).collect()))
@@ -152,7 +152,7 @@ pub async fn create_experiment(
     validate_body(&b)?;
     check_targets(&state, &b.spec).await?;
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO chaos_experiments (id, name, description, spec_json, created_by) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(id)
@@ -170,7 +170,7 @@ pub async fn get_experiment(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     let e = experiment(&state, id).await?;
-    let runs: Vec<Run> = sqlx::query_as(&format!(
+    let runs: Vec<Run> = crate::db::query_as(&format!(
         "{RUNS} WHERE experiment_id = ? ORDER BY started_at DESC LIMIT 20"
     ))
     .bind(id)
@@ -200,7 +200,7 @@ pub async fn update_experiment(
             "Abort or wait for the run first.",
         ));
     }
-    let n = sqlx::query("UPDATE chaos_experiments SET name = ?, description = ?, spec_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+    let n = crate::db::query("UPDATE chaos_experiments SET name = ?, description = ?, spec_json = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(&b.name)
         .bind(&b.description)
         .bind(serde_json::to_string(&b.spec).map_err(bad)?)
@@ -226,7 +226,7 @@ pub async fn delete_experiment(
             "Abort or wait for the run first.",
         ));
     }
-    let n = sqlx::query("DELETE FROM chaos_experiments WHERE id = ?")
+    let n = crate::db::query("DELETE FROM chaos_experiments WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?
@@ -292,7 +292,7 @@ pub async fn list_runs(
 ) -> Result<Json<Vec<Run>>, ApiError> {
     let rows: Vec<Run> = match q.experiment_id {
         Some(e) => {
-            sqlx::query_as(&format!(
+            crate::db::query_as(&format!(
                 "{RUNS} WHERE experiment_id = ? ORDER BY started_at DESC LIMIT 100"
             ))
             .bind(e)
@@ -300,7 +300,7 @@ pub async fn list_runs(
             .await?
         }
         None => {
-            sqlx::query_as(&format!("{RUNS} ORDER BY started_at DESC LIMIT 100"))
+            crate::db::query_as(&format!("{RUNS} ORDER BY started_at DESC LIMIT 100"))
                 .fetch_all(&state.pool)
                 .await?
         }
@@ -312,7 +312,7 @@ pub async fn get_run(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
-    let r: Run = sqlx::query_as(&format!("{RUNS} WHERE id = ?"))
+    let r: Run = crate::db::query_as(&format!("{RUNS} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -327,7 +327,7 @@ pub async fn abort_run(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     require_operator(&actor)?;
-    let status: String = sqlx::query_scalar("SELECT status FROM chaos_runs WHERE id = ?")
+    let status: String = crate::db::query_scalar("SELECT status FROM chaos_runs WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;

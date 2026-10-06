@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,7 +40,7 @@ pub struct PatchPromptBody {
     pub agent_id: Option<String>,
 }
 
-pub async fn list_prompts(pool: &SqlitePool, user_id: &str) -> anyhow::Result<Vec<PromptRow>> {
+pub async fn list_prompts(pool: &DbPool, user_id: &str) -> anyhow::Result<Vec<PromptRow>> {
     let rows: Vec<(
         Uuid,
         String,
@@ -51,7 +51,7 @@ pub async fn list_prompts(pool: &SqlitePool, user_id: &str) -> anyhow::Result<Ve
         serde_json::Value,
         String,
         DateTime<Utc>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, scope, owner_id, team_id, title, body, tags, agent_id,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
              FROM ai_prompts
@@ -91,7 +91,7 @@ fn map_row(
 }
 
 pub async fn create_prompt(
-    pool: &SqlitePool,
+    pool: &DbPool,
     user_id: &str,
     body: &CreatePromptBody,
 ) -> anyhow::Result<PromptRow> {
@@ -106,7 +106,7 @@ pub async fn create_prompt(
         body.agent_id.trim()
     };
     let tags = serde_json::to_value(&body.tags)?;
-    let id: Uuid = sqlx::query_scalar(
+    let id: Uuid = crate::db::query_scalar(
         "INSERT INTO ai_prompts (id, scope, owner_id, team_id, title, body, tags, agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(uuid::Uuid::new_v4())
@@ -124,9 +124,9 @@ pub async fn create_prompt(
         .ok_or_else(|| anyhow::anyhow!("prompt missing"))
 }
 
-pub async fn get_prompt(pool: &SqlitePool, id: Uuid) -> anyhow::Result<Option<PromptRow>> {
+pub async fn get_prompt(pool: &DbPool, id: Uuid) -> anyhow::Result<Option<PromptRow>> {
     let row: Option<(Uuid, String, String, String, String, String, serde_json::Value, String, DateTime<Utc>)> =
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, scope, owner_id, team_id, title, body, tags, agent_id, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at FROM ai_prompts WHERE id = ?",
         )
         .bind(id)
@@ -138,12 +138,12 @@ pub async fn get_prompt(pool: &SqlitePool, id: Uuid) -> anyhow::Result<Option<Pr
 /// Returns true if `actor` (username, role) may modify/delete the given prompt:
 /// the owner, or an admin. Org/team-shared prompts are still owner-scoped for
 /// writes — sharing only affects visibility via `list_prompts`.
-async fn can_modify(pool: &SqlitePool, id: Uuid, actor: &str, role: &str) -> anyhow::Result<bool> {
+async fn can_modify(pool: &DbPool, id: Uuid, actor: &str, role: &str) -> anyhow::Result<bool> {
     if role == "admin" {
         return Ok(true);
     }
     let owner_id: Option<String> =
-        sqlx::query_scalar("SELECT owner_id FROM ai_prompts WHERE id = ?")
+        crate::db::query_scalar("SELECT owner_id FROM ai_prompts WHERE id = ?")
             .bind(id)
             .fetch_optional(pool)
             .await?;
@@ -151,7 +151,7 @@ async fn can_modify(pool: &SqlitePool, id: Uuid, actor: &str, role: &str) -> any
 }
 
 pub async fn patch_prompt(
-    pool: &SqlitePool,
+    pool: &DbPool,
     id: Uuid,
     actor: &str,
     role: &str,
@@ -162,28 +162,28 @@ pub async fn patch_prompt(
     }
     let mut tx = pool.begin().await?;
     if let Some(v) = &body.title {
-        sqlx::query("UPDATE ai_prompts SET title = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE ai_prompts SET title = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.body {
-        sqlx::query("UPDATE ai_prompts SET body = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE ai_prompts SET body = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.tags {
-        sqlx::query("UPDATE ai_prompts SET tags = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE ai_prompts SET tags = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(serde_json::to_value(v)?)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.agent_id {
-        sqlx::query(
+        crate::db::query(
             "UPDATE ai_prompts SET agent_id = ?, updated_at = datetime('now') WHERE id = ?",
         )
         .bind(v)
@@ -198,7 +198,7 @@ pub async fn patch_prompt(
 }
 
 pub async fn delete_prompt(
-    pool: &SqlitePool,
+    pool: &DbPool,
     id: Uuid,
     actor: &str,
     role: &str,
@@ -206,7 +206,7 @@ pub async fn delete_prompt(
     if !can_modify(pool, id, actor, role).await? {
         return Ok(false);
     }
-    let r = sqlx::query("DELETE FROM ai_prompts WHERE id = ?")
+    let r = crate::db::query("DELETE FROM ai_prompts WHERE id = ?")
         .bind(id)
         .execute(pool)
         .await?;

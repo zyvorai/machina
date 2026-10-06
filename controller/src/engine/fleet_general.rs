@@ -4,7 +4,7 @@
 // Fleet System Settings / General rollup (Phase 48).
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FleetGeneralWallpaperOption {
@@ -32,25 +32,25 @@ pub struct FleetGeneralOverview {
     pub settings_url: String,
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetGeneralOverview> {
-    let cluster_name: String = sqlx::query_scalar(
+pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetGeneralOverview> {
+    let cluster_name: String = crate::db::query_scalar(
         "SELECT COALESCE(NULLIF(name, ''), 'machina') FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(pool)
     .await?
     .unwrap_or_else(|| "machina".into());
 
-    let hosts_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+    let hosts_total: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await?;
-    let hosts_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+    let hosts_online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(pool)
         .await?;
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
         .await?;
     let active_tasks: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'running')")
+        crate::db::query_scalar("SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'running')")
             .fetch_one(pool)
             .await?;
 

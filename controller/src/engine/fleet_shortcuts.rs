@@ -4,7 +4,7 @@
 // Fleet Shortcuts / blueprint Launchpad rollup (Phase 46).
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,26 +27,26 @@ pub struct FleetShortcutsOverview {
     pub shortcuts: Vec<FleetShortcutItem>,
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetShortcutsOverview> {
+pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetShortcutsOverview> {
     let rows: Vec<(
         Uuid,
         String,
         String,
         serde_json::Value,
         sqlx::types::Json<Vec<Uuid>>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, name, description, actions, vm_ids FROM blueprints ORDER BY name",
     )
     .fetch_all(pool)
     .await?;
 
     let runbook_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM ops_runbook_catalog WHERE enabled = true")
+        crate::db::query_scalar("SELECT COUNT(*) FROM ops_runbook_catalog WHERE enabled = true")
             .fetch_one(pool)
             .await
             .unwrap_or(0);
 
-    let executions_24h: i64 = sqlx::query_scalar(
+    let executions_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM ops_runbook_executions WHERE created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -61,7 +61,7 @@ struct FilterPlan {
 }
 
 pub async fn execute(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     req: &FleetGuestQueryRequest,
 ) -> anyhow::Result<FleetGuestQueryReport> {
@@ -139,14 +139,14 @@ fn escape_like(s: &str) -> String {
 }
 
 async fn resolve_vm_ids(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: &FleetGuestQueryRequest,
 ) -> anyhow::Result<Vec<Uuid>> {
     if !req.vm_ids.is_empty() {
         return Ok(req.vm_ids.clone());
     }
     let pattern = format!("%{}%", escape_like(req.query.trim()));
-    let rows: Vec<(Uuid,)> = sqlx::query_as(
+    let rows: Vec<(Uuid,)> = crate::db::query_as(
         "SELECT id FROM vms
          WHERE COALESCE(inventory_source, 'libvirt') = 'libvirt'
            AND (? IS NULL OR project = ?)
@@ -162,7 +162,7 @@ async fn resolve_vm_ids(
     .fetch_all(pool)
     .await?;
     if rows.is_empty() {
-        let rows: Vec<(Uuid,)> = sqlx::query_as(
+        let rows: Vec<(Uuid,)> = crate::db::query_as(
             "SELECT id FROM vms
              WHERE COALESCE(inventory_source, 'libvirt') = 'libvirt'
                AND name LIKE ? ESCAPE '\\'
@@ -176,7 +176,7 @@ async fn resolve_vm_ids(
     Ok(rows.into_iter().map(|(id,)| id).collect())
 }
 
-async fn parse_filter_plan(pool: &SqlitePool, query: &str) -> FilterPlan {
+async fn parse_filter_plan(pool: &DbPool, query: &str) -> FilterPlan {
     let ql = query.to_lowercase();
     let mut plan = keyword_plan(&ql);
 

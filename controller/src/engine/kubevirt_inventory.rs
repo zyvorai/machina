@@ -183,7 +183,7 @@ pub async fn sync_cluster(
             "pod_ip": row.pod_ip,
         });
 
-        let existing: Option<(Uuid, bool)> = sqlx::query_as(
+        let existing: Option<(Uuid, bool)> = crate::db::query_as(
             "SELECT id, managed FROM vms
              WHERE cluster_id = ? AND inventory_source = 'kubevirt'
                AND k8s_namespace = ? AND name = ?",
@@ -195,7 +195,7 @@ pub async fn sync_cluster(
         .await?;
 
         if let Some((id, _managed)) = existing {
-            sqlx::query(
+            crate::db::query(
                 "UPDATE vms SET observed_state = ?, spec_json = ?, last_seen_at = datetime('now'), updated_at = datetime('now')
                  WHERE id = ?",
             )
@@ -206,7 +206,7 @@ pub async fn sync_cluster(
             .await?;
         } else {
             let new_id = Uuid::new_v4();
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO vms (id, cluster_id, host_id, name, k8s_namespace, spec_json,
                  desired_state, observed_state, managed, lifecycle_phase, inventory_source, last_seen_at)
                  VALUES (?, ?, NULL, ?, ?, ?, 'unknown', ?, FALSE, 'idle', 'kubevirt', datetime('now'))",
@@ -247,7 +247,7 @@ async fn reconcile_kubevirt_tombstones(
         managed: bool,
     }
 
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows: Vec<Row> = crate::db::query_as(
         "SELECT id, name, k8s_namespace, managed FROM vms
          WHERE cluster_id = ? AND inventory_source = 'kubevirt'",
     )
@@ -261,7 +261,7 @@ async fn reconcile_kubevirt_tombstones(
             continue;
         }
         if !row.managed && policy.inventory_prune_unmanaged {
-            sqlx::query("DELETE FROM vms WHERE id = ?")
+            crate::db::query("DELETE FROM vms WHERE id = ?")
                 .bind(row.id)
                 .execute(&state.pool)
                 .await?;
@@ -273,7 +273,7 @@ async fn reconcile_kubevirt_tombstones(
                 ),
             );
         } else if row.managed && policy.inventory_mark_managed_missing {
-            sqlx::query(
+            crate::db::query(
                 "UPDATE vms SET observed_state = 'missing', last_error = ?, updated_at = datetime('now') WHERE id = ?",
             )
             .bind(KUBEVIRT_MISSING)

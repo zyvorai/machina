@@ -98,7 +98,7 @@ pub fn strongest<'a>(roles: &'a [String]) -> Option<&'a str> {
 }
 
 async fn is_managed_user(state: &AppState, username: &str) -> bool {
-    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE username = ?")
+    crate::db::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE username = ?")
         .bind(username)
         .fetch_one(&state.pool)
         .await
@@ -107,7 +107,7 @@ async fn is_managed_user(state: &AppState, username: &str) -> bool {
 }
 
 async fn project_roles(state: &AppState, username: &str, project: &str) -> Vec<String> {
-    sqlx::query_scalar(
+    crate::db::query_scalar(
         "SELECT a.role FROM project_role_assignments a
          JOIN users u ON u.id = a.user_id JOIN projects p ON p.id = a.project_id
          WHERE u.username = ? AND p.name = ? AND p.enabled = 1",
@@ -121,7 +121,7 @@ async fn project_roles(state: &AppState, username: &str, project: &str) -> Vec<S
 
 /// Names of the projects this user belongs to.
 async fn member_projects(state: &AppState, username: &str) -> Vec<String> {
-    sqlx::query_scalar(
+    crate::db::query_scalar(
         "SELECT DISTINCT p.name FROM project_role_assignments a
          JOIN users u ON u.id = a.user_id JOIN projects p ON p.id = a.project_id
          WHERE u.username = ? AND p.enabled = 1",
@@ -148,7 +148,7 @@ pub async fn middleware(
         let path = req.uri().path().to_string();
         let method = req.method().clone();
         let vm_project: Option<String> = match vm_id_in_path(&path) {
-            Some(vm) => sqlx::query_scalar("SELECT COALESCE(project, 'default') FROM vms WHERE id = ?")
+            Some(vm) => crate::db::query_scalar("SELECT COALESCE(project, 'default') FROM vms WHERE id = ?")
                 .bind(vm)
                 .fetch_optional(&state.pool)
                 .await
@@ -181,7 +181,7 @@ pub async fn middleware(
 
     if let Some(vm) = vm_id {
         let project: Option<String> =
-            sqlx::query_scalar("SELECT COALESCE(project, 'default') FROM vms WHERE id = ?")
+            crate::db::query_scalar("SELECT COALESCE(project, 'default') FROM vms WHERE id = ?")
                 .bind(vm)
                 .fetch_optional(&state.pool)
                 .await

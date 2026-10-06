@@ -39,7 +39,7 @@ pub async fn get_blueprint(
     Path(id): Path<Uuid>,
 ) -> Result<Json<BlueprintRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, BlueprintRow>(
+    let row = crate::db::query_as::<_, BlueprintRow>(
         "SELECT id, name, description, actions, vm_ids, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at FROM blueprints WHERE id = ?",
     )
     .bind(id)
@@ -54,7 +54,7 @@ pub async fn list_blueprints(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<BlueprintRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, BlueprintRow>(
+    let rows = crate::db::query_as::<_, BlueprintRow>(
         "SELECT id, name, description, actions, vm_ids, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at FROM blueprints ORDER BY name",
     )
     .fetch_all(&state.pool)
@@ -75,13 +75,13 @@ pub async fn create_blueprint(
             "actions required (start, stop, backup)",
         ));
     }
-    let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
+    let cluster_id: Uuid = crate::db::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(|| ApiError::bad_request("no cluster configured"))?;
     let id = Uuid::new_v4();
     let actions = serde_json::to_value(&body.actions).unwrap_or(serde_json::json!([]));
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO blueprints (id, cluster_id, name, description, actions, vm_ids)
          VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -93,7 +93,7 @@ pub async fn create_blueprint(
     .bind(serde_json::to_string(&body.vm_ids).unwrap_or_else(|_| "[]".into()))
     .execute(&state.pool)
     .await?;
-    let row = sqlx::query_as::<_, BlueprintRow>(
+    let row = crate::db::query_as::<_, BlueprintRow>(
         "SELECT id, name, description, actions, vm_ids, strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at FROM blueprints WHERE id = ?",
     )
     .bind(id)
@@ -109,7 +109,7 @@ pub async fn run_blueprint(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
     let row: (serde_json::Value, sqlx::types::Json<Vec<Uuid>>) =
-        sqlx::query_as("SELECT actions, vm_ids FROM blueprints WHERE id = ?")
+        crate::db::query_as("SELECT actions, vm_ids FROM blueprints WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
@@ -118,7 +118,7 @@ pub async fn run_blueprint(
     let actions: Vec<String> = serde_json::from_value(row.0).unwrap_or_default();
     let mut task_ids = Vec::new();
     for vm_id in row.1.iter() {
-        let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+        let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await?
@@ -157,7 +157,7 @@ pub async fn delete_blueprint(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    let deleted = sqlx::query("DELETE FROM blueprints WHERE id = ?")
+    let deleted = crate::db::query("DELETE FROM blueprints WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;

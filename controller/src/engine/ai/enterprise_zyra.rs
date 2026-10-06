@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ZyraEnterpriseOverview {
@@ -15,20 +15,20 @@ pub struct ZyraEnterpriseOverview {
     pub sso_configured: bool,
 }
 
-pub async fn overview(pool: &SqlitePool, username: &str) -> anyhow::Result<ZyraEnterpriseOverview> {
-    let air_gap: bool = sqlx::query_scalar(
+pub async fn overview(pool: &DbPool, username: &str) -> anyhow::Result<ZyraEnterpriseOverview> {
+    let air_gap: bool = crate::db::query_scalar(
         "SELECT COALESCE(zeus_air_gap_llm, FALSE) FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
     .await
     .unwrap_or(false);
-    let audit_events_24h: i64 = sqlx::query_scalar(
+    let audit_events_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM audit_logs WHERE action LIKE 'zeus.%' AND created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await
     .unwrap_or(0);
-    let is_admin = sqlx::query_scalar::<_, i64>(
+    let is_admin = crate::db::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM users WHERE username = ? AND role = 'admin'",
     )
     .bind(username)
@@ -52,9 +52,9 @@ pub struct ZyraEnterprisePatch {
     pub air_gap_llm: Option<bool>,
 }
 
-pub async fn patch(pool: &SqlitePool, patch: &ZyraEnterprisePatch) -> anyhow::Result<()> {
+pub async fn patch(pool: &DbPool, patch: &ZyraEnterprisePatch) -> anyhow::Result<()> {
     if let Some(v) = patch.air_gap_llm {
-        sqlx::query("UPDATE clusters SET zeus_air_gap_llm = ?")
+        crate::db::query("UPDATE clusters SET zeus_air_gap_llm = ?")
             .bind(v)
             .execute(pool)
             .await?;
@@ -71,14 +71,14 @@ pub fn require_zyra_admin(actor: &crate::auth::AuthUser) -> Result<(), crate::ap
 }
 
 pub async fn audit_llm_call(
-    pool: &SqlitePool,
+    pool: &DbPool,
     actor: &str,
     provider_kind: &str,
     model: &str,
     task_class: &str,
     agent_id: Option<&str>,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, detail)
          VALUES (?, ?, 'zeus.llm.complete', 'zeus', ?)",
     )

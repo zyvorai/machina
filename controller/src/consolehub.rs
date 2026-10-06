@@ -216,7 +216,7 @@ pub fn api_routes() -> Router<AppState> {
 }
 
 async fn vm_row(state: &AppState, id: Uuid) -> Result<(String, Uuid), ApiError> {
-    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -230,7 +230,7 @@ async fn vm_meta(
     state: &AppState,
     id: Uuid,
 ) -> Result<(String, Option<Uuid>, String, Option<String>), ApiError> {
-    let row: (String, Option<Uuid>, String, Option<String>) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String, Option<String>) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), k8s_namespace FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -273,7 +273,7 @@ fn kubevirt_plan(vm_id: Uuid, vm_name: &str, ws_token: &str) -> ConsoleHubPlan {
 }
 
 async fn kubevirt_plan_enriched(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     daemon_base_url: &str,
     vm_id: Uuid,
     vm_name: &str,
@@ -282,7 +282,7 @@ async fn kubevirt_plan_enriched(
 ) -> ConsoleHubPlan {
     let mut plan = kubevirt_plan(vm_id, vm_name, ws_token);
     let row: Option<(Option<String>, serde_json::Value)> =
-        sqlx::query_as("SELECT guest_ip, spec_json FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT guest_ip, spec_json FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(pool)
             .await
@@ -360,16 +360,16 @@ fn check_federated_console_auth(state: &AppState, user: &AuthUser) -> Result<(),
     }
 }
 
-async fn host_agent_grpc(pool: &sqlx::SqlitePool, host_id: Uuid) -> Result<String, ApiError> {
-    let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+async fn host_agent_grpc(pool: &crate::db::DbPool, host_id: Uuid) -> Result<String, ApiError> {
+    let addr: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;
     Ok(addr)
 }
 
-async fn host_agent_console(pool: &sqlx::SqlitePool, host_id: Uuid) -> Result<String, ApiError> {
-    let addr: String = sqlx::query_scalar(
+async fn host_agent_console(pool: &crate::db::DbPool, host_id: Uuid) -> Result<String, ApiError> {
+    let addr: String = crate::db::query_scalar(
         "SELECT COALESCE(NULLIF(agent_console_addr, ''), agent_grpc_addr) FROM hosts WHERE id = ?",
     )
     .bind(host_id)
@@ -415,7 +415,7 @@ fn serial_password_login(auth_mode: &str) -> bool {
 }
 
 async fn build_guest_access_hints(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     host_id: Uuid,
     agent: &machina_agent::pb::GetConsoleAccessPlanResponse,
     spec_vm: Option<&VirtualMachine>,
@@ -591,7 +591,7 @@ pub async fn consolehub_plan(
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
     let spec_vm: Option<VirtualMachine> =
-        sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
+        crate::db::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await
@@ -601,7 +601,7 @@ pub async fn consolehub_plan(
     let guest_access =
         build_guest_access_hints(&state.pool, host_id, &agent_plan, spec_vm.as_ref()).await;
     let hypervisor_address: Option<String> =
-        sqlx::query_scalar("SELECT NULLIF(TRIM(address), '') FROM hosts WHERE id = ?")
+        crate::db::query_scalar("SELECT NULLIF(TRIM(address), '') FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_optional(&state.pool)
             .await
@@ -671,7 +671,7 @@ async fn check_jit_approval(
     if !state.config.consolehub_require_approval {
         return Ok(());
     }
-    let approved: Option<Uuid> = sqlx::query_scalar(
+    let approved: Option<Uuid> = crate::db::query_scalar(
         "SELECT id FROM console_access_requests WHERE vm_id = ? AND requester = ? AND protocol = ? AND status = 'approved' AND (expires_at IS NULL OR expires_at > datetime('now')) ORDER BY approved_at DESC LIMIT 1",
     )
     .bind(vm_id)
@@ -733,7 +733,7 @@ pub async fn create_session(
         // entry + its ws-token stayed live until natural TTL expiry with no way
         // for the owner (or an admin) to end it early, and no audit trail was
         // ever written for the session start.
-        if let Err(e) = sqlx::query(
+        if let Err(e) = crate::db::query(
             "INSERT INTO console_sessions (id, vm_id, host_id, actor, protocol, backend, agent_proxy_base, expires_at, audit_id, recording_enabled)
              VALUES (?,?,?,?,?,'native','',?,?,FALSE)",
         )
@@ -756,7 +756,7 @@ pub async fn create_session(
             });
             return Err(ApiError::internal(e.to_string()));
         }
-        if let Err(e) = sqlx::query(
+        if let Err(e) = crate::db::query(
             "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
              VALUES (?,?,?,?,?,?)",
         )
@@ -776,7 +776,7 @@ pub async fn create_session(
                 if let Some(token) = sessions.remove(session_id).await {
                     ws_tokens.revoke(&token).await;
                 }
-                let _ = sqlx::query("DELETE FROM console_sessions WHERE id = ?")
+                let _ = crate::db::query("DELETE FROM console_sessions WHERE id = ?")
                     .bind(session_id)
                     .execute(&pool)
                     .await;
@@ -840,7 +840,7 @@ pub async fn create_session(
     )?;
 
     if body.break_glass {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
              VALUES (?,?,?,?,?,?)",
         )
@@ -881,7 +881,7 @@ pub async fn create_session(
         .await;
 
     let recording = state.config.consolehub_recording_enabled || body.break_glass;
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO console_sessions (id, vm_id, host_id, actor, protocol, backend, guac_token, agent_proxy_base, emergency_url, expires_at, audit_id, recording_enabled)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
     )
@@ -910,7 +910,7 @@ pub async fn create_session(
         ApiError::internal(e.to_string())
     })?;
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
          VALUES (?,?,?,?,?,?)",
     )
@@ -935,7 +935,7 @@ pub async fn create_session(
             if let Some(token) = sessions.remove(session_id).await {
                 ws_tokens.revoke(&token).await;
             }
-            let _ = sqlx::query("DELETE FROM console_sessions WHERE id = ?")
+            let _ = crate::db::query("DELETE FROM console_sessions WHERE id = ?")
                 .bind(session_id)
                 .execute(&pool)
                 .await;
@@ -951,7 +951,7 @@ pub async fn create_session(
         // solely by matching `spectator_token` in the DB row. A silently
         // dropped UPDATE would hand the caller a token that can never
         // authenticate a spectate — a false success.
-        sqlx::query("UPDATE console_sessions SET spectator_token = ? WHERE id = ?")
+        crate::db::query("UPDATE console_sessions SET spectator_token = ? WHERE id = ?")
             .bind(&spectator_token)
             .bind(session_id)
             .execute(&state.pool)
@@ -1002,7 +1002,7 @@ pub async fn list_sessions(
         Option<chrono::DateTime<chrono::Utc>>,
         bool,
         Option<String>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, actor, protocol, backend, started_at, ended_at, recording_enabled, recording_path FROM console_sessions WHERE vm_id = ? ORDER BY started_at DESC LIMIT 50",
     )
     .bind(id)
@@ -1041,7 +1041,7 @@ pub async fn validate_spectator(
     State(_state): State<AppState>,
     axum::extract::Query(q): Query<SpectatorValidateQuery>,
 ) -> Result<Json<SpectatorValidateResponse>, ApiError> {
-    let row: Option<(Uuid, String, String)> = sqlx::query_as(
+    let row: Option<(Uuid, String, String)> = crate::db::query_as(
         "SELECT vm_id, actor, protocol FROM console_sessions WHERE id = ? AND spectator_token = ? AND ended_at IS NULL AND recording_enabled = TRUE",
     )
     .bind(q.session_id)
@@ -1101,7 +1101,7 @@ pub async fn collaborate_session(
     let ttl = Duration::from_secs(state.config.consolehub_session_ttl_secs);
     let expires_at = chrono::Utc::now() + chrono::Duration::seconds(ttl.as_secs() as i64);
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO console_sessions (id, vm_id, host_id, actor, protocol, backend, expires_at, audit_id, recording_enabled, spectator_token, metadata_json)
          VALUES (?,?,?,?,?,'native',?,?,TRUE,?,?)",
     )
@@ -1120,7 +1120,7 @@ pub async fn collaborate_session(
     .execute(&state.pool)
     .await?;
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
          VALUES (?,?,?,?,?,?)",
     )
@@ -1190,7 +1190,7 @@ pub async fn end_session(
     // codebase uses instead of comparing `user.role` inline.
     let is_admin = crate::auth::require_admin(&user).is_ok();
     let res = if is_admin {
-        sqlx::query(
+        crate::db::query(
             "UPDATE console_sessions SET ended_at = datetime('now'),
              recording_path = CASE WHEN recording_enabled THEN ? ELSE recording_path END
              WHERE id = ?",
@@ -1200,7 +1200,7 @@ pub async fn end_session(
         .execute(&state.pool)
         .await?
     } else {
-        sqlx::query(
+        crate::db::query(
             "UPDATE console_sessions SET ended_at = datetime('now'),
              recording_path = CASE WHEN recording_enabled THEN ? ELSE recording_path END
              WHERE id = ? AND actor = ?",
@@ -1233,7 +1233,7 @@ pub async fn end_session(
     if is_admin {
         return Err(ApiError::not_found("console session not found"));
     }
-    let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM console_sessions WHERE id = ?")
+    let exists: Option<i64> = crate::db::query_scalar("SELECT 1 FROM console_sessions WHERE id = ?")
         .bind(session_id)
         .fetch_optional(&state.pool)
         .await?;
@@ -1253,7 +1253,7 @@ pub async fn upload_session_replay(
     body: Body,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let row: Option<(bool, String)> =
-        sqlx::query_as("SELECT recording_enabled, actor FROM console_sessions WHERE id = ?")
+        crate::db::query_as("SELECT recording_enabled, actor FROM console_sessions WHERE id = ?")
             .bind(session_id)
             .fetch_optional(&state.pool)
             .await?;
@@ -1285,7 +1285,7 @@ pub async fn upload_session_replay(
         .map_err(|e| ApiError::internal(format!("write replay: {e}")))?;
 
     let path_str = path.to_string_lossy().into_owned();
-    sqlx::query("UPDATE console_sessions SET recording_path = ? WHERE id = ?")
+    crate::db::query("UPDATE console_sessions SET recording_path = ? WHERE id = ?")
         .bind(&path_str)
         .bind(session_id)
         .execute(&state.pool)
@@ -1306,7 +1306,7 @@ pub async fn get_session_replay(
 ) -> Result<Response, ApiError> {
     require_operator(&actor)?;
     let recording_path: Option<String> =
-        sqlx::query_scalar("SELECT recording_path FROM console_sessions WHERE id = ?")
+        crate::db::query_scalar("SELECT recording_path FROM console_sessions WHERE id = ?")
             .bind(session_id)
             .fetch_optional(&state.pool)
             .await?
@@ -1350,7 +1350,7 @@ pub async fn create_access_request(
     Json(body): Json<AccessRequestBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let request_id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO console_access_requests (id, vm_id, requester, protocol, reason, status, expires_at)
          VALUES (?,?,?,?,?,'pending', datetime('now', '+24 hours'))",
     )
@@ -1374,7 +1374,7 @@ pub async fn approve_access_request(
     Path(request_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     crate::auth::require_operator(&user)?;
-    let updated = sqlx::query(
+    let updated = crate::db::query(
         "UPDATE console_access_requests SET status = 'approved', approved_by = ?, approved_at = datetime('now'), expires_at = datetime('now', '+4 hours')
          WHERE id = ? AND status = 'pending'",
     )

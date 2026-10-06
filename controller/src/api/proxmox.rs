@@ -25,7 +25,7 @@ pub async fn sync_inventory(
 ) -> Result<Json<ProxmoxSyncResponse>, ApiError> {
     require_operator(&actor)?;
     let count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE inventory_source = 'proxmox'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE inventory_source = 'proxmox'")
             .fetch_one(&state.pool)
             .await?;
     Ok(Json(ProxmoxSyncResponse {

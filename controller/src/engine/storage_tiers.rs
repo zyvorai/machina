@@ -4,7 +4,7 @@
 // vSAN-class storage tiers, snapshot retention, backup SLA stubs.
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -71,8 +71,8 @@ pub struct UpsertBackupSlaRequest {
     pub retention_days: i32,
 }
 
-pub async fn tiers_overview(pool: &SqlitePool) -> anyhow::Result<TiersOverview> {
-    let rows: Vec<StorageTierRow> = match sqlx::query_as(
+pub async fn tiers_overview(pool: &DbPool) -> anyhow::Result<TiersOverview> {
+    let rows: Vec<StorageTierRow> = match crate::db::query_as(
         "SELECT id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description
          FROM storage_tiers ORDER BY tier_class, name",
     )
@@ -91,7 +91,7 @@ pub async fn tiers_overview(pool: &SqlitePool) -> anyhow::Result<TiersOverview> 
 
     let mut tiers = Vec::new();
     for row in rows {
-        let stats: (i64, i64, i64) = match sqlx::query_as(
+        let stats: (i64, i64, i64) = match crate::db::query_as(
             "SELECT COUNT(*), COALESCE(SUM(capacity_gib), 0), COALESCE(SUM(used_gib), 0)
              FROM storage_pools WHERE tier_id = ?",
         )
@@ -130,15 +130,15 @@ pub async fn tiers_overview(pool: &SqlitePool) -> anyhow::Result<TiersOverview> 
     Ok(TiersOverview { tiers, summary })
 }
 
-pub async fn bind_pool_tier(pool: &SqlitePool, pool_id: Uuid, tier_id: Uuid) -> anyhow::Result<()> {
-    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM storage_tiers WHERE id = ?")
+pub async fn bind_pool_tier(pool: &DbPool, pool_id: Uuid, tier_id: Uuid) -> anyhow::Result<()> {
+    let exists: Option<Uuid> = crate::db::query_scalar("SELECT id FROM storage_tiers WHERE id = ?")
         .bind(tier_id)
         .fetch_optional(pool)
         .await?;
     if exists.is_none() {
         anyhow::bail!("tier not found");
     }
-    let r = sqlx::query("UPDATE storage_pools SET tier_id = ? WHERE id = ?")
+    let r = crate::db::query("UPDATE storage_pools SET tier_id = ? WHERE id = ?")
         .bind(tier_id)
         .bind(pool_id)
         .execute(pool)
@@ -149,10 +149,10 @@ pub async fn bind_pool_tier(pool: &SqlitePool, pool_id: Uuid, tier_id: Uuid) -> 
     Ok(())
 }
 
-pub async fn backup_sla_overview(pool: &SqlitePool) -> anyhow::Result<BackupSlaOverview> {
+pub async fn backup_sla_overview(pool: &DbPool) -> anyhow::Result<BackupSlaOverview> {
     ensure_sla_stubs(pool).await?;
 
-    let policies = sqlx::query_as(
+    let policies = crate::db::query_as(
         "SELECT s.id, s.pool_id, p.name AS pool_name, t.name AS tier_name,
                 s.rpo_hours, s.rto_hours, s.retention_days, s.last_backup_at, s.compliance_grade
          FROM storage_backup_sla s
@@ -172,11 +172,11 @@ pub async fn backup_sla_overview(pool: &SqlitePool) -> anyhow::Result<BackupSlaO
 }
 
 pub async fn upsert_backup_sla(
-    pool: &SqlitePool,
+    pool: &DbPool,
     pool_id: Uuid,
     req: &UpsertBackupSlaRequest,
 ) -> anyhow::Result<BackupSlaRow> {
-    let _pool: String = sqlx::query_scalar("SELECT name FROM storage_pools WHERE id = ?")
+    let _pool: String = crate::db::query_scalar("SELECT name FROM storage_pools WHERE id = ?")
         .bind(pool_id)
         .fetch_optional(pool)
         .await?
@@ -191,7 +191,7 @@ pub async fn upsert_backup_sla(
     };
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO storage_backup_sla (id, pool_id, rpo_hours, rto_hours, retention_days, compliance_grade)
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT (pool_id) DO UPDATE SET
@@ -209,7 +209,7 @@ pub async fn upsert_backup_sla(
     .execute(pool)
     .await?;
 
-    sqlx::query_as(
+    crate::db::query_as(
         "SELECT s.id, s.pool_id, p.name AS pool_name, t.name AS tier_name,
                 s.rpo_hours, s.rto_hours, s.retention_days, s.last_backup_at, s.compliance_grade
          FROM storage_backup_sla s
@@ -223,15 +223,15 @@ pub async fn upsert_backup_sla(
     .map_err(|e| e.into())
 }
 
-async fn ensure_sla_stubs(pool: &SqlitePool) -> anyhow::Result<()> {
+async fn ensure_sla_stubs(pool: &DbPool) -> anyhow::Result<()> {
     let pools: Vec<(Uuid, Option<Uuid>)> =
-        sqlx::query_as("SELECT id, tier_id FROM storage_pools ORDER BY name")
+        crate::db::query_as("SELECT id, tier_id FROM storage_pools ORDER BY name")
             .fetch_all(pool)
             .await?;
 
     for (pool_id, tier_id) in pools {
         let exists: Option<Uuid> =
-            sqlx::query_scalar("SELECT id FROM storage_backup_sla WHERE pool_id = ?")
+            crate::db::query_scalar("SELECT id FROM storage_backup_sla WHERE pool_id = ?")
                 .bind(pool_id)
                 .fetch_optional(pool)
                 .await?;
@@ -240,7 +240,7 @@ async fn ensure_sla_stubs(pool: &SqlitePool) -> anyhow::Result<()> {
         }
 
         let (rpo, retention): (i32, i32) = if let Some(tid) = tier_id {
-            sqlx::query_as(
+            crate::db::query_as(
                 "SELECT backup_rpo_hours, snapshot_retention_days FROM storage_tiers WHERE id = ?",
             )
             .bind(tid)
@@ -259,7 +259,7 @@ async fn ensure_sla_stubs(pool: &SqlitePool) -> anyhow::Result<()> {
             "C"
         };
         let mut tx = pool.begin().await?;
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO storage_backup_sla (id, pool_id, rpo_hours, rto_hours, retention_days, compliance_grade)
              VALUES (?, ?, ?, 4, ?, ?)",
         )
@@ -276,10 +276,10 @@ async fn ensure_sla_stubs(pool: &SqlitePool) -> anyhow::Result<()> {
 }
 
 pub async fn snapshot_policy_for_pool(
-    pool: &SqlitePool,
+    pool: &DbPool,
     pool_id: Uuid,
 ) -> anyhow::Result<serde_json::Value> {
-    let row: Option<(String, Option<String>, i32)> = sqlx::query_as(
+    let row: Option<(String, Option<String>, i32)> = crate::db::query_as(
         "SELECT p.name, t.name, COALESCE(t.snapshot_retention_days, 7)
          FROM storage_pools p
          LEFT JOIN storage_tiers t ON t.id = p.tier_id

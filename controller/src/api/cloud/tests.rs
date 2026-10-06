@@ -24,12 +24,12 @@ impl Fixture {
         let other = Uuid::new_v4();
         let host = Uuid::new_v4();
         let cluster = Uuid::new_v4();
-        sqlx::query("INSERT INTO clusters(id,name) VALUES (?,'cloud-test')")
+        crate::db::query("INSERT INTO clusters(id,name) VALUES (?,'cloud-test')")
             .bind(cluster)
             .execute(&state.pool)
             .await
             .unwrap();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO hosts(id,cluster_id,hostname,state) VALUES (?,?,'cloud-host','online')",
         )
         .bind(host)
@@ -38,7 +38,7 @@ impl Fixture {
         .await
         .unwrap();
         for (id, name) in [(project, "cloud-a"), (other, "cloud-b")] {
-            sqlx::query("INSERT INTO projects(id,name) VALUES (?,?)")
+            crate::db::query("INSERT INTO projects(id,name) VALUES (?,?)")
                 .bind(id)
                 .bind(name)
                 .execute(&state.pool)
@@ -46,8 +46,8 @@ impl Fixture {
                 .unwrap();
         }
         let user = Uuid::new_v4();
-        sqlx::query("INSERT INTO users(id,username,password_hash,role) VALUES (?,'alice','unused','operator')").bind(user).execute(&state.pool).await.unwrap();
-        sqlx::query("INSERT INTO project_role_assignments(id,user_id,project_id,role) VALUES (?,?,?,'operator')").bind(Uuid::new_v4()).bind(user).bind(project).execute(&state.pool).await.unwrap();
+        crate::db::query("INSERT INTO users(id,username,password_hash,role) VALUES (?,'alice','unused','operator')").bind(user).execute(&state.pool).await.unwrap();
+        crate::db::query("INSERT INTO project_role_assignments(id,user_id,project_id,role) VALUES (?,?,?,'operator')").bind(Uuid::new_v4()).bind(user).bind(project).execute(&state.pool).await.unwrap();
         Self {
             state,
             project,
@@ -198,7 +198,7 @@ async fn overlapping_vpcs_and_subnets_are_rejected_and_outbox_is_committed() {
         .0,
         StatusCode::BAD_REQUEST
     );
-    let n:i64=sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE resource_id=? AND status='pending' AND operation='cloud.subnet.provision'").bind(subnet).fetch_one(&f.state.pool).await.unwrap();
+    let n:i64=crate::db::query_scalar("SELECT COUNT(*) FROM tasks WHERE resource_id=? AND status='pending' AND operation='cloud.subnet.provision'").bind(subnet).fetch_one(&f.state.pool).await.unwrap();
     assert_eq!(n, 1);
     assert_eq!(
         f.admin("DELETE", &format!("/api/v1/cloud/vpcs/{vpc}"), json!({}))
@@ -220,7 +220,7 @@ async fn ipam_retries_reuse_addresses_and_never_enter_dhcp_range() {
     let (_, b) = f.admin("POST", &path, json!({"request_key":"vm-b"})).await;
     assert_eq!(b["address"], "10.20.1.5");
     for n in 6..=127 {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO cloud_ip_allocations(id,subnet_id,request_key,address) VALUES (?,?,?,?)",
         )
         .bind(Uuid::new_v4())
@@ -316,7 +316,7 @@ async fn template_secrets_and_cross_project_groups_are_rejected() {
     let f = Fixture::new().await;
     let vpc = f.vpc("10.20.0.0/16").await;
     let subnet = f.subnet(vpc).await;
-    sqlx::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
+    crate::db::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
         .bind(subnet)
         .execute(&f.state.pool)
         .await
@@ -379,7 +379,7 @@ async fn legacy_attachment_paths_check_owner_host_and_ready_state() {
             .await
             .is_err()
     );
-    sqlx::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
+    crate::db::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
         .bind(subnet)
         .execute(&f.state.pool)
         .await
@@ -399,7 +399,7 @@ async fn legacy_attachment_paths_check_owner_host_and_ready_state() {
             .await
             .is_err()
     );
-    let network: Uuid = sqlx::query_scalar("SELECT network_id FROM cloud_subnets WHERE id=?")
+    let network: Uuid = crate::db::query_scalar("SELECT network_id FROM cloud_subnets WHERE id=?")
         .bind(subnet)
         .fetch_one(&f.state.pool)
         .await
@@ -414,13 +414,13 @@ async fn a_bus_outage_does_not_lose_the_committed_subnet_job() {
     drop(rx);
     f.state.task_bus = bus;
     let subnet = f.subnet(vpc).await;
-    let status: String = sqlx::query_scalar("SELECT status FROM tasks WHERE resource_id=?")
+    let status: String = crate::db::query_scalar("SELECT status FROM tasks WHERE resource_id=?")
         .bind(subnet)
         .fetch_one(&f.state.pool)
         .await
         .unwrap();
     assert_eq!(status, "pending");
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cloud_subnets WHERE id=?")
+    let count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM cloud_subnets WHERE id=?")
         .bind(subnet)
         .fetch_one(&f.state.pool)
         .await
@@ -433,7 +433,7 @@ async fn instance_reconciliation_is_idempotent_and_scale_in_retains_disks() {
     let f = Fixture::new().await;
     let vpc = f.vpc("10.20.0.0/16").await;
     let subnet = f.subnet(vpc).await;
-    sqlx::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
+    crate::db::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
         .bind(subnet)
         .execute(&f.state.pool)
         .await
@@ -463,13 +463,13 @@ async fn instance_reconciliation_is_idempotent_and_scale_in_retains_disks() {
         .await
         .unwrap();
     let members: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM cloud_group_members WHERE group_id=?")
+        crate::db::query_scalar("SELECT COUNT(*) FROM cloud_group_members WHERE group_id=?")
             .bind(group)
             .fetch_one(&f.state.pool)
             .await
             .unwrap();
     assert_eq!(members, 1);
-    let (vm,desired):(Uuid,String)=sqlx::query_as("SELECT v.id,v.desired_state FROM vms v JOIN cloud_group_members m ON m.vm_id=v.id WHERE m.group_id=?").bind(group).fetch_one(&f.state.pool).await.unwrap();
+    let (vm,desired):(Uuid,String)=crate::db::query_as("SELECT v.id,v.desired_state FROM vms v JOIN cloud_group_members m ON m.vm_id=v.id WHERE m.group_id=?").bind(group).fetch_one(&f.state.pool).await.unwrap();
     assert_eq!(desired, "running");
     assert!(check_vm_host(&f.state.pool, vm, f.host).await.is_ok());
     assert!(check_vm_host(&f.state.pool, vm, Uuid::new_v4())
@@ -489,13 +489,13 @@ async fn instance_reconciliation_is_idempotent_and_scale_in_retains_disks() {
     crate::engine::cloud::reconcile_group(&f.state, group)
         .await
         .unwrap();
-    let desired: String = sqlx::query_scalar("SELECT desired_state FROM vms WHERE id=?")
+    let desired: String = crate::db::query_scalar("SELECT desired_state FROM vms WHERE id=?")
         .bind(vm)
         .fetch_one(&f.state.pool)
         .await
         .unwrap();
     assert_eq!(desired, "stopped");
-    let disks: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vm_disks WHERE vm_id=?")
+    let disks: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vm_disks WHERE vm_id=?")
         .bind(vm)
         .fetch_one(&f.state.pool)
         .await
@@ -511,7 +511,7 @@ async fn instance_reconciliation_is_idempotent_and_scale_in_retains_disks() {
     crate::engine::cloud::reconcile_group(&f.state, group)
         .await
         .unwrap();
-    let desired: String = sqlx::query_scalar("SELECT desired_state FROM vms WHERE id=?")
+    let desired: String = crate::db::query_scalar("SELECT desired_state FROM vms WHERE id=?")
         .bind(vm)
         .fetch_one(&f.state.pool)
         .await
@@ -523,7 +523,7 @@ async fn instance_reconciliation_is_idempotent_and_scale_in_retains_disks() {
 async fn subnet_creation_rolls_back_if_the_outbox_insert_fails() {
     let f = Fixture::new().await;
     let vpc = f.vpc("10.20.0.0/16").await;
-    sqlx::query("CREATE TRIGGER fail_cloud_job BEFORE INSERT ON tasks WHEN NEW.operation='cloud.subnet.provision' BEGIN SELECT RAISE(ABORT,'outbox unavailable'); END").execute(&f.state.pool).await.unwrap();
+    crate::db::query("CREATE TRIGGER fail_cloud_job BEFORE INSERT ON tasks WHEN NEW.operation='cloud.subnet.provision' BEGIN SELECT RAISE(ABORT,'outbox unavailable'); END").execute(&f.state.pool).await.unwrap();
     let (status, _) = f
         .admin(
             "POST",
@@ -533,7 +533,7 @@ async fn subnet_creation_rolls_back_if_the_outbox_insert_fails() {
         .await;
     assert!(status.is_server_error());
     // Acquiring the sole connection waits for SQLx's deferred rollback.
-    let count:i64=sqlx::query_scalar("SELECT (SELECT COUNT(*) FROM cloud_subnets)+(SELECT COUNT(*) FROM networks WHERE backend='cloud-isolated')").fetch_one(&f.state.pool).await.unwrap();
+    let count:i64=crate::db::query_scalar("SELECT (SELECT COUNT(*) FROM cloud_subnets)+(SELECT COUNT(*) FROM networks WHERE backend='cloud-isolated')").fetch_one(&f.state.pool).await.unwrap();
     assert_eq!(count, 0);
 }
 #[tokio::test]
@@ -562,7 +562,7 @@ async fn groups_drain_from_their_load_balancer_then_sleep() {
     let f = Fixture::new().await;
     let vpc = f.vpc("10.20.0.0/16").await;
     let subnet = f.subnet(vpc).await;
-    sqlx::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
+    crate::db::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
         .bind(subnet)
         .execute(&f.state.pool)
         .await
@@ -588,7 +588,7 @@ async fn groups_drain_from_their_load_balancer_then_sleep() {
         )
         .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "unknown load balancer");
-    sqlx::query("INSERT INTO load_balancers (id, project_id, name, host_id, listener_port) VALUES (?, ?, 'web', ?, 8080)")
+    crate::db::query("INSERT INTO load_balancers (id, project_id, name, host_id, listener_port) VALUES (?, ?, 'web', ?, 8080)")
         .bind(lb)
         .bind(f.project)
         .bind(f.host)
@@ -606,13 +606,13 @@ async fn groups_drain_from_their_load_balancer_then_sleep() {
     let group: Uuid = serde_json::from_value(g["id"].clone()).unwrap();
     let reconcile = || crate::engine::cloud::reconcile_group(&f.state, group);
     reconcile().await.unwrap();
-    let vm: Uuid = sqlx::query_scalar("SELECT vm_id FROM cloud_group_members WHERE group_id=?")
+    let vm: Uuid = crate::db::query_scalar("SELECT vm_id FROM cloud_group_members WHERE group_id=?")
         .bind(group)
         .fetch_one(&f.state.pool)
         .await
         .unwrap();
     let member = || async {
-        sqlx::query_scalar::<_, bool>(
+        crate::db::query_scalar::<_, bool>(
             "SELECT enabled FROM lb_members WHERE load_balancer_id=? AND vm_id=?",
         )
         .bind(lb)
@@ -623,7 +623,7 @@ async fn groups_drain_from_their_load_balancer_then_sleep() {
     };
     reconcile().await.unwrap();
     assert_eq!(member().await, None, "no address yet: not a member");
-    sqlx::query("UPDATE vms SET observed_state='running', guest_ip='10.20.1.130' WHERE id=?")
+    crate::db::query("UPDATE vms SET observed_state='running', guest_ip='10.20.1.130' WHERE id=?")
         .bind(vm)
         .execute(&f.state.pool)
         .await
@@ -644,7 +644,7 @@ async fn groups_drain_from_their_load_balancer_then_sleep() {
         Some(false),
         "out of the load balancer first"
     );
-    let (desired, draining): (String, Option<String>) = sqlx::query_as(
+    let (desired, draining): (String, Option<String>) = crate::db::query_as(
         "SELECT v.desired_state, m.draining_since FROM vms v JOIN cloud_group_members m ON m.vm_id=v.id WHERE v.id=?",
     )
     .bind(vm)
@@ -654,7 +654,7 @@ async fn groups_drain_from_their_load_balancer_then_sleep() {
     assert_eq!(desired, "running", "still serving open connections");
     assert!(draining.is_some());
     let sleeps = || async {
-        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM tasks WHERE resource_id=? AND operation='vm.power' AND json_extract(payload,'$.action')='managedsave'")
+        crate::db::query_scalar::<_, i64>("SELECT COUNT(*) FROM tasks WHERE resource_id=? AND operation='vm.power' AND json_extract(payload,'$.action')='managedsave'")
             .bind(vm)
             .fetch_one(&f.state.pool)
             .await
@@ -662,7 +662,7 @@ async fn groups_drain_from_their_load_balancer_then_sleep() {
     };
     reconcile().await.unwrap();
     assert_eq!(sleeps().await, 0, "drain period not over");
-    sqlx::query("UPDATE cloud_group_members SET draining_since=datetime('now','-31 seconds') WHERE group_id=?")
+    crate::db::query("UPDATE cloud_group_members SET draining_since=datetime('now','-31 seconds') WHERE group_id=?")
         .bind(group)
         .execute(&f.state.pool)
         .await
@@ -672,12 +672,12 @@ async fn groups_drain_from_their_load_balancer_then_sleep() {
     reconcile().await.unwrap();
     assert_eq!(sleeps().await, 1, "one sleep while it is in flight");
 
-    sqlx::query("UPDATE tasks SET status='completed' WHERE resource_id=?")
+    crate::db::query("UPDATE tasks SET status='completed' WHERE resource_id=?")
         .bind(vm)
         .execute(&f.state.pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE vms SET desired_state='sleeping', observed_state='shut off' WHERE id=?")
+    crate::db::query("UPDATE vms SET desired_state='sleeping', observed_state='shut off' WHERE id=?")
         .bind(vm)
         .execute(&f.state.pool)
         .await
@@ -685,14 +685,14 @@ async fn groups_drain_from_their_load_balancer_then_sleep() {
     f.admin("PATCH", &path, json!({"policy":policy(1),"paused":false}))
         .await;
     reconcile().await.unwrap();
-    let desired: String = sqlx::query_scalar("SELECT desired_state FROM vms WHERE id=?")
+    let desired: String = crate::db::query_scalar("SELECT desired_state FROM vms WHERE id=?")
         .bind(vm)
         .fetch_one(&f.state.pool)
         .await
         .unwrap();
     assert_eq!(desired, "running", "scale-out wakes the sleeping member");
     assert_eq!(member().await, Some(false), "rejoins once it runs");
-    sqlx::query("UPDATE vms SET observed_state='running' WHERE id=?")
+    crate::db::query("UPDATE vms SET observed_state='running' WHERE id=?")
         .bind(vm)
         .execute(&f.state.pool)
         .await
@@ -708,7 +708,7 @@ async fn group_forecast_reads_the_hourly_history() {
     let f = Fixture::new().await;
     let vpc = f.vpc("10.20.0.0/16").await;
     let subnet = f.subnet(vpc).await;
-    sqlx::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
+    crate::db::query("UPDATE cloud_subnets SET status='ready' WHERE id=?")
         .bind(subnet)
         .execute(&f.state.pool)
         .await
@@ -732,7 +732,7 @@ async fn group_forecast_reads_the_hourly_history() {
     let group: Uuid = serde_json::from_value(g["id"].clone()).unwrap();
     let now = chrono::Utc::now().timestamp() / 3600 * 3600;
     for d in 1..=3 {
-        sqlx::query("INSERT INTO metric_hourly (subject, metric, hour, avg, max, n) VALUES (?, 'cpu_sum', ?, 150, 240, 12)")
+        crate::db::query("INSERT INTO metric_hourly (subject, metric, hour, avg, max, n) VALUES (?, 'cpu_sum', ?, 150, 240, 12)")
             .bind(crate::engine::ai::forecast::group_subject(group))
             .bind(now + 3600 - d * 86400)
             .execute(&f.state.pool)
@@ -758,7 +758,7 @@ async fn group_forecast_reads_the_hourly_history() {
         .await
         .unwrap();
     let raw: String =
-        sqlx::query_scalar("SELECT policy_json FROM cloud_instance_groups WHERE id=?")
+        crate::db::query_scalar("SELECT policy_json FROM cloud_instance_groups WHERE id=?")
             .bind(group)
             .fetch_one(&f.state.pool)
             .await
@@ -778,7 +778,7 @@ async fn samples_roll_up_hourly_with_a_network_rate() {
     {
         let ts = hour + i as i64 * 1200;
         for (metric, value) in [("cpu_percent", cpu), ("net_bytes", net)] {
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO metric_samples (subject, metric, ts, value) VALUES ('vm-a', ?, ?, ?)",
             )
             .bind(metric)
@@ -811,7 +811,7 @@ async fn groups_and_unused_templates_can_be_deleted_and_used_ones_cannot() {
     let f = Fixture::new().await;
     let vpc = f.vpc("10.20.0.0/16").await;
     let subnet = f.subnet(vpc).await;
-    sqlx::query("UPDATE cloud_subnets SET status='ready' WHERE id=?").bind(subnet).execute(&f.state.pool).await.unwrap();
+    crate::db::query("UPDATE cloud_subnets SET status='ready' WHERE id=?").bind(subnet).execute(&f.state.pool).await.unwrap();
     let (_, t) = f.admin("POST", &format!("/api/v1/cloud/projects/{}/launch-templates", f.project), json!({"name":"base","vm":template()})).await;
     let (status, g) = f
         .admin(
@@ -862,7 +862,7 @@ async fn a_subnet_with_reserved_addresses_cannot_be_deleted() {
 #[tokio::test]
 async fn a_project_scoped_api_key_reaches_only_its_projects() {
     let f = Fixture::new().await;
-    sqlx::query("INSERT INTO api_keys (id, name, key_hash, role, projects) VALUES (?, 'svc', 'x', 'operator', '[\"cloud-a\"]')")
+    crate::db::query("INSERT INTO api_keys (id, name, key_hash, role, projects) VALUES (?, 'svc', 'x', 'operator', '[\"cloud-a\"]')")
         .bind(Uuid::new_v4())
         .execute(&f.state.pool)
         .await
@@ -875,7 +875,7 @@ async fn a_project_scoped_api_key_reaches_only_its_projects() {
     assert_eq!(code, StatusCode::FORBIDDEN, "{body}");
     assert!(body.to_string().contains("key_scope_forbidden"), "{body}");
     // a read-only key cannot write even inside its project
-    sqlx::query("INSERT INTO api_keys (id, name, key_hash, role, projects) VALUES (?, 'ro', 'y', 'viewer', '[\"cloud-a\"]')")
+    crate::db::query("INSERT INTO api_keys (id, name, key_hash, role, projects) VALUES (?, 'ro', 'y', 'viewer', '[\"cloud-a\"]')")
         .bind(Uuid::new_v4())
         .execute(&f.state.pool)
         .await

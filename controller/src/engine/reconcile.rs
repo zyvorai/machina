@@ -76,7 +76,7 @@ async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
     // attempted (and never-attempted) first, so a VM skipped this tick sorts
     // ahead of ones just enqueued, guaranteeing rotation across the whole
     // out-of-sync set over successive ticks instead of wedging on the first 20.
-    let rows: Vec<(Uuid, String, String, String)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, String)> = crate::db::query_as(
         "SELECT v.id, v.name, v.desired_state, v.observed_state
          FROM vms v
          LEFT JOIN (
@@ -97,7 +97,7 @@ async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
 
     for (vm_id, name, desired, observed) in rows {
         tracing::info!("reconcile VM {name}: desired={desired} observed={observed}");
-        let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+        let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await?;
@@ -114,7 +114,7 @@ async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
         // or running, skip this tick. Otherwise a VM that never converges (a start
         // that keeps failing, or a guest ignoring ACPI shutdown) would accrue a
         // fresh task — and a task_failed webhook — every 60s indefinitely.
-        let inflight: i64 = sqlx::query_scalar(
+        let inflight: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'vm.power' AND status IN ('pending', 'running')",
         )
         .bind(vm_id)
@@ -131,7 +131,7 @@ async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
         // never converges would re-enqueue — and fire a task_failed webhook —
         // every 60s forever. Space attempts by 2^fails minutes (capped at 30)
         // measured from the last attempt; recent_fails == 0 → no delay.
-        let recent_fails: i64 = sqlx::query_scalar(
+        let recent_fails: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM tasks
              WHERE resource_id = ? AND operation = 'vm.power' AND status = 'failed'
                AND created_at > datetime('now', '-1 hour')",
@@ -142,7 +142,7 @@ async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
         .unwrap_or(0);
         if recent_fails > 0 {
             let backoff_min = reconcile_backoff_minutes(recent_fails);
-            let too_soon: bool = sqlx::query_scalar(
+            let too_soon: bool = crate::db::query_scalar(
                 "SELECT EXISTS(SELECT 1 FROM tasks
                  WHERE resource_id = ? AND operation = 'vm.power'
                    AND created_at > datetime('now', ?))",
@@ -224,10 +224,10 @@ mod tests {
         assert_eq!(reconcile_action("sleeping", "running"), None);
     }
 
-    async fn seed_vm(pool: &sqlx::SqlitePool, desired: &str, observed: &str) -> Uuid {
+    async fn seed_vm(pool: &crate::db::DbPool, desired: &str, observed: &str) -> Uuid {
         let host_id = seed_host(pool, Uuid::from_u128(10)).await;
         let vm_id = Uuid::from_u128(11);
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vms (id, host_id, name, desired_state, observed_state)
              VALUES (?, ?, 'vm1', ?, ?)",
         )
@@ -241,8 +241,8 @@ mod tests {
         vm_id
     }
 
-    async fn power_tasks(pool: &sqlx::SqlitePool, vm_id: Uuid) -> Vec<serde_json::Value> {
-        let rows: Vec<(serde_json::Value,)> = sqlx::query_as(
+    async fn power_tasks(pool: &crate::db::DbPool, vm_id: Uuid) -> Vec<serde_json::Value> {
+        let rows: Vec<(serde_json::Value,)> = crate::db::query_as(
             "SELECT payload FROM tasks WHERE resource_id = ? AND operation = 'vm.power'",
         )
         .bind(vm_id)

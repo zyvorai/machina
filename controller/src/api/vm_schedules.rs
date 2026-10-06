@@ -47,7 +47,7 @@ pub async fn list_vm_schedules(
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<Vec<VmScheduleRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, VmScheduleRow>(
+    let rows = crate::db::query_as::<_, VmScheduleRow>(
         "SELECT id, vm_id, action, interval_minutes, retention, label, enabled,
                 next_run_at, last_run_at, created_at
          FROM vm_schedules WHERE vm_id = ? ORDER BY created_at",
@@ -76,7 +76,7 @@ pub async fn create_vm_schedule(
     }
 
     // Verify VM exists
-    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM vms WHERE id = ?")
+    let exists: Option<Uuid> = crate::db::query_scalar("SELECT id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?;
@@ -85,7 +85,7 @@ pub async fn create_vm_schedule(
     }
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vm_schedules (id, vm_id, action, interval_minutes, retention, label, next_run_at)
          VALUES (?, ?, ?, ?, ?, ?, datetime('now', '+' || ? || ' minutes'))",
     )
@@ -99,7 +99,7 @@ pub async fn create_vm_schedule(
     .execute(&state.pool)
     .await?;
 
-    let row = sqlx::query_as::<_, VmScheduleRow>(
+    let row = crate::db::query_as::<_, VmScheduleRow>(
         "SELECT id, vm_id, action, interval_minutes, retention, label, enabled,
                 next_run_at, last_run_at, created_at
          FROM vm_schedules WHERE id = ?",
@@ -118,7 +118,7 @@ pub async fn delete_vm_schedule(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
 
-    let affected = sqlx::query("DELETE FROM vm_schedules WHERE id = ? AND vm_id = ?")
+    let affected = crate::db::query("DELETE FROM vm_schedules WHERE id = ? AND vm_id = ?")
         .bind(schedule_id)
         .bind(vm_id)
         .execute(&state.pool)

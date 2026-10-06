@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Deserialize)]
 pub struct ServiceImpactQuery {
@@ -27,13 +27,13 @@ fn escape_like(s: &str) -> String {
 }
 
 pub async fn simulate(
-    pool: &SqlitePool,
+    pool: &DbPool,
     q: &ServiceImpactQuery,
 ) -> anyhow::Result<ServiceImpactResult> {
     let name = q.service.trim();
     let pattern = format!("%{}%", escape_like(name));
 
-    let group_id: Option<uuid::Uuid> = sqlx::query_scalar(
+    let group_id: Option<uuid::Uuid> = crate::db::query_scalar(
         "SELECT id FROM application_groups WHERE name LIKE ? ESCAPE '\\' LIMIT 1",
     )
     .bind(&pattern)
@@ -44,7 +44,7 @@ pub async fn simulate(
     let mut affected_hosts = Vec::new();
 
     if let Some(gid) = group_id {
-        let rows: Vec<(String, Option<String>)> = sqlx::query_as(
+        let rows: Vec<(String, Option<String>)> = crate::db::query_as(
             "SELECT v.name, h.hostname FROM application_group_vms agv
              JOIN vms v ON v.id = agv.vm_id
              LEFT JOIN hosts h ON h.id = v.host_id
@@ -64,7 +64,7 @@ pub async fn simulate(
         }
     } else {
         let vms: Vec<String> =
-            sqlx::query_scalar("SELECT name FROM vms WHERE name LIKE ? ESCAPE '\\' LIMIT 12")
+            crate::db::query_scalar("SELECT name FROM vms WHERE name LIKE ? ESCAPE '\\' LIMIT 12")
                 .bind(&pattern)
                 .fetch_all(pool)
                 .await

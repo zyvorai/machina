@@ -7,7 +7,7 @@ use machina_core::{
     StealthLevel,
 };
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -45,10 +45,10 @@ pub struct FirewallTargetDetail {
 }
 
 pub async fn overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FirewallOverview> {
-    let hosts: Vec<(Uuid, String, String, String)> = sqlx::query_as(
+    let hosts: Vec<(Uuid, String, String, String)> = crate::db::query_as(
         "SELECT id, hostname, COALESCE(agent_grpc_addr, ''), state FROM hosts ORDER BY hostname",
     )
     .fetch_all(pool)
@@ -132,7 +132,7 @@ pub async fn overview(
 }
 
 pub async fn target_detail(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
 ) -> anyhow::Result<FirewallTargetDetail> {
@@ -153,7 +153,7 @@ pub async fn target_detail(
     }
 
     let id = Uuid::parse_str(target_id)?;
-    if let Some(row) = sqlx::query_as::<_, (String, String, String)>(
+    if let Some(row) = crate::db::query_as::<_, (String, String, String)>(
         "SELECT hostname, COALESCE(agent_grpc_addr, ''), state FROM hosts WHERE id = ?",
     )
     .bind(id)
@@ -194,7 +194,7 @@ pub async fn target_detail(
 }
 
 pub async fn target_ports(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
 ) -> anyhow::Result<Vec<OpenPort>> {
@@ -203,7 +203,7 @@ pub async fn target_ports(
 }
 
 pub async fn target_services(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
 ) -> anyhow::Result<Vec<machina_core::firewall::types::AllowedService>> {
@@ -212,7 +212,7 @@ pub async fn target_services(
 }
 
 pub async fn target_score(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
 ) -> anyhow::Result<machina_core::FirewallScore> {
@@ -221,7 +221,7 @@ pub async fn target_score(
 }
 
 pub async fn plan_target(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
     mut req: FirewallPlanRequest,
@@ -232,7 +232,7 @@ pub async fn plan_target(
     req.zone_cidrs = cfg.firewall_zones.clone();
     if target_id != "local" {
         if let Ok(id) = Uuid::parse_str(target_id) {
-            if sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM hosts WHERE id = ?")
+            if crate::db::query_scalar::<_, i64>("SELECT COUNT(*) FROM hosts WHERE id = ?")
                 .bind(id)
                 .fetch_one(pool)
                 .await?
@@ -251,7 +251,7 @@ pub async fn plan_target(
 }
 
 pub async fn apply_target(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
     mut req: FirewallPlanRequest,
@@ -260,7 +260,7 @@ pub async fn apply_target(
     req.zone_cidrs = cfg.firewall_zones.clone();
     if target_id != "local" {
         if let Ok(id) = Uuid::parse_str(target_id) {
-            if sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM hosts WHERE id = ?")
+            if crate::db::query_scalar::<_, i64>("SELECT COUNT(*) FROM hosts WHERE id = ?")
                 .bind(id)
                 .fetch_one(pool)
                 .await?
@@ -291,7 +291,7 @@ pub async fn apply_target(
         if let Ok(detail) = target_detail(pool, cfg, target_id).await {
             let _ = super::drift::save_snapshot(pool, "host", host_id, &detail.inventory).await;
         }
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, 'host', ?, 'apply', ?, ?, ?)",
         )
         .bind(uuid::Uuid::new_v4())
@@ -301,7 +301,7 @@ pub async fn apply_target(
         .bind(actor)
         .execute(pool)
         .await;
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
              VALUES (?, ?, 'zeus_firewall.apply', 'host', ?, ?)",
         )
@@ -404,7 +404,7 @@ pub fn risk_label(inv: &FirewallInventory) -> &'static str {
 }
 
 async fn resolve_hostname(
-    pool: &SqlitePool,
+    pool: &DbPool,
     _cfg: &ControllerConfig,
     target_id: &str,
 ) -> anyhow::Result<String> {
@@ -413,7 +413,7 @@ async fn resolve_hostname(
     }
     let id = Uuid::parse_str(target_id)?;
     if let Some(hostname) =
-        sqlx::query_scalar::<_, String>("SELECT hostname FROM hosts WHERE id = ?")
+        crate::db::query_scalar::<_, String>("SELECT hostname FROM hosts WHERE id = ?")
             .bind(id)
             .fetch_optional(pool)
             .await?
@@ -425,7 +425,7 @@ async fn resolve_hostname(
 }
 
 async fn resolve_agent(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
 ) -> anyhow::Result<Option<String>> {
@@ -434,7 +434,7 @@ async fn resolve_agent(
     }
     let host_id = Uuid::parse_str(target_id)?;
     let addr: String =
-        sqlx::query_scalar("SELECT COALESCE(agent_grpc_addr, '') FROM hosts WHERE id = ?")
+        crate::db::query_scalar("SELECT COALESCE(agent_grpc_addr, '') FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_one(pool)
             .await?;
@@ -446,7 +446,7 @@ async fn resolve_agent(
 }
 
 pub async fn apply_profile(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
     profile: &str,

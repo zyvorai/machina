@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::capacity;
@@ -28,7 +28,7 @@ pub struct PredictionsReport {
     pub summary: String,
 }
 
-pub async fn unified(pool: &SqlitePool) -> anyhow::Result<PredictionsReport> {
+pub async fn unified(pool: &DbPool) -> anyhow::Result<PredictionsReport> {
     let mut predictions = Vec::new();
 
     let sre = sre_predict::forecast(pool).await?;
@@ -67,7 +67,7 @@ pub async fn unified(pool: &SqlitePool) -> anyhow::Result<PredictionsReport> {
     }
 
     // Host saturation
-    let hot_hosts: Vec<(String, f64)> = sqlx::query_as(
+    let hot_hosts: Vec<(String, f64)> = crate::db::query_as(
         "SELECT hostname, cpu_percent FROM hosts WHERE state = 'online' AND cpu_percent >= 80 ORDER BY cpu_percent DESC LIMIT 5",
     )
     .fetch_all(pool)
@@ -87,7 +87,7 @@ pub async fn unified(pool: &SqlitePool) -> anyhow::Result<PredictionsReport> {
     }
 
     // SMART / linux health stub from fleet
-    let smart_warn: i64 = sqlx::query_scalar(
+    let smart_warn: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM hosts WHERE state = 'online' AND tags LIKE '%smart_warn%'",
     )
     .fetch_optional(pool)
@@ -135,7 +135,7 @@ fn escape_like(s: &str) -> String {
 }
 
 /// Open ai_incidents for high/critical predictions within 72h horizon (deduped by resource).
-pub async fn promote_critical(pool: &SqlitePool, predictions: &[Prediction]) -> anyhow::Result<()> {
+pub async fn promote_critical(pool: &DbPool, predictions: &[Prediction]) -> anyhow::Result<()> {
     use super::incident_commander::{self, CreateIncidentRequest};
 
     for p in predictions {
@@ -149,7 +149,7 @@ pub async fn promote_critical(pool: &SqlitePool, predictions: &[Prediction]) -> 
         // dedup check match unrelated resources (e.g. "db-primary" vs
         // "dbXprimary") and silently skip opening a real incident.
         let pattern = format!("%{}%", escape_like(&p.resource));
-        let exists: bool = sqlx::query_scalar(
+        let exists: bool = crate::db::query_scalar(
             "SELECT EXISTS(
                 SELECT 1 FROM ai_incidents
                 WHERE status IN ('open', 'investigating')
@@ -183,7 +183,7 @@ pub async fn promote_critical(pool: &SqlitePool, predictions: &[Prediction]) -> 
             },
         )
         .await?;
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO events (id, kind, message, resource_type, resource_id, payload) VALUES (?, 'prediction', ?, ?, ?, ?)",
         )
         .bind(uuid::Uuid::new_v4())
@@ -218,7 +218,7 @@ pub struct RightsizingReport {
     pub estimated_monthly_savings_usd: f64,
 }
 
-pub async fn rightsizing_report(pool: &SqlitePool) -> anyhow::Result<RightsizingReport> {
+pub async fn rightsizing_report(pool: &DbPool) -> anyhow::Result<RightsizingReport> {
     let cost_analysis = cost::analyze(pool).await?;
     let sre = match sre_remediate::propose(pool).await {
         Ok(r) => r,
@@ -230,7 +230,7 @@ pub async fn rightsizing_report(pool: &SqlitePool) -> anyhow::Result<Rightsizing
 
     let mut recommendations = Vec::new();
 
-    let oversized: Vec<(Uuid, String, i64, Option<i64>)> = sqlx::query_as(
+    let oversized: Vec<(Uuid, String, i64, Option<i64>)> = crate::db::query_as(
         "SELECT v.id, v.name, v.memory_mib, m.memory_used_mib FROM vms v
          JOIN vm_metrics m ON m.vm_id = v.id
          WHERE v.observed_state = 'running'
@@ -257,7 +257,7 @@ pub async fn rightsizing_report(pool: &SqlitePool) -> anyhow::Result<Rightsizing
         });
     }
 
-    let idle: Vec<(Uuid, String)> = sqlx::query_as(
+    let idle: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT id, name FROM vms WHERE observed_state = 'stopped'
          AND updated_at < datetime('now', '-30 days') LIMIT 20",
     )

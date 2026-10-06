@@ -7,7 +7,7 @@ use machina_core::{
     FirewallPlanRequest,
 };
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct K8sFirewallStatus {
@@ -39,7 +39,7 @@ pub async fn compile_plan(
 
 pub async fn apply_plan(
     cfg: &ControllerConfig,
-    pool: &SqlitePool,
+    pool: &DbPool,
     namespace: &str,
     profile: &str,
     actor: &str,
@@ -55,7 +55,7 @@ pub async fn apply_plan(
     };
     let result = apply_k8s_plan(namespace, &req)?;
     if !dry_run {
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO firewall_k8s_apply_log (id, namespace, profile, backend, actor, detail_json) VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(uuid::Uuid::new_v4())

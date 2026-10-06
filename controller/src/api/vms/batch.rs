@@ -120,7 +120,7 @@ pub async fn batch_vm_snapshot(
         } else {
             format!("{}-{}", body.name, i + 1)
         };
-        let host_id: Option<Uuid> = match sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+        let host_id: Option<Uuid> = match crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await?
@@ -136,7 +136,7 @@ pub async fn batch_vm_snapshot(
             }
         };
         let snapshot_id = Uuid::new_v4();
-        if sqlx::query(
+        if crate::db::query(
             "INSERT INTO snapshot_records (id, vm_id, name, status) VALUES (?, ?, ?, 'pending')",
         )
         .bind(snapshot_id)
@@ -200,7 +200,7 @@ pub async fn batch_vm_delete(
 ) -> Result<Json<BatchVmPowerResponse>, ApiError> {
     require_operator(&actor)?;
     check_batch_size(&body.vm_ids)?;
-    let require: bool = sqlx::query_scalar(
+    let require: bool = crate::db::query_scalar(
         "SELECT require_vm_delete_approval FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(&state.pool)
@@ -214,7 +214,7 @@ pub async fn batch_vm_delete(
     let mut results = Vec::with_capacity(body.vm_ids.len());
     for vm_id in body.vm_ids {
         let row: Option<(Option<Uuid>, String)> =
-            sqlx::query_as("SELECT host_id, observed_state FROM vms WHERE id = ?")
+            crate::db::query_as("SELECT host_id, observed_state FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .fetch_optional(&state.pool)
                 .await?;

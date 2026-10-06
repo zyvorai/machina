@@ -4,7 +4,7 @@
 // Zeus Security Fabric — fleet risk aggregation over native eBPF telemetry.
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::config::ControllerConfig;
 use crate::engine::ai::security_graph;
@@ -18,7 +18,7 @@ pub struct ZeusSecurityStatus {
     pub fabric_reachable: bool,
 }
 
-pub async fn status(pool: &SqlitePool) -> ZeusSecurityStatus {
+pub async fn status(pool: &DbPool) -> ZeusSecurityStatus {
     let native = bpf::fleet_status(pool).await;
     ZeusSecurityStatus {
         fabric_reachable: native.reachable,
@@ -37,7 +37,7 @@ pub struct FleetThreatSummary {
 }
 
 pub async fn fleet_threat(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FleetThreatSummary> {
     let threat = telemetry::fleet_threat_summary(pool).await;
@@ -68,12 +68,12 @@ pub async fn fleet_threat(
     })
 }
 
-pub async fn host_summary(pool: &SqlitePool, host_id: &str) -> serde_json::Value {
+pub async fn host_summary(pool: &DbPool, host_id: &str) -> serde_json::Value {
     telemetry::host_resource(pool, host_id, "summary", 0).await
 }
 
 pub async fn host_resource(
-    pool: &SqlitePool,
+    pool: &DbPool,
     host_id: &str,
     resource: &str,
     hours: u32,
@@ -81,11 +81,11 @@ pub async fn host_resource(
     telemetry::host_resource(pool, host_id, resource, hours).await
 }
 
-pub async fn fleet_timeline(pool: &SqlitePool, hours: u32) -> serde_json::Value {
+pub async fn fleet_timeline(pool: &DbPool, hours: u32) -> serde_json::Value {
     telemetry::fleet_timeline(pool, hours).await
 }
 
-pub async fn sync_security_alerts(pool: &SqlitePool) -> anyhow::Result<usize> {
+pub async fn sync_security_alerts(pool: &DbPool) -> anyhow::Result<usize> {
     let anomalies = telemetry::anomalies(pool)
         .await
         .get("anomalies")
@@ -130,7 +130,7 @@ pub async fn sync_security_alerts(pool: &SqlitePool) -> anyhow::Result<usize> {
 }
 
 async fn insert_security_alert(
-    pool: &SqlitePool,
+    pool: &DbPool,
     summary: &str,
     host_id: &str,
     detail: &serde_json::Value,
@@ -143,7 +143,7 @@ async fn insert_security_alert(
         "kind": detail.get("kind"),
         "source": telemetry::SOURCE,
     });
-    let exists: bool = sqlx::query_scalar(
+    let exists: bool = crate::db::query_scalar(
         "SELECT EXISTS(
             SELECT 1 FROM notification_outbox
             WHERE kind = 'security.alert' AND json_extract(payload, '$.title') = ? AND created_at > datetime('now', '-1 hours')
@@ -156,7 +156,7 @@ async fn insert_security_alert(
     if exists {
         return Ok(false);
     }
-    sqlx::query("INSERT INTO notification_outbox (id, kind, payload) VALUES (?, ?, ?)")
+    crate::db::query("INSERT INTO notification_outbox (id, kind, payload) VALUES (?, ?, ?)")
         .bind(id)
         .bind("security.alert")
         .bind(payload)

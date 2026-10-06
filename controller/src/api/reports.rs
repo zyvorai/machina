@@ -43,20 +43,20 @@ pub async fn finops_report(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<FinOpsReport>, ApiError> {
     require_operator(&actor)?;
-    let rates: (f64, f64) = sqlx::query_as(
+    let rates: (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(&state.pool)
     .await?;
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(&state.pool)
         .await?;
     let running_vms: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
             .fetch_one(&state.pool)
             .await?;
     let totals: (i64, i64) =
-        sqlx::query_as("SELECT COALESCE(SUM(vcpus), 0), COALESCE(SUM(memory_mib), 0) FROM vms")
+        crate::db::query_as("SELECT COALESCE(SUM(vcpus), 0), COALESCE(SUM(memory_mib), 0) FROM vms")
             .fetch_one(&state.pool)
             .await?;
     let memory_gib = totals.1 as f64 / 1024.0;
@@ -77,26 +77,26 @@ pub async fn capacity_report(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<CapacityReport>, ApiError> {
     require_operator(&actor)?;
-    let hosts_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+    let hosts_online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(&state.pool)
         .await?;
     let hosts_offline: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
             .fetch_one(&state.pool)
             .await?;
-    let total_vms: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let total_vms: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(&state.pool)
         .await?;
     let running_vms: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
             .fetch_one(&state.pool)
             .await?;
-    let mem: (i64, i64) = sqlx::query_as(
+    let mem: (i64, i64) = crate::db::query_as(
         "SELECT COALESCE(SUM(memory_total_mib), 0), COALESCE(SUM(memory_used_mib), 0) FROM hosts WHERE state = 'online'",
     )
     .fetch_one(&state.pool)
     .await?;
-    let avg_cpu: f32 = sqlx::query_scalar(
+    let avg_cpu: f32 = crate::db::query_scalar(
         "SELECT COALESCE(AVG(cpu_percent), 0.0) FROM hosts WHERE state = 'online'",
     )
     .fetch_one(&state.pool)

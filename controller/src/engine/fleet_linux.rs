@@ -5,7 +5,7 @@
 
 use futures_util::future::join_all;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -32,10 +32,10 @@ pub struct FleetLinuxHealthOverview {
 }
 
 pub async fn overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FleetLinuxHealthOverview> {
-    let rows: Vec<(Uuid, String)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT id, hostname FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 20",
     )
     .fetch_all(pool)
@@ -136,7 +136,7 @@ pub struct FleetDiagnoseReport {
 }
 
 pub async fn diagnose(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     query: &str,
 ) -> anyhow::Result<FleetDiagnoseReport> {

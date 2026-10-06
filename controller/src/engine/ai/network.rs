@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct NetworkExplainResult {
@@ -13,7 +13,7 @@ pub struct NetworkExplainResult {
 }
 
 pub async fn explain_reach(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &crate::config::ControllerConfig,
     vm_a_name: &str,
     vm_b_name: &str,

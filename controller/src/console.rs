@@ -45,7 +45,7 @@ pub async fn vm_console(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ConsoleInfo>, ApiError> {
     require_operator(&actor)?;
-    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -87,7 +87,7 @@ pub async fn issue_ws_token(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let _exists: Uuid = sqlx::query_scalar("SELECT id FROM vms WHERE id = ?")
+    let _exists: Uuid = crate::db::query_scalar("SELECT id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -99,8 +99,8 @@ pub async fn issue_ws_token(
 /// daemon has `kubectl` access to the cluster (`daemon/src/kubevirt_k8s_ws_proxy.rs`).
 /// `None` for a libvirt VM (the common case, checked first so a plain DB
 /// error doesn't misroute a normal console open).
-async fn kubevirt_target(pool: &sqlx::SqlitePool, vm_id: Uuid) -> Option<(String, String)> {
-    let row: Option<(String, Option<String>, String)> = sqlx::query_as(
+async fn kubevirt_target(pool: &crate::db::DbPool, vm_id: Uuid) -> Option<(String, String)> {
+    let row: Option<(String, Option<String>, String)> = crate::db::query_as(
         "SELECT name, k8s_namespace, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(vm_id)
@@ -171,7 +171,7 @@ pub async fn serial_ws_proxy(
 
 async fn vm_agent_target(state: &AppState, vm_id: Uuid) -> Option<(String, String)> {
     let row =
-        sqlx::query_as::<_, (String, Option<Uuid>)>("SELECT name, host_id FROM vms WHERE id = ?")
+        crate::db::query_as::<_, (String, Option<Uuid>)>("SELECT name, host_id FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await
@@ -485,16 +485,16 @@ async fn proxy_to_agent_serial(socket: WebSocket, state: AppState, vm_id: Uuid, 
     }
 }
 
-async fn host_agent_addr(pool: &sqlx::SqlitePool, host_id: Uuid) -> Result<String, ApiError> {
-    let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+async fn host_agent_addr(pool: &crate::db::DbPool, host_id: Uuid) -> Result<String, ApiError> {
+    let addr: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;
     Ok(addr)
 }
 
-async fn host_console_addr(pool: &sqlx::SqlitePool, host_id: Uuid) -> Result<String, ApiError> {
-    let addr: String = sqlx::query_scalar(
+async fn host_console_addr(pool: &crate::db::DbPool, host_id: Uuid) -> Result<String, ApiError> {
+    let addr: String = crate::db::query_scalar(
         "SELECT COALESCE(NULLIF(agent_console_addr, ''), agent_grpc_addr) FROM hosts WHERE id = ?",
     )
     .bind(host_id)

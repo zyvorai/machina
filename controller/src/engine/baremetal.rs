@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -62,8 +62,8 @@ pub struct BaremetalCapacityPlan {
     pub summary: String,
 }
 
-pub async fn list_servers(pool: &SqlitePool) -> anyhow::Result<Vec<BaremetalServer>> {
-    let rows = sqlx::query_as::<_, BaremetalServer>(
+pub async fn list_servers(pool: &DbPool) -> anyhow::Result<Vec<BaremetalServer>> {
+    let rows = crate::db::query_as::<_, BaremetalServer>(
         "SELECT id, hostname, bmc_address, bmc_type, state, cpu_cores, memory_mib,
                 firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan, created_at
          FROM baremetal_servers ORDER BY hostname",
@@ -74,11 +74,11 @@ pub async fn list_servers(pool: &SqlitePool) -> anyhow::Result<Vec<BaremetalServ
 }
 
 pub async fn register(
-    pool: &SqlitePool,
+    pool: &DbPool,
     body: &RegisterBaremetalBody,
 ) -> anyhow::Result<BaremetalServer> {
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO baremetal_servers
          (id, hostname, bmc_address, bmc_type, cpu_cores, memory_mib, state,
           firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan)
@@ -104,7 +104,7 @@ pub async fn register(
     )
     .await;
 
-    sqlx::query_as::<_, BaremetalServer>(
+    crate::db::query_as::<_, BaremetalServer>(
         "SELECT id, hostname, bmc_address, bmc_type, state, cpu_cores, memory_mib,
                 firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan, created_at
          FROM baremetal_servers WHERE id = ?",
@@ -116,16 +116,16 @@ pub async fn register(
 }
 
 pub async fn link_host_firewall_profile(
-    pool: &SqlitePool,
+    pool: &DbPool,
     baremetal_id: Uuid,
     host_id: Uuid,
 ) -> anyhow::Result<()> {
     let profile: String =
-        sqlx::query_scalar("SELECT firewall_profile FROM baremetal_servers WHERE id = ?")
+        crate::db::query_scalar("SELECT firewall_profile FROM baremetal_servers WHERE id = ?")
             .bind(baremetal_id)
             .fetch_one(pool)
             .await?;
-    sqlx::query(
+    crate::db::query(
         "UPDATE hosts SET baremetal_origin_id = ?, notes = COALESCE(notes, '') || ? WHERE id = ?",
     )
     .bind(baremetal_id)
@@ -178,7 +178,7 @@ pub struct BmcPowerResult {
 }
 
 pub async fn set_power(
-    pool: &SqlitePool,
+    pool: &DbPool,
     id: Uuid,
     body: &BmcPowerBody,
 ) -> anyhow::Result<BmcPowerResult> {
@@ -187,7 +187,7 @@ pub async fn set_power(
         anyhow::bail!("action must be on, off, cycle, or reset");
     }
 
-    let row: BaremetalServer = sqlx::query_as(
+    let row: BaremetalServer = crate::db::query_as(
         "SELECT id, hostname, bmc_address, bmc_type, state, cpu_cores, memory_mib,
                 firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan, created_at
          FROM baremetal_servers WHERE id = ?",
@@ -219,7 +219,7 @@ pub async fn set_power(
         });
     }
 
-    sqlx::query("UPDATE baremetal_servers SET state = ? WHERE id = ?")
+    crate::db::query("UPDATE baremetal_servers SET state = ? WHERE id = ?")
         .bind(new_state)
         .bind(id)
         .execute(pool)
@@ -245,10 +245,10 @@ pub struct BaremetalProvisionPlan {
 }
 
 pub async fn provision_preview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     id: Uuid,
 ) -> anyhow::Result<BaremetalProvisionPlan> {
-    let row: BaremetalServer = sqlx::query_as(
+    let row: BaremetalServer = crate::db::query_as(
         "SELECT id, hostname, bmc_address, bmc_type, state, cpu_cores, memory_mib,
                 firewall_profile, firewall_enabled, bmc_vlan, pxe_vlan, created_at
          FROM baremetal_servers WHERE id = ?",

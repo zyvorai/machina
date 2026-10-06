@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -37,7 +37,7 @@ pub struct ReviewBody {
 }
 
 pub async fn request_approval(
-    pool: &SqlitePool,
+    pool: &DbPool,
     body: ApprovalRequest,
     actor: &str,
 ) -> anyhow::Result<FirewallApproval> {
@@ -47,7 +47,7 @@ pub async fn request_approval(
         .plan_json
         .unwrap_or_else(|| serde_json::json!({ "profile": body.profile, "dry_run": true }));
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO firewall_approvals (id, target_kind, target_id, profile, plan_json, requested_by)
          VALUES (?, 'host', ?, ?, ?, ?)",
     )
@@ -59,7 +59,7 @@ pub async fn request_approval(
     .execute(pool)
     .await?;
 
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "INSERT INTO events (id, kind, message, resource_type, resource_id, payload) VALUES (?, 'approval', ?, 'zeus_firewall', ?, '{\"severity\":\"warning\"}')",
     )
     .bind(uuid::Uuid::new_v4())
@@ -75,7 +75,7 @@ pub async fn request_approval(
 }
 
 pub async fn list_approvals(
-    pool: &SqlitePool,
+    pool: &DbPool,
     status: Option<&str>,
 ) -> anyhow::Result<Vec<FirewallApproval>> {
     let rows: Vec<(
@@ -91,7 +91,7 @@ pub async fn list_approvals(
         chrono::DateTime<chrono::Utc>,
         Option<chrono::DateTime<chrono::Utc>>,
     )> = if let Some(st) = status {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, target_kind, target_id, profile, plan_json, status, requested_by,
                     reviewed_by, review_note, created_at, reviewed_at
              FROM firewall_approvals WHERE status = ? ORDER BY created_at DESC LIMIT 100",
@@ -100,7 +100,7 @@ pub async fn list_approvals(
         .fetch_all(pool)
         .await?
     } else {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, target_kind, target_id, profile, plan_json, status, requested_by,
                     reviewed_by, review_note, created_at, reviewed_at
              FROM firewall_approvals ORDER BY created_at DESC LIMIT 100",
@@ -121,7 +121,7 @@ pub struct ApprovalApplyResult {
 }
 
 pub async fn approve_and_apply(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     approval_id: Uuid,
     reviewer: &str,
@@ -161,7 +161,7 @@ pub async fn approve_and_apply(
 }
 
 pub async fn approve(
-    pool: &SqlitePool,
+    pool: &DbPool,
     approval_id: Uuid,
     reviewer: &str,
     note: Option<&str>,
@@ -170,7 +170,7 @@ pub async fn approve(
 }
 
 pub async fn reject(
-    pool: &SqlitePool,
+    pool: &DbPool,
     approval_id: Uuid,
     reviewer: &str,
     note: Option<&str>,
@@ -179,13 +179,13 @@ pub async fn reject(
 }
 
 async fn review(
-    pool: &SqlitePool,
+    pool: &DbPool,
     approval_id: Uuid,
     reviewer: &str,
     status: &str,
     note: Option<&str>,
 ) -> anyhow::Result<FirewallApproval> {
-    let updated = sqlx::query(
+    let updated = crate::db::query(
         "UPDATE firewall_approvals SET status = ?, reviewed_by = ?, review_note = ?, reviewed_at = datetime('now')
          WHERE id = ? AND status = 'pending'",
     )
@@ -203,7 +203,7 @@ async fn review(
     get_approval(pool, approval_id).await
 }
 
-async fn get_approval(pool: &SqlitePool, id: Uuid) -> anyhow::Result<FirewallApproval> {
+async fn get_approval(pool: &DbPool, id: Uuid) -> anyhow::Result<FirewallApproval> {
     let row: (
         Uuid,
         String,
@@ -216,7 +216,7 @@ async fn get_approval(pool: &SqlitePool, id: Uuid) -> anyhow::Result<FirewallApp
         Option<String>,
         chrono::DateTime<chrono::Utc>,
         Option<chrono::DateTime<chrono::Utc>>,
-    ) = sqlx::query_as(
+    ) = crate::db::query_as(
         "SELECT id, target_kind, target_id, profile, plan_json, status, requested_by,
                 reviewed_by, review_note, created_at, reviewed_at
          FROM firewall_approvals WHERE id = ?",

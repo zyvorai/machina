@@ -4,7 +4,7 @@
 // Fleet network rollup — System Settings + Network Lens (Phase 40).
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::engine::network_overlay;
 
@@ -31,16 +31,16 @@ pub struct FleetNetworkOverview {
     pub segments: Vec<FleetNetworkSegment>,
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetNetworkOverview> {
+pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetNetworkOverview> {
     let segments = network_overlay::segments_overview(pool).await?;
-    let network_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM networks")
+    let network_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM networks")
         .fetch_one(pool)
         .await?;
-    let ipam_pool_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM network_ipam_pools")
+    let ipam_pool_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM network_ipam_pools")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
-    let hosts_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+    let hosts_online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(pool)
         .await?;
 

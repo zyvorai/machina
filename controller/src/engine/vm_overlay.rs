@@ -15,7 +15,7 @@ use machina_bpf::api::{Request, VmOverlay, VmOverlayMap, VmOverlayPeer, VmOverla
 use machina_bpf::netpol::overlay as ov;
 use machina_bpf::netpol::NetpolVm;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::bpf::{self, HostRef};
 
@@ -82,8 +82,8 @@ static KEYS: Mutex<BTreeMap<String, String>> = Mutex::new(BTreeMap::new());
 /// Every host was told the overlay is off and nothing changed since.
 static IDLE: AtomicBool = AtomicBool::new(false);
 
-pub async fn settings(pool: &SqlitePool) -> OverlaySettings {
-    sqlx::query_scalar::<_, String>("SELECT value FROM vm_netpol_overlay WHERE key = 'settings'")
+pub async fn settings(pool: &DbPool) -> OverlaySettings {
+    crate::db::query_scalar::<_, String>("SELECT value FROM vm_netpol_overlay WHERE key = 'settings'")
         .fetch_optional(pool)
         .await
         .ok()
@@ -92,8 +92,8 @@ pub async fn settings(pool: &SqlitePool) -> OverlaySettings {
         .unwrap_or_default()
 }
 
-pub async fn put_settings(pool: &SqlitePool, s: &OverlaySettings) -> anyhow::Result<()> {
-    sqlx::query(
+pub async fn put_settings(pool: &DbPool, s: &OverlaySettings) -> anyhow::Result<()> {
+    crate::db::query(
         "INSERT INTO vm_netpol_overlay (key, value) VALUES ('settings', ?)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
     )
@@ -104,8 +104,8 @@ pub async fn put_settings(pool: &SqlitePool, s: &OverlaySettings) -> anyhow::Res
     Ok(())
 }
 
-async fn allocations(pool: &SqlitePool) -> BTreeMap<String, u32> {
-    sqlx::query_as::<_, (String, String)>(
+async fn allocations(pool: &DbPool) -> BTreeMap<String, u32> {
+    crate::db::query_as::<_, (String, String)>(
         "SELECT key, value FROM vm_netpol_overlay WHERE key != 'settings'",
     )
     .fetch_all(pool)
@@ -282,18 +282,18 @@ fn endpoint(addr: &str, port: u16) -> Option<String> {
 }
 
 async fn save_allocations(
-    pool: &SqlitePool,
+    pool: &DbPool,
     before: &BTreeMap<String, u32>,
     after: &BTreeMap<String, u32>,
 ) {
     for k in before.keys().filter(|k| !after.contains_key(*k)) {
-        let _ = sqlx::query("DELETE FROM vm_netpol_overlay WHERE key = ?")
+        let _ = crate::db::query("DELETE FROM vm_netpol_overlay WHERE key = ?")
             .bind(k)
             .execute(pool)
             .await;
     }
     for (k, v) in after.iter().filter(|(k, v)| before.get(*k) != Some(v)) {
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO vm_netpol_overlay (key, value) VALUES (?, ?)
              ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP",
         )
@@ -306,7 +306,7 @@ async fn save_allocations(
 
 /// VM address → fleet address, from the stored allocations (for identities).
 pub async fn fleet_addresses(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vms: &[NetpolVm],
 ) -> BTreeMap<(String, String), String> {
     let s = settings(pool).await;
@@ -341,13 +341,13 @@ pub async fn fleet_addresses(
     out
 }
 
-pub async fn enabled(pool: &SqlitePool) -> bool {
+pub async fn enabled(pool: &DbPool) -> bool {
     settings(pool).await.enabled
 }
 
 /// Push each online host its overlay config; when off, tear down once.
 pub async fn reconcile(
-    pool: &SqlitePool,
+    pool: &DbPool,
     hosts: &[HostRef],
     host_addrs: &BTreeMap<String, String>,
     vms: &[NetpolVm],

@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::auth::AuthUser;
 use crate::state::AppState;
@@ -40,8 +40,8 @@ pub fn spawn(state: AppState) {
     });
 }
 
-async fn get_autopilot_interval_secs(pool: &SqlitePool) -> anyhow::Result<i32> {
-    let v: i32 = sqlx::query_scalar(
+async fn get_autopilot_interval_secs(pool: &DbPool) -> anyhow::Result<i32> {
+    let v: i32 = crate::db::query_scalar(
         "SELECT ai_autopilot_interval_secs FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
@@ -49,7 +49,7 @@ async fn get_autopilot_interval_secs(pool: &SqlitePool) -> anyhow::Result<i32> {
     Ok(v)
 }
 
-async fn should_run(pool: &SqlitePool, interval_secs: i32) -> bool {
+async fn should_run(pool: &DbPool, interval_secs: i32) -> bool {
     let settings = match super::settings::get_ai_settings(pool).await {
         Ok(s) => s,
         Err(_) => return false,
@@ -58,7 +58,7 @@ async fn should_run(pool: &SqlitePool, interval_secs: i32) -> bool {
         return false;
     }
 
-    let last: Option<DateTime<Utc>> = sqlx::query_scalar(
+    let last: Option<DateTime<Utc>> = crate::db::query_scalar(
         "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', ai_autopilot_last_run) FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
@@ -97,7 +97,7 @@ async fn run_scheduled_batch(state: &AppState) {
                 result.skipped_count
             );
             if let Err(e) =
-                sqlx::query("UPDATE clusters SET ai_autopilot_last_run = datetime('now')")
+                crate::db::query("UPDATE clusters SET ai_autopilot_last_run = datetime('now')")
                     .execute(&state.pool)
                     .await
             {

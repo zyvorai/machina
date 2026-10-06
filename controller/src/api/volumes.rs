@@ -75,7 +75,7 @@ const VOLUME_SELECT: &str = "SELECT id, project_id, name, size_gib, volume_class
 /// later fails (this was a real bug: a failed detach still left the volume marked
 /// `available`). Polls the task to a terminal state before the caller updates any
 /// volume state.
-pub(crate) async fn wait_for_task(pool: &sqlx::SqlitePool, task_id: &str) -> Result<(), ApiError> {
+pub(crate) async fn wait_for_task(pool: &crate::db::DbPool, task_id: &str) -> Result<(), ApiError> {
     wait_for_task_timeout(pool, task_id, Duration::from_secs(20)).await
 }
 
@@ -86,7 +86,7 @@ pub(crate) async fn wait_for_task(pool: &sqlx::SqlitePool, task_id: &str) -> Res
 /// and may still complete later — callers that track created resources (e.g.
 /// `stacks::build_stack`) should account for that instead of assuming timeout == no-op.
 pub(crate) async fn wait_for_task_timeout(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     task_id: &str,
     timeout: Duration,
 ) -> Result<(), ApiError> {
@@ -94,7 +94,7 @@ pub(crate) async fn wait_for_task_timeout(
     let attempts = (timeout.as_millis() / 500).max(1) as u32;
     for _ in 0..attempts {
         let row: Option<(String, Option<String>)> =
-            sqlx::query_as("SELECT status, message FROM tasks WHERE id = ?")
+            crate::db::query_as("SELECT status, message FROM tasks WHERE id = ?")
                 .bind(task_uuid)
                 .fetch_optional(pool)
                 .await?;
@@ -130,7 +130,7 @@ pub async fn list_volumes(
     Query(q): Query<ListVolumesQuery>,
 ) -> Result<Json<Vec<VolumeRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, VolumeRow>(&format!(
+    let rows = crate::db::query_as::<_, VolumeRow>(&format!(
         "{VOLUME_SELECT} WHERE (?1 IS NULL OR project_id = ?1) \
          AND (?2 IS NULL OR EXISTS (SELECT 1 FROM resource_tags rt WHERE rt.resource_type = 'volume' \
               AND rt.resource_id = lower(hex(volumes.id)) AND rt.key = ?2 AND (?3 IS NULL OR rt.value = ?3))) \
@@ -150,7 +150,7 @@ pub async fn get_volume(
     Path(id): Path<Uuid>,
 ) -> Result<Json<VolumeRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -192,7 +192,7 @@ pub async fn create_volume(
     };
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO volumes (id, project_id, name, size_gib, volume_class, status, delete_on_termination) VALUES (?, ?, ?, ?, ?, 'creating', ?)",
     )
     .bind(id)
@@ -210,14 +210,14 @@ pub async fn create_volume(
         create_volume_local(&state, actor, id, body.size_gib, &body.volume_class).await
     };
     if let Err(e) = result {
-        sqlx::query("UPDATE volumes SET status = 'error' WHERE id = ?")
+        crate::db::query("UPDATE volumes SET status = 'error' WHERE id = ?")
             .bind(id)
             .execute(&state.pool)
             .await?;
         return Err(e);
     }
 
-    let row = sqlx::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -263,7 +263,7 @@ async fn create_volume_atlas(
     if let Some(jid) = job.job_id() {
         let _ = client.wait_for_job(jid, Duration::from_secs(60)).await;
     }
-    sqlx::query("UPDATE volumes SET status = 'available', atlas_volume_id = ? WHERE id = ?")
+    crate::db::query("UPDATE volumes SET status = 'available', atlas_volume_id = ? WHERE id = ?")
         .bind(&atlas_volume_id)
         .bind(id)
         .execute(&state.pool)
@@ -301,18 +301,18 @@ async fn create_volume_local(
     volume_class: &str,
 ) -> Result<(), ApiError> {
     let pool_row: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM storage_pools WHERE storage_class = ? LIMIT 1")
+        crate::db::query_scalar("SELECT id FROM storage_pools WHERE storage_class = ? LIMIT 1")
             .bind(volume_class)
             .fetch_optional(&state.pool)
             .await?;
     let pool_id = match pool_row {
         Some(p) => p,
-        None => sqlx::query_scalar("SELECT id FROM storage_pools LIMIT 1")
+        None => crate::db::query_scalar("SELECT id FROM storage_pools LIMIT 1")
             .fetch_optional(&state.pool)
             .await?
             .ok_or_else(|| ApiError::bad_request("no storage pool configured"))?,
     };
-    sqlx::query("UPDATE volumes SET storage_pool_id = ? WHERE id = ?")
+    crate::db::query("UPDATE volumes SET storage_pool_id = ? WHERE id = ?")
         .bind(pool_id)
         .bind(id)
         .execute(&state.pool)
@@ -336,7 +336,7 @@ async fn create_volume_local(
         .get("path")
         .and_then(|v| v.as_str())
         .map(str::to_string);
-    sqlx::query("UPDATE volumes SET status = 'available', path = ? WHERE id = ?")
+    crate::db::query("UPDATE volumes SET status = 'available', path = ? WHERE id = ?")
         .bind(path)
         .bind(id)
         .execute(&state.pool)
@@ -350,7 +350,7 @@ pub async fn delete_volume(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let row: Option<(Option<Uuid>, Option<String>, Option<Uuid>)> = sqlx::query_as(
+    let row: Option<(Option<Uuid>, Option<String>, Option<Uuid>)> = crate::db::query_as(
         "SELECT attached_vm_id, atlas_volume_id, storage_pool_id FROM volumes WHERE id = ?",
     )
     .bind(id)
@@ -383,7 +383,7 @@ pub async fn delete_volume(
         .await;
     }
 
-    sqlx::query("DELETE FROM volumes WHERE id = ?")
+    crate::db::query("DELETE FROM volumes WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -431,7 +431,7 @@ pub async fn attach_volume(
 ) -> Result<Json<VolumeRow>, ApiError> {
     require_operator(&actor)?;
     let row: Option<(Option<String>, Option<String>)> =
-        sqlx::query_as("SELECT path, atlas_volume_id FROM volumes WHERE id = ?")
+        crate::db::query_as("SELECT path, atlas_volume_id FROM volumes WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -463,7 +463,7 @@ pub async fn attach_volume(
     .await?;
     wait_for_task(&state.pool, &task.0.task_id).await?;
 
-    sqlx::query("UPDATE volumes SET status = 'in-use', attached_vm_id = ?, attached_device = ?, delete_on_termination = COALESCE(?, delete_on_termination) WHERE id = ?")
+    crate::db::query("UPDATE volumes SET status = 'in-use', attached_vm_id = ?, attached_device = ?, delete_on_termination = COALESCE(?, delete_on_termination) WHERE id = ?")
         .bind(body.vm_id)
         .bind(&body.target_dev)
         .bind(body.delete_on_termination)
@@ -471,7 +471,7 @@ pub async fn attach_volume(
         .execute(&state.pool)
         .await?;
 
-    let row = sqlx::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -485,7 +485,7 @@ pub async fn detach_volume(
 ) -> Result<Json<VolumeRow>, ApiError> {
     require_operator(&actor)?;
     let row: Option<(Option<Uuid>, Option<String>)> =
-        sqlx::query_as("SELECT attached_vm_id, attached_device FROM volumes WHERE id = ?")
+        crate::db::query_as("SELECT attached_vm_id, attached_device FROM volumes WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -501,11 +501,11 @@ pub async fn detach_volume(
         .await?;
         wait_for_task(&state.pool, &task.0.task_id).await?;
     }
-    sqlx::query("UPDATE volumes SET status = 'available', attached_vm_id = NULL, attached_device = NULL WHERE id = ?")
+    crate::db::query("UPDATE volumes SET status = 'available', attached_vm_id = NULL, attached_device = NULL WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
-    let row = sqlx::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -527,7 +527,7 @@ pub async fn extend_volume(
     if body.new_size_gib < 1 {
         return Err(ApiError::bad_request("new_size_gib must be at least 1"));
     }
-    let row: Option<(Option<Uuid>, Option<String>, Option<String>)> = sqlx::query_as(
+    let row: Option<(Option<Uuid>, Option<String>, Option<String>)> = crate::db::query_as(
         "SELECT attached_vm_id, attached_device, atlas_volume_id FROM volumes WHERE id = ?",
     )
     .bind(id)
@@ -556,12 +556,12 @@ pub async fn extend_volume(
         .await?;
         wait_for_task(&state.pool, &task.0.task_id).await?;
     }
-    sqlx::query("UPDATE volumes SET size_gib = ? WHERE id = ?")
+    crate::db::query("UPDATE volumes SET size_gib = ? WHERE id = ?")
         .bind(body.new_size_gib)
         .bind(id)
         .execute(&state.pool)
         .await?;
-    let row = sqlx::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, VolumeRow>(&format!("{VOLUME_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -586,7 +586,7 @@ pub async fn list_volume_snapshots(
     Path(volume_id): Path<Uuid>,
 ) -> Result<Json<Vec<VolumeSnapshotRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, VolumeSnapshotRow>(
+    let rows = crate::db::query_as::<_, VolumeSnapshotRow>(
         "SELECT id, volume_id, name, status FROM volume_snapshots WHERE volume_id = ? ORDER BY created_at DESC",
     )
     .bind(volume_id)
@@ -611,7 +611,7 @@ pub async fn list_all_volume_snapshots(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<VolumeSnapshotWithVolumeRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, VolumeSnapshotWithVolumeRow>(
+    let rows = crate::db::query_as::<_, VolumeSnapshotWithVolumeRow>(
         "SELECT s.id, s.volume_id, v.name AS volume_name, s.name, s.status \
          FROM volume_snapshots s JOIN volumes v ON v.id = s.volume_id \
          ORDER BY s.created_at DESC",
@@ -634,7 +634,7 @@ pub async fn create_volume_snapshot(
 ) -> Result<Json<VolumeSnapshotRow>, ApiError> {
     require_operator(&actor)?;
     let atlas_volume_id: Option<String> =
-        sqlx::query_scalar("SELECT atlas_volume_id FROM volumes WHERE id = ?")
+        crate::db::query_scalar("SELECT atlas_volume_id FROM volumes WHERE id = ?")
             .bind(volume_id)
             .fetch_optional(&state.pool)
             .await?
@@ -658,7 +658,7 @@ pub async fn create_volume_snapshot(
         .map(str::to_string);
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO volume_snapshots (id, volume_id, name, atlas_snapshot_id) VALUES (?, ?, ?, ?)",
     )
     .bind(id)
@@ -682,7 +682,7 @@ pub async fn delete_volume_snapshot(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
     let atlas_snapshot_id: Option<String> =
-        sqlx::query_scalar("SELECT atlas_snapshot_id FROM volume_snapshots WHERE id = ?")
+        crate::db::query_scalar("SELECT atlas_snapshot_id FROM volume_snapshots WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
@@ -692,7 +692,7 @@ pub async fn delete_volume_snapshot(
             .map_err(|e| ApiError::internal(e.to_string()))?;
         let _ = client.delete_snapshot(&snap_id, false).await;
     }
-    sqlx::query("DELETE FROM volume_snapshots WHERE id = ?")
+    crate::db::query("DELETE FROM volume_snapshots WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -711,7 +711,7 @@ pub async fn set_volume_delete_on_termination(
     Json(body): Json<DeleteOnTerminationBody>,
 ) -> Result<Json<VolumeRow>, ApiError> {
     require_operator(&actor)?;
-    let r = sqlx::query("UPDATE volumes SET delete_on_termination = ? WHERE id = ?")
+    let r = crate::db::query("UPDATE volumes SET delete_on_termination = ? WHERE id = ?")
         .bind(body.value)
         .bind(id)
         .execute(&state.pool)
@@ -760,7 +760,7 @@ pub async fn set_volume_iotune(
     require_operator(&actor)?;
     validate_iotune(&body).map_err(ApiError::bad_request)?;
     let row: Option<(Option<Uuid>, Option<String>)> =
-        sqlx::query_as("SELECT attached_vm_id, attached_device FROM volumes WHERE id = ?")
+        crate::db::query_as("SELECT attached_vm_id, attached_device FROM volumes WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -769,12 +769,12 @@ pub async fn set_volume_iotune(
     };
     if let (Some(vm), Some(dev)) = (vm, dev) {
         let (name, host): (String, Option<Uuid>) =
-            sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+            crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
                 .bind(vm)
                 .fetch_one(&state.pool)
                 .await?;
         let host = host.ok_or_else(|| ApiError::conflict("the instance has no host", "start it first"))?;
-        let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+        let addr: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
             .bind(host)
             .fetch_one(&state.pool)
             .await?;
@@ -793,7 +793,7 @@ pub async fn set_volume_iotune(
         .await
         .map_err(|e| ApiError::internal(format!("applying the limits failed: {e:#}")))?;
     }
-    sqlx::query(
+    crate::db::query(
         "UPDATE volumes SET read_iops = COALESCE(?, read_iops), write_iops = COALESCE(?, write_iops), \
          read_bps = COALESCE(?, read_bps), write_bps = COALESCE(?, write_bps) WHERE id = ?",
     )
@@ -811,7 +811,7 @@ pub async fn set_volume_iotune(
 /// deletes the volumes flagged `delete_on_termination` that were attached to it. Failures are logged and
 /// leave the volume behind (detached) rather than failing the instance delete.
 pub(crate) async fn purge_terminating_volumes(state: &AppState, vm_id: Uuid, host: Option<Uuid>) {
-    let rows: Vec<(Uuid, Option<String>, Option<Uuid>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, Option<String>, Option<Uuid>)> = crate::db::query_as(
         "SELECT id, atlas_volume_id, storage_pool_id FROM volumes WHERE attached_vm_id = ? AND delete_on_termination = 1",
     )
     .bind(vm_id)
@@ -833,7 +833,7 @@ pub(crate) async fn purge_terminating_volumes(state: &AppState, vm_id: Uuid, hos
         };
         match result {
             Ok(()) => {
-                let _ = sqlx::query("DELETE FROM volumes WHERE id = ?").bind(id).execute(&state.pool).await;
+                let _ = crate::db::query("DELETE FROM volumes WHERE id = ?").bind(id).execute(&state.pool).await;
                 state.emit_event("volume.delete", format!("Volume {id} deleted with its instance"));
             }
             Err(e) => tracing::warn!(volume = %id, "delete on termination failed: {e}"),
@@ -875,7 +875,7 @@ pub async fn create_volume_from_snapshot(
     require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let snap: Option<(Option<String>, Uuid)> =
-        sqlx::query_as("SELECT atlas_snapshot_id, volume_id FROM volume_snapshots WHERE id = ?")
+        crate::db::query_as("SELECT atlas_snapshot_id, volume_id FROM volume_snapshots WHERE id = ?")
             .bind(snapshot_id)
             .fetch_optional(&state.pool)
             .await?;
@@ -885,7 +885,7 @@ pub async fn create_volume_from_snapshot(
     let atlas_snapshot = atlas_snapshot
         .ok_or_else(|| ApiError::bad_request("this snapshot has no Atlas snapshot behind it"))?;
     let (project_id, size_gib, class): (Option<Uuid>, i64, String) =
-        sqlx::query_as("SELECT project_id, size_gib, volume_class FROM volumes WHERE id = ?")
+        crate::db::query_as("SELECT project_id, size_gib, volume_class FROM volumes WHERE id = ?")
             .bind(parent)
             .fetch_one(&state.pool)
             .await?;
@@ -893,7 +893,7 @@ pub async fn create_volume_from_snapshot(
         .map_err(|e| ApiError::internal(e.to_string()))?;
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO volumes (id, project_id, name, size_gib, volume_class, status) VALUES (?, ?, ?, ?, ?, 'creating')",
     )
     .bind(id)
@@ -919,14 +919,14 @@ pub async fn create_volume_from_snapshot(
     .await;
     match cloned {
         Ok(vol) => {
-            sqlx::query("UPDATE volumes SET status = 'available', atlas_volume_id = ? WHERE id = ?")
+            crate::db::query("UPDATE volumes SET status = 'available', atlas_volume_id = ? WHERE id = ?")
                 .bind(&vol)
                 .bind(id)
                 .execute(&state.pool)
                 .await?;
         }
         Err(e) => {
-            sqlx::query("UPDATE volumes SET status = 'error' WHERE id = ?")
+            crate::db::query("UPDATE volumes SET status = 'error' WHERE id = ?")
                 .bind(id)
                 .execute(&state.pool)
                 .await?;

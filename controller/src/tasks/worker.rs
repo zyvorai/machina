@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 use machina_spec::VirtualMachine;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tokio::sync::{mpsc, Semaphore};
 use uuid::Uuid;
 
@@ -218,7 +218,7 @@ async fn vm_apply(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .map_err(|e| anyhow::anyhow!("cloud host placement: {e:?}"))?;
 
     let row: (String, serde_json::Value) =
-        sqlx::query_as("SELECT name, spec_json FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, spec_json FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await?
@@ -271,7 +271,7 @@ async fn vm_apply(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     // not retry), the domain still exists on the host — persisting the uuid only after
     // a successful start would strand this row in 'creating' with an empty uuid,
     // recoverable only by a later inventory sweep re-adopting it by name.
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET uuid = ?, observed_state = 'defined', updated_at = datetime('now') WHERE id = ?",
     )
     .bind(&resp.uuid)
@@ -279,7 +279,7 @@ async fn vm_apply(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     .execute(&state.pool)
     .await?;
 
-    let desired_state: String = sqlx::query_scalar("SELECT desired_state FROM vms WHERE id = ?")
+    let desired_state: String = crate::db::query_scalar("SELECT desired_state FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?
@@ -289,7 +289,7 @@ async fn vm_apply(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     if needs_start {
         vm_lifecycle::set_vm_phase(&state.pool, vm_id, vm_lifecycle::PHASE_STARTING).await?;
         agent_client::vm_power(&mut client, &row.0, "start", None).await?;
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET observed_state = 'running', updated_at = datetime('now') WHERE id = ?",
         )
         .bind(vm_id)
@@ -337,7 +337,7 @@ async fn vm_power(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     vm_lifecycle::set_vm_phase_clear_error(&state.pool, vm_id, phase).await?;
 
     let row: (String, Option<Uuid>, String) =
-        sqlx::query_as("SELECT name, host_id, observed_state FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, host_id, observed_state FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await?
@@ -357,7 +357,7 @@ async fn vm_power(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         "managedsave" => "sleeping",
         _ => "running",
     };
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET desired_state = ?, observed_state = ?, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(desired)
@@ -367,7 +367,7 @@ async fn vm_power(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     .await?;
     if action == "managedsave" {
         let preempt = msg.payload["preempt"].as_bool() == Some(true);
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET slept_at = datetime('now'),
              preempted_at = CASE WHEN ? THEN datetime('now') ELSE NULL END WHERE id = ?",
         )
@@ -388,12 +388,12 @@ async fn vm_power(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         crate::engine::vm_sleep::record(&state.pool, vm_id, "sleep", &reason).await;
     } else if desired == "running" {
         let was_sleeping: bool =
-            sqlx::query_scalar("SELECT slept_at IS NOT NULL FROM vms WHERE id = ?")
+            crate::db::query_scalar("SELECT slept_at IS NOT NULL FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .fetch_one(&state.pool)
                 .await
                 .unwrap_or(false);
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET slept_at = NULL, preempted_at = NULL, last_active_at = datetime('now') WHERE id = ?",
         )
         .bind(vm_id)
@@ -437,7 +437,7 @@ async fn vm_install(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .await?;
 
     let row: (String, String, Option<Uuid>) =
-        sqlx::query_as("SELECT name, spec_json, host_id FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, spec_json, host_id FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await?
@@ -456,7 +456,7 @@ async fn vm_install(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     )
     .await?;
 
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET desired_state = 'running', observed_state = 'defined', updated_at = datetime('now') WHERE id = ?",
     )
     .bind(vm_id)
@@ -475,7 +475,7 @@ async fn vm_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("vm_id missing"))?;
     vm_lifecycle::set_vm_phase(&state.pool, vm_id, vm_lifecycle::PHASE_DELETING).await?;
 
-    let row: (String, Option<Uuid>, String, Option<String>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String, Option<String>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), k8s_namespace, observed_state FROM vms WHERE id = ?",
     )
     .bind(vm_id)
@@ -516,7 +516,7 @@ async fn vm_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     }
 
     // Leave a tombstone so EC2-style clients still see the instance as `terminated` for a while.
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "INSERT OR REPLACE INTO terminated_instances (id, name, instance_type, project, vcpus, memory_mib) \
          SELECT v.id, v.name, f.name, v.project, v.vcpus, v.memory_mib FROM vms v LEFT JOIN flavors f ON f.id = v.flavor_id WHERE v.id = ?",
     )
@@ -524,15 +524,15 @@ async fn vm_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     .execute(&state.pool)
     .await;
     crate::api::volumes::purge_terminating_volumes(state, vm_id, row.1).await;
-    sqlx::query("DELETE FROM vm_forks WHERE fork_vm_id = ?1 OR source_vm_id = ?1")
+    crate::db::query("DELETE FROM vm_forks WHERE fork_vm_id = ?1 OR source_vm_id = ?1")
         .bind(vm_id)
         .execute(&state.pool)
         .await?;
-    sqlx::query("DELETE FROM vm_restore_points WHERE vm_id = ?")
+    crate::db::query("DELETE FROM vm_restore_points WHERE vm_id = ?")
         .bind(vm_id)
         .execute(&state.pool)
         .await?;
-    sqlx::query("DELETE FROM vms WHERE id = ?")
+    crate::db::query("DELETE FROM vms WHERE id = ?")
         .bind(vm_id)
         .execute(&state.pool)
         .await?;
@@ -607,7 +607,7 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
     };
     state.sprite_inventory.update(sprite_snapshot).await;
 
-    sqlx::query(
+    crate::db::query(
         // Clear any stale fence flag: a host that just heartbeated is alive and
         // reachable, so a future failure must be fenced afresh before HA recovers it.
         "UPDATE hosts SET vm_count = ?, state = ?, last_heartbeat_at = datetime('now'), fenced = 0,
@@ -645,7 +645,7 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
     // non-Option Uuid would raise a ColumnDecode error) — then .flatten() folds
     // "no row" and "NULL cluster" into the same not-found error.
     let cluster_id: Uuid =
-        sqlx::query_scalar::<_, Option<Uuid>>("SELECT cluster_id FROM hosts WHERE id = ?")
+        crate::db::query_scalar::<_, Option<Uuid>>("SELECT cluster_id FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_optional(&state.pool)
             .await?
@@ -660,7 +660,7 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
         // a migrated VM updates its own row and two same-name VMs on different
         // hosts stay distinct. Fall back to name only when no uuid is available.
         let existing: Option<(Uuid, bool, Option<Uuid>)> = if !vm.uuid.trim().is_empty() {
-            sqlx::query_as(
+            crate::db::query_as(
                 "SELECT id, managed, host_id FROM vms
                  WHERE cluster_id = ? AND uuid = ? AND inventory_source = 'libvirt'",
             )
@@ -669,7 +669,7 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
             .fetch_optional(&state.pool)
             .await?
         } else {
-            sqlx::query_as(
+            crate::db::query_as(
                 "SELECT id, managed, host_id FROM vms
                  WHERE cluster_id = ? AND name = ? AND inventory_source = 'libvirt'",
             )
@@ -698,7 +698,7 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
             let is_migration_leftover =
                 matches!(current_host, Some(h) if h != host_id) && !domain_active;
             if is_migration_leftover {
-                sqlx::query("UPDATE vms SET last_seen_at = datetime('now') WHERE id = ?")
+                crate::db::query("UPDATE vms SET last_seen_at = datetime('now') WHERE id = ?")
                     .bind(id)
                     .execute(&state.pool)
                     .await?;
@@ -708,7 +708,7 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
             // place (same uuid, new name) must adopt the new name — otherwise the
             // name-keyed reconcile below would treat the stale name as absent and
             // mark this VM 'missing' / prune it.
-            sqlx::query(
+            crate::db::query(
                 "UPDATE vms SET host_id = ?, name = ?, observed_state = ?, uuid = COALESCE(NULLIF(?, ''), uuid),
                  vcpus = ?, memory_mib = ?, guest_ip = CASE WHEN ? != '' THEN ? ELSE guest_ip END,
                  guest_ips = CASE WHEN ? != '[]' THEN ? ELSE guest_ips END,
@@ -737,7 +737,7 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
                 )
                 .await;
             }
-            let metrics_result = sqlx::query(
+            let metrics_result = crate::db::query(
                 "INSERT INTO vm_metrics (vm_id, cpu_percent, memory_used_mib, disk_read_iops, disk_write_iops, net_bytes, updated_at)
                  VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
                  ON CONFLICT (vm_id) DO UPDATE SET
@@ -766,7 +766,7 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
             }
         } else {
             let new_id = Uuid::new_v4();
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO vms (id, cluster_id, host_id, name, spec_json, desired_state, observed_state,
                  uuid, vcpus, memory_mib, managed, lifecycle_phase)
                  VALUES (?, ?, ?, ?, '{}', 'unknown', ?, ?, ?, ?, FALSE, 'idle')",
@@ -905,7 +905,7 @@ async fn vm_migrate(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         anyhow::bail!("migration pre-check failed: {msg}");
     }
 
-    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?
@@ -915,7 +915,7 @@ async fn vm_migrate(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("vm {} has no host", vm_id))?;
 
     let dest_uri: String =
-        sqlx::query_scalar("SELECT COALESCE(NULLIF(libvirt_uri, ''), ?) FROM hosts WHERE id = ?")
+        crate::db::query_scalar("SELECT COALESCE(NULLIF(libvirt_uri, ''), ?) FROM hosts WHERE id = ?")
             .bind(&state.config.default_libvirt_uri)
             .bind(dest_host_id)
             .fetch_optional(&state.pool)
@@ -941,13 +941,13 @@ async fn vm_migrate(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
 
     {
         let mut tx = state.pool.begin().await?;
-        sqlx::query("UPDATE vms SET host_id = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE vms SET host_id = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(dest_host_id)
             .bind(vm_id)
             .execute(&mut *tx)
             .await?;
         let job_id = Uuid::new_v4();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO migration_jobs (id, vm_id, source_host_id, dest_host_id, live, status, progress, precheck)
              VALUES (?, ?, ?, ?, ?, 'completed', 100, ?)",
         )
@@ -983,7 +983,7 @@ async fn vm_clone(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .unwrap_or("linked")
         .to_string();
 
-    let row: (String, Option<Uuid>, Uuid, serde_json::Value, i32, i64) = sqlx::query_as(
+    let row: (String, Option<Uuid>, Uuid, serde_json::Value, i32, i64) = crate::db::query_as(
         "SELECT name, host_id, cluster_id, spec_json, vcpus, memory_mib FROM vms WHERE id = ?",
     )
     .bind(vm_id)
@@ -997,7 +997,7 @@ async fn vm_clone(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     // Insert the DB record first so a hypervisor clone success always has a matching row.
     // The row starts with a placeholder uuid that is updated once the hypervisor responds.
     let new_id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vms (id, cluster_id, host_id, name, spec_json, desired_state, observed_state, vcpus, memory_mib)
          VALUES (?, ?, ?, ?, ?, 'stopped', 'creating', ?, ?)",
     )
@@ -1022,7 +1022,7 @@ async fn vm_clone(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         Err(e) => {
             // Remove the placeholder row so a failed clone doesn't leave a VM
             // stuck in observed_state='creating' forever (nothing else clears it).
-            let _ = sqlx::query("DELETE FROM vms WHERE id = ? AND observed_state = 'creating'")
+            let _ = crate::db::query("DELETE FROM vms WHERE id = ? AND observed_state = 'creating'")
                 .bind(new_id)
                 .execute(&state.pool)
                 .await;
@@ -1030,7 +1030,7 @@ async fn vm_clone(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         }
     };
 
-    sqlx::query("UPDATE vms SET uuid = ?, observed_state = 'defined' WHERE id = ?")
+    crate::db::query("UPDATE vms SET uuid = ?, observed_state = 'defined' WHERE id = ?")
         .bind(&resp.uuid)
         .bind(new_id)
         .execute(&state.pool)
@@ -1057,13 +1057,13 @@ async fn host_maintenance(state: &AppState, msg: &TaskMessage) -> anyhow::Result
     agent_client::maintenance(&mut client, &action, evacuate).await?;
 
     if action == "enter" {
-        sqlx::query("UPDATE hosts SET maintenance_mode = TRUE WHERE id = ?")
+        crate::db::query("UPDATE hosts SET maintenance_mode = TRUE WHERE id = ?")
             .bind(host_id)
             .execute(&state.pool)
             .await?;
 
         if evacuate {
-            let vms: Vec<(Uuid, String, i64)> = sqlx::query_as(
+            let vms: Vec<(Uuid, String, i64)> = crate::db::query_as(
                 "SELECT id, name, memory_mib FROM vms WHERE host_id = ? AND desired_state = 'running'",
             )
             .bind(host_id)
@@ -1074,7 +1074,7 @@ async fn host_maintenance(state: &AppState, msg: &TaskMessage) -> anyhow::Result
             // memory headroom. Reuses HA recovery's picker so evacuation spreads VMs
             // across hosts by real capacity instead of piling every VM onto the
             // single least-loaded host and overcommitting it (the old behavior).
-            let candidates: Vec<(Uuid, i64)> = sqlx::query_as(
+            let candidates: Vec<(Uuid, i64)> = crate::db::query_as(
                 "SELECT id, (memory_total_mib - memory_used_mib) AS headroom FROM hosts
                  WHERE id != ? AND state = 'online' AND maintenance_mode = FALSE AND schedulable = TRUE
                  ORDER BY vm_count, memory_used_mib",
@@ -1139,7 +1139,7 @@ async fn host_maintenance(state: &AppState, msg: &TaskMessage) -> anyhow::Result
             }
         }
     } else {
-        sqlx::query("UPDATE hosts SET maintenance_mode = FALSE WHERE id = ?")
+        crate::db::query("UPDATE hosts SET maintenance_mode = FALSE WHERE id = ?")
             .bind(host_id)
             .execute(&state.pool)
             .await?;
@@ -1166,7 +1166,7 @@ async fn confirm_host_drained(
     let poll = std::time::Duration::from_secs(5);
     let mut waited: i64 = 0;
     loop {
-        let remaining: i64 = sqlx::query_scalar(
+        let remaining: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM vms
              WHERE host_id = ? AND desired_state = 'running'
                AND observed_state IN ('running', 'blocked', 'paused')",
@@ -1211,7 +1211,7 @@ async fn ha_recover(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     let desired = msg.payload["desired_state"].as_str().unwrap_or("running");
 
     let row: (String, serde_json::Value) =
-        sqlx::query_as("SELECT name, spec_json FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, spec_json FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await?
@@ -1258,7 +1258,7 @@ async fn ha_recover(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     }
 
     let mut tx = state.pool.begin().await?;
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET uuid = ?, host_id = ?, observed_state = 'defined', updated_at = datetime('now') WHERE id = ?",
     )
     .bind(&resp.uuid)
@@ -1268,7 +1268,7 @@ async fn ha_recover(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     .await?;
 
     if desired == "running" {
-        if let Err(e) = sqlx::query("UPDATE vms SET observed_state = 'running' WHERE id = ?")
+        if let Err(e) = crate::db::query("UPDATE vms SET observed_state = 'running' WHERE id = ?")
             .bind(vm_id)
             .execute(&mut *tx)
             .await
@@ -1296,7 +1296,7 @@ async fn ha_recover(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
 /// next HA scan can retry — mirroring the enqueue-failure compensation already
 /// done inline in `recover_vms`.
 pub(crate) async fn revert_failed_ha_recovery(
-    pool: &SqlitePool,
+    pool: &DbPool,
     msg: &TaskMessage,
 ) -> anyhow::Result<()> {
     let Some(vm_id) = vm_id_from_payload(msg) else {
@@ -1317,7 +1317,7 @@ pub(crate) async fn revert_failed_ha_recovery(
         return Ok(());
     };
 
-    let result = sqlx::query(
+    let result = crate::db::query(
         "UPDATE vms SET host_id = ?, ha_recovery_count = MAX(ha_recovery_count - 1, 0),
          updated_at = datetime('now') WHERE id = ? AND host_id = ?",
     )
@@ -1330,7 +1330,7 @@ pub(crate) async fn revert_failed_ha_recovery(
     if result.rows_affected() > 0 {
         tracing::warn!(vm_id = %vm_id, dest_host = %dest_host_id, source_host = %source_host_id,
             "ha.recover failed terminally — reverted host_id so HA can retry recovery instead of leaving the VM stuck pointing at a host it was never created on");
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO ha_events (id, vm_id, host_id, action, message) VALUES (?, ?, ?, 'ha.recover_failed', ?)",
         )
         .bind(Uuid::new_v4())
@@ -1345,8 +1345,8 @@ pub(crate) async fn revert_failed_ha_recovery(
     Ok(())
 }
 
-pub(crate) async fn host_agent_addr(pool: &SqlitePool, host_id: Uuid) -> anyhow::Result<String> {
-    let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+pub(crate) async fn host_agent_addr(pool: &DbPool, host_id: Uuid) -> anyhow::Result<String> {
+    let addr: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_optional(pool)
         .await?
@@ -1361,8 +1361,8 @@ fn disk_path_for(cfg: &ControllerConfig, name: &str) -> String {
         .into_owned()
 }
 
-async fn claim_task(pool: &SqlitePool, id: Uuid, owner: &str) -> anyhow::Result<bool> {
-    let claimed: Option<Uuid> = sqlx::query_scalar(
+async fn claim_task(pool: &DbPool, id: Uuid, owner: &str) -> anyhow::Result<bool> {
+    let claimed: Option<Uuid> = crate::db::query_scalar(
         "UPDATE tasks SET status = 'running', claimed_by = ?, updated_at = datetime('now')
          WHERE id = ? AND status = 'pending'
          RETURNING id",
@@ -1374,8 +1374,8 @@ async fn claim_task(pool: &SqlitePool, id: Uuid, owner: &str) -> anyhow::Result<
     Ok(claimed.is_some())
 }
 
-async fn mark_task_completed(pool: &SqlitePool, id: Uuid) -> anyhow::Result<()> {
-    sqlx::query(
+async fn mark_task_completed(pool: &DbPool, id: Uuid) -> anyhow::Result<()> {
+    crate::db::query(
         "UPDATE tasks SET status = 'completed', progress = 100, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(id)
@@ -1384,8 +1384,8 @@ async fn mark_task_completed(pool: &SqlitePool, id: Uuid) -> anyhow::Result<()> 
     Ok(())
 }
 
-async fn mark_task_failed(pool: &SqlitePool, id: Uuid, message: &str) -> anyhow::Result<()> {
-    sqlx::query(
+async fn mark_task_failed(pool: &DbPool, id: Uuid, message: &str) -> anyhow::Result<()> {
+    crate::db::query(
         "UPDATE tasks SET status = 'failed', message = ?, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(message)
@@ -1396,12 +1396,12 @@ async fn mark_task_failed(pool: &SqlitePool, id: Uuid, message: &str) -> anyhow:
 }
 
 pub(crate) async fn update_task_progress(
-    pool: &SqlitePool,
+    pool: &DbPool,
     id: Uuid,
     progress: i16,
     message: &str,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    crate::db::query(
         "UPDATE tasks SET progress = ?, message = ?, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(progress)
@@ -1444,7 +1444,7 @@ async fn vm_snapshot(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
                 None => job,
             };
             if job.state == "failed" {
-                sqlx::query(
+                crate::db::query(
                     "UPDATE snapshot_records SET status = 'failed', message = ? WHERE id = ?",
                 )
                 .bind(job.error.as_deref().unwrap_or("Atlas snapshot failed"))
@@ -1457,7 +1457,7 @@ async fn vm_snapshot(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
                 );
             }
             if !job.is_terminal() {
-                sqlx::query(
+                crate::db::query(
                     "UPDATE snapshot_records SET status = 'failed', message = ? WHERE id = ?",
                 )
                 .bind("Atlas snapshot did not finish within the wait budget")
@@ -1473,7 +1473,7 @@ async fn vm_snapshot(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
         }
         let ids: Vec<&str> = terminal.iter().filter_map(|j| j.job_id()).collect();
         let summary = ids.join(",");
-        sqlx::query(
+        crate::db::query(
             "UPDATE snapshot_records SET status = 'completed', message = ?, snapshot_path = ? WHERE id = ?",
         )
         .bind(format!("Atlas snapshot job(s): {summary}"))
@@ -1488,7 +1488,7 @@ async fn vm_snapshot(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
         return Ok(());
     }
 
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT v.name, v.host_id, s.name FROM vms v JOIN snapshot_records s ON s.id = ? AND s.vm_id = v.id",
     )
     .bind(record_id)
@@ -1522,7 +1522,7 @@ async fn vm_snapshot(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
     .await?;
 
     if resp.ok {
-        sqlx::query(
+        crate::db::query(
             "UPDATE snapshot_records SET status = 'completed', message = ?, snapshot_path = ? WHERE id = ?",
         )
         .bind(&resp.message)
@@ -1534,7 +1534,7 @@ async fn vm_snapshot(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
 
         // Prune old scheduled snapshots when the schedule has a retention limit.
         if let Some(keep) = msg.payload["retention"].as_i64().filter(|&r| r > 0) {
-            let excess: Vec<(Uuid, String)> = sqlx::query_as(
+            let excess: Vec<(Uuid, String)> = crate::db::query_as(
                 "SELECT id, name FROM snapshot_records
                  WHERE vm_id = ? AND name LIKE 'sched-%' AND status = 'completed'
                    AND id NOT IN (
@@ -1568,7 +1568,7 @@ async fn vm_snapshot(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> 
             }
         }
     } else {
-        sqlx::query("UPDATE snapshot_records SET status = 'failed', message = ? WHERE id = ?")
+        crate::db::query("UPDATE snapshot_records SET status = 'failed', message = ? WHERE id = ?")
             .bind(&resp.message)
             .bind(record_id)
             .execute(&state.pool)
@@ -1589,7 +1589,7 @@ async fn vm_snapshot_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Resu
         .ok_or_else(|| anyhow::anyhow!("snapshot_name missing"))?
         .to_string();
 
-    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?
@@ -1611,7 +1611,7 @@ async fn vm_snapshot_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Resu
             tracing::warn!(snap = %snap_name, "snapshot not found in libvirt during delete — cleaning up controller record only");
         }
     }
-    sqlx::query("DELETE FROM snapshot_records WHERE vm_id = ? AND name = ?")
+    crate::db::query("DELETE FROM snapshot_records WHERE vm_id = ? AND name = ?")
         .bind(vm_id)
         .bind(&snap_name)
         .execute(&state.pool)
@@ -1635,7 +1635,7 @@ async fn vm_backup(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     vm_lifecycle::set_vm_phase_clear_error(&state.pool, vm_id, vm_lifecycle::PHASE_BACKING_UP)
         .await?;
 
-    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?
@@ -1644,7 +1644,7 @@ async fn vm_backup(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
         .1
         .ok_or_else(|| anyhow::anyhow!("vm {} has no host", vm_id))?;
     let backup_type: String =
-        sqlx::query_scalar("SELECT backup_type FROM backup_records WHERE id = ?")
+        crate::db::query_scalar("SELECT backup_type FROM backup_records WHERE id = ?")
             .bind(record_id)
             .fetch_optional(&state.pool)
             .await?
@@ -1676,7 +1676,7 @@ async fn vm_backup(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
                 None => job,
             };
             if job.state == "failed" {
-                sqlx::query(
+                crate::db::query(
                     "UPDATE backup_records SET status = 'failed', message = ? WHERE id = ?",
                 )
                 .bind(job.error.as_deref().unwrap_or("Atlas backup failed"))
@@ -1689,7 +1689,7 @@ async fn vm_backup(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
                 );
             }
             if !job.is_terminal() {
-                sqlx::query(
+                crate::db::query(
                     "UPDATE backup_records SET status = 'failed', message = ? WHERE id = ?",
                 )
                 .bind("Atlas backup did not finish within the wait budget")
@@ -1711,7 +1711,7 @@ async fn vm_backup(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
             .filter_map(|j| j.resource_backup_id())
             .collect();
         let stored = backup_ids.join(",");
-        sqlx::query(
+        crate::db::query(
             "UPDATE backup_records SET status = 'completed', message = ?, backup_path = ? WHERE id = ?",
         )
         .bind(format!("Atlas backup job(s): {}", job_ids.join(",")))
@@ -1763,7 +1763,7 @@ async fn vm_backup(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     }
 
     if resp.ok {
-        sqlx::query("UPDATE backup_records SET status = 'completed', backup_path = ?, message = ? WHERE id = ?")
+        crate::db::query("UPDATE backup_records SET status = 'completed', backup_path = ?, message = ? WHERE id = ?")
             .bind(&resp.path)
             .bind(&resp.message)
             .bind(record_id)
@@ -1774,7 +1774,7 @@ async fn vm_backup(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
             .as_str()
             .and_then(|s| Uuid::parse_str(s).ok())
         {
-            if let Ok(Some((kind, cfg))) = sqlx::query_as::<_, (String, serde_json::Value)>(
+            if let Ok(Some((kind, cfg))) = crate::db::query_as::<_, (String, serde_json::Value)>(
                 "SELECT kind, config_json FROM backup_targets WHERE id = ?",
             )
             .bind(tid)
@@ -1818,7 +1818,7 @@ async fn vm_backup(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
                         .await;
                         match aws_result {
                             Ok(Ok(out)) if out.status.success() => {
-                                sqlx::query("UPDATE backup_records SET message = ? WHERE id = ?")
+                                crate::db::query("UPDATE backup_records SET message = ? WHERE id = ?")
                                     .bind(format!("{}; uploaded to {dest}", resp.message))
                                     .bind(record_id)
                                     .execute(&state.pool)
@@ -1842,7 +1842,7 @@ async fn vm_backup(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
 
         state.emit_event("vm.backup", format!("Backup {} -> {}", row.0, resp.path));
     } else {
-        sqlx::query("UPDATE backup_records SET status = 'failed', message = ? WHERE id = ?")
+        crate::db::query("UPDATE backup_records SET status = 'failed', message = ? WHERE id = ?")
             .bind(&resp.message)
             .bind(record_id)
             .execute(&state.pool)
@@ -1863,7 +1863,7 @@ async fn vm_snapshot_revert(state: &AppState, msg: &TaskMessage) -> anyhow::Resu
         .ok_or_else(|| anyhow::anyhow!("snapshot_name missing"))?
         .to_string();
 
-    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?
@@ -1903,7 +1903,7 @@ async fn vm_snapshot_clone(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
         .as_str()
         .and_then(|s| Uuid::parse_str(s).ok());
 
-    let row: (String, Option<Uuid>, Uuid, serde_json::Value, i32, i64) = sqlx::query_as(
+    let row: (String, Option<Uuid>, Uuid, serde_json::Value, i32, i64) = crate::db::query_as(
         "SELECT name, host_id, cluster_id, spec_json, vcpus, memory_mib FROM vms WHERE id = ?",
     )
     .bind(vm_id)
@@ -1937,7 +1937,7 @@ async fn vm_snapshot_clone(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
     }
 
     let new_id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vms (id, cluster_id, host_id, name, spec_json, desired_state, observed_state, uuid, vcpus, memory_mib)
          VALUES (?, ?, ?, ?, ?, 'stopped', 'defined', ?, ?, ?)",
     )
@@ -1963,7 +1963,7 @@ async fn vm_snapshot_clone(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
             .await?;
             let live_migrate = msg.payload["live"].as_bool().unwrap_or(true);
             let source_running: String =
-                sqlx::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
+                crate::db::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
                     .bind(vm_id)
                     .fetch_optional(&state.pool)
                     .await?
@@ -1975,7 +1975,7 @@ async fn vm_snapshot_clone(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
                 vm_lifecycle::set_vm_phase(&state.pool, new_id, vm_lifecycle::PHASE_STARTING)
                     .await?;
                 agent_client::vm_power(&mut client, &new_name, "start", None).await?;
-                sqlx::query("UPDATE vms SET desired_state = 'running', observed_state = 'running' WHERE id = ?")
+                crate::db::query("UPDATE vms SET desired_state = 'running', observed_state = 'running' WHERE id = ?")
                     .bind(new_id)
                     .execute(&state.pool)
                     .await?;
@@ -1995,7 +1995,7 @@ async fn vm_snapshot_clone(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
             .await
             {
                 tracing::warn!(vm_id = %new_id, dest = %dest, "vm.migrate enqueue failed after snapshot clone: {}; resetting desired_state to stopped", e.message);
-                let _ = sqlx::query("UPDATE vms SET desired_state = 'stopped' WHERE id = ?")
+                let _ = crate::db::query("UPDATE vms SET desired_state = 'stopped' WHERE id = ?")
                     .bind(new_id)
                     .execute(&state.pool)
                     .await;
@@ -2028,7 +2028,7 @@ async fn vm_backup_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Result
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or_else(|| anyhow::anyhow!("backup_id missing"))?;
 
-    let row: Option<(String, Option<Uuid>, Uuid)> = sqlx::query_as(
+    let row: Option<(String, Option<Uuid>, Uuid)> = crate::db::query_as(
         "SELECT COALESCE(br.backup_path, ''), v.host_id, br.vm_id
          FROM backup_records br JOIN vms v ON v.id = br.vm_id WHERE br.id = ?",
     )
@@ -2056,7 +2056,7 @@ async fn vm_backup_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Result
         }
     }
     // Remove the catalog row regardless — the file may already be gone, and retention must converge.
-    sqlx::query("DELETE FROM backup_records WHERE id = ?")
+    crate::db::query("DELETE FROM backup_records WHERE id = ?")
         .bind(record_id)
         .execute(&state.pool)
         .await?;
@@ -2078,7 +2078,7 @@ async fn vm_backup_restore(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
     // VM B — destroying B's disk and cross-loading another tenant's data. Without
     // the status filter, a partial/failed record's truncated image could be
     // converted over a live disk.
-    let backup_path: String = sqlx::query_scalar(
+    let backup_path: String = crate::db::query_scalar(
         "SELECT backup_path FROM backup_records
          WHERE id = ? AND vm_id = ? AND status IN ('completed', 'succeeded')",
     )
@@ -2102,7 +2102,7 @@ async fn vm_backup_restore(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
             .find(|s| !s.is_empty())
             .ok_or_else(|| anyhow::anyhow!("backup record has no Atlas backup id"))?;
         let mode = msg.payload["mode"].as_str().unwrap_or("snapshot");
-        sqlx::query("UPDATE backup_records SET restore_status = 'running' WHERE id = ?")
+        crate::db::query("UPDATE backup_records SET restore_status = 'running' WHERE id = ?")
             .bind(record_id)
             .execute(&state.pool)
             .await?;
@@ -2138,7 +2138,7 @@ async fn vm_backup_restore(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
         .await;
         match result {
             Ok(job) => {
-                sqlx::query("UPDATE backup_records SET restore_status = 'completed' WHERE id = ?")
+                crate::db::query("UPDATE backup_records SET restore_status = 'completed' WHERE id = ?")
                     .bind(record_id)
                     .execute(&state.pool)
                     .await?;
@@ -2151,7 +2151,7 @@ async fn vm_backup_restore(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
                 );
             }
             Err(e) => {
-                sqlx::query("UPDATE backup_records SET restore_status = 'failed' WHERE id = ?")
+                crate::db::query("UPDATE backup_records SET restore_status = 'failed' WHERE id = ?")
                     .bind(record_id)
                     .execute(&state.pool)
                     .await?;
@@ -2162,7 +2162,7 @@ async fn vm_backup_restore(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
         return Ok(());
     }
 
-    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?
@@ -2173,13 +2173,13 @@ async fn vm_backup_restore(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
 
     let agent_addr = host_agent_addr(&state.pool, host_id).await?;
     let mut client = agent_client::connect(&agent_addr).await?;
-    sqlx::query("UPDATE backup_records SET restore_status = 'running' WHERE id = ?")
+    crate::db::query("UPDATE backup_records SET restore_status = 'running' WHERE id = ?")
         .bind(record_id)
         .execute(&state.pool)
         .await?;
     let resp = agent_client::restore_vm_backup(&mut client, &row.0, &backup_path).await?;
     if resp.ok {
-        sqlx::query("UPDATE backup_records SET restore_status = 'completed' WHERE id = ?")
+        crate::db::query("UPDATE backup_records SET restore_status = 'completed' WHERE id = ?")
             .bind(record_id)
             .execute(&state.pool)
             .await?;
@@ -2188,7 +2188,7 @@ async fn vm_backup_restore(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
             format!("Restored {} from backup", row.0),
         );
     } else {
-        sqlx::query("UPDATE backup_records SET restore_status = 'failed' WHERE id = ?")
+        crate::db::query("UPDATE backup_records SET restore_status = 'failed' WHERE id = ?")
             .bind(record_id)
             .execute(&state.pool)
             .await?;
@@ -2202,7 +2202,7 @@ async fn templates_prefetch_missing(state: &AppState, msg: &TaskMessage) -> anyh
     let host_id: Uuid = if let Some(s) = msg.payload["host_id"].as_str() {
         Uuid::parse_str(s)?
     } else {
-        sqlx::query_scalar("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1")
+        crate::db::query_scalar("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1")
             .fetch_optional(&state.pool)
             .await?
             .ok_or_else(|| anyhow::anyhow!("no online hosts"))?
@@ -2316,7 +2316,7 @@ async fn on_task_failure(state: &AppState, msg: &TaskMessage, err: &str) {
     // Count this attempt. Retry transient connect failures with backoff instead of
     // failing terminally, so a momentary agent restart / network blip during a
     // user op (vm.power/migrate) doesn't permanently fail it.
-    let attempts: i64 = sqlx::query_scalar(
+    let attempts: i64 = crate::db::query_scalar(
         "UPDATE tasks SET attempts = attempts + 1, updated_at = datetime('now')
          WHERE id = ? RETURNING attempts",
     )
@@ -2333,7 +2333,7 @@ async fn on_task_failure(state: &AppState, msg: &TaskMessage, err: &str) {
         // Reset to pending (clearing the owner) and re-publish after a linear
         // backoff. The failed run already released its scheduler key, so the
         // re-published task dispatches cleanly on its next arrival.
-        let reset = sqlx::query(
+        let reset = crate::db::query(
             "UPDATE tasks SET status = 'pending', claimed_by = NULL, message = ?, updated_at = datetime('now')
              WHERE id = ? AND status = 'running'",
         )
@@ -2387,7 +2387,7 @@ async fn on_task_failure(state: &AppState, msg: &TaskMessage, err: &str) {
 /// state. Takes a bare pool rather than `&AppState` so it can be called from
 /// call sites (enqueue, startup reap) that run before or without a full
 /// `AppState`.
-pub async fn finalize_terminal_task_failure(pool: &SqlitePool, msg: &TaskMessage, err: &str) {
+pub async fn finalize_terminal_task_failure(pool: &DbPool, msg: &TaskMessage, err: &str) {
     let _ = mark_task_failed(pool, msg.task_id, err).await;
     if let Some(vm_id) = vm_id_from_payload(msg) {
         let _ = vm_lifecycle::set_vm_error(pool, vm_id, err).await;
@@ -2452,7 +2452,7 @@ async fn kubevirt_inventory_task(state: &AppState, msg: &TaskMessage) -> anyhow:
         .unwrap_or(Uuid::nil());
 
     let cluster_id = if cluster_id.is_nil() {
-        sqlx::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_optional(&state.pool)
             .await?
             .ok_or_else(|| anyhow::anyhow!("no cluster configured"))?
@@ -2617,7 +2617,7 @@ async fn host_agent_upgrade(state: &AppState, msg: &TaskMessage) -> anyhow::Resu
         return Err(anyhow::anyhow!(detail));
     }
 
-    sqlx::query("UPDATE hosts SET agent_version = ? WHERE id = ?")
+    crate::db::query("UPDATE hosts SET agent_version = ? WHERE id = ?")
         .bind(target)
         .bind(host_id)
         .execute(&state.pool)
@@ -2643,7 +2643,7 @@ async fn storage_pool_provision(state: &AppState, msg: &TaskMessage) -> anyhow::
         .ok_or_else(|| anyhow::anyhow!("host_id missing"))?;
 
     let row: (String, String, Option<String>) =
-        sqlx::query_as("SELECT name, backend, path FROM storage_pools WHERE id = ?")
+        crate::db::query_as("SELECT name, backend, path FROM storage_pools WHERE id = ?")
             .bind(pool_id)
             .fetch_optional(&state.pool)
             .await?
@@ -2654,7 +2654,7 @@ async fn storage_pool_provision(state: &AppState, msg: &TaskMessage) -> anyhow::
     let agent_addr = host_agent_addr(&state.pool, host_id).await?;
     let mut client = agent_client::connect(&agent_addr).await?;
     agent_client::provision_storage_pool(&mut client, &row.0, &row.1, &path).await?;
-    sqlx::query("UPDATE storage_pools SET path = COALESCE(path, ?) WHERE id = ?")
+    crate::db::query("UPDATE storage_pools SET path = COALESCE(path, ?) WHERE id = ?")
         .bind(&path)
         .bind(pool_id)
         .execute(&state.pool)
@@ -2684,7 +2684,7 @@ async fn network_provision(state: &AppState, msg: &TaskMessage) -> anyhow::Resul
         .ok_or_else(|| anyhow::anyhow!("host_id missing"))?;
 
     let row: (String, String, Option<i32>, Option<String>) =
-        sqlx::query_as("SELECT name, backend, vlan_id, bridge FROM networks WHERE id = ?")
+        crate::db::query_as("SELECT name, backend, vlan_id, bridge FROM networks WHERE id = ?")
             .bind(network_id)
             .fetch_optional(&state.pool)
             .await?
@@ -2712,7 +2712,7 @@ async fn vm_disk_attach(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
         .unwrap_or("vdb")
         .to_string();
 
-    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?
@@ -2728,9 +2728,9 @@ async fn vm_disk_attach(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
     Ok(())
 }
 
-async fn vm_host_row(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<(String, Uuid)> {
+async fn vm_host_row(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<(String, Uuid)> {
     let row: Option<(String, Option<Uuid>)> =
-        sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(pool)
             .await?;
@@ -2865,7 +2865,7 @@ async fn vm_resize(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
                 .as_u64()
                 .ok_or_else(|| anyhow::anyhow!("count missing"))? as u32;
             agent_client::set_vcpus(&mut client, &name, count).await?;
-            sqlx::query("UPDATE vms SET vcpus = ?, updated_at = datetime('now') WHERE id = ?")
+            crate::db::query("UPDATE vms SET vcpus = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(count as i64)
                 .bind(vm_id)
                 .execute(&state.pool)
@@ -2877,7 +2877,7 @@ async fn vm_resize(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
                 .as_u64()
                 .ok_or_else(|| anyhow::anyhow!("memory_mb missing"))?;
             agent_client::set_memory(&mut client, &name, memory_mb).await?;
-            sqlx::query("UPDATE vms SET memory_mib = ?, updated_at = datetime('now') WHERE id = ?")
+            crate::db::query("UPDATE vms SET memory_mib = ?, updated_at = datetime('now') WHERE id = ?")
                 .bind(memory_mb as i64)
                 .bind(vm_id)
                 .execute(&state.pool)
@@ -2902,13 +2902,13 @@ async fn vm_change_type(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or_else(|| anyhow::anyhow!("flavor_id missing"))?;
     let (new_vcpus, new_memory): (i32, i64) =
-        sqlx::query_as("SELECT vcpus, memory_mib FROM flavors WHERE id = ?")
+        crate::db::query_as("SELECT vcpus, memory_mib FROM flavors WHERE id = ?")
             .bind(flavor_id)
             .fetch_optional(&state.pool)
             .await?
             .ok_or_else(|| anyhow::anyhow!("flavor not found"))?;
     let (cur_vcpus, cur_memory): (i32, i64) =
-        sqlx::query_as("SELECT vcpus, memory_mib FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT vcpus, memory_mib FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_one(&state.pool)
             .await?;
@@ -2947,7 +2947,7 @@ async fn vm_change_type(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
         update_task_progress(&state.pool, msg.task_id, 50, "resizing").await?;
         agent_client::set_vcpus(&mut client, &name, new_vcpus as u32).await?;
         agent_client::set_memory(&mut client, &name, new_memory as u64).await?;
-        sqlx::query("UPDATE vms SET vcpus = ?, memory_mib = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE vms SET vcpus = ?, memory_mib = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(new_vcpus)
             .bind(new_memory)
             .bind(vm_id)
@@ -2958,7 +2958,7 @@ async fn vm_change_type(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
             agent_client::vm_power(&mut client, &name, "start", None).await?;
         }
     }
-    sqlx::query("UPDATE vms SET flavor_id = ?, updated_at = datetime('now') WHERE id = ?")
+    crate::db::query("UPDATE vms SET flavor_id = ?, updated_at = datetime('now') WHERE id = ?")
         .bind(flavor_id)
         .bind(vm_id)
         .execute(&state.pool)
@@ -2979,7 +2979,7 @@ async fn vm_guest_tools_install(state: &AppState, msg: &TaskMessage) -> anyhow::
     // Clear sticky last_error from a prior failed attach so success doesn't leave
     // the VM detail banner stuck on the old failure.
     vm_lifecycle::set_vm_phase_clear_error(&state.pool, vm_id, vm_lifecycle::PHASE_IDLE).await?;
-    let row: (String, Option<Uuid>) = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?
@@ -2991,7 +2991,7 @@ async fn vm_guest_tools_install(state: &AppState, msg: &TaskMessage) -> anyhow::
     let mut client = agent_client::connect(&agent_addr).await?;
     agent_client::install_guest_tools(&mut client, &row.0).await?;
     crate::engine::vm_health::sync_guest_tools(&state.pool, vm_id, &row.0, host_id).await;
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET guest_tools_status = 'installed', last_error = '', updated_at = datetime('now') WHERE id = ?",
     )
     .bind(vm_id)
@@ -3006,13 +3006,13 @@ async fn vm_guest_tools_install(state: &AppState, msg: &TaskMessage) -> anyhow::
 }
 
 async fn run_incremental_backup(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Uuid,
     vm_name: &str,
     dest: &str,
     agent_addr: &str,
 ) -> anyhow::Result<machina_agent::pb::BackupVmResponse> {
-    let prior: Option<String> = sqlx::query_scalar(
+    let prior: Option<String> = crate::db::query_scalar(
         "SELECT backup_path FROM backup_records
          WHERE vm_id = ? AND status = 'completed' AND backup_path != ''
          ORDER BY datetime(created_at) DESC LIMIT 1",

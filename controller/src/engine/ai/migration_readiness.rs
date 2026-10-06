@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -54,12 +54,12 @@ pub struct MigrationReadinessReport {
 }
 
 pub async fn generate(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     req: &MigrationReadinessRequest,
 ) -> anyhow::Result<MigrationReadinessReport> {
     let vm_ids = if req.vm_ids.is_empty() {
-        sqlx::query_scalar::<_, Uuid>(
+        crate::db::query_scalar::<_, Uuid>(
             "SELECT id FROM vms WHERE COALESCE(inventory_source, 'libvirt') = 'libvirt' ORDER BY name LIMIT 25",
         )
         .fetch_all(pool)
@@ -76,7 +76,7 @@ pub async fn generate(
             .collect::<Vec<_>>()
             .join(",");
         let sql = format!("SELECT id, name, observed_state FROM vms WHERE id IN ({placeholders})");
-        let mut q = sqlx::query_as::<_, (Uuid, String, String)>(&sql);
+        let mut q = crate::db::query_as::<_, (Uuid, String, String)>(&sql);
         for id in &vm_ids {
             q = q.bind(id);
         }

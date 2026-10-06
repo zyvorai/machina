@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct ZyraOsSummary {
@@ -22,11 +22,11 @@ pub struct ZyraOsSummary {
     pub highlights: Vec<String>,
 }
 
-pub async fn summarize(pool: &SqlitePool) -> anyhow::Result<ZyraOsSummary> {
-    let hosts_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+pub async fn summarize(pool: &DbPool) -> anyhow::Result<ZyraOsSummary> {
+    let hosts_online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(pool)
         .await?;
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
         .await?;
 
@@ -52,7 +52,7 @@ pub async fn summarize(pool: &SqlitePool) -> anyhow::Result<ZyraOsSummary> {
         .filter(|r| r.risk == "Critical")
         .count();
 
-    let firewall_drift_hosts: i64 = sqlx::query_scalar(
+    let firewall_drift_hosts: i64 = crate::db::query_scalar(
         "SELECT COUNT(DISTINCT target_id) FROM firewall_timeline
          WHERE kind = 'drift' AND created_at > datetime('now', '-7 days')",
     )

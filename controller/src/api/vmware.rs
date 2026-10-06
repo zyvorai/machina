@@ -25,7 +25,7 @@ pub async fn sync_inventory(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<VmwareSyncResponse>, ApiError> {
     require_operator(&actor)?;
-    let count: i64 = sqlx::query_scalar(
+    let count: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM vms WHERE inventory_source IN ('vmware', 'vsphere', 'discovered')",
     )
     .fetch_one(&state.pool)

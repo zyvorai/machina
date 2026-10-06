@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use axum::extract::{Path, Query, State};
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
-use sqlx::SqliteConnection;
+use crate::db::DbConn;
 use uuid::Uuid;
 
 use super::cloud;
@@ -74,12 +74,12 @@ fn rid(id: Uuid) -> String {
 }
 
 pub async fn get_tag_map(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     kind: Kind,
     id: Uuid,
 ) -> Result<TagMap, sqlx::Error> {
     let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT key, value FROM resource_tags WHERE resource_type = ? AND resource_id = ? ORDER BY key")
+        crate::db::query_as("SELECT key, value FROM resource_tags WHERE resource_type = ? AND resource_id = ? ORDER BY key")
             .bind(kind.type_name())
             .bind(rid(id))
             .fetch_all(conn)
@@ -96,7 +96,7 @@ pub enum PutOutcome {
 
 /// Merge `tags` into the resource's tags (an existing key is overwritten). Run inside a write transaction.
 pub async fn put_tag_map(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     kind: Kind,
     id: Uuid,
     tags: &TagMap,
@@ -109,7 +109,7 @@ pub async fn put_tag_map(
         return Ok(PutOutcome::TooMany(current.len()));
     }
     for (k, v) in tags {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO resource_tags (resource_type, resource_id, key, value) VALUES (?, ?, ?, ?)
              ON CONFLICT(resource_type, resource_id, key) DO UPDATE SET value = excluded.value",
         )
@@ -124,13 +124,13 @@ pub async fn put_tag_map(
 }
 
 pub async fn delete_tag_keys(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     kind: Kind,
     id: Uuid,
     keys: &[String],
 ) -> Result<TagMap, sqlx::Error> {
     for k in keys {
-        sqlx::query(
+        crate::db::query(
             "DELETE FROM resource_tags WHERE resource_type = ? AND resource_id = ? AND key = ?",
         )
         .bind(kind.type_name())
@@ -144,7 +144,7 @@ pub async fn delete_tag_keys(
 
 /// The owning cloud project of a resource, if it has one.
 async fn project_of(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     kind: Kind,
     id: Uuid,
 ) -> Result<Option<Uuid>, sqlx::Error> {
@@ -161,7 +161,7 @@ async fn project_of(
         Kind::LaunchTemplate => "SELECT project_id FROM cloud_launch_templates WHERE id = ?",
         Kind::Image => return Ok(None),
     };
-    Ok(sqlx::query_scalar::<_, Option<Uuid>>(sql)
+    Ok(crate::db::query_scalar::<_, Option<Uuid>>(sql)
         .bind(id)
         .fetch_optional(conn)
         .await?
@@ -344,7 +344,7 @@ pub async fn list_tags(
     Query(q): Query<ListTagsQuery>,
 ) -> Result<Json<Vec<TagRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+    let rows: Vec<(String, String, String, String)> = crate::db::query_as(
         "SELECT resource_type, resource_id, key, value FROM resource_tags
          WHERE (?1 IS NULL OR resource_type = ?1) AND (?2 IS NULL OR key = ?2) AND (?3 IS NULL OR value = ?3)
          ORDER BY resource_type, key, value, resource_id LIMIT 1000",
@@ -439,7 +439,7 @@ mod tests {
         assert!(validate_tags(&TagMap::new()).is_err());
     }
 
-    async fn conn_with_schema() -> sqlx::SqlitePool {
+    async fn conn_with_schema() -> crate::db::DbPool {
         let pool = SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
@@ -449,7 +449,7 @@ mod tests {
             "CREATE TABLE resource_tags (resource_type TEXT NOT NULL, resource_id TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY (resource_type, resource_id, key))",
             "CREATE TABLE vms (id TEXT NOT NULL PRIMARY KEY, name TEXT)",
         ] {
-            sqlx::query(ddl).execute(&pool).await.unwrap();
+            crate::db::query(ddl).execute(&pool).await.unwrap();
         }
         pool
     }
@@ -540,7 +540,7 @@ mod tests {
         let pool = conn_with_schema().await;
         let mut c = pool.acquire().await.unwrap();
         let id = Uuid::new_v4();
-        sqlx::query("INSERT INTO vms (id, name) VALUES (?, 'a')")
+        crate::db::query("INSERT INTO vms (id, name) VALUES (?, 'a')")
             .bind(id)
             .execute(&mut *c)
             .await

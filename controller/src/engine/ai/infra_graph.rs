@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::digital_twin::DigitalTwinGraph;
@@ -135,7 +135,7 @@ pub struct TimelineReplay {
     pub graph_changes: Vec<String>,
 }
 
-pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<InfraGraph> {
+pub async fn build(pool: &DbPool, scope: &GraphScope) -> anyhow::Result<InfraGraph> {
     let twin = super::digital_twin::build_graph(pool).await?;
     let mut nodes: Vec<GraphNode> = twin
         .nodes
@@ -159,7 +159,7 @@ pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<Infr
         .collect();
 
     // VM ↔ storage (vm_disks)
-    let disks: Vec<(Uuid, String, Uuid, String)> = sqlx::query_as(
+    let disks: Vec<(Uuid, String, Uuid, String)> = crate::db::query_as(
         "SELECT d.vm_id, v.name, d.id, COALESCE(d.storage_class, 'default')
          FROM vm_disks d JOIN vms v ON v.id = d.vm_id ORDER BY v.name LIMIT 500",
     )
@@ -187,7 +187,7 @@ pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<Infr
 
     // VM ↔ network from spec_json bridges
     let vms_spec: Vec<(Uuid, String, Option<serde_json::Value>)> =
-        sqlx::query_as("SELECT id, name, spec_json FROM vms ORDER BY name LIMIT 300")
+        crate::db::query_as("SELECT id, name, spec_json FROM vms ORDER BY name LIMIT 300")
             .fetch_all(pool)
             .await
             .unwrap_or_default();
@@ -222,7 +222,7 @@ pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<Infr
 
     // Application groups → depends_on
     let apps: Vec<(Uuid, String)> =
-        sqlx::query_as("SELECT id, name FROM application_groups ORDER BY name")
+        crate::db::query_as("SELECT id, name FROM application_groups ORDER BY name")
             .fetch_all(pool)
             .await
             .unwrap_or_default();
@@ -236,7 +236,7 @@ pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<Infr
             health_score: None,
         });
         let vms: Vec<Uuid> =
-            sqlx::query_scalar("SELECT vm_id FROM application_group_vms WHERE group_id = ?")
+            crate::db::query_scalar("SELECT vm_id FROM application_group_vms WHERE group_id = ?")
                 .bind(gid)
                 .fetch_all(pool)
                 .await
@@ -251,7 +251,7 @@ pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<Infr
     }
 
     // Backups
-    let backups: Vec<(Uuid, Uuid, String)> = sqlx::query_as(
+    let backups: Vec<(Uuid, Uuid, String)> = crate::db::query_as(
         "SELECT b.id, b.vm_id, v.name FROM backup_records b
          JOIN vms v ON v.id = b.vm_id ORDER BY b.created_at DESC LIMIT 200",
     )
@@ -276,7 +276,7 @@ pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<Infr
 
     // Users (security graph lite)
     let users: Vec<(Uuid, String)> =
-        sqlx::query_as("SELECT id, username FROM users ORDER BY username LIMIT 50")
+        crate::db::query_as("SELECT id, username FROM users ORDER BY username LIMIT 50")
             .fetch_all(pool)
             .await
             .unwrap_or_default();
@@ -301,7 +301,7 @@ pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<Infr
             let Ok(host_id) = Uuid::parse_str(&n.id) else {
                 continue;
             };
-            if let Ok(st) = sqlx::query_scalar::<_, String>("SELECT state FROM hosts WHERE id = ?")
+            if let Ok(st) = crate::db::query_scalar::<_, String>("SELECT state FROM hosts WHERE id = ?")
                 .bind(host_id)
                 .fetch_optional(pool)
                 .await
@@ -318,7 +318,7 @@ pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<Infr
             let Ok(vm_id) = Uuid::parse_str(&n.id) else {
                 continue;
             };
-            if let Ok((st, mem, used)) = sqlx::query_as::<_, (String, i64, Option<i64>)>(
+            if let Ok((st, mem, used)) = crate::db::query_as::<_, (String, i64, Option<i64>)>(
                 "SELECT v.observed_state, v.memory_mib, m.memory_used_mib FROM vms v
                  LEFT JOIN vm_metrics m ON m.vm_id = v.id WHERE v.id = ?",
             )
@@ -385,7 +385,7 @@ pub async fn build(pool: &SqlitePool, scope: &GraphScope) -> anyhow::Result<Infr
 
 /// Build unified graph including Zeus Firewall connectivity matrix edges.
 pub async fn build_enriched(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &crate::config::ControllerConfig,
     scope: &GraphScope,
 ) -> anyhow::Result<InfraGraph> {
@@ -429,14 +429,14 @@ fn profile_rules(profile: &str) -> Vec<machina_core::ZeusFirewallRule> {
 }
 
 pub async fn append_firewall_edges(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &crate::config::ControllerConfig,
     nodes: &mut Vec<GraphNode>,
     edges: &mut Vec<GraphEdge>,
 ) -> anyhow::Result<()> {
     use machina_core::simulate_connectivity;
 
-    let hosts: Vec<(Uuid, String)> = sqlx::query_as(
+    let hosts: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT id, hostname FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 50",
     )
     .fetch_all(pool)
@@ -516,7 +516,7 @@ pub async fn append_firewall_edges(
 }
 
 async fn firewall_path_blocker(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &crate::config::ControllerConfig,
     host_id: Uuid,
     port: i32,
@@ -574,7 +574,7 @@ async fn firewall_path_blocker(
 }
 
 async fn resolve_vm(
-    pool: &SqlitePool,
+    pool: &DbPool,
     name: &str,
 ) -> anyhow::Result<Option<(Uuid, String, Option<Uuid>, String)>> {
     // Exact match, not LIKE: `name` is a concrete VM identifier from the request, and
@@ -582,7 +582,7 @@ async fn resolve_vm(
     // to an arbitrary `webX01`/`web-01`, and `%` would resolve to "some VM". Path
     // analysis run against the wrong VM is silently misleading.
     let row: Option<(Uuid, String, Option<Uuid>, String)> =
-        sqlx::query_as("SELECT id, name, host_id, observed_state FROM vms WHERE name = ? LIMIT 1")
+        crate::db::query_as("SELECT id, name, host_id, observed_state FROM vms WHERE name = ? LIMIT 1")
             .bind(name)
             .fetch_optional(pool)
             .await?;
@@ -590,7 +590,7 @@ async fn resolve_vm(
 }
 
 pub async fn explain_path(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &crate::config::ControllerConfig,
     req: &PathRequest,
 ) -> anyhow::Result<PathResult> {
@@ -635,7 +635,7 @@ pub async fn explain_path(
         });
     }
     if let Some(h) = a_host {
-        let host_state: Option<String> = sqlx::query_scalar("SELECT state FROM hosts WHERE id = ?")
+        let host_state: Option<String> = crate::db::query_scalar("SELECT state FROM hosts WHERE id = ?")
             .bind(h)
             .fetch_optional(pool)
             .await?;
@@ -721,7 +721,7 @@ pub async fn explain_path(
     }
 
     // Recent network/firewall audit
-    let recent: Option<(String,)> = sqlx::query_as(
+    let recent: Option<(String,)> = crate::db::query_as(
         "SELECT action FROM audit_logs
          WHERE created_at > datetime('now', '-4 hours')
            AND (action LIKE '%network%' OR action LIKE '%firewall%')
@@ -776,7 +776,7 @@ pub async fn explain_path(
     })
 }
 
-pub async fn query(pool: &SqlitePool, req: &GraphQueryRequest) -> anyhow::Result<GraphQueryResult> {
+pub async fn query(pool: &DbPool, req: &GraphQueryRequest) -> anyhow::Result<GraphQueryResult> {
     let q = req.query.to_lowercase();
     let mut hits = Vec::new();
     let mut filters = Vec::new();
@@ -815,7 +815,7 @@ pub async fn query(pool: &SqlitePool, req: &GraphQueryRequest) -> anyhow::Result
              WHERE {} ORDER BY name LIMIT 50",
             conditions.join(" AND ")
         );
-        let mut query = sqlx::query_as::<_, (Uuid, String, i64, String)>(&sql);
+        let mut query = crate::db::query_as::<_, (Uuid, String, i64, String)>(&sql);
         if let Some(min) = min_mib {
             query = query.bind(min);
         }
@@ -837,7 +837,7 @@ pub async fn query(pool: &SqlitePool, req: &GraphQueryRequest) -> anyhow::Result
             .replace('\\', "\\\\")
             .replace('%', "\\%")
             .replace('_', "\\_");
-        let rows: Vec<(Uuid, String, String)> = sqlx::query_as(
+        let rows: Vec<(Uuid, String, String)> = crate::db::query_as(
             "SELECT id, name, observed_state FROM vms WHERE name LIKE ? ESCAPE '\\' ORDER BY name LIMIT 20",
         )
         .bind(format!("%{escaped}%"))
@@ -861,7 +861,7 @@ pub async fn query(pool: &SqlitePool, req: &GraphQueryRequest) -> anyhow::Result
 }
 
 pub async fn explain_object(
-    pool: &SqlitePool,
+    pool: &DbPool,
     kind: &str,
     id: &str,
 ) -> anyhow::Result<ObjectExplain> {
@@ -869,7 +869,7 @@ pub async fn explain_object(
         "vm" => {
             let row: Option<(String, Option<String>, i64, i32, String, Option<String>)> =
                 if let Ok(uuid) = uuid::Uuid::parse_str(id) {
-                    sqlx::query_as(
+                    crate::db::query_as(
                         "SELECT v.name, v.project, v.memory_mib, v.vcpus, v.observed_state, v.tags
                          FROM vms v WHERE v.id = ? OR v.name = ?",
                     )
@@ -878,7 +878,7 @@ pub async fn explain_object(
                     .fetch_optional(pool)
                     .await?
                 } else {
-                    sqlx::query_as(
+                    crate::db::query_as(
                         "SELECT v.name, v.project, v.memory_mib, v.vcpus, v.observed_state, v.tags
                          FROM vms v WHERE v.name = ?",
                     )
@@ -912,7 +912,7 @@ pub async fn explain_object(
         }
         "host" => {
             let row: Option<(String, String, i64)> = if let Ok(uuid) = uuid::Uuid::parse_str(id) {
-                sqlx::query_as(
+                crate::db::query_as(
                     "SELECT hostname, state, vm_count FROM hosts WHERE id = ? OR hostname = ?",
                 )
                 .bind(uuid)
@@ -920,7 +920,7 @@ pub async fn explain_object(
                 .fetch_optional(pool)
                 .await?
             } else {
-                sqlx::query_as("SELECT hostname, state, vm_count FROM hosts WHERE hostname = ?")
+                crate::db::query_as("SELECT hostname, state, vm_count FROM hosts WHERE hostname = ?")
                     .bind(id)
                     .fetch_optional(pool)
                     .await?
@@ -949,7 +949,7 @@ pub async fn explain_object(
     }
 }
 
-pub async fn graph_at(pool: &SqlitePool, ts: DateTime<Utc>) -> anyhow::Result<GraphAtTime> {
+pub async fn graph_at(pool: &DbPool, ts: DateTime<Utc>) -> anyhow::Result<GraphAtTime> {
     let current = build(
         pool,
         &GraphScope {
@@ -958,21 +958,21 @@ pub async fn graph_at(pool: &SqlitePool, ts: DateTime<Utc>) -> anyhow::Result<Gr
         },
     )
     .await?;
-    let created: i64 = sqlx::query_scalar(
+    let created: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%create%' AND created_at <= ?",
     )
     .bind(ts)
     .fetch_one(pool)
     .await
     .unwrap_or(0);
-    let deleted: i64 = sqlx::query_scalar(
+    let deleted: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM audit_logs WHERE action LIKE '%delete%' AND created_at <= ?",
     )
     .bind(ts)
     .fetch_one(pool)
     .await
     .unwrap_or(0);
-    let vm_names_at: Vec<String> = sqlx::query_scalar(
+    let vm_names_at: Vec<String> = crate::db::query_scalar(
         "SELECT DISTINCT COALESCE(json_extract(detail, '$.name'), resource_id) FROM audit_logs
          WHERE action LIKE '%vm%' AND action LIKE '%create%' AND created_at <= ?
          ORDER BY 1 LIMIT 50",
@@ -981,7 +981,7 @@ pub async fn graph_at(pool: &SqlitePool, ts: DateTime<Utc>) -> anyhow::Result<Gr
     .fetch_all(pool)
     .await
     .unwrap_or_default();
-    let current_vm_names: Vec<String> = sqlx::query_scalar("SELECT name FROM vms ORDER BY name")
+    let current_vm_names: Vec<String> = crate::db::query_scalar("SELECT name FROM vms ORDER BY name")
         .fetch_all(pool)
         .await
         .unwrap_or_default();
@@ -1013,13 +1013,13 @@ pub async fn graph_at(pool: &SqlitePool, ts: DateTime<Utc>) -> anyhow::Result<Gr
 }
 
 pub async fn timeline_replay(
-    pool: &SqlitePool,
+    pool: &DbPool,
     from: DateTime<Utc>,
     to: DateTime<Utc>,
     resource: Option<&str>,
 ) -> anyhow::Result<TimelineReplay> {
     let mut entries = Vec::new();
-    let audits: Vec<(DateTime<Utc>, String, String, Option<String>)> = sqlx::query_as(
+    let audits: Vec<(DateTime<Utc>, String, String, Option<String>)> = crate::db::query_as(
         "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), actor, action, resource_type
          FROM audit_logs WHERE created_at BETWEEN ? AND ? ORDER BY created_at ASC LIMIT 200",
     )
@@ -1040,7 +1040,7 @@ pub async fn timeline_replay(
             resource: rt,
         });
     }
-    let events: Vec<(DateTime<Utc>, String, String)> = sqlx::query_as(
+    let events: Vec<(DateTime<Utc>, String, String)> = crate::db::query_as(
         "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), kind, message FROM events
          WHERE created_at BETWEEN ? AND ? ORDER BY created_at ASC LIMIT 100",
     )

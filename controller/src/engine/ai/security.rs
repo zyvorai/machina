@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct SecurityFinding {
@@ -21,10 +21,10 @@ pub struct SecurityReport {
     pub findings: Vec<SecurityFinding>,
 }
 
-pub async fn scan(pool: &SqlitePool) -> anyhow::Result<SecurityReport> {
+pub async fn scan(pool: &DbPool) -> anyhow::Result<SecurityReport> {
     let mut findings = Vec::new();
 
-    let no_backup: Vec<(uuid::Uuid, String)> = sqlx::query_as(
+    let no_backup: Vec<(uuid::Uuid, String)> = crate::db::query_as(
         "SELECT v.id, v.name FROM vms v
          WHERE COALESCE(v.managed, TRUE) = TRUE
            AND (EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='prod') OR EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='production'))
@@ -46,7 +46,7 @@ pub async fn scan(pool: &SqlitePool) -> anyhow::Result<SecurityReport> {
         });
     }
 
-    let no_guest: Vec<(uuid::Uuid, String)> = sqlx::query_as(
+    let no_guest: Vec<(uuid::Uuid, String)> = crate::db::query_as(
         "SELECT id, name FROM vms WHERE observed_state = 'running'
          AND guest_tools_status IN ('unknown', 'not_installed') LIMIT 15",
     )
@@ -66,7 +66,7 @@ pub async fn scan(pool: &SqlitePool) -> anyhow::Result<SecurityReport> {
     }
 
     let offline_hosts: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
             .fetch_one(pool)
             .await
             .unwrap_or(0);
@@ -126,7 +126,7 @@ fn explain_event_heuristic(event: &serde_json::Value, host_id: Option<&str>) -> 
 }
 
 pub async fn explain_event(
-    pool: &SqlitePool,
+    pool: &DbPool,
     event: &serde_json::Value,
     host_id: Option<&str>,
 ) -> anyhow::Result<serde_json::Value> {
@@ -174,7 +174,7 @@ pub fn attack_reconstruct_sync(timeline: &serde_json::Value) -> serde_json::Valu
 }
 
 pub async fn attack_reconstruct(
-    pool: &SqlitePool,
+    pool: &DbPool,
     timeline: &serde_json::Value,
 ) -> anyhow::Result<serde_json::Value> {
     let mut out = attack_reconstruct_sync(timeline);
@@ -268,7 +268,7 @@ pub fn translate_nl_search(query: &str) -> String {
     query.to_string()
 }
 
-pub async fn translate_nl_search_async(pool: &SqlitePool, query: &str) -> (String, bool) {
+pub async fn translate_nl_search_async(pool: &DbPool, query: &str) -> (String, bool) {
     if let Ok(Some(llm)) = super::llm::complete_simple(
         pool,
         "Convert natural-language security hunt questions into concise keyword search terms for eBPF process/network/DNS logs. Reply with keywords only — no punctuation or explanation.",
@@ -328,7 +328,7 @@ pub fn hunt_summary_heuristic(
 }
 
 pub async fn hunt_summary(
-    pool: &SqlitePool,
+    pool: &DbPool,
     correlations: &serde_json::Value,
     timeline: &serde_json::Value,
 ) -> anyhow::Result<serde_json::Value> {

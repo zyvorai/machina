@@ -8,7 +8,7 @@
 // "vault-sync-all-honesty" fix) misrepresents itself as a working feature.
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, sqlx::FromRow)]
@@ -34,15 +34,15 @@ pub struct CreateAirGapBundleRequest {
     pub name: String,
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<EnterpriseSecurityOverview> {
-    let air_gap_bundles: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM air_gap_bundles")
+pub async fn overview(pool: &DbPool) -> anyhow::Result<EnterpriseSecurityOverview> {
+    let air_gap_bundles: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM air_gap_bundles")
         .fetch_one(pool)
         .await?;
-    let tenant_policies: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tenant_isolation_policies")
+    let tenant_policies: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM tenant_isolation_policies")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
-    let fips_profiles: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM fips_crypto_profiles")
+    let fips_profiles: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM fips_crypto_profiles")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
@@ -60,8 +60,8 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<EnterpriseSecurityOve
     })
 }
 
-pub async fn list_air_gap_bundles(pool: &SqlitePool) -> anyhow::Result<Vec<AirGapBundleRow>> {
-    sqlx::query_as(
+pub async fn list_air_gap_bundles(pool: &DbPool) -> anyhow::Result<Vec<AirGapBundleRow>> {
+    crate::db::query_as(
         "SELECT id, name, checksum, manifest_json, size_bytes,
                 strftime('%Y-%m-%dT%H:%M:%SZ', exported_at) AS exported_at
          FROM air_gap_bundles ORDER BY exported_at DESC",
@@ -72,7 +72,7 @@ pub async fn list_air_gap_bundles(pool: &SqlitePool) -> anyhow::Result<Vec<AirGa
 }
 
 pub async fn create_air_gap_bundle(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: &CreateAirGapBundleRequest,
 ) -> anyhow::Result<AirGapBundleRow> {
     let name = req.name.trim();
@@ -80,19 +80,19 @@ pub async fn create_air_gap_bundle(
         anyhow::bail!("name required");
     }
 
-    let hosts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+    let hosts: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
-    let vms: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vms: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
-    let templates: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM templates")
+    let templates: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM templates")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
-    let pools: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM storage_pools")
+    let pools: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM storage_pools")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
@@ -117,7 +117,7 @@ pub async fn create_air_gap_bundle(
     let checksum = format!("sha256:{}", sha256_hex(&manifest_str));
     let id = Uuid::new_v4();
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO air_gap_bundles (id, name, checksum, manifest_json, size_bytes)
          VALUES (?, ?, ?, ?, ?)",
     )
@@ -129,7 +129,7 @@ pub async fn create_air_gap_bundle(
     .execute(pool)
     .await?;
 
-    sqlx::query_as(
+    crate::db::query_as(
         "SELECT id, name, checksum, manifest_json, size_bytes,
                 strftime('%Y-%m-%dT%H:%M:%SZ', exported_at) AS exported_at
          FROM air_gap_bundles WHERE id = ?",
@@ -140,8 +140,8 @@ pub async fn create_air_gap_bundle(
     .map_err(|e| e.into())
 }
 
-pub async fn get_air_gap_bundle(pool: &SqlitePool, id: Uuid) -> anyhow::Result<AirGapBundleRow> {
-    sqlx::query_as(
+pub async fn get_air_gap_bundle(pool: &DbPool, id: Uuid) -> anyhow::Result<AirGapBundleRow> {
+    crate::db::query_as(
         "SELECT id, name, checksum, manifest_json, size_bytes,
                 strftime('%Y-%m-%dT%H:%M:%SZ', exported_at) AS exported_at
          FROM air_gap_bundles WHERE id = ?",
@@ -152,8 +152,8 @@ pub async fn get_air_gap_bundle(pool: &SqlitePool, id: Uuid) -> anyhow::Result<A
     .ok_or_else(|| anyhow::anyhow!("bundle not found"))
 }
 
-pub async fn delete_air_gap_bundle(pool: &SqlitePool, id: Uuid) -> anyhow::Result<()> {
-    let res = sqlx::query("DELETE FROM air_gap_bundles WHERE id = ?")
+pub async fn delete_air_gap_bundle(pool: &DbPool, id: Uuid) -> anyhow::Result<()> {
+    let res = crate::db::query("DELETE FROM air_gap_bundles WHERE id = ?")
         .bind(id)
         .execute(pool)
         .await?;
@@ -217,8 +217,8 @@ pub struct UpsertTenantPolicyRequest {
     pub enforce_quotas: Option<bool>,
 }
 
-pub async fn fips_matrix(pool: &SqlitePool) -> anyhow::Result<FipsMatrix> {
-    let profiles: Vec<FipsCryptoProfileRow> = sqlx::query_as(
+pub async fn fips_matrix(pool: &DbPool) -> anyhow::Result<FipsMatrix> {
+    let profiles: Vec<FipsCryptoProfileRow> = crate::db::query_as(
         "SELECT id, name, tls_min_version, fips_mode, cipher_suites, notes FROM fips_crypto_profiles ORDER BY name",
     )
     .fetch_all(pool)
@@ -247,15 +247,15 @@ pub async fn fips_matrix(pool: &SqlitePool) -> anyhow::Result<FipsMatrix> {
 }
 
 pub async fn tenant_isolation_overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
 ) -> anyhow::Result<TenantIsolationOverview> {
-    let vm_counts: Vec<(String, i64)> = sqlx::query_as(
+    let vm_counts: Vec<(String, i64)> = crate::db::query_as(
         "SELECT COALESCE(NULLIF(project, ''), 'default') AS name, COUNT(*)
          FROM vms GROUP BY 1 ORDER BY 1",
     )
     .fetch_all(pool)
     .await?;
-    let policies: Vec<(String, String, i32, i32, bool)> = sqlx::query_as(
+    let policies: Vec<(String, String, i32, i32, bool)> = crate::db::query_as(
         "SELECT project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas
          FROM tenant_isolation_policies ORDER BY project_name",
     )
@@ -300,7 +300,7 @@ pub async fn tenant_isolation_overview(
 }
 
 pub async fn upsert_tenant_policy(
-    pool: &SqlitePool,
+    pool: &DbPool,
     project_name: &str,
     req: &UpsertTenantPolicyRequest,
 ) -> anyhow::Result<TenantIsolationItem> {
@@ -317,7 +317,7 @@ pub async fn upsert_tenant_policy(
     let enforce = req.enforce_quotas.unwrap_or(false);
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT (project_name) DO UPDATE SET

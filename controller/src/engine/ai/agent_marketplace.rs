@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AgentPluginRow {
@@ -13,8 +13,8 @@ pub struct AgentPluginRow {
     pub installed: bool,
 }
 
-pub async fn list_agents(pool: &SqlitePool) -> anyhow::Result<Vec<AgentPluginRow>> {
-    let rows: Vec<(String, String, String, String, bool)> = sqlx::query_as(
+pub async fn list_agents(pool: &DbPool) -> anyhow::Result<Vec<AgentPluginRow>> {
+    let rows: Vec<(String, String, String, String, bool)> = crate::db::query_as(
         "SELECT slug, name, description, agent_id, installed FROM ai_agent_plugins ORDER BY name",
     )
     .fetch_all(pool)
@@ -33,8 +33,8 @@ pub async fn list_agents(pool: &SqlitePool) -> anyhow::Result<Vec<AgentPluginRow
         .collect())
 }
 
-pub async fn install(pool: &SqlitePool, slug: &str) -> anyhow::Result<AgentPluginRow> {
-    sqlx::query("UPDATE ai_agent_plugins SET installed = TRUE WHERE slug = ?")
+pub async fn install(pool: &DbPool, slug: &str) -> anyhow::Result<AgentPluginRow> {
+    crate::db::query("UPDATE ai_agent_plugins SET installed = TRUE WHERE slug = ?")
         .bind(slug)
         .execute(pool)
         .await?;
@@ -43,8 +43,8 @@ pub async fn install(pool: &SqlitePool, slug: &str) -> anyhow::Result<AgentPlugi
         .ok_or_else(|| anyhow::anyhow!("agent plugin not found"))
 }
 
-pub async fn uninstall(pool: &SqlitePool, slug: &str) -> anyhow::Result<AgentPluginRow> {
-    sqlx::query("UPDATE ai_agent_plugins SET installed = FALSE WHERE slug = ?")
+pub async fn uninstall(pool: &DbPool, slug: &str) -> anyhow::Result<AgentPluginRow> {
+    crate::db::query("UPDATE ai_agent_plugins SET installed = FALSE WHERE slug = ?")
         .bind(slug)
         .execute(pool)
         .await?;
@@ -53,8 +53,8 @@ pub async fn uninstall(pool: &SqlitePool, slug: &str) -> anyhow::Result<AgentPlu
         .ok_or_else(|| anyhow::anyhow!("agent plugin not found"))
 }
 
-async fn get(pool: &SqlitePool, slug: &str) -> anyhow::Result<Option<AgentPluginRow>> {
-    let row: Option<(String, String, String, String, bool)> = sqlx::query_as(
+async fn get(pool: &DbPool, slug: &str) -> anyhow::Result<Option<AgentPluginRow>> {
+    let row: Option<(String, String, String, String, bool)> = crate::db::query_as(
         "SELECT slug, name, description, agent_id, installed FROM ai_agent_plugins WHERE slug = ?",
     )
     .bind(slug)
@@ -80,8 +80,8 @@ pub struct PublishAgentBody {
     pub agent_id: String,
 }
 
-pub async fn publish(pool: &SqlitePool, body: &PublishAgentBody) -> anyhow::Result<AgentPluginRow> {
-    sqlx::query(
+pub async fn publish(pool: &DbPool, body: &PublishAgentBody) -> anyhow::Result<AgentPluginRow> {
+    crate::db::query(
         "INSERT INTO ai_agent_plugins (slug, name, description, agent_id, installed)
          VALUES (?, ?, ?, ?, FALSE)
          ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, agent_id = EXCLUDED.agent_id",

@@ -250,7 +250,7 @@ async fn host_rows(state: &AppState) -> Result<Vec<Value>, ApiError> {
         i64,
         String,
     );
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows: Vec<Row> = crate::db::query_as(
         "SELECT host_id, hostname, synced_at, ok, error, vms, rules, peers, warnings FROM vm_netpol_host_status ORDER BY hostname",
     )
     .fetch_all(&state.pool)
@@ -312,7 +312,7 @@ pub async fn get_labels(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     let row: Option<(String, Option<String>)> =
-        sqlx::query_as("SELECT name, labels FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, labels FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -368,7 +368,7 @@ pub async fn put_labels(
 ) -> Result<Json<Value>, ApiError> {
     require_operator(&actor)?;
     validate_labels(&b.labels)?;
-    let r = sqlx::query("UPDATE vms SET labels = ?, updated_at = datetime('now') WHERE id = ?")
+    let r = crate::db::query("UPDATE vms SET labels = ?, updated_at = datetime('now') WHERE id = ?")
         .bind(serde_json::to_string(&b.labels).unwrap_or_else(|_| "{}".into()))
         .bind(id)
         .execute(&state.pool)
@@ -903,7 +903,7 @@ fn project_approval_required() -> bool {
 
 /// The caller's role in a Fleet Cloud project (`admin`, `operator`, `viewer`).
 pub async fn project_role(state: &AppState, username: &str, project: &str) -> Option<String> {
-    sqlx::query_scalar(
+    crate::db::query_scalar(
         "SELECT a.role FROM project_role_assignments a
            JOIN users u ON u.id = a.user_id
            JOIN projects p ON p.id = a.project_id
@@ -1533,7 +1533,7 @@ pub async fn build_evidence(
     let denied = evidence::denied(&fleet_edges(&state, None).await);
     let now = chrono::Utc::now();
     let stored: Vec<VmNetworkPolicy> = rows.iter().map(|r| r.0.clone()).collect();
-    let approvals: Vec<(String, String, String, Option<String>, String, String)> = sqlx::query_as(
+    let approvals: Vec<(String, String, String, Option<String>, String, String)> = crate::db::query_as(
         "SELECT action_type, label, requested_by, approved_by, status, created_at FROM ai_actions
          WHERE action_type IN (?, ?, ?, 'vm.quarantine') AND created_at >= datetime('now', '-90 days')
          ORDER BY created_at DESC LIMIT 500",

@@ -3,7 +3,7 @@
 
 use std::collections::HashSet;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -32,10 +32,10 @@ struct VmInventoryRow {
 const IN_FLIGHT_PHASES: &[&str] = &["creating", "deleting", "migrating"];
 
 pub async fn cluster_inventory_policy(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cluster_id: Uuid,
 ) -> anyhow::Result<ClusterInventoryPolicy> {
-    let row = sqlx::query_as::<_, ClusterInventoryPolicy>(
+    let row = crate::db::query_as::<_, ClusterInventoryPolicy>(
         "SELECT inventory_prune_unmanaged, inventory_mark_managed_missing FROM clusters WHERE id = ?",
     )
     .bind(cluster_id)
@@ -55,7 +55,7 @@ pub async fn reconcile_libvirt_host(
     seen_names: &HashSet<String>,
 ) -> anyhow::Result<()> {
     let policy = cluster_inventory_policy(&state.pool, cluster_id).await?;
-    let rows: Vec<VmInventoryRow> = sqlx::query_as(
+    let rows: Vec<VmInventoryRow> = crate::db::query_as(
         "SELECT id, name, managed, lifecycle_phase FROM vms
          WHERE host_id = ? AND inventory_source = 'libvirt'",
     )
@@ -74,7 +74,7 @@ pub async fn reconcile_libvirt_host(
             continue;
         }
         if !row.managed && policy.inventory_prune_unmanaged {
-            sqlx::query("DELETE FROM vms WHERE id = ?")
+            crate::db::query("DELETE FROM vms WHERE id = ?")
                 .bind(row.id)
                 .execute(&state.pool)
                 .await?;
@@ -86,7 +86,7 @@ pub async fn reconcile_libvirt_host(
                 ),
             );
         } else if row.managed && policy.inventory_mark_managed_missing {
-            sqlx::query(
+            crate::db::query(
                 "UPDATE vms SET observed_state = 'missing', last_error = ?, updated_at = datetime('now') WHERE id = ?",
             )
             .bind(DOMAIN_MISSING)
@@ -128,17 +128,17 @@ const STALE_VMS_SQL: &str = "SELECT v.id, v.name, v.managed,
        AND h.last_heartbeat_at > datetime('now', '-2 minutes')
        AND COALESCE(v.last_seen_at, v.created_at) < datetime('now', '-10 minutes')";
 
-pub async fn stale_libvirt_vms(pool: &SqlitePool) -> anyhow::Result<Vec<StaleVm>> {
+pub async fn stale_libvirt_vms(pool: &DbPool) -> anyhow::Result<Vec<StaleVm>> {
     Ok(
-        sqlx::query_as::<_, StaleVm>(&format!("{STALE_VMS_SQL} ORDER BY v.name LIMIT 50"))
+        crate::db::query_as::<_, StaleVm>(&format!("{STALE_VMS_SQL} ORDER BY v.name LIMIT 50"))
             .fetch_all(pool)
             .await?,
     )
 }
 
-pub async fn stale_libvirt_vm(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Option<StaleVm>> {
+pub async fn stale_libvirt_vm(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<Option<StaleVm>> {
     Ok(
-        sqlx::query_as::<_, StaleVm>(&format!("{STALE_VMS_SQL} AND v.id = ?"))
+        crate::db::query_as::<_, StaleVm>(&format!("{STALE_VMS_SQL} AND v.id = ?"))
             .bind(vm_id)
             .fetch_optional(pool)
             .await?,

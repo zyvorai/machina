@@ -69,7 +69,7 @@ pub async fn create_template(
     }
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     access(&mut tx, &actor, project, true).await?;
-    let duplicate: bool = sqlx::query_scalar(
+    let duplicate: bool = crate::db::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM cloud_launch_templates WHERE project_id=? AND name=?)",
     )
     .bind(project)
@@ -86,7 +86,7 @@ pub async fn create_template(
         project_id: project,
         name: body.name,
     };
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO cloud_launch_templates (id,project_id,name,spec_json) VALUES (?,?,?,?)",
     )
     .bind(row.id)
@@ -107,7 +107,7 @@ pub async fn list_templates(
     let mut conn = state.pool.acquire().await?;
     access(&mut conn, &actor, project, false).await?;
     // Listing never returns cloud-init data (keys/userdata may be sensitive).
-    Ok(Json(sqlx::query_as("SELECT id,project_id,name FROM cloud_launch_templates WHERE project_id=? ORDER BY name LIMIT 500").bind(project).fetch_all(&mut *conn).await?))
+    Ok(Json(crate::db::query_as("SELECT id,project_id,name FROM cloud_launch_templates WHERE project_id=? ORDER BY name LIMIT 500").bind(project).fetch_all(&mut *conn).await?))
 }
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub struct Group {
@@ -141,18 +141,18 @@ pub async fn create_group(
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     access(&mut tx, &actor, project, true).await?;
     let template: Option<Uuid> =
-        sqlx::query_scalar("SELECT project_id FROM cloud_launch_templates WHERE id=?")
+        crate::db::query_scalar("SELECT project_id FROM cloud_launch_templates WHERE id=?")
             .bind(body.template_id)
             .fetch_optional(&mut *tx)
             .await?;
-    let subnet:Option<Uuid>=sqlx::query_scalar("SELECT v.project_id FROM cloud_subnets s JOIN cloud_vpcs v ON v.id=s.vpc_id WHERE s.id=? AND s.status='ready'").bind(body.subnet_id).fetch_optional(&mut *tx).await?;
+    let subnet:Option<Uuid>=crate::db::query_scalar("SELECT v.project_id FROM cloud_subnets s JOIN cloud_vpcs v ON v.id=s.vpc_id WHERE s.id=? AND s.status='ready'").bind(body.subnet_id).fetch_optional(&mut *tx).await?;
     if template != Some(project) || subnet != Some(project) {
         return Err(invalid(
             "ready subnet and template from the same project required",
         ));
     }
     check_lb(&mut tx, project, body.subnet_id, &body.policy).await?;
-    let duplicate: bool = sqlx::query_scalar(
+    let duplicate: bool = crate::db::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM cloud_instance_groups WHERE project_id=? AND name=?)",
     )
     .bind(project)
@@ -163,7 +163,7 @@ pub async fn create_group(
         return Err(conflict("instance group name already exists"));
     }
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO cloud_instance_groups (id,project_id,template_id,subnet_id,name,policy_json) VALUES (?,?,?,?,?,?)").bind(id).bind(project).bind(body.template_id).bind(body.subnet_id).bind(&body.name).bind(serde_json::to_string(&body.policy).map_err(invalid)?).execute(&mut *tx).await?;
+    crate::db::query("INSERT INTO cloud_instance_groups (id,project_id,template_id,subnet_id,name,policy_json) VALUES (?,?,?,?,?,?)").bind(id).bind(project).bind(body.template_id).bind(body.subnet_id).bind(&body.name).bind(serde_json::to_string(&body.policy).map_err(invalid)?).execute(&mut *tx).await?;
     audit(&mut tx, &actor, "cloud.group.create", id).await?;
     tx.commit().await?;
     Ok(Json(
@@ -178,7 +178,7 @@ pub async fn list_groups(
     let mut conn = state.pool.acquire().await?;
     access(&mut conn, &actor, project, false).await?;
     Ok(Json(
-        sqlx::query_as(&format!(
+        crate::db::query_as(&format!(
             "{GROUPS} WHERE project_id=? ORDER BY name LIMIT 500"
         ))
         .bind(project)
@@ -192,7 +192,7 @@ pub async fn get_group(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     let mut conn = state.pool.acquire().await?;
-    let row: Group = sqlx::query_as(&format!("{GROUPS} WHERE id=?"))
+    let row: Group = crate::db::query_as(&format!("{GROUPS} WHERE id=?"))
         .bind(id)
         .fetch_one(&mut *conn)
         .await?;
@@ -205,7 +205,7 @@ pub async fn get_group(
         Option<String>,
         Option<String>,
     );
-    let members: Vec<Member> = sqlx::query_as(
+    let members: Vec<Member> = crate::db::query_as(
         "SELECT m.slot, m.vm_id, v.name, v.observed_state, v.desired_state, m.draining_since
          FROM cloud_group_members m LEFT JOIN vms v ON v.id = m.vm_id
          WHERE m.group_id = ? ORDER BY m.slot",
@@ -239,7 +239,7 @@ pub async fn get_group(
 /// A group's load balancer must be on the group's host (its rules DNAT to the
 /// members from there) and belong to the group's project.
 async fn check_lb(
-    conn: &mut sqlx::SqliteConnection,
+    conn: &mut crate::db::DbConn,
     project: Uuid,
     subnet: Uuid,
     policy: &ScalingPolicy,
@@ -247,7 +247,7 @@ async fn check_lb(
     let Some(lb) = policy.load_balancer else {
         return Ok(());
     };
-    let ok: bool = sqlx::query_scalar(
+    let ok: bool = crate::db::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM load_balancers l, cloud_subnets s
            JOIN cloud_vpcs v ON v.id = s.vpc_id
          WHERE l.id = ? AND s.id = ? AND l.host_id = v.host_id
@@ -275,7 +275,7 @@ pub async fn group_forecast(
 ) -> Result<Json<Value>, ApiError> {
     use crate::engine::ai::forecast;
     let mut conn = state.pool.acquire().await?;
-    let row: Group = sqlx::query_as(&format!("{GROUPS} WHERE id=?"))
+    let row: Group = crate::db::query_as(&format!("{GROUPS} WHERE id=?"))
         .bind(id)
         .fetch_one(&mut *conn)
         .await?;
@@ -337,13 +337,13 @@ pub async fn update_group(
     body.policy.validate().map_err(invalid)?;
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let (project, subnet): (Uuid, Uuid) =
-        sqlx::query_as("SELECT project_id, subnet_id FROM cloud_instance_groups WHERE id=?")
+        crate::db::query_as("SELECT project_id, subnet_id FROM cloud_instance_groups WHERE id=?")
             .bind(id)
             .fetch_one(&mut *tx)
             .await?;
     access(&mut tx, &actor, project, true).await?;
     check_lb(&mut tx, project, subnet, &body.policy).await?;
-    sqlx::query("UPDATE cloud_instance_groups SET policy_json=?,paused=?,last_scaled_at=CURRENT_TIMESTAMP,last_error='' WHERE id=?").bind(serde_json::to_string(&body.policy).map_err(invalid)?).bind(body.paused).bind(id).execute(&mut *tx).await?;
+    crate::db::query("UPDATE cloud_instance_groups SET policy_json=?,paused=?,last_scaled_at=CURRENT_TIMESTAMP,last_error='' WHERE id=?").bind(serde_json::to_string(&body.policy).map_err(invalid)?).bind(body.paused).bind(id).execute(&mut *tx).await?;
     audit(&mut tx, &actor, "cloud.group.update", id).await?;
     tx.commit().await?;
     Ok(Json(json!({"updated":true})))
@@ -364,15 +364,15 @@ pub async fn delete_group(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
-    let project: Uuid = sqlx::query_scalar("SELECT project_id FROM cloud_instance_groups WHERE id=?")
+    let project: Uuid = crate::db::query_scalar("SELECT project_id FROM cloud_instance_groups WHERE id=?")
         .bind(id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| ApiError::not_found("instance group not found"))?;
     access(&mut tx, &actor, project, true).await?;
     // Stop the reconciler touching it while we check.
-    sqlx::query("UPDATE cloud_instance_groups SET paused=1 WHERE id=?").bind(id).execute(&mut *tx).await?;
-    let active: i64 = sqlx::query_scalar(
+    crate::db::query("UPDATE cloud_instance_groups SET paused=1 WHERE id=?").bind(id).execute(&mut *tx).await?;
+    let active: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM cloud_group_members m JOIN vms v ON v.id = m.vm_id \
          WHERE m.group_id = ? AND v.observed_state NOT IN ('shutoff', 'stopped', 'missing')",
     )
@@ -384,9 +384,9 @@ pub async fn delete_group(
         tx.rollback().await?;
         return Err(conflict(why));
     }
-    sqlx::query("DELETE FROM cloud_group_members WHERE group_id=?").bind(id).execute(&mut *tx).await?;
-    sqlx::query("UPDATE cloud_alarms SET action='none', group_id=NULL, step=0 WHERE group_id=?").bind(id).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM cloud_instance_groups WHERE id=?").bind(id).execute(&mut *tx).await?;
+    crate::db::query("DELETE FROM cloud_group_members WHERE group_id=?").bind(id).execute(&mut *tx).await?;
+    crate::db::query("UPDATE cloud_alarms SET action='none', group_id=NULL, step=0 WHERE group_id=?").bind(id).execute(&mut *tx).await?;
+    crate::db::query("DELETE FROM cloud_instance_groups WHERE id=?").bind(id).execute(&mut *tx).await?;
     audit(&mut tx, &actor, "cloud.group.delete", id).await?;
     tx.commit().await?;
     Ok(Json(json!({"deleted":true})))
@@ -399,20 +399,20 @@ pub async fn delete_template(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
-    let project: Uuid = sqlx::query_scalar("SELECT project_id FROM cloud_launch_templates WHERE id=?")
+    let project: Uuid = crate::db::query_scalar("SELECT project_id FROM cloud_launch_templates WHERE id=?")
         .bind(id)
         .fetch_optional(&mut *tx)
         .await?
         .ok_or_else(|| ApiError::not_found("launch template not found"))?;
     access(&mut tx, &actor, project, true).await?;
-    let used: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cloud_instance_groups WHERE template_id=?")
+    let used: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM cloud_instance_groups WHERE template_id=?")
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
     if used > 0 {
         return Err(conflict(format!("{used} instance group(s) still use this launch template")));
     }
-    sqlx::query("DELETE FROM cloud_launch_templates WHERE id=?").bind(id).execute(&mut *tx).await?;
+    crate::db::query("DELETE FROM cloud_launch_templates WHERE id=?").bind(id).execute(&mut *tx).await?;
     audit(&mut tx, &actor, "cloud.template.delete", id).await?;
     tx.commit().await?;
     Ok(Json(json!({"deleted":true})))

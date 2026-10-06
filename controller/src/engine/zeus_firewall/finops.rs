@@ -10,7 +10,7 @@ use machina_core::{
     storage_profile_exposure_cost, ExposureRisk, OpenPort,
 };
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -86,7 +86,7 @@ pub struct ExposureFinOpsReport {
 }
 
 pub async fn exposure_rollup(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<ExposureFinOpsReport> {
     let ov = overview(pool, cfg).await?;
@@ -187,10 +187,10 @@ pub async fn exposure_rollup(
     })
 }
 
-async fn resolve_team(pool: &SqlitePool, target_id: &str, kind: &str) -> String {
+async fn resolve_team(pool: &DbPool, target_id: &str, kind: &str) -> String {
     if kind == "bare_metal" {
         if let Ok(uid) = Uuid::parse_str(target_id) {
-            if let Ok(Some(h)) = sqlx::query_scalar::<_, String>(
+            if let Ok(Some(h)) = crate::db::query_scalar::<_, String>(
                 "SELECT hostname FROM baremetal_servers WHERE id = ?",
             )
             .bind(uid)
@@ -203,7 +203,7 @@ async fn resolve_team(pool: &SqlitePool, target_id: &str, kind: &str) -> String 
         return "metal:unassigned".into();
     }
     if let Ok(uid) = Uuid::parse_str(target_id) {
-        if let Ok(Some(Some(t))) = sqlx::query_scalar::<_, Option<String>>(
+        if let Ok(Some(Some(t))) = crate::db::query_scalar::<_, Option<String>>(
             "SELECT (SELECT value FROM json_each(COALESCE(tags,'[]')) WHERE value LIKE 'team:%' LIMIT 1)
              FROM vms WHERE host_id = ? LIMIT 1",
         )
@@ -217,8 +217,8 @@ async fn resolve_team(pool: &SqlitePool, target_id: &str, kind: &str) -> String 
     "platform".into()
 }
 
-pub async fn vm_idle_port_ranking(pool: &SqlitePool) -> anyhow::Result<Vec<VmIdlePortRow>> {
-    let rows: Vec<(Uuid, String, Option<String>)> = sqlx::query_as(
+pub async fn vm_idle_port_ranking(pool: &DbPool) -> anyhow::Result<Vec<VmIdlePortRow>> {
+    let rows: Vec<(Uuid, String, Option<String>)> = crate::db::query_as(
         "SELECT id, name,
                 (SELECT value FROM json_each(COALESCE(tags,'[]')) WHERE value LIKE 'team:%' LIMIT 1) AS team_tag
          FROM vms ORDER BY name",
@@ -233,7 +233,7 @@ pub async fn vm_idle_port_ranking(pool: &SqlitePool) -> anyhow::Result<Vec<VmIdl
             .and_then(|t| t.strip_prefix("team:"))
             .unwrap_or("unassigned")
             .to_string();
-        let host: Option<(String,)> = sqlx::query_as(
+        let host: Option<(String,)> = crate::db::query_as(
             "SELECT h.hostname FROM hosts h JOIN vms v ON v.host_id = h.id WHERE v.id = ?",
         )
         .bind(vm_id)
@@ -319,7 +319,7 @@ fn synthetic_monthly_trend(current_exposure: f64, current_idle: f64) -> Vec<Expo
         .collect()
 }
 
-pub async fn export_csv(pool: &SqlitePool, cfg: &ControllerConfig) -> anyhow::Result<String> {
+pub async fn export_csv(pool: &DbPool, cfg: &ControllerConfig) -> anyhow::Result<String> {
     let report = exposure_rollup(pool, cfg).await?;
     let mut csv = String::from(
         "Machina Zeus Firewall Exposure Cost Export\n\
@@ -392,7 +392,7 @@ fn csv_escape(s: &str) -> String {
 
 /// Per-team exposure attribution rollup (AI-302).
 pub async fn team_exposure_attribution(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<Vec<(String, f64, f64)>> {
     let report = exposure_rollup(pool, cfg).await?;

@@ -5,7 +5,7 @@
 
 use machina_core::{gather_cloud_inventory, profile_by_name, simulate_connectivity};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -141,12 +141,12 @@ pub struct MultisiteSyncResult {
     pub summary: String,
 }
 
-pub async fn ensure_default_sites(pool: &SqlitePool) -> anyhow::Result<()> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM firewall_sites")
+pub async fn ensure_default_sites(pool: &DbPool) -> anyhow::Result<()> {
+    let count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM firewall_sites")
         .fetch_one(pool)
         .await?;
     if count == 0 {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, dr_pair) VALUES (?, 'primary-local', 'local', 'primary', 'site-primary', 'dr-replica'),
              (?, 'dr-replica', 'dr', 'replica', 'site-dr', 'primary-local')",
         )
@@ -156,16 +156,16 @@ pub async fn ensure_default_sites(pool: &SqlitePool) -> anyhow::Result<()> {
         .await?;
     }
 
-    let policy_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM firewall_site_policies")
+    let policy_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM firewall_site_policies")
         .fetch_one(pool)
         .await?;
     if policy_count == 0 {
         let primary_id: Uuid =
-            sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = 'primary-local'")
+            crate::db::query_scalar("SELECT id FROM firewall_sites WHERE name = 'primary-local'")
                 .fetch_one(pool)
                 .await?;
         let dr_id: Uuid =
-            sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = 'dr-replica'")
+            crate::db::query_scalar("SELECT id FROM firewall_sites WHERE name = 'dr-replica'")
                 .fetch_one(pool)
                 .await?;
         for (site_id, name, profile) in [
@@ -173,7 +173,7 @@ pub async fn ensure_default_sites(pool: &SqlitePool) -> anyhow::Result<()> {
             (primary_id, "fleet-public", "WebServer"),
             (dr_id, "fleet-dr-standby", "MetalLockdown"),
         ] {
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO firewall_site_policies (id, site_id, policy_name, profile, spec_yaml)
                  VALUES (?, ?, ?, ?, ?)
                  ON CONFLICT (site_id, policy_name) DO NOTHING",
@@ -193,7 +193,7 @@ pub async fn ensure_default_sites(pool: &SqlitePool) -> anyhow::Result<()> {
 }
 
 pub async fn overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<MultisiteOverview> {
     ensure_default_sites(pool).await?;
@@ -207,7 +207,7 @@ pub async fn overview(
         bool,
         Option<String>,
         Option<String>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair
              FROM firewall_sites ORDER BY name",
     )
@@ -287,8 +287,8 @@ fn site_compliance_rollup(sites: &[FirewallSiteRow]) -> SiteComplianceRollup {
     }
 }
 
-async fn detect_policy_conflicts(pool: &SqlitePool) -> anyhow::Result<Vec<PolicyConflict>> {
-    let rows: Vec<(String, String, String)> = sqlx::query_as(
+async fn detect_policy_conflicts(pool: &DbPool) -> anyhow::Result<Vec<PolicyConflict>> {
+    let rows: Vec<(String, String, String)> = crate::db::query_as(
         "SELECT s.name, p.policy_name, p.profile FROM firewall_site_policies p
          JOIN firewall_sites s ON s.id = p.site_id
          ORDER BY p.policy_name, s.name",
@@ -299,7 +299,7 @@ async fn detect_policy_conflicts(pool: &SqlitePool) -> anyhow::Result<Vec<Policy
 
     if rows.is_empty() {
         let global: Vec<(String, String)> =
-            sqlx::query_as("SELECT name, spec_yaml FROM firewall_policies ORDER BY name LIMIT 20")
+            crate::db::query_as("SELECT name, spec_yaml FROM firewall_policies ORDER BY name LIMIT 20")
                 .fetch_all(pool)
                 .await?;
         if global.len() > 1 {
@@ -335,11 +335,11 @@ async fn detect_policy_conflicts(pool: &SqlitePool) -> anyhow::Result<Vec<Policy
     Ok(conflicts)
 }
 
-pub async fn federated_export(pool: &SqlitePool) -> anyhow::Result<FederatedExport> {
+pub async fn federated_export(pool: &DbPool) -> anyhow::Result<FederatedExport> {
     ensure_default_sites(pool).await?;
     let export = gitops::export_policies(pool).await?;
     let sites: Vec<(String, String)> =
-        sqlx::query_as("SELECT name, gitops_namespace FROM firewall_sites ORDER BY name")
+        crate::db::query_as("SELECT name, gitops_namespace FROM firewall_sites ORDER BY name")
             .fetch_all(pool)
             .await?;
 
@@ -367,7 +367,7 @@ pub async fn federated_export(pool: &SqlitePool) -> anyhow::Result<FederatedExpo
     })
 }
 
-pub async fn dr_template_bundle(pool: &SqlitePool) -> anyhow::Result<DrTemplateBundle> {
+pub async fn dr_template_bundle(pool: &DbPool) -> anyhow::Result<DrTemplateBundle> {
     ensure_default_sites(pool).await?;
     Ok(DrTemplateBundle {
         primary_site: "primary-local".into(),
@@ -389,24 +389,24 @@ pub async fn dr_template_bundle(pool: &SqlitePool) -> anyhow::Result<DrTemplateB
 }
 
 pub async fn cross_site_sync(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     req: MultisiteSyncRequest,
     actor: &str,
 ) -> anyhow::Result<MultisiteSyncResult> {
     ensure_default_sites(pool).await?;
-    let source_id: Uuid = sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = ?")
+    let source_id: Uuid = crate::db::query_scalar("SELECT id FROM firewall_sites WHERE name = ?")
         .bind(&req.source_site)
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| anyhow::anyhow!("unknown source site"))?;
-    let target_id: Uuid = sqlx::query_scalar("SELECT id FROM firewall_sites WHERE name = ?")
+    let target_id: Uuid = crate::db::query_scalar("SELECT id FROM firewall_sites WHERE name = ?")
         .bind(&req.target_site)
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| anyhow::anyhow!("unknown target site"))?;
 
-    let policies: Vec<(String, String, String)> = sqlx::query_as(
+    let policies: Vec<(String, String, String)> = crate::db::query_as(
         "SELECT policy_name, spec_yaml, profile FROM firewall_site_policies WHERE site_id = ?",
     )
     .bind(source_id)
@@ -416,7 +416,7 @@ pub async fn cross_site_sync(
     let mut synced = 0usize;
     let mut profiles_to_apply: Vec<String> = Vec::new();
     for (name, yaml, profile) in policies {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO firewall_site_policies (id, site_id, policy_name, profile, spec_yaml)
              VALUES (?, ?, ?, ?, ?)
              ON CONFLICT (site_id, policy_name) DO UPDATE SET
@@ -438,7 +438,7 @@ pub async fn cross_site_sync(
     }
 
     let lockdown_applied = if req.include_lockdown {
-        sqlx::query("UPDATE firewall_sites SET lockdown_enabled = true WHERE id = ?")
+        crate::db::query("UPDATE firewall_sites SET lockdown_enabled = true WHERE id = ?")
             .bind(target_id)
             .execute(pool)
             .await?;
@@ -459,7 +459,7 @@ pub async fn cross_site_sync(
         // belonging to every other site too — the same class of bug as an
         // update touching rows it doesn't own (see gitops.rs's source-scoped
         // replace/upsert for the reference pattern).
-        let online_hosts: Vec<(Uuid,)> = sqlx::query_as(
+        let online_hosts: Vec<(Uuid,)> = crate::db::query_as(
             "SELECT id FROM hosts WHERE state = 'online' AND site = ? ORDER BY hostname LIMIT 200",
         )
         .bind(&req.target_site)
@@ -508,7 +508,7 @@ pub async fn cross_site_sync(
         "hosts_applied": hosts_applied,
         "apply_errors": apply_errors.len(),
     });
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO firewall_site_timeline (id, site_id, kind, detail_json, actor) VALUES (?, ?, 'sync', ?, ?)",
     )
     .bind(Uuid::new_v4())
@@ -536,10 +536,10 @@ pub async fn cross_site_sync(
     })
 }
 
-pub async fn site_drift_compare(pool: &SqlitePool) -> anyhow::Result<SiteDriftReport> {
+pub async fn site_drift_compare(pool: &DbPool) -> anyhow::Result<SiteDriftReport> {
     ensure_default_sites(pool).await?;
     let pairs: Vec<(String, Option<String>)> =
-        sqlx::query_as("SELECT name, dr_pair FROM firewall_sites ORDER BY name")
+        crate::db::query_as("SELECT name, dr_pair FROM firewall_sites ORDER BY name")
             .fetch_all(pool)
             .await?;
 
@@ -556,7 +556,7 @@ pub async fn site_drift_compare(pool: &SqlitePool) -> anyhow::Result<SiteDriftRe
                 ],
                 captured_at: chrono::Utc::now().to_rfc3339(),
             });
-            let _ = sqlx::query(
+            let _ = crate::db::query(
                 "INSERT INTO firewall_site_drift (id, site_id, peer_site_id, drift_json)
                  SELECT ?, s.id, p.id, ? FROM firewall_sites s
                  JOIN firewall_sites p ON p.name = ? WHERE s.name = ?",
@@ -577,12 +577,12 @@ pub async fn site_drift_compare(pool: &SqlitePool) -> anyhow::Result<SiteDriftRe
 }
 
 pub async fn cross_site_connectivity(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<CrossSiteConnectivity> {
     ensure_default_sites(pool).await?;
     let site_names: Vec<String> =
-        sqlx::query_scalar("SELECT name FROM firewall_sites ORDER BY name")
+        crate::db::query_scalar("SELECT name FROM firewall_sites ORDER BY name")
             .fetch_all(pool)
             .await?;
 
@@ -643,10 +643,10 @@ pub async fn cross_site_connectivity(
 }
 
 pub async fn federated_siem_tag(
-    pool: &SqlitePool,
+    pool: &DbPool,
     hours: u32,
 ) -> anyhow::Result<serde_json::Value> {
-    let sites: Vec<String> = sqlx::query_scalar("SELECT name FROM firewall_sites ORDER BY name")
+    let sites: Vec<String> = crate::db::query_scalar("SELECT name FROM firewall_sites ORDER BY name")
         .fetch_all(pool)
         .await?;
     Ok(serde_json::json!({
@@ -658,7 +658,7 @@ pub async fn federated_siem_tag(
 }
 
 pub async fn merge_timeline(
-    pool: &SqlitePool,
+    pool: &DbPool,
     limit: i64,
 ) -> anyhow::Result<Vec<serde_json::Value>> {
     // Clamp the client-supplied limit: SQLite treats a negative LIMIT as "no limit",
@@ -669,7 +669,7 @@ pub async fn merge_timeline(
         String,
         serde_json::Value,
         chrono::DateTime<chrono::Utc>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT s.name, t.kind, t.detail_json, t.created_at
          FROM firewall_site_timeline t
          JOIN firewall_sites s ON s.id = t.site_id

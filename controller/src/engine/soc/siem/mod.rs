@@ -8,7 +8,7 @@ pub mod splunk_hec;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -21,10 +21,10 @@ pub struct IntegrationRow {
 }
 
 pub async fn forward_all_integrations(
-    pool: &SqlitePool,
+    pool: &DbPool,
     controller_id: &str,
 ) -> anyhow::Result<usize> {
-    let rows: Vec<IntegrationRow> = sqlx::query_as(
+    let rows: Vec<IntegrationRow> = crate::db::query_as(
         "SELECT id, integration_type, name, enabled, config_json FROM soc_integrations WHERE enabled = TRUE",
     )
     .fetch_all(pool)
@@ -48,12 +48,12 @@ pub async fn forward_all_integrations(
 }
 
 pub async fn forward_replay(
-    pool: &SqlitePool,
+    pool: &DbPool,
     hours: i32,
     controller_id: &str,
 ) -> anyhow::Result<usize> {
     let since = Utc::now() - chrono::Duration::hours(hours as i64);
-    let _ = sqlx::query("DELETE FROM soc_event_exports WHERE exported_at < ?")
+    let _ = crate::db::query("DELETE FROM soc_event_exports WHERE exported_at < ?")
         .bind(since)
         .execute(pool)
         .await;
@@ -61,11 +61,11 @@ pub async fn forward_replay(
 }
 
 pub(crate) async fn fetch_unexported_events(
-    pool: &SqlitePool,
+    pool: &DbPool,
     integration_id: Uuid,
     limit: i64,
 ) -> anyhow::Result<Vec<EventRow>> {
-    let rows: Vec<EventRow> = sqlx::query_as(
+    let rows: Vec<EventRow> = crate::db::query_as(
         "SELECT e.id, e.occurred_at, e.source, e.severity, e.summary, e.ecs_json
          FROM soc_events e
          WHERE NOT EXISTS (
@@ -83,13 +83,13 @@ pub(crate) async fn fetch_unexported_events(
 }
 
 pub(crate) async fn mark_exported(
-    pool: &SqlitePool,
+    pool: &DbPool,
     integration_id: Uuid,
     resource_type: &str,
     resource_ids: &[Uuid],
 ) -> anyhow::Result<()> {
     for id in resource_ids {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO soc_event_exports (integration_id, resource_type, resource_id) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
         )
         .bind(integration_id)
@@ -101,8 +101,8 @@ pub(crate) async fn mark_exported(
     Ok(())
 }
 
-pub(crate) async fn integration_ok(pool: &SqlitePool, id: Uuid) -> anyhow::Result<()> {
-    sqlx::query(
+pub(crate) async fn integration_ok(pool: &DbPool, id: Uuid) -> anyhow::Result<()> {
+    crate::db::query(
         "UPDATE soc_integrations SET last_success_at = datetime('now'), last_error = NULL, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(id)
@@ -111,8 +111,8 @@ pub(crate) async fn integration_ok(pool: &SqlitePool, id: Uuid) -> anyhow::Resul
     Ok(())
 }
 
-pub(crate) async fn integration_err(pool: &SqlitePool, id: Uuid, err: &str) -> anyhow::Result<()> {
-    sqlx::query(
+pub(crate) async fn integration_err(pool: &DbPool, id: Uuid, err: &str) -> anyhow::Result<()> {
+    crate::db::query(
         "UPDATE soc_integrations SET last_error = ?, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(err.chars().take(2000).collect::<String>())
@@ -133,11 +133,11 @@ pub(crate) struct EventRow {
 }
 
 pub(crate) async fn fetch_unexported_alerts(
-    pool: &SqlitePool,
+    pool: &DbPool,
     integration_id: Uuid,
     limit: i64,
 ) -> anyhow::Result<Vec<AlertRow>> {
-    let rows: Vec<AlertRow> = sqlx::query_as(
+    let rows: Vec<AlertRow> = crate::db::query_as(
         "SELECT a.id, a.title, a.severity, a.status, strftime('%Y-%m-%dT%H:%M:%SZ', a.first_seen) AS first_seen, strftime('%Y-%m-%dT%H:%M:%SZ', a.last_seen) AS last_seen, a.detail_json
          FROM soc_alerts a
          WHERE a.last_seen > datetime('now', '-7 days')

@@ -52,7 +52,7 @@ pub async fn list_tasks(
     let limit = q.limit.clamp(1, 500);
     let rows = match (&q.status, &q.operation) {
         (Some(status), Some(op)) if !status.is_empty() && !op.is_empty() => {
-            sqlx::query_as::<_, TaskRow>(
+            crate::db::query_as::<_, TaskRow>(
                 "SELECT id, operation, status, progress, message,
                         strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
                  FROM tasks WHERE status = ? AND operation LIKE ? ORDER BY created_at DESC LIMIT ?",
@@ -64,7 +64,7 @@ pub async fn list_tasks(
             .await?
         }
         (Some(status), _) if !status.is_empty() => {
-            sqlx::query_as::<_, TaskRow>(
+            crate::db::query_as::<_, TaskRow>(
                 "SELECT id, operation, status, progress, message,
                         strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
                  FROM tasks WHERE status = ? ORDER BY created_at DESC LIMIT ?",
@@ -75,7 +75,7 @@ pub async fn list_tasks(
             .await?
         }
         (_, Some(op)) if !op.is_empty() => {
-            sqlx::query_as::<_, TaskRow>(
+            crate::db::query_as::<_, TaskRow>(
                 "SELECT id, operation, status, progress, message,
                         strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
                  FROM tasks WHERE operation LIKE ? ORDER BY created_at DESC LIMIT ?",
@@ -86,7 +86,7 @@ pub async fn list_tasks(
             .await?
         }
         _ => {
-            sqlx::query_as::<_, TaskRow>(
+            crate::db::query_as::<_, TaskRow>(
                 "SELECT id, operation, status, progress, message,
                         strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
                  FROM tasks ORDER BY created_at DESC LIMIT ?",
@@ -105,7 +105,7 @@ pub async fn get_task(
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, TaskRow>(
+    let row = crate::db::query_as::<_, TaskRow>(
         "SELECT id, operation, status, progress, message,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
          FROM tasks WHERE id = ?",
@@ -130,14 +130,14 @@ pub async fn cancel_task(
     // the worker/enqueue/reap terminal-failure paths fixed elsewhere — would
     // leave the VM silently pointing at a host it was never created on.
     let row: Option<(String, serde_json::Value)> =
-        sqlx::query_as("SELECT operation, payload FROM tasks WHERE id = ? AND status = 'pending'")
+        crate::db::query_as("SELECT operation, payload FROM tasks WHERE id = ? AND status = 'pending'")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
     let Some((operation, payload)) = row else {
         return Err(ApiError::bad_request("task not pending or not found"));
     };
-    let updated = sqlx::query(
+    let updated = crate::db::query(
         "UPDATE tasks SET status = 'cancelled', message = 'cancelled by operator', updated_at = datetime('now')
          WHERE id = ? AND status = 'pending'",
     )
@@ -173,7 +173,7 @@ pub async fn retry_task(
         Option<Uuid>,
         Option<Uuid>,
         String,
-    ) = sqlx::query_as(
+    ) = crate::db::query_as(
         "SELECT operation, payload, resource_type, resource_id, host_id, status FROM tasks WHERE id = ?",
     )
     .bind(id)

@@ -202,7 +202,7 @@ impl std::fmt::Debug for ControllerConfig {
         f.debug_struct("ControllerConfig")
             .field("host", &self.host)
             .field("port", &self.port)
-            .field("database_url", &self.database_url)
+            .field("database_url", &crate::db::redact_url(&self.database_url))
             .field("nats_url", &self.nats_url)
             .field("default_agent_addr", &self.default_agent_addr)
             .field("default_libvirt_uri", &self.default_libvirt_uri)

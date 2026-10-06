@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct PolicyExport {
@@ -11,14 +11,14 @@ pub struct PolicyExport {
     pub quota_count: usize,
 }
 
-pub async fn export_policy_yaml(pool: &SqlitePool) -> anyhow::Result<PolicyExport> {
+pub async fn export_policy_yaml(pool: &DbPool) -> anyhow::Result<PolicyExport> {
     let rules: Vec<(String, bool, serde_json::Value)> =
-        sqlx::query_as("SELECT name, enabled, rule_json FROM policy_rules ORDER BY name")
+        crate::db::query_as("SELECT name, enabled, rule_json FROM policy_rules ORDER BY name")
             .fetch_all(pool)
             .await
             .unwrap_or_default();
 
-    let quotas: Vec<(String, i32, i32, i64, i64)> = sqlx::query_as(
+    let quotas: Vec<(String, i32, i32, i64, i64)> = crate::db::query_as(
         "SELECT project, max_vms, max_vcpu, max_memory_mib, max_storage_gib FROM project_quotas ORDER BY project",
     )
     .fetch_all(pool)
@@ -48,7 +48,7 @@ pub async fn export_policy_yaml(pool: &SqlitePool) -> anyhow::Result<PolicyExpor
     let rule_count = rules.len();
     let quota_count = quotas.len();
 
-    if let Ok(Some((req,))) = sqlx::query_as::<_, (bool,)>(
+    if let Ok(Some((req,))) = crate::db::query_as::<_, (bool,)>(
         "SELECT COALESCE(require_vm_delete_approval, false) FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(pool)

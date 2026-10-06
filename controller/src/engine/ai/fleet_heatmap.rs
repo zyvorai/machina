@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct HostHeatCell {
@@ -22,8 +22,8 @@ pub struct FleetHeatmap {
     pub power_waste_hosts: Vec<String>,
 }
 
-pub async fn heatmap(pool: &SqlitePool) -> anyhow::Result<FleetHeatmap> {
-    let rows: Vec<(uuid::Uuid, String, f32, i64, i64, i32, String)> = sqlx::query_as(
+pub async fn heatmap(pool: &DbPool) -> anyhow::Result<FleetHeatmap> {
+    let rows: Vec<(uuid::Uuid, String, f32, i64, i64, i32, String)> = crate::db::query_as(
         "SELECT id, hostname, cpu_percent, memory_used_mib, memory_total_mib, vm_count, state
          FROM hosts ORDER BY hostname",
     )

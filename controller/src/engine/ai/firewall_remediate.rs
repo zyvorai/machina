@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -23,8 +23,8 @@ pub struct FirewallRemediateProposal {
     pub summary: String,
 }
 
-pub async fn propose(pool: &SqlitePool) -> anyhow::Result<FirewallRemediateProposal> {
-    let hosts: Vec<(Uuid, String)> = sqlx::query_as(
+pub async fn propose(pool: &DbPool) -> anyhow::Result<FirewallRemediateProposal> {
+    let hosts: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT id, hostname FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 200",
     )
     .fetch_all(pool)

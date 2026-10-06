@@ -53,7 +53,7 @@ pub async fn list_api_keys(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ApiKeyRow>>, ApiError> {
     require_admin(&actor)?;
-    let rows = sqlx::query_as::<_, ApiKeyRow>(
+    let rows = crate::db::query_as::<_, ApiKeyRow>(
         "SELECT id, name, role,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at,
                 strftime('%Y-%m-%dT%H:%M:%SZ', last_used_at) AS last_used_at,
@@ -91,12 +91,12 @@ pub async fn create_api_key(
     validate_scope(&body.role, &body.projects).map_err(ApiError::bad_request)?;
     if !body.projects.is_empty() {
         // The key's name is its identity in audit logs and in the scope lookup, so a scoped key's name must be unique.
-        let dup: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_keys WHERE name = ?").bind(&body.name).fetch_one(&state.pool).await?;
+        let dup: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM api_keys WHERE name = ?").bind(&body.name).fetch_one(&state.pool).await?;
         if dup > 0 {
             return Err(ApiError::conflict("an API key with that name exists", "scoped keys need a unique name"));
         }
         for p in &body.projects {
-            let known: Option<i64> = sqlx::query_scalar("SELECT 1 FROM projects WHERE name = ? AND enabled = 1").bind(p).fetch_optional(&state.pool).await?;
+            let known: Option<i64> = crate::db::query_scalar("SELECT 1 FROM projects WHERE name = ? AND enabled = 1").bind(p).fetch_optional(&state.pool).await?;
             if known.is_none() {
                 return Err(ApiError::bad_request(format!("no enabled project named '{p}'")));
             }
@@ -105,7 +105,7 @@ pub async fn create_api_key(
     let id = Uuid::new_v4();
     let token = format!("machina_{}", Uuid::new_v4());
     let hash = hash_token(&token);
-    sqlx::query("INSERT INTO api_keys (id, name, key_hash, role, projects) VALUES (?, ?, ?, ?, ?)")
+    crate::db::query("INSERT INTO api_keys (id, name, key_hash, role, projects) VALUES (?, ?, ?, ?, ?)")
         .bind(id)
         .bind(&body.name)
         .bind(hash)
@@ -133,7 +133,7 @@ pub async fn rotate_api_key(
 ) -> Result<Json<CreateApiKeyResponse>, ApiError> {
     require_admin(&actor)?;
     let existing: Option<(String, String, String)> =
-        sqlx::query_as("SELECT name, role, projects FROM api_keys WHERE id = ?")
+        crate::db::query_as("SELECT name, role, projects FROM api_keys WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -143,7 +143,7 @@ pub async fn rotate_api_key(
     let token = format!("machina_{}", Uuid::new_v4());
     let hash = hash_token(&token);
     // Reset last_used_at too — the new secret has never been used.
-    sqlx::query(
+    crate::db::query(
         "UPDATE api_keys SET key_hash = ?, last_used_at = NULL, created_at = datetime('now') WHERE id = ?",
     )
     .bind(hash)
@@ -177,11 +177,11 @@ pub(crate) fn validate_scope(role: &str, projects: &[String]) -> Result<(), Stri
 }
 
 /// Projects an `apikey:<name>` identity is limited to (empty = not scoped, or not an API key).
-pub async fn scope_of(pool: &sqlx::SqlitePool, username: &str) -> Vec<String> {
+pub async fn scope_of(pool: &crate::db::DbPool, username: &str) -> Vec<String> {
     let Some(name) = username.strip_prefix("apikey:") else {
         return Vec::new();
     };
-    let raw: Option<String> = sqlx::query_scalar("SELECT projects FROM api_keys WHERE name = ? AND projects <> '[]' LIMIT 1")
+    let raw: Option<String> = crate::db::query_scalar("SELECT projects FROM api_keys WHERE name = ? AND projects <> '[]' LIMIT 1")
         .bind(name)
         .fetch_optional(pool)
         .await
@@ -190,11 +190,11 @@ pub async fn scope_of(pool: &sqlx::SqlitePool, username: &str) -> Vec<String> {
     raw.and_then(|r| serde_json::from_str(&r).ok()).unwrap_or_default()
 }
 
-pub(crate) async fn scope_of_conn(conn: &mut sqlx::SqliteConnection, username: &str) -> Vec<String> {
+pub(crate) async fn scope_of_conn(conn: &mut crate::db::DbConn, username: &str) -> Vec<String> {
     let Some(name) = username.strip_prefix("apikey:") else {
         return Vec::new();
     };
-    let raw: Option<String> = sqlx::query_scalar("SELECT projects FROM api_keys WHERE name = ? AND projects <> '[]' LIMIT 1")
+    let raw: Option<String> = crate::db::query_scalar("SELECT projects FROM api_keys WHERE name = ? AND projects <> '[]' LIMIT 1")
         .bind(name)
         .fetch_optional(&mut *conn)
         .await
@@ -209,7 +209,7 @@ pub async fn delete_api_key(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    let result = sqlx::query("DELETE FROM api_keys WHERE id = ?")
+    let result = crate::db::query("DELETE FROM api_keys WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -231,18 +231,18 @@ pub fn hash_token(token: &str) -> String {
 }
 
 pub async fn authenticate_api_key(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     token: &str,
 ) -> anyhow::Result<Option<AuthUser>> {
     let hash = hash_token(token);
     let row: Option<(String, String)> =
-        sqlx::query_as("SELECT name, role FROM api_keys WHERE key_hash = ?")
+        crate::db::query_as("SELECT name, role FROM api_keys WHERE key_hash = ?")
             .bind(&hash)
             .fetch_optional(pool)
             .await?;
     if let Some((name, role)) = row {
         let _ =
-            sqlx::query("UPDATE api_keys SET last_used_at = datetime('now') WHERE key_hash = ?")
+            crate::db::query("UPDATE api_keys SET last_used_at = datetime('now') WHERE key_hash = ?")
                 .bind(&hash)
                 .execute(pool)
                 .await;

@@ -57,7 +57,7 @@ pub async fn list_fleet_snapshot_schedules(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<FleetSnapshotScheduleRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, FleetSnapshotScheduleRow>(
+    let rows = crate::db::query_as::<_, FleetSnapshotScheduleRow>(
         "SELECT id, name, cron_expr, project, tag_filter, disk_only, quiesce, retain_count, enabled,
                 strftime('%Y-%m-%dT%H:%M:%SZ', last_run_at) AS last_run_at
          FROM fleet_snapshot_schedules ORDER BY name",
@@ -77,7 +77,7 @@ pub async fn create_fleet_snapshot_schedule(
         return Err(ApiError::bad_request("name is required"));
     }
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO fleet_snapshot_schedules (id, name, cron_expr, project, tag_filter, disk_only, quiesce, retain_count)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -91,7 +91,7 @@ pub async fn create_fleet_snapshot_schedule(
     .bind(body.retain_count)
     .execute(&state.pool)
     .await?;
-    let row = sqlx::query_as::<_, FleetSnapshotScheduleRow>(
+    let row = crate::db::query_as::<_, FleetSnapshotScheduleRow>(
         "SELECT id, name, cron_expr, project, tag_filter, disk_only, quiesce, retain_count, enabled,
                 strftime('%Y-%m-%dT%H:%M:%SZ', last_run_at) AS last_run_at
          FROM fleet_snapshot_schedules WHERE id = ?",
@@ -108,7 +108,7 @@ pub async fn delete_fleet_snapshot_schedule(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let r = sqlx::query("DELETE FROM fleet_snapshot_schedules WHERE id = ?")
+    let r = crate::db::query("DELETE FROM fleet_snapshot_schedules WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;

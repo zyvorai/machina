@@ -597,7 +597,7 @@ pub async fn fleet_sensors(
     let native = telemetry::sensors(&state.pool).await;
     let sensors = native["sensors"].as_array().cloned().unwrap_or_default();
     let hosts: Vec<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, hostname, state FROM hosts ORDER BY hostname")
+        crate::db::query_as("SELECT id, hostname, state FROM hosts ORDER BY hostname")
             .fetch_all(&state.pool)
             .await
             .map_err(|e| ApiError::internal(e.to_string()))?;

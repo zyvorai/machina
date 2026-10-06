@@ -3,7 +3,7 @@
 
 use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -47,7 +47,7 @@ pub struct TemporaryRule {
 }
 
 pub async fn create_temporary_rule(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: TemporaryRuleRequest,
 ) -> anyhow::Result<TemporaryRule> {
     let expires = Utc::now() + Duration::hours(req.duration_hours as i64);
@@ -61,7 +61,7 @@ pub async fn create_temporary_rule(
     // selects `WHERE applied = true`) correctly report zero "active" rules,
     // and makes `expire_temporary_rules` a correct no-op for these rows
     // (there is nothing enforced to expire).
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO firewall_temporary_rules
          (id, target_kind, target_id, source_cidr, dest_port, protocol, reason, owner, expires_at, applied)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, false)",
@@ -78,7 +78,7 @@ pub async fn create_temporary_rule(
     .execute(pool)
     .await?;
 
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, ?, ?, 'temporary_rule', ?, ?, ?)",
     )
     .bind(uuid::Uuid::new_v4())
@@ -113,7 +113,7 @@ pub async fn create_temporary_rule(
 }
 
 pub async fn list_temporary_rules(
-    pool: &SqlitePool,
+    pool: &DbPool,
     target_id: Uuid,
 ) -> anyhow::Result<Vec<TemporaryRule>> {
     let rows: Vec<(
@@ -124,7 +124,7 @@ pub async fn list_temporary_rules(
         String,
         chrono::DateTime<Utc>,
         Option<String>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         // `expires_at` is stored as an RFC3339 string (chrono's sqlite encoding, e.g.
         // "2026-07-24T18:00:00+00:00"), while `datetime('now')` yields SQLite's own
         // "YYYY-MM-DD HH:MM:SS" format. Comparing the two directly as TEXT is wrong:
@@ -167,7 +167,7 @@ pub async fn list_temporary_rules(
         .collect())
 }
 
-pub async fn expire_temporary_rules(pool: &SqlitePool) -> anyhow::Result<u64> {
+pub async fn expire_temporary_rules(pool: &DbPool) -> anyhow::Result<u64> {
     // Same format mismatch as list_temporary_rules: normalize expires_at through
     // datetime() so a same-day expiry is actually detected instead of the raw
     // 'T'-separated string always sorting "in the future" against datetime('now').
@@ -180,7 +180,7 @@ pub async fn expire_temporary_rules(pool: &SqlitePool) -> anyhow::Result<u64> {
     // deleting it) means it starts doing real work again for free the day
     // real enforcement plumbing sets `applied = true` on rules it actually
     // pushed to a host.
-    let rows = sqlx::query(
+    let rows = crate::db::query(
         "UPDATE firewall_temporary_rules SET applied = false
          WHERE applied = true AND datetime(expires_at) <= datetime('now')",
     )
@@ -190,7 +190,7 @@ pub async fn expire_temporary_rules(pool: &SqlitePool) -> anyhow::Result<u64> {
 }
 
 pub async fn timeline(
-    pool: &SqlitePool,
+    pool: &DbPool,
     target_kind: &str,
     target_id: Uuid,
 ) -> anyhow::Result<Vec<serde_json::Value>> {
@@ -200,7 +200,7 @@ pub async fn timeline(
         serde_json::Value,
         Option<String>,
         chrono::DateTime<Utc>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT kind, summary, detail_json, actor,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
              FROM firewall_timeline

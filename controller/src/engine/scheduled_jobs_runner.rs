@@ -36,7 +36,7 @@ pub fn spawn(state: AppState) {
 }
 
 async fn tick(state: &AppState) -> anyhow::Result<()> {
-    let rows: Vec<(Uuid, String, String, String, Option<Uuid>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, String, Option<Uuid>)> = crate::db::query_as(
         "SELECT id, name, operation, payload, target_host_id
          FROM scheduled_jobs
          WHERE enabled = TRUE
@@ -57,7 +57,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
             tracing::warn!("scheduled job '{name}' ({operation}): {e:#}");
         }
         // Advance last_run_at regardless so a persistently failing job doesn't hot-loop.
-        sqlx::query("UPDATE scheduled_jobs SET last_run_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE scheduled_jobs SET last_run_at = datetime('now') WHERE id = ?")
             .bind(job_id)
             .execute(&state.pool)
             .await?;
@@ -78,7 +78,7 @@ async fn run_job(
     let host_ids: Vec<Uuid> = match target_host_id {
         Some(h) => vec![h],
         None => {
-            sqlx::query_scalar("SELECT id FROM hosts ORDER BY hostname LIMIT 500")
+            crate::db::query_scalar("SELECT id FROM hosts ORDER BY hostname LIMIT 500")
                 .fetch_all(&state.pool)
                 .await?
         }

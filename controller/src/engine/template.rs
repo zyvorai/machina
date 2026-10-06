@@ -1,7 +1,7 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 pub fn parse_template_ref(template_ref: &str) -> (String, String) {
@@ -13,7 +13,7 @@ pub fn parse_template_ref(template_ref: &str) -> (String, String) {
 }
 
 pub async fn resolve_template_disk(
-    pool: &SqlitePool,
+    pool: &DbPool,
     template_ref: &str,
 ) -> anyhow::Result<String> {
     let (name, version) = if let Some((n, v)) = template_ref.split_once('@') {
@@ -23,14 +23,14 @@ pub async fn resolve_template_disk(
     };
 
     let disk: String = if let Some(ver) = version {
-        sqlx::query_scalar("SELECT source_disk FROM templates WHERE name = ? AND version = ?")
+        crate::db::query_scalar("SELECT source_disk FROM templates WHERE name = ? AND version = ?")
             .bind(&name)
             .bind(&ver)
             .fetch_optional(pool)
             .await?
             .ok_or_else(|| anyhow::anyhow!("template not found: {name}@{ver}"))?
     } else {
-        sqlx::query_scalar(
+        crate::db::query_scalar(
             "SELECT source_disk FROM templates WHERE name = ? ORDER BY created_at DESC LIMIT 1",
         )
         .bind(&name)
@@ -50,20 +50,20 @@ pub fn image_allows(visibility: &str, owner: &str, project: &str, shared_with: &
 /// `Some(reason)` when `project` may not launch from `template_ref` (`name` or `name@version`). An unknown image is not
 /// this function's business: the normal "template not found" path reports it.
 pub async fn image_access_error(
-    pool: &SqlitePool,
+    pool: &DbPool,
     template_ref: &str,
     project: &str,
 ) -> anyhow::Result<Option<String>> {
     let row: Option<(Uuid, String, String)> = match template_ref.split_once('@') {
         Some((n, v)) => {
-            sqlx::query_as("SELECT id, COALESCE(visibility, 'public'), COALESCE(project, '') FROM templates WHERE name = ? AND version = ?")
+            crate::db::query_as("SELECT id, COALESCE(visibility, 'public'), COALESCE(project, '') FROM templates WHERE name = ? AND version = ?")
                 .bind(n)
                 .bind(v)
                 .fetch_optional(pool)
                 .await?
         }
         None => {
-            sqlx::query_as("SELECT id, COALESCE(visibility, 'public'), COALESCE(project, '') FROM templates WHERE name = ? ORDER BY created_at DESC LIMIT 1")
+            crate::db::query_as("SELECT id, COALESCE(visibility, 'public'), COALESCE(project, '') FROM templates WHERE name = ? ORDER BY created_at DESC LIMIT 1")
                 .bind(template_ref)
                 .fetch_optional(pool)
                 .await?
@@ -75,7 +75,7 @@ pub async fn image_access_error(
     if visibility != "private" {
         return Ok(None);
     }
-    let shared: Vec<String> = sqlx::query_scalar("SELECT project FROM image_shares WHERE template_id = ?")
+    let shared: Vec<String> = crate::db::query_scalar("SELECT project FROM image_shares WHERE template_id = ?")
         .bind(id)
         .fetch_all(pool)
         .await?;
@@ -88,7 +88,7 @@ pub async fn image_access_error(
 }
 
 pub async fn resolve_template_firewall_profile(
-    pool: &SqlitePool,
+    pool: &DbPool,
     template_ref: &str,
 ) -> anyhow::Result<Option<String>> {
     let (name, version) = if let Some((n, v)) = template_ref.split_once('@') {
@@ -97,13 +97,13 @@ pub async fn resolve_template_firewall_profile(
         (template_ref.to_string(), None)
     };
     let profile: Option<String> = if let Some(ver) = version {
-        sqlx::query_scalar("SELECT firewall_profile FROM templates WHERE name = ? AND version = ?")
+        crate::db::query_scalar("SELECT firewall_profile FROM templates WHERE name = ? AND version = ?")
             .bind(&name)
             .bind(&ver)
             .fetch_optional(pool)
             .await?
     } else {
-        sqlx::query_scalar(
+        crate::db::query_scalar(
             "SELECT firewall_profile FROM templates WHERE name = ? ORDER BY created_at DESC LIMIT 1",
         )
         .bind(&name)
@@ -114,7 +114,7 @@ pub async fn resolve_template_firewall_profile(
 }
 
 pub async fn upsert_ha_policy(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Uuid,
     enabled: bool,
     restart_attempts: i32,
@@ -122,13 +122,13 @@ pub async fn upsert_ha_policy(
     fence_on_failure: bool,
     anti_affinity: bool,
 ) -> anyhow::Result<()> {
-    let existing: Option<Uuid> = sqlx::query_scalar("SELECT id FROM ha_policies WHERE vm_id = ?")
+    let existing: Option<Uuid> = crate::db::query_scalar("SELECT id FROM ha_policies WHERE vm_id = ?")
         .bind(vm_id)
         .fetch_optional(pool)
         .await?;
 
     if let Some(id) = existing {
-        sqlx::query(
+        crate::db::query(
             "UPDATE ha_policies SET enabled = ?, restart_attempts = ?, restart_priority = ?,
              fence_on_failure = ?, anti_affinity = ? WHERE id = ?",
         )
@@ -141,7 +141,7 @@ pub async fn upsert_ha_policy(
         .execute(pool)
         .await?;
     } else {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO ha_policies (id, vm_id, enabled, restart_attempts, restart_priority, fence_on_failure, anti_affinity)
              VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
@@ -158,8 +158,8 @@ pub async fn upsert_ha_policy(
     Ok(())
 }
 
-pub async fn get_ha_policy(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Option<HaPolicyRow>> {
-    Ok(sqlx::query_as(
+pub async fn get_ha_policy(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<Option<HaPolicyRow>> {
+    Ok(crate::db::query_as(
         "SELECT enabled, restart_attempts, restart_priority, fence_on_failure, anti_affinity
          FROM ha_policies WHERE vm_id = ?",
     )

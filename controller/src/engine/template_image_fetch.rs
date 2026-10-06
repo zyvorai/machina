@@ -6,7 +6,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::host_shell;
@@ -16,7 +16,7 @@ use super::template_readiness;
 const FETCH_TIMEOUT_SECS: u64 = 3600;
 
 pub async fn ensure_template_disk(
-    pool: &SqlitePool,
+    pool: &DbPool,
     host_id: Uuid,
     dest_path: &str,
     template_name: &str,
@@ -39,9 +39,9 @@ pub async fn ensure_template_disk(
     Ok(true)
 }
 
-async fn host_address(pool: &SqlitePool, host_id: Uuid) -> anyhow::Result<String> {
+async fn host_address(pool: &DbPool, host_id: Uuid) -> anyhow::Result<String> {
     let row: Option<(String, String)> =
-        sqlx::query_as("SELECT hostname, address FROM hosts WHERE id = ? AND state = 'online'")
+        crate::db::query_as("SELECT hostname, address FROM hosts WHERE id = ? AND state = 'online'")
             .bind(host_id)
             .fetch_optional(pool)
             .await?;
@@ -108,13 +108,13 @@ chmod 644 '{dest}'
 
 /// Download all missing auto-fetch marketplace images onto one online host.
 pub async fn prefetch_missing_images(
-    pool: &SqlitePool,
+    pool: &DbPool,
     host_id: Option<Uuid>,
 ) -> anyhow::Result<(usize, usize, Vec<String>)> {
     let host_id = match host_id {
         Some(id) => id,
         None => {
-            let id: Option<Uuid> = sqlx::query_scalar(
+            let id: Option<Uuid> = crate::db::query_scalar(
                 "SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1",
             )
             .fetch_optional(pool)

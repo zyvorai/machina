@@ -55,7 +55,7 @@ pub async fn list_load_balancers(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<LoadBalancerRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, LoadBalancerRow>(&format!("{LB_SELECT} ORDER BY name"))
+    let rows = crate::db::query_as::<_, LoadBalancerRow>(&format!("{LB_SELECT} ORDER BY name"))
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(rows))
@@ -67,7 +67,7 @@ pub async fn get_load_balancer(
     Path(id): Path<Uuid>,
 ) -> Result<Json<LoadBalancerRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, LoadBalancerRow>(&format!("{LB_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, LoadBalancerRow>(&format!("{LB_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -98,7 +98,7 @@ pub async fn create_load_balancer(
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     validate_listener(&body.protocol, body.listener_port)?;
 
-    let host_exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM hosts WHERE id = ?")
+    let host_exists: Option<(Uuid,)> = crate::db::query_as("SELECT id FROM hosts WHERE id = ?")
         .bind(body.host_id)
         .fetch_optional(&state.pool)
         .await?;
@@ -107,7 +107,7 @@ pub async fn create_load_balancer(
     }
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO load_balancers (id, project_id, name, protocol, host_id, listener_port) \
          VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -135,7 +135,7 @@ pub async fn create_load_balancer(
     // state until the first member triggers a reconcile.
     let _ = crate::engine::load_balancer::apply(&state.pool, &state.config, id).await;
 
-    let row = sqlx::query_as::<_, LoadBalancerRow>(&format!("{LB_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, LoadBalancerRow>(&format!("{LB_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -149,7 +149,7 @@ pub async fn delete_load_balancer(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
     crate::engine::load_balancer::teardown(&state.pool, &state.config, id).await;
-    sqlx::query("DELETE FROM load_balancers WHERE id = ?")
+    crate::db::query("DELETE FROM load_balancers WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -181,7 +181,7 @@ pub async fn list_lb_members(
     Path(lb_id): Path<Uuid>,
 ) -> Result<Json<Vec<LbMemberRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, LbMemberRow>(&format!(
+    let rows = crate::db::query_as::<_, LbMemberRow>(&format!(
         "{LB_MEMBER_SELECT} WHERE m.load_balancer_id = ? ORDER BY m.created_at"
     ))
     .bind(lb_id)
@@ -212,7 +212,7 @@ pub async fn add_lb_member(
     if body.port == 0 {
         return Err(ApiError::bad_request("port must be non-zero"));
     }
-    let vm_exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM vms WHERE id = ?")
+    let vm_exists: Option<(Uuid,)> = crate::db::query_as("SELECT id FROM vms WHERE id = ?")
         .bind(body.vm_id)
         .fetch_optional(&state.pool)
         .await?;
@@ -221,7 +221,7 @@ pub async fn add_lb_member(
     }
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO lb_members (id, load_balancer_id, vm_id, port, weight) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(id)
@@ -246,7 +246,7 @@ pub async fn add_lb_member(
         .await
         .map_err(|e| ApiError::bad_request(format!("member saved but rule push failed: {e}")))?;
 
-    let row = sqlx::query_as::<_, LbMemberRow>(&format!("{LB_MEMBER_SELECT} WHERE m.id = ?"))
+    let row = crate::db::query_as::<_, LbMemberRow>(&format!("{LB_MEMBER_SELECT} WHERE m.id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -269,7 +269,7 @@ pub async fn patch_lb_member(
 ) -> Result<Json<LbMemberRow>, ApiError> {
     require_operator(&actor)?;
     if let Some(enabled) = body.enabled {
-        sqlx::query("UPDATE lb_members SET enabled = ? WHERE id = ? AND load_balancer_id = ?")
+        crate::db::query("UPDATE lb_members SET enabled = ? WHERE id = ? AND load_balancer_id = ?")
             .bind(enabled)
             .bind(member_id)
             .bind(lb_id)
@@ -277,7 +277,7 @@ pub async fn patch_lb_member(
             .await?;
     }
     if let Some(weight) = body.weight {
-        sqlx::query("UPDATE lb_members SET weight = ? WHERE id = ? AND load_balancer_id = ?")
+        crate::db::query("UPDATE lb_members SET weight = ? WHERE id = ? AND load_balancer_id = ?")
             .bind(weight.max(1) as i64)
             .bind(member_id)
             .bind(lb_id)
@@ -289,7 +289,7 @@ pub async fn patch_lb_member(
         .await
         .map_err(|e| ApiError::bad_request(format!("member updated but rule push failed: {e}")))?;
 
-    let row = sqlx::query_as::<_, LbMemberRow>(&format!("{LB_MEMBER_SELECT} WHERE m.id = ?"))
+    let row = crate::db::query_as::<_, LbMemberRow>(&format!("{LB_MEMBER_SELECT} WHERE m.id = ?"))
         .bind(member_id)
         .fetch_one(&state.pool)
         .await?;
@@ -302,7 +302,7 @@ pub async fn delete_lb_member(
     Path((lb_id, member_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    sqlx::query("DELETE FROM lb_members WHERE id = ? AND load_balancer_id = ?")
+    crate::db::query("DELETE FROM lb_members WHERE id = ? AND load_balancer_id = ?")
         .bind(member_id)
         .bind(lb_id)
         .execute(&state.pool)
@@ -365,7 +365,7 @@ pub async fn set_health_check(
         unhealthy_threshold: b.unhealthy_threshold,
     };
     crate::engine::lb_health::validate(&check).map_err(ApiError::bad_request)?;
-    let r = sqlx::query(
+    let r = crate::db::query(
         "UPDATE load_balancers SET hc_protocol = ?, hc_port = ?, hc_path = ?, hc_interval_secs = ?, hc_timeout_secs = ?, \
          hc_healthy_threshold = ?, hc_unhealthy_threshold = ?, hc_last_run = NULL WHERE id = ?",
     )
@@ -382,12 +382,12 @@ pub async fn set_health_check(
     if r.rows_affected() == 0 {
         return Err(ApiError::not_found("load balancer not found"));
     }
-    sqlx::query("UPDATE lb_members SET health = 'unknown', health_ok = 0, health_fail = 0, health_detail = '' WHERE load_balancer_id = ?")
+    crate::db::query("UPDATE lb_members SET health = 'unknown', health_ok = 0, health_fail = 0, health_detail = '' WHERE load_balancer_id = ?")
         .bind(lb_id)
         .execute(&state.pool)
         .await?;
     // Members that were out of rotation are back in until the new check says otherwise.
     let _ = crate::engine::load_balancer::apply(&state.pool, &state.config, lb_id).await;
-    let row = sqlx::query_as::<_, LoadBalancerRow>(&format!("{LB_SELECT} WHERE id = ?")).bind(lb_id).fetch_one(&state.pool).await?;
+    let row = crate::db::query_as::<_, LoadBalancerRow>(&format!("{LB_SELECT} WHERE id = ?")).bind(lb_id).fetch_one(&state.pool).await?;
     Ok(Json(row))
 }

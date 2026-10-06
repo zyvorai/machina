@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct SiemFirewallExport {
@@ -22,7 +22,7 @@ pub struct SiemEvent {
     pub detail: serde_json::Value,
 }
 
-pub async fn export_timeline(pool: &SqlitePool, hours: i32) -> anyhow::Result<SiemFirewallExport> {
+pub async fn export_timeline(pool: &DbPool, hours: i32) -> anyhow::Result<SiemFirewallExport> {
     // Clamp the caller-supplied window. `hours` is spliced into a SQLite
     // datetime modifier as `'-' || hours || ' hours'`; a negative value (e.g.
     // -5) produces the malformed modifier "--5 hours", which datetime()
@@ -42,7 +42,7 @@ pub async fn export_timeline(pool: &SqlitePool, hours: i32) -> anyhow::Result<Si
         Option<String>,
         chrono::DateTime<chrono::Utc>,
         serde_json::Value,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT target_kind, target_id, kind, summary, actor, created_at, detail_json
              FROM firewall_timeline
              WHERE created_at >= datetime('now', '-' || ? || ' hours')

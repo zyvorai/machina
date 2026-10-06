@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tokio::sync::broadcast;
 
 use crate::config::ControllerConfig;
@@ -14,7 +14,7 @@ use crate::ws_tokens::WsTokenStore;
 
 #[derive(Clone)]
 pub struct AppState {
-    pub pool: SqlitePool,
+    pub pool: DbPool,
     pub config: Arc<ControllerConfig>,
     pub task_bus: Arc<dyn TaskBus>,
     pub leader: LeaderHandle,
@@ -29,7 +29,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(
-        pool: SqlitePool,
+        pool: DbPool,
         config: Arc<ControllerConfig>,
         task_bus: Arc<dyn TaskBus>,
         leader: LeaderHandle,
@@ -60,7 +60,7 @@ impl AppState {
         let kind = kind.to_string();
         let msg_db = msg.clone();
         tokio::spawn(async move {
-            let _ = sqlx::query("INSERT INTO events (id, kind, message) VALUES (?, ?, ?)")
+            let _ = crate::db::query("INSERT INTO events (id, kind, message) VALUES (?, ?, ?)")
                 .bind(uuid::Uuid::new_v4())
                 .bind(&kind)
                 .bind(&msg_db)

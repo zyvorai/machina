@@ -1,7 +1,7 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::providers::ResolvedProvider;
 use super::routing::{RoutingRequest, TaskClass};
@@ -16,7 +16,7 @@ pub struct CompletionRequest {
 }
 
 /// Optional LLM completion — returns None when disabled or on failure.
-pub async fn complete(pool: &SqlitePool, req: CompletionRequest) -> anyhow::Result<Option<String>> {
+pub async fn complete(pool: &DbPool, req: CompletionRequest) -> anyhow::Result<Option<String>> {
     if !super::settings::llm_enabled(pool).await? {
         return Ok(None);
     }
@@ -33,7 +33,7 @@ pub async fn complete(pool: &SqlitePool, req: CompletionRequest) -> anyhow::Resu
 
 /// Backward-compatible helper for existing call sites.
 pub async fn complete_simple(
-    pool: &SqlitePool,
+    pool: &DbPool,
     system: &str,
     user: &str,
 ) -> anyhow::Result<Option<String>> {

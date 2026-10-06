@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct TeamCostRow {
@@ -23,14 +23,14 @@ pub struct CostAttributionReport {
     pub summary: String,
 }
 
-pub async fn attribute(pool: &SqlitePool) -> anyhow::Result<CostAttributionReport> {
-    let rates: (f64, f64) = sqlx::query_as(
+pub async fn attribute(pool: &DbPool) -> anyhow::Result<CostAttributionReport> {
+    let rates: (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
     .await?;
 
-    let rows: Vec<(Option<String>, i64, i64, i64)> = sqlx::query_as(
+    let rows: Vec<(Option<String>, i64, i64, i64)> = crate::db::query_as(
         "SELECT COALESCE(NULLIF(TRIM(project), ''), NULL) AS project,
                 COUNT(*),
                 COALESCE(SUM(vcpus), 0),
@@ -41,7 +41,7 @@ pub async fn attribute(pool: &SqlitePool) -> anyhow::Result<CostAttributionRepor
     .fetch_all(pool)
     .await?;
 
-    let tag_rows: Vec<(String, i64, i64, i64)> = sqlx::query_as(
+    let tag_rows: Vec<(String, i64, i64, i64)> = crate::db::query_as(
         "SELECT COALESCE(
             (SELECT value FROM json_each(COALESCE(tags,'[]')) WHERE value LIKE 'team:%' LIMIT 1),
             'team:unassigned'
@@ -167,7 +167,7 @@ pub async fn attribute(pool: &SqlitePool) -> anyhow::Result<CostAttributionRepor
     })
 }
 
-pub async fn export_csv(pool: &SqlitePool) -> anyhow::Result<String> {
+pub async fn export_csv(pool: &DbPool) -> anyhow::Result<String> {
     let report = attribute(pool).await?;
     let mut csv = String::from(
         "Machina FinOps Team Attribution\nTeam,VM Count,vCPUs,Memory GiB,Est Monthly USD,Share %\n",

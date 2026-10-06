@@ -203,7 +203,8 @@ impl From<sqlx::Error> for ApiError {
             return Self::not_found("not found");
         }
         if let sqlx::Error::Database(db) = &e {
-            if db.code().as_deref() == Some("23505") {
+            // `kind()` covers each backend's own code (SQLite 2067/1555, Postgres 23505).
+            if db.is_unique_violation() {
                 return Self::conflict(
                     "A resource with this name already exists",
                     "Choose a different name or delete the existing resource first.",
@@ -233,6 +234,15 @@ impl IntoResponse for ApiError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn a_unique_violation_is_a_409_on_the_embedded_database() {
+        let pool = sqlx::sqlite::SqlitePoolOptions::new().max_connections(1).connect("sqlite::memory:").await.unwrap();
+        crate::db::query("CREATE TABLE t (name TEXT UNIQUE)").execute(&pool).await.unwrap();
+        crate::db::query("INSERT INTO t VALUES ('a')").execute(&pool).await.unwrap();
+        let err = crate::db::query("INSERT INTO t VALUES ('a')").execute(&pool).await.unwrap_err();
+        assert_eq!(ApiError::from(err).status, StatusCode::CONFLICT);
+    }
 
     #[test]
     fn offline_host_transport_error_maps_to_503() {

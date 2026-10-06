@@ -17,7 +17,7 @@ use crate::state::AppState;
 use crate::tasks::enqueue::enqueue_task;
 
 async fn vm_row(state: &AppState, id: Uuid) -> Result<(String, Option<Uuid>, String), ApiError> {
-    sqlx::query_as("SELECT name, host_id, observed_state FROM vms WHERE id = ?")
+    crate::db::query_as("SELECT name, host_id, observed_state FROM vms WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
@@ -105,7 +105,7 @@ pub async fn set_policy(
         }
     }
     vm_row(&state, id).await?;
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET restore_point_minutes = ?, restore_point_keep = COALESCE(?, restore_point_keep) WHERE id = ?",
     )
     .bind((body.every_minutes > 0).then_some(body.every_minutes))
@@ -124,7 +124,7 @@ pub async fn rewind(
     require_operator(&actor)?;
     let (_, host, _) = vm_row(&state, id).await?;
     let exists: Option<i64> =
-        sqlx::query_scalar("SELECT 1 FROM vm_restore_points WHERE id = ? AND vm_id = ?")
+        crate::db::query_scalar("SELECT 1 FROM vm_restore_points WHERE id = ? AND vm_id = ?")
             .bind(point)
             .bind(id)
             .fetch_optional(&state.pool)
@@ -185,7 +185,7 @@ pub async fn fork(
     require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let (_, host, observed) = vm_row(&state, id).await?;
-    let taken: Option<i64> = sqlx::query_scalar("SELECT 1 FROM vms WHERE name = ?")
+    let taken: Option<i64> = crate::db::query_scalar("SELECT 1 FROM vms WHERE name = ?")
         .bind(&body.name)
         .fetch_optional(&state.pool)
         .await?;
@@ -208,7 +208,7 @@ pub async fn fork(
     }
     if let Some(p) = body.restore_point_id {
         let exists: Option<i64> =
-            sqlx::query_scalar("SELECT 1 FROM vm_restore_points WHERE id = ? AND vm_id = ?")
+            crate::db::query_scalar("SELECT 1 FROM vm_restore_points WHERE id = ? AND vm_id = ?")
                 .bind(p)
                 .bind(id)
                 .fetch_optional(&state.pool)
@@ -242,7 +242,7 @@ pub async fn detach(
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
     let (_, host, _) = vm_row(&state, id).await?;
-    let is_fork: Option<i64> = sqlx::query_scalar("SELECT 1 FROM vm_forks WHERE fork_vm_id = ?")
+    let is_fork: Option<i64> = crate::db::query_scalar("SELECT 1 FROM vm_forks WHERE fork_vm_id = ?")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?;

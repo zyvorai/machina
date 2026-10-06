@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use chrono::{DateTime, Duration, Utc};
 use machina_bpf::api::Request;
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::{call, fan_out_items, host, host_statuses, HostRef};
 
@@ -64,7 +64,7 @@ async fn host_items(h: &HostRef, req: &Request) -> Vec<Value> {
         .collect()
 }
 
-async fn proc_events(pool: &SqlitePool, kind: Option<&str>) -> Vec<Value> {
+async fn proc_events(pool: &DbPool, kind: Option<&str>) -> Vec<Value> {
     fan_out_items(
         pool,
         &Request::ProcEvents {
@@ -79,7 +79,7 @@ async fn proc_events(pool: &SqlitePool, kind: Option<&str>) -> Vec<Value> {
 // Anomalies / threats
 // ---------------------------------------------------------------------------
 
-pub async fn anomalies(pool: &SqlitePool) -> Value {
+pub async fn anomalies(pool: &DbPool) -> Value {
     let mut items = fan_out_items(
         pool,
         &Request::Anomalies {
@@ -109,7 +109,7 @@ fn severity_weight(s: &str) -> f64 {
 }
 
 /// 100 = calm. Each recent anomaly / kill subtracts by severity.
-pub async fn fleet_threat_summary(pool: &SqlitePool) -> Value {
+pub async fn fleet_threat_summary(pool: &DbPool) -> Value {
     let anomalies = within_hours(
         anomalies(pool).await["anomalies"]
             .as_array()
@@ -163,7 +163,7 @@ pub async fn fleet_threat_summary(pool: &SqlitePool) -> Value {
 // Flows / network pulse
 // ---------------------------------------------------------------------------
 
-pub async fn flows(pool: &SqlitePool, limit: usize) -> Value {
+pub async fn flows(pool: &DbPool, limit: usize) -> Value {
     let mut items = fan_out_items(
         pool,
         &Request::Flows {
@@ -185,7 +185,7 @@ fn talker_key(f: &Value) -> String {
         .unwrap_or_else(|| str_of(f, "local").to_string())
 }
 
-pub async fn flow_stats(pool: &SqlitePool) -> Value {
+pub async fn flow_stats(pool: &DbPool) -> Value {
     let all = fan_out_items(
         pool,
         &Request::Flows {
@@ -231,7 +231,7 @@ fn stats_of(all: &[Value]) -> Value {
 
 /// TLS SNI / HTTP / SSH first-payload records across the fleet, plus the
 /// most contacted hosts.
-pub async fn l7(pool: &SqlitePool, limit: usize, protocol: Option<&str>) -> Value {
+pub async fn l7(pool: &DbPool, limit: usize, protocol: Option<&str>) -> Value {
     let mut items = fan_out_items(
         pool,
         &Request::L7 {
@@ -270,7 +270,7 @@ pub async fn l7(pool: &SqlitePool, limit: usize, protocol: Option<&str>) -> Valu
 }
 
 /// Per-VM traffic totals across the fleet (billing / chargeback).
-pub async fn accounting(pool: &SqlitePool) -> Value {
+pub async fn accounting(pool: &DbPool) -> Value {
     let items = fan_out_items(pool, &Request::Accounting { vm: None }).await;
     let (mut tx, mut rx, mut drops) = (0u64, 0u64, 0u64);
     for r in &items {
@@ -289,7 +289,7 @@ pub async fn accounting(pool: &SqlitePool) -> Value {
 
 /// Per-host state of the native data plane features (service LB, VM edge,
 /// QEMU sandbox, shield, node isolation, TLS sampling), one entry per host.
-pub async fn native_dataplane(pool: &SqlitePool) -> Value {
+pub async fn native_dataplane(pool: &DbPool) -> Value {
     let hosts = super::online_hosts(pool).await;
     let per_host = futures_util::future::join_all(hosts.iter().map(|h| async move {
         let reqs = [
@@ -331,7 +331,7 @@ pub async fn native_dataplane(pool: &SqlitePool) -> Value {
 
 /// JA3/JA4 ClientHello fingerprints across the fleet, plus the most common
 /// JA4s with the SNIs and workloads that sent them.
-pub async fn tls_fingerprints(pool: &SqlitePool, limit: usize) -> Value {
+pub async fn tls_fingerprints(pool: &DbPool, limit: usize) -> Value {
     let mut items = fan_out_items(
         pool,
         &Request::TlsFingerprints {
@@ -366,7 +366,7 @@ pub async fn tls_fingerprints(pool: &SqlitePool, limit: usize) -> Value {
 }
 
 /// Newest-first records of one bpfd list request across the fleet.
-pub async fn fleet_records(pool: &SqlitePool, req: Request, limit: usize) -> Value {
+pub async fn fleet_records(pool: &DbPool, req: Request, limit: usize) -> Value {
     let mut items = fan_out_items(pool, &req).await;
     newest_first(&mut items);
     let total = items.len();
@@ -375,7 +375,7 @@ pub async fn fleet_records(pool: &SqlitePool, req: Request, limit: usize) -> Val
 }
 
 /// Who changed links, addresses and routes on each host.
-pub async fn rtnl_events(pool: &SqlitePool, limit: usize) -> Value {
+pub async fn rtnl_events(pool: &DbPool, limit: usize) -> Value {
     fleet_records(
         pool,
         Request::RtnlEvents {
@@ -388,7 +388,7 @@ pub async fn rtnl_events(pool: &SqlitePool, limit: usize) -> Value {
 }
 
 /// VMM guard violations (audited or denied) per host.
-pub async fn guard_events(pool: &SqlitePool, limit: usize) -> Value {
+pub async fn guard_events(pool: &DbPool, limit: usize) -> Value {
     fleet_records(
         pool,
         Request::GuardEvents {
@@ -400,7 +400,7 @@ pub async fn guard_events(pool: &SqlitePool, limit: usize) -> Value {
 }
 
 /// VM runtime reports for every tracked VM on hosts with it enabled.
-pub async fn vm_intel(pool: &SqlitePool) -> Value {
+pub async fn vm_intel(pool: &DbPool) -> Value {
     let hosts = super::online_hosts(pool).await;
     let per_host = futures_util::future::join_all(hosts.iter().map(|h| async move {
         let Ok(st) = call(h, &Request::VmIntelStatus).await else {
@@ -434,7 +434,7 @@ pub async fn vm_intel(pool: &SqlitePool) -> Value {
 }
 
 /// ICMP error histogram (unreachable / time exceeded / too big …) per host.
-pub async fn icmp_errors(pool: &SqlitePool) -> Value {
+pub async fn icmp_errors(pool: &DbPool) -> Value {
     let mut items = fan_out_items(pool, &Request::IcmpErrors).await;
     items.sort_by_key(|r| std::cmp::Reverse(u64_of(r, "count")));
     json!({ "errors": items, "source": SOURCE })
@@ -442,7 +442,7 @@ pub async fn icmp_errors(pool: &SqlitePool) -> Value {
 
 /// Workload → peer service map plus threats / timeline, in the shape the
 /// Network Canvas renders.
-pub async fn network_pulse(pool: &SqlitePool) -> Value {
+pub async fn network_pulse(pool: &DbPool) -> Value {
     let all = fan_out_items(
         pool,
         &Request::Flows {
@@ -595,7 +595,7 @@ fn timeline_of(procs: Vec<Value>, net: Vec<Value>, anomalies: Vec<Value>) -> Vec
     out
 }
 
-pub async fn fleet_timeline(pool: &SqlitePool, hours: u32) -> Value {
+pub async fn fleet_timeline(pool: &DbPool, hours: u32) -> Value {
     let (procs, net, anoms) = tokio::join!(
         proc_events(pool, None),
         fan_out_items(
@@ -649,7 +649,7 @@ fn process_graph(execs: &[Value]) -> Value {
 
 /// `resource` ∈ summary | processes | connections | dns | files | ports |
 /// containers | timeline | process-graph.
-pub async fn host_resource(pool: &SqlitePool, host_id: &str, resource: &str, hours: u32) -> Value {
+pub async fn host_resource(pool: &DbPool, host_id: &str, resource: &str, hours: u32) -> Value {
     let Some(h) = host(pool, host_id).await else {
         return json!({ "error": "host not found", "host_id": host_id });
     };
@@ -769,7 +769,7 @@ pub async fn host_resource(pool: &SqlitePool, host_id: &str, resource: &str, hou
 // Sensors / health / inventory
 // ---------------------------------------------------------------------------
 
-pub async fn sensors(pool: &SqlitePool) -> Value {
+pub async fn sensors(pool: &DbPool) -> Value {
     let statuses = host_statuses(pool).await;
     let sensors: Vec<Value> = statuses
         .iter()
@@ -798,7 +798,7 @@ pub async fn sensors(pool: &SqlitePool) -> Value {
     })
 }
 
-pub async fn fabric_health(pool: &SqlitePool) -> Value {
+pub async fn fabric_health(pool: &DbPool) -> Value {
     let statuses = host_statuses(pool).await;
     let mut issues = Vec::new();
     for s in &statuses {
@@ -840,7 +840,7 @@ pub async fn fabric_health(pool: &SqlitePool) -> Value {
     })
 }
 
-pub async fn asset_inventory(pool: &SqlitePool) -> Value {
+pub async fn asset_inventory(pool: &DbPool) -> Value {
     let statuses = host_statuses(pool).await;
     let procs = proc_events(pool, None).await;
     let mut vms: BTreeMap<String, Value> = BTreeMap::new();
@@ -890,7 +890,7 @@ pub async fn asset_inventory(pool: &SqlitePool) -> Value {
 }
 
 /// Anomalies sharing a workload or remote peer, grouped.
-pub async fn correlations(pool: &SqlitePool) -> Value {
+pub async fn correlations(pool: &DbPool) -> Value {
     let items = anomalies(pool).await["anomalies"]
         .as_array()
         .cloned()
@@ -941,7 +941,7 @@ pub async fn correlations(pool: &SqlitePool) -> Value {
 // Search / hunts
 // ---------------------------------------------------------------------------
 
-async fn all_events(pool: &SqlitePool) -> Vec<Value> {
+async fn all_events(pool: &DbPool) -> Vec<Value> {
     let (p, n, d, a) = tokio::join!(
         proc_events(pool, None),
         fan_out_items(
@@ -991,7 +991,7 @@ fn matches_query(v: &Value, tokens: &[String]) -> bool {
     })
 }
 
-pub async fn search(pool: &SqlitePool, query: &str, host_id: Option<&str>, limit: usize) -> Value {
+pub async fn search(pool: &DbPool, query: &str, host_id: Option<&str>, limit: usize) -> Value {
     let tokens: Vec<String> = query.split_whitespace().map(|t| t.to_lowercase()).collect();
     let results: Vec<Value> = all_events(pool)
         .await
@@ -1089,7 +1089,7 @@ fn hunt_hit(id: &str, v: &Value) -> bool {
     }
 }
 
-pub async fn run_hunt(pool: &SqlitePool, query_id: &str, host_id: Option<&str>) -> Value {
+pub async fn run_hunt(pool: &DbPool, query_id: &str, host_id: Option<&str>) -> Value {
     let Some((_, name, _)) = HUNTS.iter().find(|(id, _, _)| *id == query_id) else {
         return json!({ "ok": false, "error": format!("unknown hunt query {query_id:?}") });
     };
@@ -1109,7 +1109,7 @@ pub async fn run_hunt(pool: &SqlitePool, query_id: &str, host_id: Option<&str>) 
 
 /// Denied / allowed connection activity for a firewall target (VM name or
 /// host id) over the last `hours`.
-pub async fn target_activity(pool: &SqlitePool, target: &str, hours: u32) -> Value {
+pub async fn target_activity(pool: &DbPool, target: &str, hours: u32) -> Value {
     let events = within_hours(
         fan_out_items(
             pool,
@@ -1137,7 +1137,7 @@ pub async fn target_activity(pool: &SqlitePool, target: &str, hours: u32) -> Val
 
 /// Start a 60s pcapng capture (lockdown evidence) on every tap of `target`:
 /// a VM name, or a host id for all of that host's attached interfaces.
-pub async fn capture_target(pool: &SqlitePool, target: &str) -> Value {
+pub async fn capture_target(pool: &DbPool, target: &str) -> Value {
     let mut started = Vec::new();
     for (h, res) in super::fan_out(pool, &Request::ListInterfaces).await {
         let Ok(Value::Array(ifaces)) = res else {

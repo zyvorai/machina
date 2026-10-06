@@ -49,7 +49,7 @@ pub async fn list_audit_logs(
     }
     let rows = match (&q.action, &q.actor) {
         (Some(action), Some(actor_filter)) if !action.is_empty() && !actor_filter.is_empty() => {
-            sqlx::query_as::<_, AuditRow>(
+            crate::db::query_as::<_, AuditRow>(
                 "SELECT id, actor, action, resource_type, resource_id,
                         strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
                  FROM audit_logs WHERE action LIKE ? ESCAPE '\\' AND actor LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
@@ -61,7 +61,7 @@ pub async fn list_audit_logs(
             .await?
         }
         (Some(action), _) if !action.is_empty() => {
-            sqlx::query_as::<_, AuditRow>(
+            crate::db::query_as::<_, AuditRow>(
                 "SELECT id, actor, action, resource_type, resource_id,
                         strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
                  FROM audit_logs WHERE action LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
@@ -72,7 +72,7 @@ pub async fn list_audit_logs(
             .await?
         }
         (_, Some(actor_filter)) if !actor_filter.is_empty() => {
-            sqlx::query_as::<_, AuditRow>(
+            crate::db::query_as::<_, AuditRow>(
                 "SELECT id, actor, action, resource_type, resource_id,
                         strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
                  FROM audit_logs WHERE actor LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?",
@@ -83,7 +83,7 @@ pub async fn list_audit_logs(
             .await?
         }
         _ => {
-            sqlx::query_as::<_, AuditRow>(
+            crate::db::query_as::<_, AuditRow>(
                 "SELECT id, actor, action, resource_type, resource_id,
                         strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
                  FROM audit_logs ORDER BY created_at DESC LIMIT ?",

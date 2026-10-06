@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct FrameworkControl {
@@ -30,7 +30,7 @@ pub struct ComplianceFrameworksReport {
     pub summary: String,
 }
 
-pub async fn scan(pool: &SqlitePool) -> anyhow::Result<ComplianceFrameworksReport> {
+pub async fn scan(pool: &DbPool) -> anyhow::Result<ComplianceFrameworksReport> {
     let base = super::compliance::generate(pool).await?;
     let security = super::security::scan(pool).await?;
 

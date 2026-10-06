@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::profiles::plan_for_profile;
@@ -37,7 +37,7 @@ pub fn lockdown_preview(capture: bool) -> LockdownPreview {
 }
 
 pub async fn lockdown_target(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
     capture: bool,
@@ -49,7 +49,7 @@ pub async fn lockdown_target(
         let _ = crate::engine::bpf::telemetry::capture_target(pool, target_id).await;
     }
     if let Ok(host_id) = Uuid::parse_str(target_id) {
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO events (id, kind, message, resource_type, resource_id, payload) VALUES (?, 'security', ?, 'host', ?, '{\"severity\":\"critical\"}')",
         )
         .bind(uuid::Uuid::new_v4())

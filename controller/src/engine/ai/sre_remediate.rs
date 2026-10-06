@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct SreRemediation {
@@ -22,7 +22,7 @@ pub struct SreRemediationReport {
     pub summary: String,
 }
 
-pub async fn propose(pool: &SqlitePool) -> anyhow::Result<SreRemediationReport> {
+pub async fn propose(pool: &DbPool) -> anyhow::Result<SreRemediationReport> {
     let forecast = super::sre_predict::forecast(pool).await?;
     let mut remediations = Vec::new();
 

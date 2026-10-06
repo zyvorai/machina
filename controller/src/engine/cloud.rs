@@ -43,14 +43,14 @@ pub fn spawn(state: AppState) {
 pub async fn provision_subnet(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
     let id: Uuid = serde_json::from_value(msg.payload["subnet_id"].clone())?;
     let result=async {
-        let row:(String,String)=sqlx::query_as("SELECT s.cidr,h.agent_grpc_addr FROM cloud_subnets s JOIN cloud_vpcs v ON v.id=s.vpc_id JOIN hosts h ON h.id=v.host_id WHERE s.id=? AND h.state='online'").bind(id).fetch_one(&state.pool).await?;
+        let row:(String,String)=crate::db::query_as("SELECT s.cidr,h.agent_grpc_addr FROM cloud_subnets s JOIN cloud_vpcs v ON v.id=s.vpc_id JOIN hosts h ON h.id=v.host_id WHERE s.id=? AND h.state='online'").bind(id).fetch_one(&state.pool).await?;
         let mut client=agent_client::connect(&row.1).await?;
         agent_client::provision_cloud_subnet(&mut client,id,&row.0).await?;
-        sqlx::query("UPDATE cloud_subnets SET status='ready',last_error='' WHERE id=?").bind(id).execute(&state.pool).await?;
+        crate::db::query("UPDATE cloud_subnets SET status='ready',last_error='' WHERE id=?").bind(id).execute(&state.pool).await?;
         Ok::<(),anyhow::Error>(())
     }.await;
     if let Err(ref e) = result {
-        sqlx::query("UPDATE cloud_subnets SET status='error',last_error=? WHERE id=?")
+        crate::db::query("UPDATE cloud_subnets SET status='error',last_error=? WHERE id=?")
             .bind(format!("{e:#}"))
             .bind(id)
             .execute(&state.pool)
@@ -63,7 +63,7 @@ pub async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
     let epoch = crate::leader::current_epoch();
     // Publish committed pending rows again after process/bus failure. Worker
     // claim_task's compare-and-swap makes duplicate deliveries harmless.
-    let jobs:Vec<(Uuid,Value)>=sqlx::query_as("SELECT id,payload FROM tasks WHERE operation='cloud.subnet.provision' AND status='pending' ORDER BY created_at LIMIT 100").fetch_all(&state.pool).await?;
+    let jobs:Vec<(Uuid,Value)>=crate::db::query_as("SELECT id,payload FROM tasks WHERE operation='cloud.subnet.provision' AND status='pending' ORDER BY created_at LIMIT 100").fetch_all(&state.pool).await?;
     for (task_id, payload) in jobs {
         state
             .task_bus
@@ -79,8 +79,8 @@ pub async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
     }
     // Bootstrap reaps orphaned tasks through the generic worker. Propagate that
     // failure to the cloud resource so its retry endpoint is usable.
-    sqlx::query("UPDATE cloud_subnets SET status='error',last_error='Provisioning task failed; inspect task history and retry' WHERE status='pending' AND EXISTS(SELECT 1 FROM tasks WHERE resource_id=cloud_subnets.id AND operation='cloud.subnet.provision' AND status='failed') AND NOT EXISTS(SELECT 1 FROM tasks WHERE resource_id=cloud_subnets.id AND operation='cloud.subnet.provision' AND status IN ('pending','running'))").execute(&state.pool).await?;
-    let groups:Vec<Uuid>=sqlx::query_scalar("SELECT g.id FROM cloud_instance_groups g JOIN projects p ON p.id=g.project_id WHERE g.paused=0 AND p.enabled=1 ORDER BY g.id LIMIT 100").fetch_all(&state.pool).await?;
+    crate::db::query("UPDATE cloud_subnets SET status='error',last_error='Provisioning task failed; inspect task history and retry' WHERE status='pending' AND EXISTS(SELECT 1 FROM tasks WHERE resource_id=cloud_subnets.id AND operation='cloud.subnet.provision' AND status='failed') AND NOT EXISTS(SELECT 1 FROM tasks WHERE resource_id=cloud_subnets.id AND operation='cloud.subnet.provision' AND status IN ('pending','running'))").execute(&state.pool).await?;
+    let groups:Vec<Uuid>=crate::db::query_scalar("SELECT g.id FROM cloud_instance_groups g JOIN projects p ON p.id=g.project_id WHERE g.paused=0 AND p.enabled=1 ORDER BY g.id LIMIT 100").fetch_all(&state.pool).await?;
     for id in groups {
         if !fence_ok(state, Some(epoch)) {
             break;
@@ -95,7 +95,7 @@ pub async fn reconcile_once(state: &AppState) -> anyhow::Result<()> {
             break;
         }
         // Only write when the message changed, so an unchanged failure is not a database write every tick.
-        sqlx::query("UPDATE cloud_instance_groups SET last_error=? WHERE id=? AND last_error<>?1")
+        crate::db::query("UPDATE cloud_instance_groups SET last_error=? WHERE id=? AND last_error<>?1")
             .bind(error)
             .bind(id)
             .execute(&state.pool)
@@ -115,7 +115,7 @@ async fn reconcile_group_fenced(
     epoch: Option<i64>,
 ) -> anyhow::Result<()> {
     type Definition = (Uuid, String, String, Uuid, String, String, bool);
-    let (_project_id,project,raw,host,network,template,paused):Definition=sqlx::query_as("SELECT g.project_id,p.name,g.policy_json,v.host_id,n.name,t.spec_json,g.paused FROM cloud_instance_groups g JOIN projects p ON p.id=g.project_id AND p.enabled=1 JOIN cloud_launch_templates t ON t.id=g.template_id AND t.project_id=g.project_id JOIN cloud_subnets s ON s.id=g.subnet_id AND s.status='ready' JOIN cloud_vpcs v ON v.id=s.vpc_id AND v.project_id=g.project_id JOIN networks n ON n.id=s.network_id WHERE g.id=?").bind(id).fetch_one(&state.pool).await?;
+    let (_project_id,project,raw,host,network,template,paused):Definition=crate::db::query_as("SELECT g.project_id,p.name,g.policy_json,v.host_id,n.name,t.spec_json,g.paused FROM cloud_instance_groups g JOIN projects p ON p.id=g.project_id AND p.enabled=1 JOIN cloud_launch_templates t ON t.id=g.template_id AND t.project_id=g.project_id JOIN cloud_subnets s ON s.id=g.subnet_id AND s.status='ready' JOIN cloud_vpcs v ON v.id=s.vpc_id AND v.project_id=g.project_id JOIN networks n ON n.id=s.network_id WHERE g.id=?").bind(id).fetch_one(&state.pool).await?;
     if paused {
         return Ok(());
     }
@@ -123,8 +123,8 @@ async fn reconcile_group_fenced(
     policy.validate().map_err(anyhow::Error::msg)?;
     // Autoscaling is only allowed on a fully converged group with a fresh
     // sample from EVERY active member. Averages over a partial set are unsafe.
-    let (count,cpu):(i64,Option<f64>)=sqlx::query_as("SELECT COUNT(*),AVG(m.cpu_percent) FROM cloud_group_members gm JOIN vms v ON v.id=gm.vm_id JOIN vm_metrics m ON m.vm_id=v.id WHERE gm.group_id=? AND gm.slot<? AND v.observed_state='running' AND m.updated_at>datetime('now','-2 minutes')").bind(id).bind(policy.desired).fetch_one(&state.pool).await?;
-    let elapsed:i64=sqlx::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)-CAST(strftime('%s',last_scaled_at) AS INTEGER) FROM cloud_instance_groups WHERE id=?").bind(id).fetch_one(&state.pool).await?;
+    let (count,cpu):(i64,Option<f64>)=crate::db::query_as("SELECT COUNT(*),AVG(m.cpu_percent) FROM cloud_group_members gm JOIN vms v ON v.id=gm.vm_id JOIN vm_metrics m ON m.vm_id=v.id WHERE gm.group_id=? AND gm.slot<? AND v.observed_state='running' AND m.updated_at>datetime('now','-2 minutes')").bind(id).bind(policy.desired).fetch_one(&state.pool).await?;
+    let elapsed:i64=crate::db::query_scalar("SELECT CAST(strftime('%s','now') AS INTEGER)-CAST(strftime('%s',last_scaled_at) AS INTEGER) FROM cloud_instance_groups WHERE id=?").bind(id).fetch_one(&state.pool).await?;
     let peak = if policy.predictive {
         crate::engine::ai::forecast::group_demand_peak(&state.pool, id).await
     } else {
@@ -141,7 +141,7 @@ async fn reconcile_group_fenced(
     );
     if desired != policy.desired {
         policy.desired = desired;
-        let changed=sqlx::query("UPDATE cloud_instance_groups SET policy_json=?,last_scaled_at=CURRENT_TIMESTAMP WHERE id=? AND paused=0 AND policy_json=?").bind(serde_json::to_string(&policy)?).bind(id).bind(&raw).execute(&state.pool).await?.rows_affected();
+        let changed=crate::db::query("UPDATE cloud_instance_groups SET policy_json=?,last_scaled_at=CURRENT_TIMESTAMP WHERE id=? AND paused=0 AND policy_json=?").bind(serde_json::to_string(&policy)?).bind(id).bind(&raw).execute(&state.pool).await?.rows_affected();
         if changed == 0 {
             return Ok(());
         }
@@ -162,7 +162,7 @@ async fn reconcile_group_fenced(
         }
         // A PATCH/pause that races this tick wins; do not continue with stale
         // desired counts or resurrect a paused group's stopped VMs.
-        let current: Option<String> = sqlx::query_scalar(
+        let current: Option<String> = crate::db::query_scalar(
             "SELECT policy_json FROM cloud_instance_groups WHERE id=? AND paused=0",
         )
         .bind(id)
@@ -171,7 +171,7 @@ async fn reconcile_group_fenced(
         if current.as_deref() != Some(expected.as_str()) {
             return Ok(());
         }
-        let existing: Option<Member> = sqlx::query_as(
+        let existing: Option<Member> = crate::db::query_as(
             "SELECT gm.vm_id, COALESCE(v.desired_state, ''), COALESCE(v.observed_state, ''),
                     COALESCE(v.guest_ip, ''),
                     CAST(strftime('%s', 'now') AS INTEGER) - CAST(strftime('%s', gm.draining_since) AS INTEGER)
@@ -217,7 +217,7 @@ async fn reconcile_group_fenced(
         // Deterministic name allows recovery if creation committed but recording
         // group membership was interrupted. Only adopt the exact stored spec.
         let prior: Option<(Uuid, Value)> =
-            sqlx::query_as("SELECT id,spec_json FROM vms WHERE name=? AND project=?")
+            crate::db::query_as("SELECT id,spec_json FROM vms WHERE name=? AND project=?")
                 .bind(&vm.metadata.name)
                 .bind(&project)
                 .fetch_optional(&state.pool)
@@ -248,16 +248,16 @@ async fn reconcile_group_fenced(
             let _ = crate::api::vms::create_vm(State(state.clone()), Extension(actor), Json(body))
                 .await
                 .map_err(|e| anyhow::anyhow!("instance create: {e:?}"))?;
-            sqlx::query_scalar("SELECT id FROM vms WHERE name=? AND project=?")
+            crate::db::query_scalar("SELECT id FROM vms WHERE name=? AND project=?")
                 .bind(&vm.metadata.name)
                 .bind(&project)
                 .fetch_one(&state.pool)
                 .await?
         };
-        sqlx::query("INSERT INTO cloud_group_members (group_id,slot,vm_id) VALUES (?,?,?) ON CONFLICT(group_id,slot) DO UPDATE SET vm_id=excluded.vm_id WHERE cloud_group_members.vm_id IS NULL").bind(id).bind(slot).bind(vm_id).execute(&state.pool).await?;
+        crate::db::query("INSERT INTO cloud_group_members (group_id,slot,vm_id) VALUES (?,?,?) ON CONFLICT(group_id,slot) DO UPDATE SET vm_id=excluded.vm_id WHERE cloud_group_members.vm_id IS NULL").bind(id).bind(slot).bind(vm_id).execute(&state.pool).await?;
     }
     // If max was lowered, stopped retained slots above the new max remain owned.
-    sqlx::query("UPDATE vms SET desired_state='stopped' WHERE id IN (SELECT vm_id FROM cloud_group_members WHERE group_id=? AND slot>=?) AND desired_state<>'sleeping' AND EXISTS(SELECT 1 FROM cloud_instance_groups WHERE id=? AND paused=0 AND policy_json=?)").bind(id).bind(policy.max).bind(id).bind(&expected).execute(&state.pool).await?;
+    crate::db::query("UPDATE vms SET desired_state='stopped' WHERE id IN (SELECT vm_id FROM cloud_group_members WHERE group_id=? AND slot>=?) AND desired_state<>'sleeping' AND EXISTS(SELECT 1 FROM cloud_instance_groups WHERE id=? AND paused=0 AND policy_json=?)").bind(id).bind(policy.max).bind(id).bind(&expected).execute(&state.pool).await?;
     Ok(())
 }
 
@@ -273,7 +273,7 @@ struct Guard<'a> {
 
 impl Guard<'_> {
     async fn set_desired(&self, state: &AppState, vm: Uuid, target: &str) -> anyhow::Result<()> {
-        sqlx::query("UPDATE vms SET desired_state=? WHERE id=? AND project=? AND EXISTS(SELECT 1 FROM cloud_instance_groups WHERE id=? AND paused=0 AND policy_json=?)")
+        crate::db::query("UPDATE vms SET desired_state=? WHERE id=? AND project=? AND EXISTS(SELECT 1 FROM cloud_instance_groups WHERE id=? AND paused=0 AND policy_json=?)")
             .bind(target)
             .bind(vm)
             .bind(self.project)
@@ -291,7 +291,7 @@ async fn set_draining(state: &AppState, group: Uuid, slot: u32, on: bool) -> any
     } else {
         "UPDATE cloud_group_members SET draining_since = NULL WHERE group_id = ? AND slot = ? AND draining_since IS NOT NULL"
     };
-    sqlx::query(sql)
+    crate::db::query(sql)
         .bind(group)
         .bind(slot)
         .execute(&state.pool)
@@ -326,14 +326,14 @@ async fn scale_in(
     }
     let sleep = policy.scale_in == ScaleIn::Sleep && observed == "running" && !ip.is_empty();
     if sleep {
-        let inflight: i64 = sqlx::query_scalar(
+        let inflight: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'vm.power' AND status IN ('pending', 'running')",
         )
         .bind(vm)
         .fetch_one(&state.pool)
         .await?;
         if inflight == 0 {
-            let host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            let host: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
                 .bind(vm)
                 .fetch_one(&state.pool)
                 .await?;
@@ -357,7 +357,7 @@ async fn scale_in(
 /// Enables or disables `vm` in the group's load balancer, adding it on first
 /// join, and pushes the rule set only when something changed.
 async fn lb_member(state: &AppState, lb: LbBinding, vm: Uuid, enabled: bool) -> anyhow::Result<()> {
-    let row: Option<(Uuid, bool)> = sqlx::query_as(
+    let row: Option<(Uuid, bool)> = crate::db::query_as(
         "SELECT id, enabled FROM lb_members WHERE load_balancer_id = ? AND vm_id = ? AND port = ?",
     )
     .bind(lb.id)
@@ -367,7 +367,7 @@ async fn lb_member(state: &AppState, lb: LbBinding, vm: Uuid, enabled: bool) -> 
     .await?;
     let changed = match row {
         Some((member, on)) if on != enabled => {
-            sqlx::query("UPDATE lb_members SET enabled = ? WHERE id = ?")
+            crate::db::query("UPDATE lb_members SET enabled = ? WHERE id = ?")
                 .bind(enabled)
                 .bind(member)
                 .execute(&state.pool)
@@ -376,7 +376,7 @@ async fn lb_member(state: &AppState, lb: LbBinding, vm: Uuid, enabled: bool) -> 
         }
         Some(_) => false,
         None if enabled => {
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO lb_members (id, load_balancer_id, vm_id, port, weight, enabled) VALUES (?, ?, ?, ?, 1, 1)",
             )
             .bind(Uuid::new_v4())

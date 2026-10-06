@@ -57,7 +57,7 @@ pub async fn list_scheduled_jobs(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ScheduledJobRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, ScheduledJobRow>(
+    let rows = crate::db::query_as::<_, ScheduledJobRow>(
         "SELECT id, name, operation, payload, target_host_id, interval_minutes, enabled,
                 last_run_at, created_at
          FROM scheduled_jobs ORDER BY created_at DESC LIMIT 500",
@@ -89,7 +89,7 @@ pub async fn create_scheduled_job(
         return Err(ApiError::bad_request("payload must be valid JSON"));
     }
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO scheduled_jobs
            (id, name, operation, payload, target_host_id, interval_minutes, enabled)
          VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -103,7 +103,7 @@ pub async fn create_scheduled_job(
     .bind(body.enabled)
     .execute(&state.pool)
     .await?;
-    let row = sqlx::query_as::<_, ScheduledJobRow>(
+    let row = crate::db::query_as::<_, ScheduledJobRow>(
         "SELECT id, name, operation, payload, target_host_id, interval_minutes, enabled,
                 last_run_at, created_at
          FROM scheduled_jobs WHERE id = ?",
@@ -126,7 +126,7 @@ pub async fn patch_scheduled_job(
     Json(body): Json<PatchScheduledJobBody>,
 ) -> Result<Json<ScheduledJobRow>, ApiError> {
     require_operator(&actor)?;
-    let updated = sqlx::query("UPDATE scheduled_jobs SET enabled = ? WHERE id = ?")
+    let updated = crate::db::query("UPDATE scheduled_jobs SET enabled = ? WHERE id = ?")
         .bind(body.enabled)
         .bind(id)
         .execute(&state.pool)
@@ -135,7 +135,7 @@ pub async fn patch_scheduled_job(
     if updated == 0 {
         return Err(ApiError::not_found("scheduled job not found"));
     }
-    let row = sqlx::query_as::<_, ScheduledJobRow>(
+    let row = crate::db::query_as::<_, ScheduledJobRow>(
         "SELECT id, name, operation, payload, target_host_id, interval_minutes, enabled,
                 last_run_at, created_at
          FROM scheduled_jobs WHERE id = ?",
@@ -152,7 +152,7 @@ pub async fn delete_scheduled_job(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let deleted = sqlx::query("DELETE FROM scheduled_jobs WHERE id = ?")
+    let deleted = crate::db::query("DELETE FROM scheduled_jobs WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?

@@ -39,7 +39,7 @@ pub fn spawn(state: AppState) {
 
 async fn tick(state: &AppState) -> anyhow::Result<()> {
     // Only rules whose cooldown has elapsed (or never fired) are eligible this tick.
-    let rows: Vec<(Uuid, String, String, String, f64, String, String, String)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, String, f64, String, String, String)> = crate::db::query_as(
         "SELECT id, name, metric, comparator, threshold, severity, scope_project, scope_tag
          FROM alert_rules
          WHERE enabled = TRUE
@@ -80,7 +80,7 @@ async fn evaluate_rule(state: &AppState, rule: &Rule) -> anyhow::Result<Vec<(Str
     let rows: Vec<(String, f64, f64)> = if !rule.scope_project.is_empty()
         && !rule.scope_tag.is_empty()
     {
-        sqlx::query_as(&format!(
+        crate::db::query_as(&format!(
                 "{base} AND v.project = ? AND EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value = ?)"
             ))
             .bind(&rule.scope_project)
@@ -88,12 +88,12 @@ async fn evaluate_rule(state: &AppState, rule: &Rule) -> anyhow::Result<Vec<(Str
             .fetch_all(&state.pool)
             .await?
     } else if !rule.scope_project.is_empty() {
-        sqlx::query_as(&format!("{base} AND v.project = ?"))
+        crate::db::query_as(&format!("{base} AND v.project = ?"))
             .bind(&rule.scope_project)
             .fetch_all(&state.pool)
             .await?
     } else {
-        sqlx::query_as(base).fetch_all(&state.pool).await?
+        crate::db::query_as(base).fetch_all(&state.pool).await?
     };
 
     let mut out = Vec::new();
@@ -130,7 +130,7 @@ async fn fire(state: &AppState, rule: &Rule, violations: &[(String, f64)]) -> an
     // Route through the central dispatcher: in-app notification_outbox + signed webhooks +
     // notification channels (Slack/email/webhook), each filtered by its event list.
     crate::engine::webhooks::dispatch_webhooks(&state.pool, &kind, payload).await;
-    sqlx::query("UPDATE alert_rules SET last_fired_at = datetime('now') WHERE id = ?")
+    crate::db::query("UPDATE alert_rules SET last_fired_at = datetime('now') WHERE id = ?")
         .bind(rule.id)
         .execute(&state.pool)
         .await?;

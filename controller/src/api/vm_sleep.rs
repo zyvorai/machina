@@ -31,7 +31,7 @@ pub async fn list_project_policies(
     State(state): State<AppState>,
     Extension(_actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ProjectSleepPolicy>>, ApiError> {
-    let rows = sqlx::query_as::<_, ProjectSleepPolicy>(
+    let rows = crate::db::query_as::<_, ProjectSleepPolicy>(
         "SELECT project, sleep_after_minutes, updated_at FROM vm_sleep_project_policies ORDER BY project",
     )
     .fetch_all(&state.pool)
@@ -56,7 +56,7 @@ pub async fn put_project_policy(
             "sleep_after_minutes must be 0 or between {MIN_SLEEP_AFTER_MINUTES} and 10080"
         )));
     }
-    let row = sqlx::query_as::<_, ProjectSleepPolicy>(
+    let row = crate::db::query_as::<_, ProjectSleepPolicy>(
         "INSERT INTO vm_sleep_project_policies (project, sleep_after_minutes, updated_at)
          VALUES (?, ?, datetime('now'))
          ON CONFLICT (project) DO UPDATE SET
@@ -76,7 +76,7 @@ pub async fn delete_project_policy(
     Path(project): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let res = sqlx::query("DELETE FROM vm_sleep_project_policies WHERE project = ?")
+    let res = crate::db::query("DELETE FROM vm_sleep_project_policies WHERE project = ?")
         .bind(project.trim())
         .execute(&state.pool)
         .await?;
@@ -123,26 +123,26 @@ pub async fn summary(
     State(state): State<AppState>,
     Extension(_actor): Extension<AuthUser>,
 ) -> Result<Json<SleepSummary>, ApiError> {
-    let sleeping = sqlx::query_as::<_, SleepingVm>(
+    let sleeping = crate::db::query_as::<_, SleepingVm>(
         "SELECT id, name, host_id, project, COALESCE(memory_mib, 0) AS memory_mib,
                 COALESCE(vcpus, 0) AS vcpus, slept_at
          FROM vms WHERE desired_state = 'sleeping' ORDER BY slept_at DESC",
     )
     .fetch_all(&state.pool)
     .await?;
-    let auto_sleep_vms: i64 = sqlx::query_scalar(
+    let auto_sleep_vms: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM vms v LEFT JOIN vm_sleep_project_policies p ON p.project = v.project
          WHERE v.sleep_after_minutes > 0 OR (v.sleep_after_minutes IS NULL AND p.sleep_after_minutes > 0)",
     )
     .fetch_one(&state.pool)
     .await?;
-    let counts: (i64, i64) = sqlx::query_as(
+    let counts: (i64, i64) = crate::db::query_as(
         "SELECT COALESCE(SUM(kind = 'wake'), 0), COALESCE(SUM(kind = 'sleep'), 0)
          FROM vm_sleep_events WHERE at > datetime('now', '-1 day')",
     )
     .fetch_one(&state.pool)
     .await?;
-    let recent = sqlx::query_as::<_, SleepEventRow>(
+    let recent = crate::db::query_as::<_, SleepEventRow>(
         "SELECT e.vm_id, v.name AS vm_name, e.kind, e.reason, e.at
          FROM vm_sleep_events e JOIN vms v ON v.id = e.vm_id
          ORDER BY e.id DESC LIMIT 30",

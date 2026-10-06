@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::crypto;
@@ -98,9 +98,9 @@ fn row_from_db(
     }
 }
 
-pub async fn list_providers(pool: &SqlitePool) -> anyhow::Result<Vec<AiProviderRow>> {
+pub async fn list_providers(pool: &DbPool) -> anyhow::Result<Vec<AiProviderRow>> {
     let rows: Vec<(Uuid, String, String, String, String, String, String, bool, bool)> =
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, name, kind, base_url, org_id, deployment_name, api_key_encrypted, enabled, is_default
              FROM ai_providers ORDER BY is_default DESC, name",
         )
@@ -126,9 +126,9 @@ pub async fn list_providers(pool: &SqlitePool) -> anyhow::Result<Vec<AiProviderR
         .collect())
 }
 
-pub async fn get_provider(pool: &SqlitePool, id: Uuid) -> anyhow::Result<Option<AiProviderRow>> {
+pub async fn get_provider(pool: &DbPool, id: Uuid) -> anyhow::Result<Option<AiProviderRow>> {
     let row: Option<(Uuid, String, String, String, String, String, String, bool, bool)> =
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, name, kind, base_url, org_id, deployment_name, api_key_encrypted, enabled, is_default
              FROM ai_providers WHERE id = ?",
         )
@@ -153,17 +153,17 @@ pub async fn get_provider(pool: &SqlitePool, id: Uuid) -> anyhow::Result<Option<
 }
 
 pub async fn create_provider(
-    pool: &SqlitePool,
+    pool: &DbPool,
     body: &CreateProviderBody,
 ) -> anyhow::Result<AiProviderRow> {
     let stored_key = crypto::store_api_key(body.api_key.trim())?;
     let mut tx = pool.begin().await?;
     if body.is_default {
-        sqlx::query("UPDATE ai_providers SET is_default = FALSE WHERE is_default = TRUE")
+        crate::db::query("UPDATE ai_providers SET is_default = FALSE WHERE is_default = TRUE")
             .execute(&mut *tx)
             .await?;
     }
-    let id: Uuid = sqlx::query_scalar(
+    let id: Uuid = crate::db::query_scalar(
         "INSERT INTO ai_providers (id, name, kind, base_url, org_id, deployment_name, api_key_encrypted, is_default) VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(uuid::Uuid::new_v4())
@@ -183,7 +183,7 @@ pub async fn create_provider(
         } else {
             m.display_name.clone()
         };
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO ai_models (id, provider_id, model_id, display_name, context_window)
              VALUES (?, ?, ?, ?, ?) ON CONFLICT (provider_id, model_id) DO NOTHING",
         )
@@ -197,7 +197,7 @@ pub async fn create_provider(
     }
 
     if body.models.is_empty() {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO ai_models (id, provider_id, model_id, display_name)
              VALUES (?, ?, 'gpt-4o-mini', 'gpt-4o-mini') ON CONFLICT DO NOTHING",
         )
@@ -214,11 +214,11 @@ pub async fn create_provider(
 }
 
 pub async fn patch_provider(
-    pool: &SqlitePool,
+    pool: &DbPool,
     id: Uuid,
     body: &PatchProviderBody,
 ) -> anyhow::Result<AiProviderRow> {
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM ai_providers WHERE id = ?)")
+    let exists: bool = crate::db::query_scalar("SELECT EXISTS(SELECT 1 FROM ai_providers WHERE id = ?)")
         .bind(id)
         .fetch_one(pool)
         .await?;
@@ -232,61 +232,61 @@ pub async fn patch_provider(
     };
     let mut tx = pool.begin().await?;
     if body.is_default == Some(true) {
-        sqlx::query("UPDATE ai_providers SET is_default = FALSE WHERE is_default = TRUE")
+        crate::db::query("UPDATE ai_providers SET is_default = FALSE WHERE is_default = TRUE")
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.name {
-        sqlx::query("UPDATE ai_providers SET name = ? WHERE id = ?")
+        crate::db::query("UPDATE ai_providers SET name = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.kind {
-        sqlx::query("UPDATE ai_providers SET kind = ? WHERE id = ?")
+        crate::db::query("UPDATE ai_providers SET kind = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.base_url {
-        sqlx::query("UPDATE ai_providers SET base_url = ? WHERE id = ?")
+        crate::db::query("UPDATE ai_providers SET base_url = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.org_id {
-        sqlx::query("UPDATE ai_providers SET org_id = ? WHERE id = ?")
+        crate::db::query("UPDATE ai_providers SET org_id = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.deployment_name {
-        sqlx::query("UPDATE ai_providers SET deployment_name = ? WHERE id = ?")
+        crate::db::query("UPDATE ai_providers SET deployment_name = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(stored_key) = stored_key {
-        sqlx::query("UPDATE ai_providers SET api_key_encrypted = ? WHERE id = ?")
+        crate::db::query("UPDATE ai_providers SET api_key_encrypted = ? WHERE id = ?")
             .bind(stored_key)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = body.enabled {
-        sqlx::query("UPDATE ai_providers SET enabled = ? WHERE id = ?")
+        crate::db::query("UPDATE ai_providers SET enabled = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = body.is_default {
-        sqlx::query("UPDATE ai_providers SET is_default = ? WHERE id = ?")
+        crate::db::query("UPDATE ai_providers SET is_default = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
@@ -298,16 +298,16 @@ pub async fn patch_provider(
         .ok_or_else(|| anyhow::anyhow!("provider not found"))
 }
 
-pub async fn delete_provider(pool: &SqlitePool, id: Uuid) -> anyhow::Result<bool> {
-    let r = sqlx::query("DELETE FROM ai_providers WHERE id = ?")
+pub async fn delete_provider(pool: &DbPool, id: Uuid) -> anyhow::Result<bool> {
+    let r = crate::db::query("DELETE FROM ai_providers WHERE id = ?")
         .bind(id)
         .execute(pool)
         .await?;
     Ok(r.rows_affected() > 0)
 }
 
-pub async fn list_models(pool: &SqlitePool, provider_id: Uuid) -> anyhow::Result<Vec<AiModelRow>> {
-    let rows: Vec<(Uuid, Uuid, String, String, i32, bool)> = sqlx::query_as(
+pub async fn list_models(pool: &DbPool, provider_id: Uuid) -> anyhow::Result<Vec<AiModelRow>> {
+    let rows: Vec<(Uuid, Uuid, String, String, i32, bool)> = crate::db::query_as(
         "SELECT id, provider_id, model_id, display_name, context_window, enabled
          FROM ai_models WHERE provider_id = ? ORDER BY display_name",
     )
@@ -339,18 +339,18 @@ pub struct ResolvedProvider {
     pub model_id: String,
 }
 
-pub async fn resolve_default(pool: &SqlitePool) -> anyhow::Result<Option<ResolvedProvider>> {
+pub async fn resolve_default(pool: &DbPool) -> anyhow::Result<Option<ResolvedProvider>> {
     resolve_for_provider(pool, None, None).await
 }
 
 pub async fn resolve_for_provider(
-    pool: &SqlitePool,
+    pool: &DbPool,
     provider_id: Option<Uuid>,
     model_id: Option<&str>,
 ) -> anyhow::Result<Option<ResolvedProvider>> {
     let row: Option<(Uuid, String, String, String, String, String)> = if let Some(pid) = provider_id
     {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, kind, base_url, org_id, deployment_name, api_key_encrypted
              FROM ai_providers WHERE id = ? AND enabled = TRUE",
         )
@@ -358,7 +358,7 @@ pub async fn resolve_for_provider(
         .fetch_optional(pool)
         .await?
     } else {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, kind, base_url, org_id, deployment_name, api_key_encrypted
              FROM ai_providers WHERE is_default = TRUE AND enabled = TRUE
              ORDER BY created_at LIMIT 1",
@@ -378,7 +378,7 @@ pub async fn resolve_for_provider(
     let model: String = if let Some(mid) = model_id.filter(|s| !s.is_empty()) {
         mid.to_string()
     } else {
-        sqlx::query_scalar(
+        crate::db::query_scalar(
             "SELECT model_id FROM ai_models WHERE provider_id = ? AND enabled = TRUE ORDER BY display_name LIMIT 1",
         )
         .bind(pid)
@@ -398,8 +398,8 @@ pub async fn resolve_for_provider(
     }))
 }
 
-async fn legacy_resolve(pool: &SqlitePool) -> anyhow::Result<Option<ResolvedProvider>> {
-    let row: Option<(String, String, String)> = sqlx::query_as(
+async fn legacy_resolve(pool: &DbPool) -> anyhow::Result<Option<ResolvedProvider>> {
+    let row: Option<(String, String, String)> = crate::db::query_as(
         "SELECT ai_provider, ai_model, COALESCE(ai_api_key, '') FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(pool)
@@ -422,8 +422,8 @@ async fn legacy_resolve(pool: &SqlitePool) -> anyhow::Result<Option<ResolvedProv
     }))
 }
 
-pub async fn resolve_local(pool: &SqlitePool) -> anyhow::Result<Option<ResolvedProvider>> {
-    let row: Option<(Uuid, String, String, String, String, String)> = sqlx::query_as(
+pub async fn resolve_local(pool: &DbPool) -> anyhow::Result<Option<ResolvedProvider>> {
+    let row: Option<(Uuid, String, String, String, String, String)> = crate::db::query_as(
         "SELECT id, kind, base_url, org_id, deployment_name, api_key_encrypted
          FROM ai_providers
          WHERE enabled = TRUE AND kind IN ('ollama', 'vllm', 'openai_compatible')
@@ -439,7 +439,7 @@ pub async fn resolve_local(pool: &SqlitePool) -> anyhow::Result<Option<ResolvedP
     } else {
         crypto::load_api_key(&stored_key)?
     };
-    let model: String = sqlx::query_scalar(
+    let model: String = crate::db::query_scalar(
         "SELECT model_id FROM ai_models WHERE provider_id = ? AND enabled = TRUE ORDER BY display_name LIMIT 1",
     )
     .bind(pid)
@@ -457,7 +457,7 @@ pub async fn resolve_local(pool: &SqlitePool) -> anyhow::Result<Option<ResolvedP
     }))
 }
 
-pub async fn test_provider(pool: &SqlitePool, id: Uuid) -> anyhow::Result<serde_json::Value> {
+pub async fn test_provider(pool: &DbPool, id: Uuid) -> anyhow::Result<serde_json::Value> {
     let resolved = resolve_for_provider(pool, Some(id), None)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Provider not configured or disabled"))?;

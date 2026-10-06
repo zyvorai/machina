@@ -6,7 +6,7 @@
 // this mirrors fleet_snapshot_scheduler (which had both scheduling and retention) so
 // backups get the same automation + a bounded catalog.
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -31,7 +31,7 @@ pub fn spawn(state: AppState) {
 async fn tick(state: &AppState) -> anyhow::Result<()> {
     // Due = never run, or last run older than the schedule's interval. We compare in SQL
     // using each row's interval_hours so schedules with different cadences are honored.
-    let rows: Vec<(Uuid, String, String, String, Option<String>, i32)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, String, Option<String>, i32)> = crate::db::query_as(
         "SELECT id, project, tag_filter, backup_type, target_id, retain_count
          FROM backup_schedules
          WHERE enabled = TRUE
@@ -59,7 +59,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
             tracing::warn!("fleet backup scheduler: schedule {sched_id} enqueue failed: {e:#}");
             continue;
         }
-        sqlx::query("UPDATE backup_schedules SET last_run_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE backup_schedules SET last_run_at = datetime('now') WHERE id = ?")
             .bind(sched_id)
             .execute(&state.pool)
             .await?;
@@ -73,7 +73,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
 /// Select the managed VMs a schedule targets (whole fleet, a project, or a project+tag),
 /// mirroring fleet_snapshot_scheduler's filtering.
 async fn select_vms(
-    pool: &SqlitePool,
+    pool: &DbPool,
     project: &str,
     tag_filter: &str,
 ) -> anyhow::Result<Vec<(Uuid, String, Option<Uuid>)>> {
@@ -81,7 +81,7 @@ async fn select_vms(
                 WHERE managed = TRUE AND COALESCE(inventory_source, 'libvirt') = 'libvirt'
                   AND lifecycle_phase NOT IN ('retired', 'deleting')";
     let vms = if !project.is_empty() && !tag_filter.is_empty() {
-        sqlx::query_as(&format!(
+        crate::db::query_as(&format!(
             "{base} AND project = ? AND EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value = ?)"
         ))
         .bind(project)
@@ -89,18 +89,18 @@ async fn select_vms(
         .fetch_all(pool)
         .await?
     } else if !project.is_empty() {
-        sqlx::query_as(&format!("{base} AND project = ?"))
+        crate::db::query_as(&format!("{base} AND project = ?"))
             .bind(project)
             .fetch_all(pool)
             .await?
     } else {
-        sqlx::query_as(base).fetch_all(pool).await?
+        crate::db::query_as(base).fetch_all(pool).await?
     };
     Ok(vms)
 }
 
 async fn enqueue_backups_for_schedule(
-    pool: &SqlitePool,
+    pool: &DbPool,
     app: &AppState,
     project: &str,
     tag_filter: &str,
@@ -112,7 +112,7 @@ async fn enqueue_backups_for_schedule(
         let backup_id = Uuid::new_v4();
         // Insert the record before enqueue (the worker looks it up by id), compensating
         // with a delete on enqueue failure — same ordering as create_vm_backup.
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES (?, ?, ?, 'pending')",
         )
         .bind(backup_id)
@@ -135,7 +135,7 @@ async fn enqueue_backups_for_schedule(
         )
         .await
         {
-            let _ = sqlx::query("DELETE FROM backup_records WHERE id = ?")
+            let _ = crate::db::query("DELETE FROM backup_records WHERE id = ?")
                 .bind(backup_id)
                 .execute(pool)
                 .await;
@@ -162,7 +162,7 @@ async fn prune_retained_backups(
 ) -> anyhow::Result<()> {
     let vms = select_vms(&app.pool, project, tag_filter).await?;
     for (vm_id, _name, host_id) in vms {
-        let prunable: Vec<(Uuid,)> = sqlx::query_as(
+        let prunable: Vec<(Uuid,)> = crate::db::query_as(
             "SELECT id FROM backup_records
              WHERE vm_id = ? AND status IN ('completed', 'succeeded')
                AND id NOT IN (

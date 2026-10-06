@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct FleetConsoleEntry {
@@ -32,20 +32,20 @@ pub struct FleetConsoleOverview {
     pub entries: Vec<FleetConsoleEntry>,
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetConsoleOverview> {
-    let audit_24h: i64 = sqlx::query_scalar(
+pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetConsoleOverview> {
+    let audit_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM audit_logs WHERE created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await?;
 
-    let events_24h: i64 = sqlx::query_scalar(
+    let events_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM events WHERE created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await?;
 
-    let tasks_failed_24h: i64 = sqlx::query_scalar(
+    let tasks_failed_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE status = 'failed' AND created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
@@ -53,18 +53,18 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetConsoleOverview>
 
     let total_24h = audit_24h + events_24h + tasks_failed_24h;
 
-    let audit_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_logs")
+    let audit_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM audit_logs")
         .fetch_one(pool)
         .await?;
-    let event_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM events")
+    let event_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM events")
         .fetch_one(pool)
         .await?;
-    let task_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tasks")
+    let task_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM tasks")
         .fetch_one(pool)
         .await?;
 
     let rows: Vec<(String, String, String, Option<String>, String, String, Option<String>, DateTime<Utc>)> =
-        sqlx::query_as(
+        crate::db::query_as(
             r#"
             SELECT source, id, severity, actor, action, message, resource_type, created_at FROM (
                 SELECT

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -43,12 +43,12 @@ pub struct AttackPathResult {
     pub summary: String,
 }
 
-pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<SecurityGraph> {
+pub async fn build_graph(pool: &DbPool) -> anyhow::Result<SecurityGraph> {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
     let users: Vec<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, username, role FROM users ORDER BY username")
+        crate::db::query_as("SELECT id, username, role FROM users ORDER BY username")
             .fetch_all(pool)
             .await?;
     for (id, name, role) in users {
@@ -79,7 +79,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<SecurityGraph> {
     });
 
     let hosts: Vec<(Uuid, String)> =
-        sqlx::query_as("SELECT id, hostname FROM hosts ORDER BY hostname")
+        crate::db::query_as("SELECT id, hostname FROM hosts ORDER BY hostname")
             .fetch_all(pool)
             .await?;
     for (id, name) in hosts {
@@ -98,7 +98,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<SecurityGraph> {
     }
 
     let vms: Vec<(Uuid, String, Option<Uuid>)> =
-        sqlx::query_as("SELECT id, name, host_id FROM vms ORDER BY name LIMIT 100")
+        crate::db::query_as("SELECT id, name, host_id FROM vms ORDER BY name LIMIT 100")
             .fetch_all(pool)
             .await?;
     for (id, name, host_id) in vms {
@@ -119,7 +119,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<SecurityGraph> {
     }
 
     let networks: Vec<(Uuid, String)> =
-        sqlx::query_as("SELECT id, name FROM networks ORDER BY name")
+        crate::db::query_as("SELECT id, name FROM networks ORDER BY name")
             .fetch_all(pool)
             .await?;
     for (id, name) in networks {
@@ -137,7 +137,7 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<SecurityGraph> {
         });
     }
 
-    let keys: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM api_keys")
+    let keys: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM api_keys")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
@@ -159,20 +159,20 @@ pub async fn build_graph(pool: &SqlitePool) -> anyhow::Result<SecurityGraph> {
 }
 
 pub async fn attack_path(
-    pool: &SqlitePool,
+    pool: &DbPool,
     q: &AttackPathQuery,
 ) -> anyhow::Result<AttackPathResult> {
     let graph = build_graph(pool).await?;
     let target_id: Option<Uuid> = if let Ok(u) = Uuid::parse_str(&q.target_vm) {
         Some(u)
     } else {
-        sqlx::query_scalar("SELECT id FROM vms WHERE name = ?")
+        crate::db::query_scalar("SELECT id FROM vms WHERE name = ?")
             .bind(&q.target_vm)
             .fetch_optional(pool)
             .await?
     };
     let target_label = if let Some(id) = target_id {
-        sqlx::query_scalar::<_, String>("SELECT name FROM vms WHERE id = ?")
+        crate::db::query_scalar::<_, String>("SELECT name FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(pool)
             .await?

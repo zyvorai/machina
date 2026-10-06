@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct CostAnalysis {
@@ -15,23 +15,23 @@ pub struct CostAnalysis {
     pub suggestions: Vec<String>,
 }
 
-pub async fn analyze(pool: &SqlitePool) -> anyhow::Result<CostAnalysis> {
-    let rates: (f64, f64) = sqlx::query_as(
+pub async fn analyze(pool: &DbPool) -> anyhow::Result<CostAnalysis> {
+    let rates: (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
     .await?;
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
         .await?;
     let totals: (i64, i64) =
-        sqlx::query_as("SELECT COALESCE(SUM(vcpus), 0), COALESCE(SUM(memory_mib), 0) FROM vms")
+        crate::db::query_as("SELECT COALESCE(SUM(vcpus), 0), COALESCE(SUM(memory_mib), 0) FROM vms")
             .fetch_one(pool)
             .await?;
     let memory_gib = totals.1 as f64 / 1024.0;
     let hourly = totals.0 as f64 * rates.0 + memory_gib * rates.1;
     let estimated_monthly_usd = hourly * 730.0;
-    let idle_vm_count: i64 = sqlx::query_scalar(
+    let idle_vm_count: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM vms WHERE observed_state != 'running'
          AND updated_at < datetime('now', '-30 days')",
     )
@@ -39,7 +39,7 @@ pub async fn analyze(pool: &SqlitePool) -> anyhow::Result<CostAnalysis> {
     .await
     .unwrap_or(0);
 
-    let oversized_vm_count: i64 = sqlx::query_scalar(
+    let oversized_vm_count: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM vms v
          JOIN vm_metrics m ON m.vm_id = v.id
          WHERE v.observed_state = 'running'
@@ -51,7 +51,7 @@ pub async fn analyze(pool: &SqlitePool) -> anyhow::Result<CostAnalysis> {
     .await
     .unwrap_or(0);
 
-    let snapshot_heavy_count: i64 = sqlx::query_scalar(
+    let snapshot_heavy_count: i64 = crate::db::query_scalar(
         "SELECT COUNT(DISTINCT vm_id) FROM snapshot_records WHERE status = 'completed'",
     )
     .fetch_one(pool)
@@ -93,15 +93,15 @@ pub async fn analyze(pool: &SqlitePool) -> anyhow::Result<CostAnalysis> {
     })
 }
 
-pub async fn export_csv(pool: &SqlitePool) -> anyhow::Result<String> {
+pub async fn export_csv(pool: &DbPool) -> anyhow::Result<String> {
     let analysis = analyze(pool).await?;
-    let rates: (f64, f64) = sqlx::query_as(
+    let rates: (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
     .await?;
 
-    let vms: Vec<(String, i64, i64, String)> = sqlx::query_as(
+    let vms: Vec<(String, i64, i64, String)> = crate::db::query_as(
         "SELECT name, vcpus, memory_mib, COALESCE(observed_state, 'unknown')
          FROM vms ORDER BY name",
     )

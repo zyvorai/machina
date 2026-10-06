@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -56,8 +56,8 @@ fn dns_safe(s: &str) -> String {
     }
 }
 
-pub async fn list_vm_volumes(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<Vec<VmAtlasVolume>> {
-    let rows = sqlx::query_as::<_, VmAtlasVolume>(
+pub async fn list_vm_volumes(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<Vec<VmAtlasVolume>> {
+    let rows = crate::db::query_as::<_, VmAtlasVolume>(
         "SELECT id, vm_id, volume_id, role, size_bytes, policy, backend_native_id, state, created_at \
          FROM vm_atlas_volumes WHERE vm_id = ? ORDER BY created_at",
     )
@@ -67,8 +67,8 @@ pub async fn list_vm_volumes(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<V
     Ok(rows)
 }
 
-async fn vm_name(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<String> {
-    let name: Option<String> = sqlx::query_scalar("SELECT name FROM vms WHERE id = ?")
+async fn vm_name(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<String> {
+    let name: Option<String> = crate::db::query_scalar("SELECT name FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(pool)
         .await?;
@@ -162,7 +162,7 @@ pub async fn provision_vm_volume(
     };
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vm_atlas_volumes \
          (id, vm_id, volume_id, role, size_bytes, policy, backend_native_id, state) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -291,8 +291,8 @@ pub fn rbd_source(cfg: &ControllerConfig, backend_native_id: &str) -> String {
 
 /// True if the VM has at least one Atlas-backed disk — used by the generic
 /// snapshot/backup handlers to route through Atlas instead of the agent.
-pub async fn vm_is_atlas_backed(pool: &SqlitePool, vm_id: Uuid) -> bool {
-    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM vm_atlas_volumes WHERE vm_id = ?")
+pub async fn vm_is_atlas_backed(pool: &DbPool, vm_id: Uuid) -> bool {
+    crate::db::query_scalar::<_, i64>("SELECT COUNT(*) FROM vm_atlas_volumes WHERE vm_id = ?")
         .bind(vm_id)
         .fetch_one(pool)
         .await

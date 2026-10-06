@@ -53,7 +53,7 @@ struct WatchTarget {
 }
 
 async fn tick(state: &AppState) -> anyhow::Result<()> {
-    let rows: Vec<WatchTarget> = sqlx::query_as::<_, (
+    let rows: Vec<WatchTarget> = crate::db::query_as::<_, (
         Uuid, String, Option<Uuid>, String, String,
         Option<String>, Option<String>, i64, i64, i64, i64, Option<String>,
     )>(
@@ -102,7 +102,7 @@ async fn evaluate(state: &AppState, t: &WatchTarget) -> anyhow::Result<()> {
 
     // Guest agent unreachable while running + tools were installed => likely hung.
     if t.unhealthy_since.is_none() {
-        sqlx::query("UPDATE vm_watchdog SET unhealthy_since = datetime('now') WHERE vm_id = ?")
+        crate::db::query("UPDATE vm_watchdog SET unhealthy_since = datetime('now') WHERE vm_id = ?")
             .bind(t.vm_id)
             .execute(&state.pool)
             .await?;
@@ -111,7 +111,7 @@ async fn evaluate(state: &AppState, t: &WatchTarget) -> anyhow::Result<()> {
     }
 
     // Sustained-failure gate: only act once continuously unhealthy for failure_threshold_secs.
-    let sustained: bool = sqlx::query_scalar(
+    let sustained: bool = crate::db::query_scalar(
         "SELECT unhealthy_since <= datetime('now', printf('-%d seconds', ?)) FROM vm_watchdog WHERE vm_id = ?",
     )
     .bind(t.failure_threshold_secs)
@@ -125,7 +125,7 @@ async fn evaluate(state: &AppState, t: &WatchTarget) -> anyhow::Result<()> {
 
     // Cooldown gate: don't reset again within cooldown_secs of the last reset.
     if t.last_restart_at.is_some() {
-        let cooling: bool = sqlx::query_scalar(
+        let cooling: bool = crate::db::query_scalar(
             "SELECT last_restart_at > datetime('now', printf('-%d seconds', ?)) FROM vm_watchdog WHERE vm_id = ?",
         )
         .bind(t.cooldown_secs)
@@ -141,7 +141,7 @@ async fn evaluate(state: &AppState, t: &WatchTarget) -> anyhow::Result<()> {
     // Per-hour cap gate: roll the window, then enforce max_restarts_per_hour.
     let window_expired = match &t.hour_window_start {
         None => true,
-        Some(_) => sqlx::query_scalar::<_, bool>(
+        Some(_) => crate::db::query_scalar::<_, bool>(
             "SELECT hour_window_start <= datetime('now', '-1 hour') FROM vm_watchdog WHERE vm_id = ?",
         )
         .bind(t.vm_id)
@@ -163,7 +163,7 @@ async fn evaluate(state: &AppState, t: &WatchTarget) -> anyhow::Result<()> {
     // Propagate (rather than default to 0) on a query failure: we don't actually know
     // whether a task is in flight, and defaulting to "none" here risks double-enqueuing
     // a reset. Failing this tick and retrying next tick is the safe fallback.
-    let inflight: i64 = sqlx::query_scalar(
+    let inflight: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'vm.power' AND status IN ('pending','running')",
     )
     .bind(t.vm_id)
@@ -191,7 +191,7 @@ async fn evaluate(state: &AppState, t: &WatchTarget) -> anyhow::Result<()> {
 
     // Record the action: advance the window/counter, stamp last_restart_at, clear the timer.
     let new_count = restarts_in_window + 1;
-    sqlx::query(
+    crate::db::query(
         "UPDATE vm_watchdog
          SET last_restart_at = datetime('now'),
              unhealthy_since = NULL,
@@ -230,7 +230,7 @@ async fn evaluate(state: &AppState, t: &WatchTarget) -> anyhow::Result<()> {
 }
 
 async fn clear_unhealthy(state: &AppState, vm_id: Uuid) -> anyhow::Result<()> {
-    sqlx::query("UPDATE vm_watchdog SET unhealthy_since = NULL WHERE vm_id = ? AND unhealthy_since IS NOT NULL")
+    crate::db::query("UPDATE vm_watchdog SET unhealthy_since = NULL WHERE vm_id = ? AND unhealthy_since IS NOT NULL")
         .bind(vm_id)
         .execute(&state.pool)
         .await?;
@@ -254,8 +254,8 @@ async fn probe_guest_reachable(state: &AppState, t: &WatchTarget) -> bool {
     }
 }
 
-async fn host_agent_addr(pool: &sqlx::SqlitePool, host_id: Uuid) -> anyhow::Result<String> {
-    let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+async fn host_agent_addr(pool: &crate::db::DbPool, host_id: Uuid) -> anyhow::Result<String> {
+    let addr: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;

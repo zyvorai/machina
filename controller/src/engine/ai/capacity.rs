@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct CapacityPlan {
@@ -20,23 +20,23 @@ pub struct CapacityPlan {
     pub forecast_90d_vms: i64,
 }
 
-pub async fn plan(pool: &SqlitePool) -> anyhow::Result<CapacityPlan> {
-    let hosts_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+pub async fn plan(pool: &DbPool) -> anyhow::Result<CapacityPlan> {
+    let hosts_online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(pool)
         .await?;
-    let mem: (i64, i64) = sqlx::query_as(
+    let mem: (i64, i64) = crate::db::query_as(
         "SELECT COALESCE(SUM(memory_total_mib), 0), COALESCE(SUM(memory_used_mib), 0) FROM hosts WHERE state = 'online'",
     )
     .fetch_one(pool)
     .await?;
-    let avg_cpu: f32 = sqlx::query_scalar(
+    let avg_cpu: f32 = crate::db::query_scalar(
         "SELECT COALESCE(AVG(cpu_percent), 0.0) FROM hosts WHERE state = 'online'",
     )
     .fetch_one(pool)
     .await?;
     let memory_headroom_mib = mem.0.saturating_sub(mem.1);
 
-    let (storage_used, storage_cap): (i64, i64) = sqlx::query_as(
+    let (storage_used, storage_cap): (i64, i64) = crate::db::query_as(
         "SELECT COALESCE(SUM(used_gib), 0), COALESCE(SUM(capacity_gib), 0) FROM storage_pools",
     )
     .fetch_one(pool)
@@ -58,7 +58,7 @@ pub async fn plan(pool: &SqlitePool) -> anyhow::Result<CapacityPlan> {
         0
     };
 
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE managed = TRUE")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE managed = TRUE")
         .fetch_one(pool)
         .await?;
     let growth_rate = 0.02_f64;
@@ -100,7 +100,7 @@ pub async fn plan(pool: &SqlitePool) -> anyhow::Result<CapacityPlan> {
     })
 }
 
-pub async fn export_csv(pool: &SqlitePool) -> anyhow::Result<String> {
+pub async fn export_csv(pool: &DbPool) -> anyhow::Result<String> {
     let plan = plan(pool).await?;
     let mut csv = String::from("Machina Capacity Planner Export\nMetric,Value\n");
     csv.push_str(&format!("Hosts online,{}\n", plan.hosts_online));

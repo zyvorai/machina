@@ -41,7 +41,7 @@ pub async fn list_notifications(
     require_operator(&actor)?;
     let limit = q.limit.clamp(1, 500);
     let rows = if q.undelivered {
-        sqlx::query_as::<_, NotificationRow>(
+        crate::db::query_as::<_, NotificationRow>(
             "SELECT id, kind, payload, delivered, created_at, delivered_at
              FROM notification_outbox WHERE delivered = FALSE ORDER BY created_at DESC LIMIT ?",
         )
@@ -49,7 +49,7 @@ pub async fn list_notifications(
         .fetch_all(&state.pool)
         .await?
     } else {
-        sqlx::query_as::<_, NotificationRow>(
+        crate::db::query_as::<_, NotificationRow>(
             "SELECT id, kind, payload, delivered, created_at, delivered_at
              FROM notification_outbox ORDER BY created_at DESC LIMIT ?",
         )
@@ -66,7 +66,7 @@ pub async fn mark_notification_delivered(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    sqlx::query(
+    crate::db::query(
         "UPDATE notification_outbox SET delivered = TRUE, delivered_at = datetime('now') WHERE id = ?",
     )
     .bind(id)

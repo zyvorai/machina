@@ -44,7 +44,7 @@ pub struct SecurityGroupRow {
     pub ec2_id: String,
 }
 
-async fn with_enforcement(pool: &sqlx::SqlitePool, mut r: SecurityGroupRow) -> SecurityGroupRow {
+async fn with_enforcement(pool: &crate::db::DbPool, mut r: SecurityGroupRow) -> SecurityGroupRow {
     r.enforcement = Some(crate::engine::sg_enforce::enforcement(pool, &r.id.simple().to_string()).await);
     r.ec2_id = crate::resource_ids::ec2_id(crate::resource_ids::Kind::SecurityGroup, r.id);
     r
@@ -62,7 +62,7 @@ pub async fn list_security_groups(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<SecurityGroupRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, SecurityGroupRow>(
+    let rows = crate::db::query_as::<_, SecurityGroupRow>(
         "SELECT id, project_id, name, description, (mode = 'enforce') AS enforced, mode FROM security_groups ORDER BY name",
     )
     .fetch_all(&state.pool)
@@ -80,7 +80,7 @@ pub async fn get_security_group(
     Path(id): Path<Uuid>,
 ) -> Result<Json<SecurityGroupRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, SecurityGroupRow>(
+    let row = crate::db::query_as::<_, SecurityGroupRow>(
         "SELECT id, project_id, name, description, (mode = 'enforce') AS enforced, mode FROM security_groups WHERE id = ?",
     )
     .bind(id)
@@ -110,7 +110,7 @@ pub async fn create_security_group(
         None => default_project_id(&state.pool).await?,
     };
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO security_groups (id, project_id, name, description) VALUES (?, ?, ?, ?)",
     )
     .bind(id)
@@ -120,7 +120,7 @@ pub async fn create_security_group(
     .execute(&state.pool)
     .await?;
     // EC2 parity: a new group allows all outbound traffic until the operator removes the rule.
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO security_group_rules (id, security_group_id, direction, remote_cidr, description) \
          VALUES (?, ?, 'egress', '0.0.0.0/0', 'default: allow all outbound')",
     )
@@ -146,7 +146,7 @@ pub async fn delete_security_group(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    sqlx::query("DELETE FROM security_groups WHERE id = ?")
+    crate::db::query("DELETE FROM security_groups WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -172,7 +172,7 @@ pub async fn list_security_group_rules(
     Path(group_id): Path<Uuid>,
 ) -> Result<Json<Vec<SecurityGroupRuleRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, SecurityGroupRuleRow>(
+    let rows = crate::db::query_as::<_, SecurityGroupRuleRow>(
         "SELECT id, security_group_id, direction, protocol, port_min, port_max, remote_cidr, remote_sg_id, description \
          FROM security_group_rules WHERE security_group_id = ? ORDER BY created_at",
     )
@@ -250,7 +250,7 @@ pub async fn create_security_group_rule(
     validate_rule(&body)?;
     if let Some(r) = body.remote_sg_id.as_deref().filter(|s| !s.is_empty()) {
         let rid = Uuid::parse_str(r).map_err(|_| ApiError::bad_request("remote_sg_id must be a security group id"))?;
-        let known: Option<i64> = sqlx::query_scalar("SELECT 1 FROM security_groups WHERE id = ?")
+        let known: Option<i64> = crate::db::query_scalar("SELECT 1 FROM security_groups WHERE id = ?")
             .bind(rid)
             .fetch_optional(&state.pool)
             .await?;
@@ -260,7 +260,7 @@ pub async fn create_security_group_rule(
         body.remote_sg_id = Some(rid.simple().to_string());
     }
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO security_group_rules (id, security_group_id, direction, protocol, port_min, port_max, remote_cidr, remote_sg_id, description) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -295,7 +295,7 @@ pub async fn delete_security_group_rule(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    sqlx::query("DELETE FROM security_group_rules WHERE id = ?")
+    crate::db::query("DELETE FROM security_group_rules WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -350,7 +350,7 @@ pub async fn list_ports(
     Query(q): Query<ListPortsQuery>,
 ) -> Result<Json<Vec<PortRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, PortRow>(&format!(
+    let rows = crate::db::query_as::<_, PortRow>(&format!(
         "{PORT_SELECT} WHERE (?1 IS NULL OR network_id = ?1) AND (?2 IS NULL OR vm_id = ?2) ORDER BY created_at"
     ))
     .bind(q.network_id)
@@ -366,7 +366,7 @@ pub async fn get_port(
     Path(id): Path<Uuid>,
 ) -> Result<Json<PortRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, PortRow>(&format!("{PORT_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, PortRow>(&format!("{PORT_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -399,7 +399,7 @@ pub async fn create_port(
     Json(body): Json<CreatePortBody>,
 ) -> Result<Json<PortRow>, ApiError> {
     require_operator(&actor)?;
-    let network_name: String = sqlx::query_scalar("SELECT name FROM networks WHERE id = ?")
+    let network_name: String = crate::db::query_scalar("SELECT name FROM networks WHERE id = ?")
         .bind(body.network_id)
         .fetch_optional(&state.pool)
         .await?
@@ -409,7 +409,7 @@ pub async fn create_port(
         None => default_project_id(&state.pool).await?,
     };
 
-    let cloud_owner: Option<Uuid> = sqlx::query_scalar("SELECT v.project_id FROM cloud_subnets s JOIN cloud_vpcs v ON v.id=s.vpc_id WHERE s.network_id=?").bind(body.network_id).fetch_optional(&state.pool).await?;
+    let cloud_owner: Option<Uuid> = crate::db::query_scalar("SELECT v.project_id FROM cloud_subnets s JOIN cloud_vpcs v ON v.id=s.vpc_id WHERE s.network_id=?").bind(body.network_id).fetch_optional(&state.pool).await?;
     if let Some(owner) = cloud_owner {
         if owner != project_id {
             return Err(ApiError::forbidden(
@@ -426,7 +426,7 @@ pub async fn create_port(
         return Err(ApiError::bad_request("description is limited to 255 characters"));
     }
     // A port on a cloud subnet owns a managed address, reserved before anything is attached.
-    let subnet: Option<Uuid> = sqlx::query_scalar("SELECT id FROM cloud_subnets WHERE network_id = ?")
+    let subnet: Option<Uuid> = crate::db::query_scalar("SELECT id FROM cloud_subnets WHERE network_id = ?")
         .bind(body.network_id)
         .fetch_optional(&state.pool)
         .await?;
@@ -481,7 +481,7 @@ pub async fn create_port(
         },
         _ => false,
     };
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO ports (id, network_id, project_id, vm_id, mac_address, security_group_id, status, subnet_id, private_ip, description, dhcp_pinned) \
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -522,7 +522,7 @@ pub async fn delete_port(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
     let pinned: Option<(Uuid, Option<String>, Option<String>, bool)> =
-        sqlx::query_as("SELECT network_id, mac_address, private_ip, dhcp_pinned FROM ports WHERE id = ?")
+        crate::db::query_as("SELECT network_id, mac_address, private_ip, dhcp_pinned FROM ports WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -532,7 +532,7 @@ pub async fn delete_port(
         }
     }
     let row: Option<(Option<Uuid>, Option<String>)> =
-        sqlx::query_as("SELECT vm_id, mac_address FROM ports WHERE id = ?")
+        crate::db::query_as("SELECT vm_id, mac_address FROM ports WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -544,11 +544,11 @@ pub async fn delete_port(
             vms::detach_vm_nic(State(state.clone()), Extension(actor), Path((vm_id, mac))).await?;
         crate::api::volumes::wait_for_task(&state.pool, &task.0.task_id).await?;
     }
-    sqlx::query("DELETE FROM ports WHERE id = ?")
+    crate::db::query("DELETE FROM ports WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
-    sqlx::query("DELETE FROM cloud_ip_allocations WHERE request_key = ?")
+    crate::db::query("DELETE FROM cloud_ip_allocations WHERE request_key = ?")
         .bind(format!("eni-{id}"))
         .execute(&state.pool)
         .await?;
@@ -578,7 +578,7 @@ pub async fn set_security_group_mode(
         return Err(ApiError::bad_request("mode must be audit or enforce"));
     }
     if body.mode == "enforce" {
-        let blind: Vec<String> = sqlx::query_scalar(
+        let blind: Vec<String> = crate::db::query_scalar(
             "SELECT v.name FROM instance_security_groups i \
              JOIN vms v ON v.id = i.vm_id \
              WHERE i.sg_id = ? AND COALESCE(v.guest_ip, '') = '' AND COALESCE(v.guest_ips, '') IN ('', '[]')",
@@ -594,7 +594,7 @@ pub async fn set_security_group_mode(
             .with_code("sg_enforce_unknown_address"));
         }
     }
-    let r = sqlx::query("UPDATE security_groups SET mode = ? WHERE id = ?")
+    let r = crate::db::query("UPDATE security_groups SET mode = ? WHERE id = ?")
         .bind(&body.mode)
         .bind(id)
         .execute(&state.pool)
@@ -612,7 +612,7 @@ pub async fn list_instance_security_groups(
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<Vec<SecurityGroupRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, SecurityGroupRow>(
+    let rows = crate::db::query_as::<_, SecurityGroupRow>(
         "SELECT g.id, g.project_id, g.name, g.description, (g.mode = 'enforce') AS enforced, g.mode \
          FROM security_groups g JOIN instance_security_groups i ON i.sg_id = g.id \
          WHERE i.vm_id = ? ORDER BY g.name",
@@ -633,21 +633,21 @@ pub async fn attach_instance_security_group(
     Path((vm_id, sg_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let vm: Option<String> = sqlx::query_scalar("SELECT name FROM vms WHERE id = ?")
+    let vm: Option<String> = crate::db::query_scalar("SELECT name FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?;
     if vm.is_none() {
         return Err(ApiError::not_found("instance not found"));
     }
-    let sg: Option<String> = sqlx::query_scalar("SELECT name FROM security_groups WHERE id = ?")
+    let sg: Option<String> = crate::db::query_scalar("SELECT name FROM security_groups WHERE id = ?")
         .bind(sg_id)
         .fetch_optional(&state.pool)
         .await?;
     if sg.is_none() {
         return Err(ApiError::not_found("security group not found"));
     }
-    sqlx::query("INSERT OR IGNORE INTO instance_security_groups (vm_id, sg_id) VALUES (?, ?)")
+    crate::db::query("INSERT OR IGNORE INTO instance_security_groups (vm_id, sg_id) VALUES (?, ?)")
         .bind(vm_id)
         .bind(sg_id)
         .execute(&state.pool)
@@ -662,7 +662,7 @@ pub async fn detach_instance_security_group(
     Path((vm_id, sg_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    sqlx::query("DELETE FROM instance_security_groups WHERE vm_id = ? AND sg_id = ?")
+    crate::db::query("DELETE FROM instance_security_groups WHERE vm_id = ? AND sg_id = ?")
         .bind(vm_id)
         .bind(sg_id)
         .execute(&state.pool)
@@ -678,7 +678,7 @@ pub async fn preview_security_group_enforcement(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let known: Option<String> = sqlx::query_scalar("SELECT name FROM security_groups WHERE id = ?")
+    let known: Option<String> = crate::db::query_scalar("SELECT name FROM security_groups WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?;
@@ -693,7 +693,7 @@ pub async fn preview_security_group_enforcement(
 
 /// Pin (or unpin) `ip` for `mac` on the libvirt network behind a cloud subnet, on the host that owns it.
 async fn pin_dhcp(state: &AppState, network_id: Uuid, mac: &str, ip: &str, enabled: bool) -> Result<(), String> {
-    let row: Option<(String, String)> = sqlx::query_as(
+    let row: Option<(String, String)> = crate::db::query_as(
         "SELECT h.agent_grpc_addr, n.name FROM cloud_subnets s JOIN cloud_vpcs v ON v.id = s.vpc_id \
          JOIN hosts h ON h.id = v.host_id JOIN networks n ON n.id = s.network_id WHERE s.network_id = ?",
     )

@@ -19,7 +19,7 @@ use machina_bpf::netpol::{
 };
 use serde::Serialize;
 use serde_json::Value;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::bpf::{self, HostRef, LOCAL_HOST_ID};
@@ -44,9 +44,9 @@ static LEARNED: Mutex<BTreeMap<String, BTreeMap<String, Vec<String>>>> =
 static EGRESS_IDLE: AtomicBool = AtomicBool::new(false);
 
 pub async fn policies(
-    pool: &SqlitePool,
+    pool: &DbPool,
 ) -> anyhow::Result<Vec<(VmNetworkPolicy, bool, i64, String)>> {
-    let rows: Vec<(String, bool, i64, String)> = sqlx::query_as(
+    let rows: Vec<(String, bool, i64, String)> = crate::db::query_as(
         "SELECT policy_json, enabled, generation, updated_at FROM vm_network_policies ORDER BY name",
     )
     .fetch_all(pool)
@@ -57,7 +57,7 @@ pub async fn policies(
         .collect())
 }
 
-pub async fn enabled_policies(pool: &SqlitePool) -> Vec<VmNetworkPolicy> {
+pub async fn enabled_policies(pool: &DbPool) -> Vec<VmNetworkPolicy> {
     let now = chrono::Utc::now();
     policies(pool)
         .await
@@ -69,7 +69,7 @@ pub async fn enabled_policies(pool: &SqlitePool) -> Vec<VmNetworkPolicy> {
 }
 
 /// Delete policies past `machina.io/expires-at`; returns their names.
-pub async fn reap_expired(pool: &SqlitePool) -> Vec<String> {
+pub async fn reap_expired(pool: &DbPool) -> Vec<String> {
     let now = chrono::Utc::now();
     let mut gone = Vec::new();
     for (p, ..) in policies(pool).await.unwrap_or_default() {
@@ -80,14 +80,14 @@ pub async fn reap_expired(pool: &SqlitePool) -> Vec<String> {
     gone
 }
 
-pub async fn upsert(pool: &SqlitePool, p: &VmNetworkPolicy, actor: &str) -> anyhow::Result<bool> {
+pub async fn upsert(pool: &DbPool, p: &VmNetworkPolicy, actor: &str) -> anyhow::Result<bool> {
     let json = serde_json::to_string(p)?;
     let existed: Option<String> =
-        sqlx::query_scalar("SELECT name FROM vm_network_policies WHERE name = ?")
+        crate::db::query_scalar("SELECT name FROM vm_network_policies WHERE name = ?")
             .bind(&p.name)
             .fetch_optional(pool)
             .await?;
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vm_network_policies (name, kind, policy_json, created_by) VALUES (?, ?, ?, ?)
          ON CONFLICT(name) DO UPDATE SET kind = excluded.kind, policy_json = excluded.policy_json,
            generation = generation + 1, updated_at = CURRENT_TIMESTAMP",
@@ -101,16 +101,16 @@ pub async fn upsert(pool: &SqlitePool, p: &VmNetworkPolicy, actor: &str) -> anyh
     Ok(existed.is_none())
 }
 
-pub async fn delete(pool: &SqlitePool, name: &str) -> anyhow::Result<bool> {
-    let r = sqlx::query("DELETE FROM vm_network_policies WHERE name = ?")
+pub async fn delete(pool: &DbPool, name: &str) -> anyhow::Result<bool> {
+    let r = crate::db::query("DELETE FROM vm_network_policies WHERE name = ?")
         .bind(name)
         .execute(pool)
         .await?;
     Ok(r.rows_affected() > 0)
 }
 
-pub async fn set_enabled(pool: &SqlitePool, name: &str, enabled: bool) -> anyhow::Result<bool> {
-    let r = sqlx::query(
+pub async fn set_enabled(pool: &DbPool, name: &str, enabled: bool) -> anyhow::Result<bool> {
+    let r = crate::db::query(
         "UPDATE vm_network_policies SET enabled = ?, generation = generation + 1, updated_at = CURRENT_TIMESTAMP WHERE name = ?",
     )
     .bind(enabled)
@@ -121,7 +121,7 @@ pub async fn set_enabled(pool: &SqlitePool, name: &str, enabled: bool) -> anyhow
 }
 
 /// libvirt VMs of the fleet (KubeVirt VMs are pod endpoints, not taps).
-pub async fn inventory(pool: &SqlitePool) -> Vec<NetpolVm> {
+pub async fn inventory(pool: &DbPool) -> Vec<NetpolVm> {
     type Row = (
         String,
         Option<Uuid>,
@@ -131,7 +131,7 @@ pub async fn inventory(pool: &SqlitePool) -> Vec<NetpolVm> {
         Option<String>,
         Option<String>,
     );
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows: Vec<Row> = crate::db::query_as(
         "SELECT name, host_id, project, labels, tags, guest_ip, guest_ips FROM vms
              WHERE COALESCE(inventory_source, 'libvirt') != 'kubevirt' ORDER BY name",
     )
@@ -178,8 +178,8 @@ pub async fn inventory(pool: &SqlitePool) -> Vec<NetpolVm> {
 }
 
 /// host id → management address.
-pub async fn host_addresses(pool: &SqlitePool) -> BTreeMap<String, String> {
-    let rows: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, address FROM hosts")
+pub async fn host_addresses(pool: &DbPool) -> BTreeMap<String, String> {
+    let rows: Vec<(Uuid, String)> = crate::db::query_as("SELECT id, address FROM hosts")
         .fetch_all(pool)
         .await
         .unwrap_or_default();
@@ -197,7 +197,7 @@ pub async fn host_addresses(pool: &SqlitePool) -> BTreeMap<String, String> {
 /// Fleet Cloud load balancers as `toServices` targets: name = LB name,
 /// namespace = project, endpoints = listener on the owning host plus the
 /// enabled members.
-pub async fn services(pool: &SqlitePool) -> Vec<NetpolService> {
+pub async fn services(pool: &DbPool) -> Vec<NetpolService> {
     type Row = (
         Uuid,
         String,
@@ -208,7 +208,7 @@ pub async fn services(pool: &SqlitePool) -> Vec<NetpolService> {
         Option<String>,
         Option<i64>,
     );
-    let rows: Vec<Row> = sqlx::query_as(
+    let rows: Vec<Row> = crate::db::query_as(
         "SELECT lb.id, lb.name, COALESCE(p.name, ''), lb.protocol, lb.listener_port, h.address,
                 v.guest_ip, m.port
            FROM load_balancers lb
@@ -247,8 +247,8 @@ pub async fn services(pool: &SqlitePool) -> Vec<NetpolService> {
 }
 
 /// Project network settings, the default (`*`) first.
-pub async fn project_settings(pool: &SqlitePool) -> Vec<ProjectNet> {
-    let rows: Vec<(String, String, String)> = sqlx::query_as(
+pub async fn project_settings(pool: &DbPool) -> Vec<ProjectNet> {
+    let rows: Vec<(String, String, String)> = crate::db::query_as(
         "SELECT settings, updated_by, updated_at FROM vm_netpol_projects
          ORDER BY project != '*', project",
     )
@@ -265,8 +265,8 @@ pub async fn project_settings(pool: &SqlitePool) -> Vec<ProjectNet> {
         .collect()
 }
 
-pub async fn project_put(pool: &SqlitePool, s: &ProjectNet, actor: &str) -> anyhow::Result<()> {
-    sqlx::query(
+pub async fn project_put(pool: &DbPool, s: &ProjectNet, actor: &str) -> anyhow::Result<()> {
+    crate::db::query(
         "INSERT INTO vm_netpol_projects (project, settings, updated_by) VALUES (?, ?, ?)
          ON CONFLICT(project) DO UPDATE SET settings = excluded.settings,
            updated_by = excluded.updated_by, updated_at = CURRENT_TIMESTAMP",
@@ -280,8 +280,8 @@ pub async fn project_put(pool: &SqlitePool, s: &ProjectNet, actor: &str) -> anyh
     Ok(())
 }
 
-pub async fn project_delete(pool: &SqlitePool, project: &str) -> anyhow::Result<bool> {
-    let r = sqlx::query("DELETE FROM vm_netpol_projects WHERE project = ?")
+pub async fn project_delete(pool: &DbPool, project: &str) -> anyhow::Result<bool> {
+    let r = crate::db::query("DELETE FROM vm_netpol_projects WHERE project = ?")
         .bind(project)
         .execute(pool)
         .await?;
@@ -290,8 +290,8 @@ pub async fn project_delete(pool: &SqlitePool, project: &str) -> anyhow::Result<
 }
 
 /// Fleet Cloud projects plus every project a VM names.
-pub async fn project_names(pool: &SqlitePool, vms: &[NetpolVm]) -> BTreeSet<String> {
-    let mut out: BTreeSet<String> = sqlx::query_scalar("SELECT name FROM projects")
+pub async fn project_names(pool: &DbPool, vms: &[NetpolVm]) -> BTreeSet<String> {
+    let mut out: BTreeSet<String> = crate::db::query_scalar("SELECT name FROM projects")
         .fetch_all(pool)
         .await
         .unwrap_or_default()
@@ -413,7 +413,7 @@ pub struct Fleet {
 }
 
 impl Fleet {
-    pub async fn load(pool: &SqlitePool) -> Self {
+    pub async fn load(pool: &DbPool) -> Self {
         let host_addrs = host_addresses(pool).await;
         let node_addrs = node_addrs();
         let host_ips: BTreeSet<String> = host_addrs
@@ -632,8 +632,8 @@ fn hash_value(v: &Value) -> u64 {
     h.finish()
 }
 
-async fn record(pool: &SqlitePool, s: &HostSync) {
-    let _ = sqlx::query(
+async fn record(pool: &DbPool, s: &HostSync) {
+    let _ = crate::db::query(
         "INSERT INTO vm_netpol_host_status (host_id, hostname, synced_at, ok, error, vms, rules, peers, warnings)
          VALUES (?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(host_id) DO UPDATE SET hostname = excluded.hostname, synced_at = excluded.synced_at,
@@ -652,8 +652,8 @@ async fn record(pool: &SqlitePool, s: &HostSync) {
     .await;
 }
 
-async fn previously_synced(pool: &SqlitePool, host_id: &str) -> bool {
-    sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM vm_netpol_host_status WHERE host_id = ?")
+async fn previously_synced(pool: &DbPool, host_id: &str) -> bool {
+    crate::db::query_scalar::<_, i64>("SELECT COUNT(*) FROM vm_netpol_host_status WHERE host_id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await
@@ -712,7 +712,7 @@ async fn ensure_auth_cert(h: &HostRef) -> anyhow::Result<bool> {
     Ok(true)
 }
 
-async fn sync_host(pool: &SqlitePool, fleet: &Fleet, h: &HostRef, force: bool) -> HostSync {
+async fn sync_host(pool: &DbPool, fleet: &Fleet, h: &HostRef, force: bool) -> HostSync {
     let c = fleet.compile(Some(&h.id));
     let mut state = c.state;
     let empty = fleet.policies.is_empty();
@@ -774,7 +774,7 @@ async fn sync_host(pool: &SqlitePool, fleet: &Fleet, h: &HostRef, force: bool) -
         }
     }
     if empty && out.ok {
-        let _ = sqlx::query("DELETE FROM vm_netpol_host_status WHERE host_id = ?")
+        let _ = crate::db::query("DELETE FROM vm_netpol_host_status WHERE host_id = ?")
             .bind(&h.id)
             .execute(pool)
             .await;
@@ -785,7 +785,7 @@ async fn sync_host(pool: &SqlitePool, fleet: &Fleet, h: &HostRef, force: bool) -
 }
 
 /// Compile and push to every online host.
-pub async fn reconcile(pool: &SqlitePool, force: bool) -> Vec<HostSync> {
+pub async fn reconcile(pool: &DbPool, force: bool) -> Vec<HostSync> {
     let hosts = bpf::online_hosts(pool).await;
     refresh_node_addrs(&hosts).await;
     let fleet = Fleet::load(pool).await;
@@ -1063,7 +1063,7 @@ async fn propose_quarantine(state: &AppState, a: &machina_bpf::api::VmFlowAlert)
     {
         return;
     }
-    let pending: i64 = sqlx::query_scalar(
+    let pending: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM ai_actions WHERE status = 'pending' AND action_type = 'vm.quarantine' AND json_extract(object_ref, '$.vm') = ?",
     )
     .bind(vm)
@@ -1123,8 +1123,8 @@ impl ThreatFeedRow {
     }
 }
 
-pub async fn threat_feeds(pool: &SqlitePool) -> Vec<ThreatFeedRow> {
-    let rows: Vec<(String, String, bool, String, String, String)> = sqlx::query_as(
+pub async fn threat_feeds(pool: &DbPool) -> Vec<ThreatFeedRow> {
+    let rows: Vec<(String, String, bool, String, String, String)> = crate::db::query_as(
         "SELECT name, source, block, domains, updated_by, updated_at FROM vm_netpol_threat_feeds ORDER BY name",
     )
     .fetch_all(pool)
@@ -1147,14 +1147,14 @@ pub async fn threat_feeds(pool: &SqlitePool) -> Vec<ThreatFeedRow> {
 }
 
 pub async fn threat_feed_put(
-    pool: &SqlitePool,
+    pool: &DbPool,
     name: &str,
     source: &str,
     block: bool,
     domains: &[String],
     by: &str,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vm_netpol_threat_feeds (name, source, block, domains, updated_by, updated_at)
          VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
          ON CONFLICT(name) DO UPDATE SET source = excluded.source, block = excluded.block,
@@ -1170,8 +1170,8 @@ pub async fn threat_feed_put(
     Ok(())
 }
 
-pub async fn threat_feed_delete(pool: &SqlitePool, name: &str) -> anyhow::Result<bool> {
-    let r = sqlx::query("DELETE FROM vm_netpol_threat_feeds WHERE name = ?")
+pub async fn threat_feed_delete(pool: &DbPool, name: &str) -> anyhow::Result<bool> {
+    let r = crate::db::query("DELETE FROM vm_netpol_threat_feeds WHERE name = ?")
         .bind(name)
         .execute(pool)
         .await?;
@@ -1221,7 +1221,7 @@ fn threat_diff<'a>(
 }
 
 /// With any fleet feeds, every online host carries exactly those.
-pub async fn reconcile_threat(pool: &SqlitePool) {
+pub async fn reconcile_threat(pool: &DbPool) {
     let want = threat_feeds(pool).await;
     if want.is_empty() {
         return;
@@ -1252,7 +1252,7 @@ pub async fn reconcile_threat(pool: &SqlitePool) {
 
 /// Refetch URL feeds older than [`netpol::threat::REFRESH_SECS`]; returns
 /// the refreshed names (pushed to the hosts by the caller).
-pub async fn refresh_due_threat_feeds(pool: &SqlitePool) -> Vec<ThreatFeedRow> {
+pub async fn refresh_due_threat_feeds(pool: &DbPool) -> Vec<ThreatFeedRow> {
     let cutoff = (chrono::Utc::now()
         - chrono::Duration::seconds(netpol::threat::REFRESH_SECS as i64))
     .format("%Y-%m-%d %H:%M:%S")
@@ -1271,7 +1271,7 @@ pub async fn refresh_due_threat_feeds(pool: &SqlitePool) -> Vec<ThreatFeedRow> {
 }
 
 pub async fn refresh_threat_feed(
-    pool: &SqlitePool,
+    pool: &DbPool,
     f: &ThreatFeedRow,
     by: &str,
 ) -> anyhow::Result<ThreatFeedRow> {
@@ -1408,13 +1408,13 @@ mod tests {
         let (state, _rx) = test_state().await;
         let pool = &state.pool;
         let host = seed_host(pool, Uuid::from_u128(1)).await;
-        sqlx::query("UPDATE hosts SET address = '192.0.2.10:50051' WHERE id = ?")
+        crate::db::query("UPDATE hosts SET address = '192.0.2.10:50051' WHERE id = ?")
             .bind(host)
             .execute(pool)
             .await
             .unwrap();
         let (vm, lb) = (Uuid::from_u128(2), Uuid::from_u128(3));
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vms (id, name, host_id, guest_ip) VALUES (?, 'web-1', ?, '10.0.0.5')",
         )
         .bind(vm)
@@ -1422,7 +1422,7 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO load_balancers (id, name, protocol, host_id, listener_port) VALUES (?, 'web-lb', 'tcp', ?, 8080)",
         )
         .bind(lb)
@@ -1430,7 +1430,7 @@ mod tests {
         .execute(pool)
         .await
         .unwrap();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO lb_members (id, load_balancer_id, vm_id, port) VALUES (?, ?, ?, 80)",
         )
         .bind(Uuid::from_u128(4))
@@ -1487,7 +1487,7 @@ mod tests {
         let (state, _rx) = test_state().await;
         let pool = &state.pool;
         for (i, name) in ["np-a", "np-b"].iter().enumerate() {
-            sqlx::query("INSERT INTO vms (id, name) VALUES (?, ?)")
+            crate::db::query("INSERT INTO vms (id, name) VALUES (?, ?)")
                 .bind(Uuid::from_u128(10 + i as u128))
                 .bind(name)
                 .execute(pool)

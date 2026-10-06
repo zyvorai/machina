@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::resource_ids::{ec2_id, Kind};
@@ -56,8 +56,8 @@ pub fn group_by_host(rows: &[Row]) -> BTreeMap<Uuid, Vec<Value>> {
     out
 }
 
-async fn push_all(pool: &SqlitePool) -> anyhow::Result<()> {
-    let rows: Vec<Row> = sqlx::query_as(
+async fn push_all(pool: &DbPool) -> anyhow::Result<()> {
+    let rows: Vec<Row> = crate::db::query_as(
         "SELECT v.id, v.name, v.spec_json, v.guest_ip, v.guest_ips, f.name, v.project, v.host_id \
          FROM vms v LEFT JOIN flavors f ON f.id = v.flavor_id \
          WHERE v.host_id IS NOT NULL AND COALESCE(v.inventory_source, 'libvirt') != 'kubevirt'",
@@ -65,7 +65,7 @@ async fn push_all(pool: &SqlitePool) -> anyhow::Result<()> {
     .fetch_all(pool)
     .await?;
     let mut by_host = group_by_host(&rows);
-    let hosts: Vec<(Uuid, String)> = sqlx::query_as("SELECT id, agent_grpc_addr FROM hosts WHERE state = 'online'").fetch_all(pool).await?;
+    let hosts: Vec<(Uuid, String)> = crate::db::query_as("SELECT id, agent_grpc_addr FROM hosts WHERE state = 'online'").fetch_all(pool).await?;
     for (id, addr) in hosts {
         // An empty list still goes out: it clears entries of instances that were deleted or lost their address.
         let instances = by_host.remove(&id).unwrap_or_default();

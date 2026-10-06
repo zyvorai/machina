@@ -53,7 +53,7 @@ pub async fn discover_storage_pools(
     let imported = crate::engine::storage_sync::discover_all_online(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    let rows = sqlx::query_as::<_, StoragePoolRow>(
+    let rows = crate::db::query_as::<_, StoragePoolRow>(
         "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id
          FROM storage_pools ORDER BY name",
     )
@@ -71,7 +71,7 @@ pub async fn get_storage_pool(
     Path(id): Path<Uuid>,
 ) -> Result<Json<StoragePoolRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, StoragePoolRow>(
+    let row = crate::db::query_as::<_, StoragePoolRow>(
         "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id FROM storage_pools WHERE id = ?",
     )
     .bind(id)
@@ -86,7 +86,7 @@ pub async fn list_storage_pools(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<StoragePoolRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, StoragePoolRow>(
+    let rows = crate::db::query_as::<_, StoragePoolRow>(
         "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id
          FROM storage_pools ORDER BY name",
     )
@@ -102,11 +102,11 @@ pub async fn create_storage_pool(
 ) -> Result<Json<StoragePoolRow>, ApiError> {
     require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
+    let cluster_id: Uuid = crate::db::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_one(&state.pool)
         .await?;
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO storage_pools (id, cluster_id, name, storage_class, backend, path, capacity_gib)
          VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -120,7 +120,7 @@ pub async fn create_storage_pool(
     .execute(&state.pool)
     .await?;
 
-    let row = sqlx::query_as::<_, StoragePoolRow>(
+    let row = crate::db::query_as::<_, StoragePoolRow>(
         "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id FROM storage_pools WHERE id = ?",
     )
     .bind(id)
@@ -130,7 +130,7 @@ pub async fn create_storage_pool(
     if body.path.is_some() {
         let host_id = match body.host_id {
             Some(h) => h,
-            None => sqlx::query_scalar(
+            None => crate::db::query_scalar(
                 "SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1",
             )
             .fetch_optional(&state.pool)
@@ -170,21 +170,21 @@ pub async fn patch_storage_pool(
 ) -> Result<Json<StoragePoolRow>, ApiError> {
     require_operator(&actor)?;
     if let Some(v) = &body.path {
-        sqlx::query("UPDATE storage_pools SET path = ? WHERE id = ?")
+        crate::db::query("UPDATE storage_pools SET path = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = body.capacity_gib {
-        sqlx::query("UPDATE storage_pools SET capacity_gib = ? WHERE id = ?")
+        crate::db::query("UPDATE storage_pools SET capacity_gib = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = body.used_gib {
-        sqlx::query("UPDATE storage_pools SET used_gib = ? WHERE id = ?")
+        crate::db::query("UPDATE storage_pools SET used_gib = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&state.pool)
@@ -195,7 +195,7 @@ pub async fn patch_storage_pool(
             .await
             .map_err(|e| ApiError::bad_request(e.to_string()))?;
     }
-    let row = sqlx::query_as::<_, StoragePoolRow>(
+    let row = crate::db::query_as::<_, StoragePoolRow>(
         "SELECT id, name, storage_class, backend, path, capacity_gib, used_gib, tier_id FROM storage_pools WHERE id = ?",
     )
     .bind(id)
@@ -229,7 +229,7 @@ pub async fn delete_storage_pool(
         .map(|e| e.message),
         Err(e) => Some(e.message),
     };
-    sqlx::query("DELETE FROM storage_pools WHERE id = ?")
+    crate::db::query("DELETE FROM storage_pools WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -245,8 +245,8 @@ pub struct StoragePoolHostQuery {
     pub host_id: Option<Uuid>,
 }
 
-async fn storage_pool_name(pool: &sqlx::SqlitePool, id: Uuid) -> Result<String, ApiError> {
-    sqlx::query_scalar("SELECT name FROM storage_pools WHERE id = ?")
+async fn storage_pool_name(pool: &crate::db::DbPool, id: Uuid) -> Result<String, ApiError> {
+    crate::db::query_scalar("SELECT name FROM storage_pools WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -254,13 +254,13 @@ async fn storage_pool_name(pool: &sqlx::SqlitePool, id: Uuid) -> Result<String, 
 }
 
 async fn resolve_online_host(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     host_id: Option<Uuid>,
 ) -> Result<Uuid, ApiError> {
     if let Some(h) = host_id {
         return Ok(h);
     }
-    sqlx::query_scalar("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1")
+    crate::db::query_scalar("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1")
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| ApiError::bad_request("no online host for libvirt storage operation"))

@@ -3,7 +3,7 @@
 
 use machina_spec::PlacementRecommendation;
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, sqlx::FromRow)]
@@ -30,21 +30,21 @@ pub struct PlacementRecommendationRow {
 }
 
 pub async fn compute_recommendations(
-    pool: &SqlitePool,
+    pool: &DbPool,
 ) -> anyhow::Result<Vec<PlacementRecommendationRow>> {
     let threshold: f32 =
-        sqlx::query_scalar("SELECT drs_cpu_threshold FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_scalar("SELECT drs_cpu_threshold FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_one(pool)
             .await
             .unwrap_or(85.0);
 
     let placement_policy: String =
-        sqlx::query_scalar("SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_scalar("SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_one(pool)
             .await
             .unwrap_or_else(|_| "balanced".into());
 
-    let hosts: Vec<HostLoad> = sqlx::query_as(
+    let hosts: Vec<HostLoad> = crate::db::query_as(
         "SELECT id, hostname, cpu_percent, memory_used_mib, memory_total_mib, vm_count,
                 COALESCE(tags, '[]') AS tags
          FROM hosts WHERE state = 'online' AND maintenance_mode = FALSE AND schedulable = TRUE",
@@ -56,7 +56,7 @@ pub async fn compute_recommendations(
         return Ok(Vec::new());
     }
 
-    let vms: Vec<(Uuid, String, Uuid, i64, sqlx::types::Json<Vec<String>>)> = sqlx::query_as(
+    let vms: Vec<(Uuid, String, Uuid, i64, sqlx::types::Json<Vec<String>>)> = crate::db::query_as(
         "SELECT v.id, v.name, v.host_id, v.memory_mib, COALESCE(v.tags, '[]') AS tags FROM vms v
          JOIN hosts h ON h.id = v.host_id
          WHERE v.desired_state = 'running' AND h.state = 'online'",
@@ -177,16 +177,16 @@ pub async fn compute_recommendations(
 }
 
 pub async fn persist_recommendations(
-    pool: &SqlitePool,
+    pool: &DbPool,
     rows: &[PlacementRecommendationRow],
 ) -> anyhow::Result<()> {
     let mut tx = pool.begin().await?;
-    sqlx::query("UPDATE placement_recommendations SET status = 'superseded' WHERE status = 'open'")
+    crate::db::query("UPDATE placement_recommendations SET status = 'superseded' WHERE status = 'open'")
         .execute(&mut *tx)
         .await?;
 
     for row in rows.iter().take(50) {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO placement_recommendations (id, vm_id, from_host_id, to_host_id, reason, score)
              VALUES (?, ?, ?, ?, ?, ?)",
         )
@@ -251,17 +251,17 @@ struct HostCandidate {
 }
 
 pub async fn pick_host_for_vm(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_tags: &[String],
     memory_mib: i64,
 ) -> anyhow::Result<Uuid> {
     let placement_policy: String =
-        sqlx::query_scalar("SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_scalar("SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_one(pool)
             .await
             .unwrap_or_else(|_| "balanced".into());
 
-    let hosts: Vec<HostCandidate> = sqlx::query_as(
+    let hosts: Vec<HostCandidate> = crate::db::query_as(
         "SELECT id, cpu_percent, memory_used_mib, memory_total_mib, vm_count,
                 COALESCE(tags, '[]') AS tags
          FROM hosts WHERE state = 'online' AND maintenance_mode = FALSE AND schedulable = TRUE",
@@ -334,15 +334,15 @@ pub struct PlacementAsk {
 /// Where each VM would land if created in this order, counting the memory and
 /// anti-affinity of the ones placed before it. Creates nothing.
 pub async fn simulate_placement(
-    pool: &SqlitePool,
+    pool: &DbPool,
     asks: &[PlacementAsk],
 ) -> anyhow::Result<Vec<(String, Option<(Uuid, String)>, bool)>> {
     let placement_policy: String =
-        sqlx::query_scalar("SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_scalar("SELECT placement_policy FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_one(pool)
             .await
             .unwrap_or_else(|_| "balanced".into());
-    let mut hosts: Vec<HostCandidate> = sqlx::query_as(
+    let mut hosts: Vec<HostCandidate> = crate::db::query_as(
         "SELECT id, cpu_percent, memory_used_mib, memory_total_mib, vm_count,
                 COALESCE(tags, '[]') AS tags
          FROM hosts WHERE state = 'online' AND maintenance_mode = FALSE AND schedulable = TRUE",
@@ -350,7 +350,7 @@ pub async fn simulate_placement(
     .fetch_all(pool)
     .await?;
     let names: std::collections::HashMap<Uuid, String> =
-        sqlx::query_as::<_, (Uuid, String)>("SELECT id, hostname FROM hosts")
+        crate::db::query_as::<_, (Uuid, String)>("SELECT id, hostname FROM hosts")
             .fetch_all(pool)
             .await?
             .into_iter()
@@ -415,8 +415,8 @@ fn violates_anti_affinity(
 }
 
 /// host_id -> anti-affinity tags of the running VMs currently on it.
-async fn host_anti_affinity_map(pool: &SqlitePool) -> anyhow::Result<AntiMap> {
-    let rows: Vec<(Uuid, sqlx::types::Json<Vec<String>>)> = sqlx::query_as(
+async fn host_anti_affinity_map(pool: &DbPool) -> anyhow::Result<AntiMap> {
+    let rows: Vec<(Uuid, sqlx::types::Json<Vec<String>>)> = crate::db::query_as(
         "SELECT host_id, COALESCE(tags, '[]') AS tags
          FROM vms WHERE desired_state = 'running' AND host_id IS NOT NULL",
     )
@@ -477,14 +477,14 @@ mod tests {
         let (state, _rx) = crate::engine::test_support::test_state().await;
         let full = crate::engine::test_support::seed_host(&state.pool, Uuid::from_u128(1)).await;
         let roomy = crate::engine::test_support::seed_host(&state.pool, Uuid::from_u128(2)).await;
-        sqlx::query(
+        crate::db::query(
             "UPDATE hosts SET memory_total_mib = 4096, memory_used_mib = 4096 WHERE id = ?",
         )
         .bind(full)
         .execute(&state.pool)
         .await
         .unwrap();
-        sqlx::query("UPDATE hosts SET memory_total_mib = 4096, memory_used_mib = 512 WHERE id = ?")
+        crate::db::query("UPDATE hosts SET memory_total_mib = 4096, memory_used_mib = 512 WHERE id = ?")
             .bind(roomy)
             .execute(&state.pool)
             .await

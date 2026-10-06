@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -49,12 +49,12 @@ fn escape_like(s: &str) -> String {
 }
 
 async fn resolve_vm(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Option<Uuid>,
     vm_name: Option<&str>,
 ) -> anyhow::Result<(Uuid, String, Option<Uuid>, i64, i32, String)> {
     if let Some(id) = vm_id {
-        let row: (String, Option<Uuid>, i64, i32, String) = sqlx::query_as(
+        let row: (String, Option<Uuid>, i64, i32, String) = crate::db::query_as(
             "SELECT name, host_id, memory_mib, vcpus, observed_state FROM vms WHERE id = ?",
         )
         .bind(id)
@@ -63,7 +63,7 @@ async fn resolve_vm(
         return Ok((id, row.0, row.1, row.2, row.3, row.4));
     }
     if let Some(name) = vm_name.filter(|n| !n.is_empty()) {
-        let row: (Uuid, String, Option<Uuid>, i64, i32, String) = sqlx::query_as(
+        let row: (Uuid, String, Option<Uuid>, i64, i32, String) = crate::db::query_as(
             "SELECT id, name, host_id, memory_mib, vcpus, observed_state FROM vms WHERE name LIKE ? ESCAPE '\\' LIMIT 1",
         )
         // No wildcards added — this LIKE is used for case-insensitive exact
@@ -79,7 +79,7 @@ async fn resolve_vm(
 }
 
 pub async fn diagnose(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: &TroubleshootRequest,
 ) -> anyhow::Result<DiagnosisReport> {
     let (vid, vname, host_id, mem_alloc, vcpus, state) =
@@ -90,7 +90,7 @@ pub async fn diagnose(
     let mut actions = Vec::new();
 
     // CPU
-    let cpu: Option<f64> = sqlx::query_scalar("SELECT cpu_percent FROM vm_metrics WHERE vm_id = ?")
+    let cpu: Option<f64> = crate::db::query_scalar("SELECT cpu_percent FROM vm_metrics WHERE vm_id = ?")
         .bind(vid)
         .fetch_optional(pool)
         .await?;
@@ -118,7 +118,7 @@ pub async fn diagnose(
 
     // Memory / balloon
     let mem_used: Option<i64> =
-        sqlx::query_scalar("SELECT memory_used_mib FROM vm_metrics WHERE vm_id = ?")
+        crate::db::query_scalar("SELECT memory_used_mib FROM vm_metrics WHERE vm_id = ?")
             .bind(vid)
             .fetch_optional(pool)
             .await?;
@@ -163,13 +163,13 @@ pub async fn diagnose(
     });
 
     // Disk
-    let disk_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vm_disks WHERE vm_id = ?")
+    let disk_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vm_disks WHERE vm_id = ?")
         .bind(vid)
         .fetch_one(pool)
         .await
         .unwrap_or(0);
     let disk_io: Option<(i64, i64)> =
-        sqlx::query_as("SELECT disk_read_iops, disk_write_iops FROM vm_metrics WHERE vm_id = ?")
+        crate::db::query_as("SELECT disk_read_iops, disk_write_iops FROM vm_metrics WHERE vm_id = ?")
             .bind(vid)
             .fetch_optional(pool)
             .await?;
@@ -198,7 +198,7 @@ pub async fn diagnose(
 
     // Host pressure
     if let Some(hid) = host_id {
-        let host: Option<(String, f64, i64, i64)> = sqlx::query_as(
+        let host: Option<(String, f64, i64, i64)> = crate::db::query_as(
             "SELECT hostname, cpu_percent, memory_used_mib, memory_total_mib FROM hosts WHERE id = ?",
         )
         .bind(hid)
@@ -341,7 +341,7 @@ pub async fn diagnose(
     })
 }
 
-pub async fn verify_after_action(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<String> {
+pub async fn verify_after_action(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<String> {
     let req = TroubleshootRequest {
         vm_id: Some(vm_id),
         vm_name: None,

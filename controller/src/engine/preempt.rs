@@ -12,7 +12,7 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -156,8 +156,8 @@ pub fn resume_order(hosts: &[HostCap], reserve_pct: i64, preempted: &[Candidate]
     out
 }
 
-pub async fn settings(pool: &SqlitePool) -> Settings {
-    sqlx::query_as::<_, (bool, i64)>(
+pub async fn settings(pool: &DbPool) -> Settings {
+    crate::db::query_as::<_, (bool, i64)>(
         "SELECT enabled, reserve_pct FROM preempt_settings WHERE id = 1",
     )
     .fetch_optional(pool)
@@ -174,8 +174,8 @@ pub async fn settings(pool: &SqlitePool) -> Settings {
     })
 }
 
-pub async fn hosts(pool: &SqlitePool) -> anyhow::Result<Vec<HostCap>> {
-    let rows: Vec<(Uuid, String, i64, i64, Option<f64>)> = sqlx::query_as(
+pub async fn hosts(pool: &DbPool) -> anyhow::Result<Vec<HostCap>> {
+    let rows: Vec<(Uuid, String, i64, i64, Option<f64>)> = crate::db::query_as(
         "SELECT id, hostname, memory_total_mib, memory_used_mib,
                 (julianday('now') - julianday(last_heartbeat_at)) * 86400.0
          FROM hosts WHERE state = 'online' AND memory_total_mib > 0",
@@ -197,8 +197,8 @@ pub async fn hosts(pool: &SqlitePool) -> anyhow::Result<Vec<HostCap>> {
 const CANDIDATE: &str =
     "SELECT v.id, v.name, v.host_id, v.memory_mib, v.preempt_priority FROM vms v";
 
-async fn busy(pool: &SqlitePool) -> std::collections::HashSet<Uuid> {
-    sqlx::query_scalar::<_, Uuid>(
+async fn busy(pool: &DbPool) -> std::collections::HashSet<Uuid> {
+    crate::db::query_scalar::<_, Uuid>(
         "SELECT resource_id FROM tasks WHERE operation IN ('vm.power', 'vm.migrate', 'vm.delete')
          AND status IN ('pending', 'running') AND resource_id IS NOT NULL",
     )
@@ -209,10 +209,10 @@ async fn busy(pool: &SqlitePool) -> std::collections::HashSet<Uuid> {
     .collect()
 }
 
-async fn candidates(pool: &SqlitePool, filter: &str) -> anyhow::Result<Vec<Candidate>> {
+async fn candidates(pool: &DbPool, filter: &str) -> anyhow::Result<Vec<Candidate>> {
     let busy = busy(pool).await;
     let rows: Vec<(Uuid, String, Uuid, i64, i64)> =
-        sqlx::query_as(&format!("{CANDIDATE} {filter}"))
+        crate::db::query_as(&format!("{CANDIDATE} {filter}"))
             .fetch_all(pool)
             .await?;
     Ok(rows
@@ -228,7 +228,7 @@ async fn candidates(pool: &SqlitePool, filter: &str) -> anyhow::Result<Vec<Candi
         .collect())
 }
 
-async fn running(pool: &SqlitePool) -> anyhow::Result<Vec<Candidate>> {
+async fn running(pool: &DbPool) -> anyhow::Result<Vec<Candidate>> {
     candidates(
         pool,
         "WHERE v.preemptible = 1 AND v.desired_state = 'running' AND v.observed_state = 'running'
@@ -237,7 +237,7 @@ async fn running(pool: &SqlitePool) -> anyhow::Result<Vec<Candidate>> {
     .await
 }
 
-async fn preempted(pool: &SqlitePool) -> anyhow::Result<Vec<Candidate>> {
+async fn preempted(pool: &DbPool) -> anyhow::Result<Vec<Candidate>> {
     candidates(
         pool,
         "WHERE v.preempted_at IS NOT NULL AND v.desired_state = 'sleeping' AND v.host_id IS NOT NULL
@@ -295,7 +295,7 @@ pub async fn make_room(
         return Ok(None);
     }
     let hosts = hosts(&state.pool).await?;
-    let schedulable: std::collections::HashSet<Uuid> = sqlx::query_scalar(
+    let schedulable: std::collections::HashSet<Uuid> = crate::db::query_scalar(
         "SELECT id FROM hosts WHERE maintenance_mode = FALSE AND schedulable = TRUE",
     )
     .fetch_all(&state.pool)
@@ -322,7 +322,7 @@ pub async fn make_room(
             freed += c.memory_mib;
         }
     }
-    sqlx::query("UPDATE hosts SET memory_used_mib = MAX(0, memory_used_mib - ?) WHERE id = ?")
+    crate::db::query("UPDATE hosts SET memory_used_mib = MAX(0, memory_used_mib - ?) WHERE id = ?")
         .bind(freed)
         .bind(host)
         .execute(&state.pool)
@@ -503,7 +503,7 @@ mod tests {
     }
 
     async fn seed(
-        pool: &SqlitePool,
+        pool: &DbPool,
         host: Uuid,
         id: u128,
         mem: i64,
@@ -511,7 +511,7 @@ mod tests {
         preemptible: bool,
     ) -> Uuid {
         let v = Uuid::from_u128(id);
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vms (id, host_id, name, desired_state, observed_state, memory_mib, preemptible, preempt_priority, guest_ip, lifecycle_phase, inventory_source)
              VALUES (?, ?, ?, 'running', 'running', ?, ?, ?, ?, 'running', 'libvirt')",
         )
@@ -528,8 +528,8 @@ mod tests {
         v
     }
 
-    async fn power_tasks(pool: &SqlitePool) -> Vec<(Uuid, serde_json::Value)> {
-        sqlx::query_as(
+    async fn power_tasks(pool: &DbPool) -> Vec<(Uuid, serde_json::Value)> {
+        crate::db::query_as(
             "SELECT resource_id, payload FROM tasks WHERE operation = 'vm.power' ORDER BY rowid",
         )
         .fetch_all(pool)
@@ -541,7 +541,7 @@ mod tests {
     async fn pressure_preempts_and_capacity_resumes() {
         let (state, _rx) = test_state().await;
         let h = seed_host(&state.pool, Uuid::from_u128(101)).await;
-        sqlx::query("UPDATE hosts SET memory_total_mib = 10000, memory_used_mib = 9500, last_heartbeat_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE hosts SET memory_total_mib = 10000, memory_used_mib = 9500, last_heartbeat_at = datetime('now') WHERE id = ?")
             .bind(h)
             .execute(&state.pool)
             .await
@@ -556,11 +556,11 @@ mod tests {
         assert_eq!(t[0].1["action"], "managedsave");
         assert_eq!(t[0].1["preempt"], true);
 
-        sqlx::query("UPDATE tasks SET status = 'completed'")
+        crate::db::query("UPDATE tasks SET status = 'completed'")
             .execute(&state.pool)
             .await
             .unwrap();
-        sqlx::query("UPDATE vms SET desired_state = 'sleeping', observed_state = 'shutoff', preempted_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE vms SET desired_state = 'sleeping', observed_state = 'shutoff', preempted_at = datetime('now') WHERE id = ?")
             .bind(low)
             .execute(&state.pool)
             .await
@@ -571,7 +571,7 @@ mod tests {
             "a preempted VM must not wake on traffic"
         );
 
-        sqlx::query("UPDATE hosts SET memory_used_mib = 3000 WHERE id = ?")
+        crate::db::query("UPDATE hosts SET memory_used_mib = 3000 WHERE id = ?")
             .bind(h)
             .execute(&state.pool)
             .await
@@ -589,7 +589,7 @@ mod tests {
     async fn make_room_preempts_on_the_cheapest_host() {
         let (state, _rx) = test_state().await;
         let h = seed_host(&state.pool, Uuid::from_u128(1)).await;
-        sqlx::query("UPDATE hosts SET memory_total_mib = 8000, memory_used_mib = 7500, last_heartbeat_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE hosts SET memory_total_mib = 8000, memory_used_mib = 7500, last_heartbeat_at = datetime('now') WHERE id = ?")
             .bind(h)
             .execute(&state.pool)
             .await
@@ -601,13 +601,13 @@ mod tests {
         assert_eq!(t.len(), 1);
         assert_eq!(t[0].0, p);
         assert_eq!(t[0].1["reason"], "preempted: room for web on h1");
-        let used: i64 = sqlx::query_scalar("SELECT memory_used_mib FROM hosts WHERE id = ?")
+        let used: i64 = crate::db::query_scalar("SELECT memory_used_mib FROM hosts WHERE id = ?")
             .bind(h)
             .fetch_one(&state.pool)
             .await
             .unwrap();
         assert_eq!(used, 4500);
-        sqlx::query("UPDATE preempt_settings SET enabled = 0")
+        crate::db::query("UPDATE preempt_settings SET enabled = 0")
             .execute(&state.pool)
             .await
             .unwrap();

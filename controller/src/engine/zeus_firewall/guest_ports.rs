@@ -3,7 +3,7 @@
 
 use machina_core::{guest_ports_to_open_ports, simulate_connectivity};
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -21,18 +21,18 @@ pub struct GuestPortReport {
 }
 
 pub async fn vm_guest_ports(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     vm_id: &str,
 ) -> anyhow::Result<GuestPortReport> {
     let vm_uuid = Uuid::parse_str(vm_id).map_err(|e| anyhow::anyhow!("invalid vm id: {e}"))?;
-    let row: Option<(String, Uuid)> = sqlx::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+    let row: Option<(String, Uuid)> = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
         .bind(vm_uuid)
         .fetch_optional(pool)
         .await?;
     let (vm_name, host_id) = row.ok_or_else(|| anyhow::anyhow!("vm not found"))?;
     let agent_addr: String =
-        sqlx::query_scalar("SELECT COALESCE(agent_grpc_addr, '') FROM hosts WHERE id = ?")
+        crate::db::query_scalar("SELECT COALESCE(agent_grpc_addr, '') FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_one(pool)
             .await?;
@@ -66,7 +66,7 @@ pub async fn vm_guest_ports(
 }
 
 pub async fn connectivity_matrix(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     target_id: &str,
     profile: &str,
@@ -95,7 +95,7 @@ pub async fn connectivity_matrix(
         .collect();
     let matrix = simulate_connectivity(&detail.inventory, &after_rules);
     if let Ok(host_id) = Uuid::parse_str(target_id) {
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO firewall_connectivity_runs (id, target_id, profile, matrix_json)
              VALUES (?, ?, ?, ?)",
         )

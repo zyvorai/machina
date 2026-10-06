@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -28,19 +28,19 @@ fn escape_like(s: &str) -> String {
 }
 
 pub async fn suggest(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Option<Uuid>,
     vm_name_hint: Option<&str>,
 ) -> anyhow::Result<TerminalSuggestResult> {
     let row: Option<(Uuid, String, String, String)> = if let Some(id) = vm_id {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, name, observed_state, COALESCE(guest_tools_status, 'unknown') FROM vms WHERE id = ?",
         )
         .bind(id)
         .fetch_optional(pool)
         .await?
     } else if let Some(name) = vm_name_hint {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, name, observed_state, COALESCE(guest_tools_status, 'unknown') FROM vms WHERE name LIKE ? ESCAPE '\\' LIMIT 1",
         )
         // Escape only — no wildcards added, this matches the caller-supplied

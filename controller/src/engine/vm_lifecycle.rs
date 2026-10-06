@@ -1,7 +1,7 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 pub const PHASE_IDLE: &str = "idle";
@@ -30,8 +30,8 @@ pub fn phase_for_operation(op: &str) -> &'static str {
     }
 }
 
-pub async fn set_vm_phase(pool: &SqlitePool, vm_id: Uuid, phase: &str) -> anyhow::Result<()> {
-    sqlx::query("UPDATE vms SET lifecycle_phase = ?, updated_at = datetime('now') WHERE id = ?")
+pub async fn set_vm_phase(pool: &DbPool, vm_id: Uuid, phase: &str) -> anyhow::Result<()> {
+    crate::db::query("UPDATE vms SET lifecycle_phase = ?, updated_at = datetime('now') WHERE id = ?")
         .bind(phase)
         .bind(vm_id)
         .execute(pool)
@@ -40,11 +40,11 @@ pub async fn set_vm_phase(pool: &SqlitePool, vm_id: Uuid, phase: &str) -> anyhow
 }
 
 pub async fn set_vm_phase_clear_error(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Uuid,
     phase: &str,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET lifecycle_phase = ?, last_error = '', updated_at = datetime('now') WHERE id = ?",
     )
     .bind(phase)
@@ -54,8 +54,8 @@ pub async fn set_vm_phase_clear_error(
     Ok(())
 }
 
-pub async fn set_vm_error(pool: &SqlitePool, vm_id: Uuid, message: &str) -> anyhow::Result<()> {
-    sqlx::query(
+pub async fn set_vm_error(pool: &DbPool, vm_id: Uuid, message: &str) -> anyhow::Result<()> {
+    crate::db::query(
         "UPDATE vms SET lifecycle_phase = ?, last_error = ?, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(PHASE_ERROR)
@@ -66,8 +66,8 @@ pub async fn set_vm_error(pool: &SqlitePool, vm_id: Uuid, message: &str) -> anyh
     Ok(())
 }
 
-pub async fn sync_phase_from_observed(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<()> {
-    let row: Option<(String, String, String, String)> = sqlx::query_as(
+pub async fn sync_phase_from_observed(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<()> {
+    let row: Option<(String, String, String, String)> = crate::db::query_as(
         "SELECT desired_state, observed_state, lifecycle_phase, COALESCE(last_error, '') FROM vms WHERE id = ?",
     )
     .bind(vm_id)

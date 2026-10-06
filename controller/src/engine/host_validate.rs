@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -23,13 +23,13 @@ pub struct HostValidationReport {
 }
 
 pub async fn validate_host(
-    pool: &SqlitePool,
+    pool: &DbPool,
     host_id: Uuid,
 ) -> anyhow::Result<HostValidationReport> {
     let mut checks = Vec::new();
 
     let row: Option<(String, String, String)> =
-        sqlx::query_as("SELECT hostname, agent_grpc_addr, libvirt_uri FROM hosts WHERE id = ?")
+        crate::db::query_as("SELECT hostname, agent_grpc_addr, libvirt_uri FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_optional(pool)
             .await?;
@@ -143,7 +143,7 @@ pub async fn validate_host(
 }
 
 pub async fn persist_validation(
-    pool: &SqlitePool,
+    pool: &DbPool,
     host_id: Uuid,
     report: &HostValidationReport,
 ) -> anyhow::Result<()> {
@@ -153,7 +153,7 @@ pub async fn persist_validation(
     } else {
         "pending_validation"
     };
-    sqlx::query(
+    crate::db::query(
         "UPDATE hosts SET validation_status = ?, validation_report = ?, state = ? WHERE id = ?",
     )
     .bind(status)

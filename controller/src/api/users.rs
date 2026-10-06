@@ -94,7 +94,7 @@ pub async fn list_users(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<UserRow>>, ApiError> {
     require_admin(&actor)?;
-    let rows = sqlx::query_as::<_, UserRow>(
+    let rows = crate::db::query_as::<_, UserRow>(
         "SELECT id, username, role, created_at FROM users ORDER BY username",
     )
     .fetch_all(&state.pool)
@@ -113,14 +113,14 @@ pub async fn create_user(
     let role = validate_role(&body.role)?;
     let id = Uuid::new_v4();
     let hash = bcrypt::hash(&body.password, 12).map_err(|e| ApiError::internal(e.to_string()))?;
-    sqlx::query("INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)")
+    crate::db::query("INSERT INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)")
         .bind(id)
         .bind(&username)
         .bind(hash)
         .bind(&role)
         .execute(&state.pool)
         .await?;
-    let row = sqlx::query_as::<_, UserRow>(
+    let row = crate::db::query_as::<_, UserRow>(
         "SELECT id, username, role, created_at FROM users WHERE id = ?",
     )
     .bind(id)
@@ -138,7 +138,7 @@ pub async fn patch_user(
     require_admin(&actor)?;
     if let Some(role) = &body.role {
         let role = validate_role(role)?;
-        sqlx::query("UPDATE users SET role = ? WHERE id = ?")
+        crate::db::query("UPDATE users SET role = ? WHERE id = ?")
             .bind(role)
             .bind(id)
             .execute(&state.pool)
@@ -148,13 +148,13 @@ pub async fn patch_user(
         validate_password(pass)?;
         let hash = bcrypt::hash(pass, bcrypt::DEFAULT_COST)
             .map_err(|e| ApiError::internal(e.to_string()))?;
-        sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+        crate::db::query("UPDATE users SET password_hash = ? WHERE id = ?")
             .bind(hash)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
-    let row = sqlx::query_as::<_, UserRow>(
+    let row = crate::db::query_as::<_, UserRow>(
         "SELECT id, username, role, created_at FROM users WHERE id = ?",
     )
     .bind(id)
@@ -169,7 +169,7 @@ pub async fn delete_user(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    let row: (String,) = sqlx::query_as("SELECT username FROM users WHERE id = ?")
+    let row: (String,) = crate::db::query_as("SELECT username FROM users WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -178,7 +178,7 @@ pub async fn delete_user(
             .with_code("invalid_request")
             .with_remediation("Sign in as another admin or delete a different user."));
     }
-    sqlx::query("DELETE FROM users WHERE id = ?")
+    crate::db::query("DELETE FROM users WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -195,7 +195,7 @@ pub async fn prune_invalid_users(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<PruneInvalidUsersResponse>, ApiError> {
     require_admin(&actor)?;
-    let result = sqlx::query("DELETE FROM users WHERE username IS NULL OR TRIM(username) = ''")
+    let result = crate::db::query("DELETE FROM users WHERE username IS NULL OR TRIM(username) = ''")
         .execute(&state.pool)
         .await?;
     Ok(Json(PruneInvalidUsersResponse {
@@ -208,7 +208,7 @@ pub async fn me(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     let row: Option<UserRow> =
-        sqlx::query_as("SELECT id, username, role, created_at FROM users WHERE username = ?")
+        crate::db::query_as("SELECT id, username, role, created_at FROM users WHERE username = ?")
             .bind(&actor.username)
             .fetch_optional(&state.pool)
             .await?;

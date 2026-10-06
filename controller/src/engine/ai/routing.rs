@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::providers::{self, ResolvedProvider};
@@ -53,10 +53,10 @@ pub struct RoutingRequest {
 }
 
 pub async fn resolve(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: &RoutingRequest,
 ) -> anyhow::Result<Option<ResolvedProvider>> {
-    let air_gap: bool = sqlx::query_scalar(
+    let air_gap: bool = crate::db::query_scalar(
         "SELECT COALESCE(zeus_air_gap_llm, FALSE) FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
@@ -64,7 +64,7 @@ pub async fn resolve(
     .unwrap_or(false);
 
     let task_key = req.task_class.as_db_key();
-    let rule: Option<(Option<Uuid>, Option<Uuid>)> = sqlx::query_as(
+    let rule: Option<(Option<Uuid>, Option<Uuid>)> = crate::db::query_as(
         "SELECT provider_id, model_id FROM ai_routing_rules WHERE task_class = ? AND enabled = TRUE",
     )
     .bind(task_key)
@@ -73,7 +73,7 @@ pub async fn resolve(
 
     let mut resolved = if let Some((Some(pid), model_uuid)) = rule {
         let model_id = if let Some(mid) = model_uuid {
-            sqlx::query_scalar::<_, String>("SELECT model_id FROM ai_models WHERE id = ?")
+            crate::db::query_scalar::<_, String>("SELECT model_id FROM ai_models WHERE id = ?")
                 .bind(mid)
                 .fetch_optional(pool)
                 .await?
@@ -114,8 +114,8 @@ pub struct RoutingRuleRow {
     pub enabled: bool,
 }
 
-pub async fn list_rules(pool: &SqlitePool) -> anyhow::Result<Vec<RoutingRuleRow>> {
-    let rows: Vec<(String, Option<Uuid>, Option<Uuid>, bool)> = sqlx::query_as(
+pub async fn list_rules(pool: &DbPool) -> anyhow::Result<Vec<RoutingRuleRow>> {
+    let rows: Vec<(String, Option<Uuid>, Option<Uuid>, bool)> = crate::db::query_as(
         "SELECT task_class, provider_id, model_id, enabled FROM ai_routing_rules ORDER BY priority",
     )
     .fetch_all(pool)
@@ -141,11 +141,11 @@ pub struct PatchRoutingRuleBody {
 }
 
 pub async fn patch_rule(
-    pool: &SqlitePool,
+    pool: &DbPool,
     task_class: &str,
     body: &PatchRoutingRuleBody,
 ) -> anyhow::Result<RoutingRuleRow> {
-    let row: (String, Option<Uuid>, Option<Uuid>, bool) = sqlx::query_as(
+    let row: (String, Option<Uuid>, Option<Uuid>, bool) = crate::db::query_as(
         "INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, enabled) VALUES (?, ?, ?, ?, ?)
          ON CONFLICT (task_class) DO UPDATE SET
             provider_id = EXCLUDED.provider_id,

@@ -46,7 +46,7 @@ pub async fn get_network(
     Path(id): Path<Uuid>,
 ) -> Result<Json<NetworkRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, NetworkRow>(
+    let row = crate::db::query_as::<_, NetworkRow>(
         "SELECT id, name, backend, vlan_id, bridge, segment_id FROM networks WHERE id = ?",
     )
     .bind(id)
@@ -61,7 +61,7 @@ pub async fn list_networks(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<NetworkRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, NetworkRow>(
+    let rows = crate::db::query_as::<_, NetworkRow>(
         "SELECT id, name, backend, vlan_id, bridge, segment_id FROM networks ORDER BY name",
     )
     .fetch_all(&state.pool)
@@ -81,7 +81,7 @@ pub async fn create_network(
         ));
     }
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
+    let cluster_id: Uuid = crate::db::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_one(&state.pool)
         .await?;
     // Validate segment_id references an existing segment before inserting. The
@@ -90,7 +90,7 @@ pub async fn create_network(
     // overlay reference.
     if let Some(seg_id) = body.segment_id {
         let exists: bool =
-            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM network_segments WHERE id = ?)")
+            crate::db::query_scalar("SELECT EXISTS(SELECT 1 FROM network_segments WHERE id = ?)")
                 .bind(seg_id)
                 .fetch_one(&state.pool)
                 .await?;
@@ -101,7 +101,7 @@ pub async fn create_network(
         }
     }
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO networks (id, cluster_id, name, backend, vlan_id, bridge, segment_id)
          VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -117,7 +117,7 @@ pub async fn create_network(
 
     if let Some(seg_id) = body.segment_id {
         if let Some(prof) = body.firewall_profile.as_deref() {
-            sqlx::query(
+            crate::db::query(
                 "UPDATE network_segments SET firewall_profile = COALESCE(?, firewall_profile) WHERE id = ?",
             )
             .bind(prof)
@@ -127,7 +127,7 @@ pub async fn create_network(
         }
     }
 
-    let row = sqlx::query_as::<_, NetworkRow>(
+    let row = crate::db::query_as::<_, NetworkRow>(
         "SELECT id, name, backend, vlan_id, bridge, segment_id FROM networks WHERE id = ?",
     )
     .bind(id)
@@ -136,7 +136,7 @@ pub async fn create_network(
 
     let host_id = match body.host_id {
         Some(h) => h,
-        None => sqlx::query_scalar(
+        None => crate::db::query_scalar(
             "SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1",
         )
         .fetch_optional(&state.pool)
@@ -167,7 +167,7 @@ pub async fn discover_networks(
     let imported = crate::engine::network_sync::discover_all_online(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    let rows = sqlx::query_as::<_, NetworkRow>(
+    let rows = crate::db::query_as::<_, NetworkRow>(
         "SELECT id, name, backend, vlan_id, bridge, segment_id FROM networks ORDER BY name",
     )
     .fetch_all(&state.pool)
@@ -194,14 +194,14 @@ pub async fn patch_network(
     require_operator(&actor)?;
     crate::api::cloud::protect_network(&state, id).await?;
     if let Some(v) = body.vlan_id {
-        sqlx::query("UPDATE networks SET vlan_id = ? WHERE id = ?")
+        crate::db::query("UPDATE networks SET vlan_id = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(v) = &body.bridge {
-        sqlx::query("UPDATE networks SET bridge = ? WHERE id = ?")
+        crate::db::query("UPDATE networks SET bridge = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&state.pool)
@@ -212,7 +212,7 @@ pub async fn patch_network(
             .await
             .map_err(|e| ApiError::bad_request(e.to_string()))?;
     }
-    let row = sqlx::query_as::<_, NetworkRow>(
+    let row = crate::db::query_as::<_, NetworkRow>(
         "SELECT id, name, backend, vlan_id, bridge, segment_id FROM networks WHERE id = ?",
     )
     .bind(id)
@@ -241,7 +241,7 @@ pub async fn delete_network(
             .map(|e| e.message),
         Err(e) => Some(e.message),
     };
-    sqlx::query("DELETE FROM networks WHERE id = ?")
+    crate::db::query("DELETE FROM networks WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -257,8 +257,8 @@ pub struct NetworkHostQuery {
     pub host_id: Option<Uuid>,
 }
 
-async fn network_name(pool: &sqlx::SqlitePool, id: Uuid) -> Result<String, ApiError> {
-    sqlx::query_scalar("SELECT name FROM networks WHERE id = ?")
+async fn network_name(pool: &crate::db::DbPool, id: Uuid) -> Result<String, ApiError> {
+    crate::db::query_scalar("SELECT name FROM networks WHERE id = ?")
         .bind(id)
         .fetch_optional(pool)
         .await?
@@ -266,13 +266,13 @@ async fn network_name(pool: &sqlx::SqlitePool, id: Uuid) -> Result<String, ApiEr
 }
 
 async fn resolve_online_host(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     host_id: Option<Uuid>,
 ) -> Result<Uuid, ApiError> {
     if let Some(h) = host_id {
         return Ok(h);
     }
-    sqlx::query_scalar("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1")
+    crate::db::query_scalar("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1")
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| ApiError::bad_request("no online host for libvirt network operation"))

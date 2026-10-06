@@ -71,7 +71,7 @@ pub async fn list_alert_rules(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<AlertRuleRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, AlertRuleRow>(
+    let rows = crate::db::query_as::<_, AlertRuleRow>(
         "SELECT id, name, metric, comparator, threshold, severity,
                 scope_project, scope_tag, cooldown_minutes, enabled,
                 last_fired_at, created_at
@@ -108,7 +108,7 @@ pub async fn create_alert_rule(
         return Err(ApiError::bad_request("threshold must be a finite number"));
     }
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO alert_rules
            (id, name, metric, comparator, threshold, severity, scope_project, scope_tag, cooldown_minutes, enabled)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -125,7 +125,7 @@ pub async fn create_alert_rule(
     .bind(body.enabled)
     .execute(&state.pool)
     .await?;
-    let row = sqlx::query_as::<_, AlertRuleRow>(
+    let row = crate::db::query_as::<_, AlertRuleRow>(
         "SELECT id, name, metric, comparator, threshold, severity,
                 scope_project, scope_tag, cooldown_minutes, enabled, last_fired_at, created_at
          FROM alert_rules WHERE id = ?",
@@ -148,7 +148,7 @@ pub async fn patch_alert_rule(
     Json(body): Json<PatchAlertRuleBody>,
 ) -> Result<Json<AlertRuleRow>, ApiError> {
     require_operator(&actor)?;
-    let updated = sqlx::query("UPDATE alert_rules SET enabled = ? WHERE id = ?")
+    let updated = crate::db::query("UPDATE alert_rules SET enabled = ? WHERE id = ?")
         .bind(body.enabled)
         .bind(id)
         .execute(&state.pool)
@@ -157,7 +157,7 @@ pub async fn patch_alert_rule(
     if updated == 0 {
         return Err(ApiError::not_found("alert rule not found"));
     }
-    let row = sqlx::query_as::<_, AlertRuleRow>(
+    let row = crate::db::query_as::<_, AlertRuleRow>(
         "SELECT id, name, metric, comparator, threshold, severity,
                 scope_project, scope_tag, cooldown_minutes, enabled, last_fired_at, created_at
          FROM alert_rules WHERE id = ?",
@@ -174,7 +174,7 @@ pub async fn delete_alert_rule(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let deleted = sqlx::query("DELETE FROM alert_rules WHERE id = ?")
+    let deleted = crate::db::query("DELETE FROM alert_rules WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?

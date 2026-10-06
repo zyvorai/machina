@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 /// Lease duration granted by the DB (`datetime('now','+15 seconds')`).
 const LEASE_SECS: i64 = 15;
@@ -70,7 +70,7 @@ fn holds_lease(flag: bool, now: i64, lease_until: i64) -> bool {
     flag && now < lease_until - DEMOTE_GUARD_SECS
 }
 
-pub fn spawn(pool: SqlitePool, controller_id: String) -> LeaderHandle {
+pub fn spawn(pool: DbPool, controller_id: String) -> LeaderHandle {
     let is_leader = Arc::new(AtomicBool::new(false));
     let lease_until_unix = Arc::new(AtomicI64::new(0));
     let handle = LeaderHandle {
@@ -110,17 +110,17 @@ pub fn spawn(pool: SqlitePool, controller_id: String) -> LeaderHandle {
     handle
 }
 
-async fn read_epoch(pool: &SqlitePool) -> anyhow::Result<Option<i64>> {
+async fn read_epoch(pool: &DbPool) -> anyhow::Result<Option<i64>> {
     Ok(
-        sqlx::query_scalar("SELECT epoch FROM controller_leadership WHERE id = 1")
+        crate::db::query_scalar("SELECT epoch FROM controller_leadership WHERE id = 1")
             .fetch_optional(pool)
             .await?,
     )
 }
 
-async fn renew_lease(pool: &SqlitePool, holder_id: &str) -> anyhow::Result<bool> {
+async fn renew_lease(pool: &DbPool, holder_id: &str) -> anyhow::Result<bool> {
     // The epoch only moves when leadership changes hands (the old holder differs from us); a plain renewal keeps it.
-    let acquired: bool = sqlx::query_scalar(
+    let acquired: bool = crate::db::query_scalar(
         "UPDATE controller_leadership SET
              epoch = CASE WHEN holder_id = ? THEN epoch ELSE epoch + 1 END,
              holder_id = ?, lease_until = datetime('now', '+15 seconds'),
@@ -140,7 +140,7 @@ async fn renew_lease(pool: &SqlitePool, holder_id: &str) -> anyhow::Result<bool>
     }
 
     let current: Option<String> =
-        sqlx::query_scalar("SELECT holder_id FROM controller_leadership WHERE id = 1")
+        crate::db::query_scalar("SELECT holder_id FROM controller_leadership WHERE id = 1")
             .fetch_optional(pool)
             .await?;
     Ok(current.as_deref() == Some(holder_id))
@@ -189,13 +189,13 @@ mod tests {
         assert!(!holds_lease(true, lease_until + 100, lease_until));
     }
 
-    async fn pool_with_lease_table() -> sqlx::SqlitePool {
+    async fn pool_with_lease_table() -> crate::db::DbPool {
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
             .await
             .unwrap();
-        sqlx::query(
+        crate::db::query(
             "CREATE TABLE controller_leadership (
                  id INTEGER PRIMARY KEY CHECK (id = 1), holder_id TEXT NOT NULL DEFAULT '',
                  lease_until TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -204,7 +204,7 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        sqlx::query("INSERT INTO controller_leadership (id, holder_id) VALUES (1, '')")
+        crate::db::query("INSERT INTO controller_leadership (id, holder_id) VALUES (1, '')")
             .execute(&pool)
             .await
             .unwrap();
@@ -223,7 +223,7 @@ mod tests {
         assert!(!super::renew_lease(&pool, "b").await.unwrap());
         assert_eq!(super::read_epoch(&pool).await.unwrap(), Some(1));
         // Once the lease lapses the challenger takes over and the epoch goes up.
-        sqlx::query("UPDATE controller_leadership SET lease_until = datetime('now', '-1 minute')")
+        crate::db::query("UPDATE controller_leadership SET lease_until = datetime('now', '-1 minute')")
             .execute(&pool)
             .await
             .unwrap();

@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -48,14 +48,14 @@ fn default_hours() -> i32 {
 }
 
 pub async fn analyze(
-    pool: &SqlitePool,
+    pool: &DbPool,
     q: &AnalyzeIncidentQuery,
 ) -> anyhow::Result<IncidentAnalysis> {
     analyze_with_symptoms(pool, q, &[]).await
 }
 
 pub async fn analyze_post(
-    pool: &SqlitePool,
+    pool: &DbPool,
     body: &AnalyzeIncidentBody,
 ) -> anyhow::Result<IncidentAnalysis> {
     let q = AnalyzeIncidentQuery {
@@ -67,7 +67,7 @@ pub async fn analyze_post(
 }
 
 async fn analyze_with_symptoms(
-    pool: &SqlitePool,
+    pool: &DbPool,
     q: &AnalyzeIncidentQuery,
     symptoms: &[String],
 ) -> anyhow::Result<IncidentAnalysis> {
@@ -76,7 +76,7 @@ async fn analyze_with_symptoms(
 
     let mut timeline = Vec::new();
 
-    let audits: Vec<(DateTime<Utc>, String, String, Option<String>)> = sqlx::query_as(
+    let audits: Vec<(DateTime<Utc>, String, String, Option<String>)> = crate::db::query_as(
         "SELECT created_at, actor, action, resource_type
          FROM audit_logs
          WHERE created_at > datetime('now', '-' || ? || ' hours')
@@ -98,7 +98,7 @@ async fn analyze_with_symptoms(
         });
     }
 
-    let events: Vec<(DateTime<Utc>, String, String)> = sqlx::query_as(
+    let events: Vec<(DateTime<Utc>, String, String)> = crate::db::query_as(
         "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), kind, message FROM events
          WHERE created_at > datetime('now', '-' || ? || ' hours')
          ORDER BY created_at DESC LIMIT 60",
@@ -121,7 +121,7 @@ async fn analyze_with_symptoms(
     }
 
     let tasks: Vec<(DateTime<Utc>, String, String, Option<Uuid>)> = if let Some(vid) = vm_id {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT created_at, operation, status, resource_id FROM tasks
              WHERE created_at > datetime('now', '-' || ? || ' hours')
                AND (resource_id = ? OR status = 'failed')
@@ -132,7 +132,7 @@ async fn analyze_with_symptoms(
         .fetch_all(pool)
         .await?
     } else {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT created_at, operation, status, resource_id FROM tasks
              WHERE created_at > datetime('now', '-' || ? || ' hours')
              ORDER BY created_at DESC LIMIT 40",
@@ -172,7 +172,7 @@ async fn analyze_with_symptoms(
     }
 
     // Fence events
-    let fences: Vec<(DateTime<Utc>, String)> = sqlx::query_as(
+    let fences: Vec<(DateTime<Utc>, String)> = crate::db::query_as(
         "SELECT created_at, COALESCE(message, action) FROM fence_events
          WHERE created_at > datetime('now', '-' || ? || ' hours')
          ORDER BY created_at DESC LIMIT 10",
@@ -195,7 +195,7 @@ async fn analyze_with_symptoms(
     // VM metrics spike
     if let Some(vid) = vm_id {
         if let Ok(Some(c)) =
-            sqlx::query_scalar::<_, f64>("SELECT cpu_percent FROM vm_metrics WHERE vm_id = ?")
+            crate::db::query_scalar::<_, f64>("SELECT cpu_percent FROM vm_metrics WHERE vm_id = ?")
                 .bind(vid)
                 .fetch_optional(pool)
                 .await
@@ -260,7 +260,7 @@ pub fn merge_bpf_anomalies(timeline: &mut Vec<TimelineEntry>, anomalies: &serde_
 }
 
 async fn resolve_vm(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Option<Uuid>,
     vm_name: Option<&str>,
 ) -> anyhow::Result<Option<Uuid>> {
@@ -268,7 +268,7 @@ async fn resolve_vm(
         return Ok(Some(id));
     }
     if let Some(name) = vm_name.filter(|n| !n.is_empty()) {
-        let id: Option<Uuid> = sqlx::query_scalar("SELECT id FROM vms WHERE name = ?")
+        let id: Option<Uuid> = crate::db::query_scalar("SELECT id FROM vms WHERE name = ?")
             .bind(name)
             .fetch_optional(pool)
             .await?;

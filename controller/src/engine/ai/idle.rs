@@ -5,7 +5,7 @@
 //! averaged under 5% and never went above 25%. Savings are the VM's compute cost at the cluster's FinOps rates.
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::forecast;
@@ -48,13 +48,13 @@ pub fn is_idle(avg: f64, peak: f64, hours: f64) -> bool {
 }
 
 /// Idle running machines, biggest saving first.
-pub async fn find(pool: &SqlitePool, limit: usize) -> anyhow::Result<Vec<IdleVm>> {
-    let (vcpu_rate, gib_rate): (f64, f64) = sqlx::query_as(
+pub async fn find(pool: &DbPool, limit: usize) -> anyhow::Result<Vec<IdleVm>> {
+    let (vcpu_rate, gib_rate): (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
     .await?;
-    let vms: Vec<(Uuid, String, i64, i64)> = sqlx::query_as(
+    let vms: Vec<(Uuid, String, i64, i64)> = crate::db::query_as(
         "SELECT id, name, vcpus, memory_mib FROM vms WHERE observed_state = 'running' ORDER BY name LIMIT 200",
     )
     .fetch_all(pool)

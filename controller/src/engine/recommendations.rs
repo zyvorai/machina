@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Recommendation {
@@ -17,10 +17,10 @@ pub struct Recommendation {
     pub object_ref: Option<serde_json::Value>,
 }
 
-pub async fn generate_recommendations(pool: &SqlitePool) -> anyhow::Result<Vec<Recommendation>> {
+pub async fn generate_recommendations(pool: &DbPool) -> anyhow::Result<Vec<Recommendation>> {
     let mut out = Vec::new();
 
-    let no_backup: Vec<(uuid::Uuid, String)> = sqlx::query_as(
+    let no_backup: Vec<(uuid::Uuid, String)> = crate::db::query_as(
         "SELECT v.id, v.name FROM vms v
          WHERE COALESCE(v.managed, TRUE) = TRUE
            AND (EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='prod') OR EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='production'))
@@ -44,7 +44,7 @@ pub async fn generate_recommendations(pool: &SqlitePool) -> anyhow::Result<Vec<R
         });
     }
 
-    let no_ha: Vec<(uuid::Uuid, String)> = sqlx::query_as(
+    let no_ha: Vec<(uuid::Uuid, String)> = crate::db::query_as(
         "SELECT v.id, v.name FROM vms v
          LEFT JOIN ha_policies hp ON hp.vm_id = v.id
          WHERE COALESCE(hp.enabled, FALSE) = FALSE
@@ -72,7 +72,7 @@ pub async fn generate_recommendations(pool: &SqlitePool) -> anyhow::Result<Vec<R
         });
     }
 
-    let no_guest: i64 = sqlx::query_scalar(
+    let no_guest: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM vms WHERE observed_state = 'running'
          AND guest_tools_status IN ('unknown', 'not_installed')",
     )
@@ -94,7 +94,7 @@ pub async fn generate_recommendations(pool: &SqlitePool) -> anyhow::Result<Vec<R
         });
     }
 
-    let offline: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
+    let offline: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
         .fetch_one(pool)
         .await
         .unwrap_or(0);

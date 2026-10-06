@@ -21,8 +21,8 @@ pub struct ProjectRow {
 /// Canonical "default" project resolver, shared by every native handler
 /// (`api::volumes`, `api::networking`, `api::stacks`) that accepts an optional
 /// `project_id` and needs to fall back to the seeded default when omitted.
-pub(crate) async fn default_project_id(pool: &sqlx::SqlitePool) -> Result<Uuid, ApiError> {
-    sqlx::query_scalar("SELECT id FROM projects WHERE name = 'default'")
+pub(crate) async fn default_project_id(pool: &crate::db::DbPool) -> Result<Uuid, ApiError> {
+    crate::db::query_scalar("SELECT id FROM projects WHERE name = 'default'")
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| ApiError::internal("no default project — controller bootstrap has not run"))
@@ -37,7 +37,7 @@ pub async fn list_projects(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ProjectRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows: Vec<(Option<Uuid>, String, i64)> = sqlx::query_as(
+    let rows: Vec<(Option<Uuid>, String, i64)> = crate::db::query_as(
         "SELECT p.id, v.name, COUNT(*) AS vm_count
          FROM (SELECT COALESCE(NULLIF(project, ''), 'default') AS name FROM vms) v
          LEFT JOIN projects p ON p.name = v.name
@@ -65,7 +65,7 @@ pub async fn list_project_registry(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ProjectRegistryRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, ProjectRegistryRow>(
+    let rows = crate::db::query_as::<_, ProjectRegistryRow>(
         "SELECT id, name, description, enabled FROM projects ORDER BY name",
     )
     .fetch_all(&state.pool)
@@ -88,7 +88,7 @@ pub async fn create_project(
     require_admin(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO projects (id, name, description) VALUES (?, ?, ?)")
+    crate::db::query("INSERT INTO projects (id, name, description) VALUES (?, ?, ?)")
         .bind(id)
         .bind(&body.name)
         .bind(&body.description)
@@ -115,7 +115,7 @@ pub async fn list_project_members(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<ProjectMemberRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, ProjectMemberRow>(
+    let rows = crate::db::query_as::<_, ProjectMemberRow>(
         "SELECT a.user_id, u.username, a.role
          FROM project_role_assignments a
          JOIN users u ON u.id = a.user_id
@@ -151,7 +151,7 @@ pub async fn add_project_member(
             "role must be admin, operator, or viewer",
         ));
     }
-    sqlx::query(
+    crate::db::query(
         "INSERT OR IGNORE INTO project_role_assignments (id, user_id, project_id, role) VALUES (?, ?, ?, ?)",
     )
     .bind(Uuid::new_v4())
@@ -160,7 +160,7 @@ pub async fn add_project_member(
     .bind(&body.role)
     .execute(&state.pool)
     .await?;
-    let username: String = sqlx::query_scalar("SELECT username FROM users WHERE id = ?")
+    let username: String = crate::db::query_scalar("SELECT username FROM users WHERE id = ?")
         .bind(body.user_id)
         .fetch_one(&state.pool)
         .await?;
@@ -177,7 +177,7 @@ pub async fn remove_project_member(
     Path((id, user_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    sqlx::query("DELETE FROM project_role_assignments WHERE project_id = ? AND user_id = ?")
+    crate::db::query("DELETE FROM project_role_assignments WHERE project_id = ? AND user_id = ?")
         .bind(id)
         .bind(user_id)
         .execute(&state.pool)

@@ -45,7 +45,7 @@ pub async fn list_keypairs(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<KeypairRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, KeypairRow>(&format!("{KEYPAIR_SELECT} ORDER BY name"))
+    let rows = crate::db::query_as::<_, KeypairRow>(&format!("{KEYPAIR_SELECT} ORDER BY name"))
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(rows.into_iter().map(KeypairRow::with_id).collect()))
@@ -57,7 +57,7 @@ pub async fn get_keypair(
     Path(id): Path<Uuid>,
 ) -> Result<Json<KeypairRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, KeypairRow>(&format!("{KEYPAIR_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, KeypairRow>(&format!("{KEYPAIR_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -100,7 +100,7 @@ pub async fn create_keypair(
     }
     let fingerprint = ssh_fingerprint(&body.public_key)?;
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO keypairs (id, project_id, name, public_key, fingerprint) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(id)
@@ -126,7 +126,7 @@ pub async fn delete_keypair(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    sqlx::query("DELETE FROM keypairs WHERE id = ?")
+    crate::db::query("DELETE FROM keypairs WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;

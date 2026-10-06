@@ -2,12 +2,54 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions};
-use sqlx::SqlitePool;
+use sqlx::{Database, FromRow};
 use std::str::FromStr;
 use std::time::Duration;
 use uuid::Uuid;
 
-pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
+/// The database backend the controller was built for. Everything outside this module names these aliases instead of the
+/// `sqlx::Sqlite*` types, so a second backend is a change here rather than in ~260 files.
+pub type Db = sqlx::Sqlite;
+pub type DbPool = sqlx::SqlitePool;
+pub type DbConn = sqlx::SqliteConnection;
+
+/// Prepare a statement. Today the text is used as written; this is the one place a backend that needs a different dialect
+/// rewrites it (placeholders, date functions), so the SQL in the rest of the controller stays in one form.
+fn sql(text: &str) -> &str {
+    text
+}
+
+pub fn query<DB: Database>(text: &str) -> sqlx::query::Query<'_, DB, <DB as Database>::Arguments<'_>> {
+    sqlx::query(sql(text))
+}
+
+pub fn query_as<'q, DB, O>(text: &'q str) -> sqlx::query::QueryAs<'q, DB, O, <DB as Database>::Arguments<'q>>
+where
+    DB: Database,
+    O: for<'r> FromRow<'r, <DB as Database>::Row>,
+{
+    sqlx::query_as(sql(text))
+}
+
+pub fn query_scalar<'q, DB, O>(text: &'q str) -> sqlx::query::QueryScalar<'q, DB, O, <DB as Database>::Arguments<'q>>
+where
+    DB: Database,
+    (O,): for<'r> FromRow<'r, <DB as Database>::Row>,
+{
+    sqlx::query_scalar(sql(text))
+}
+
+/// A database URL that is safe to log: `scheme://user:password@host/db` loses the password, anything else is returned as is.
+pub fn redact_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else { return url.to_string() };
+    let Some((auth, host)) = rest.rsplit_once('@') else { return url.to_string() };
+    match auth.split_once(':') {
+        Some((user, _)) => format!("{scheme}://{user}:<redacted>@{host}"),
+        None => url.to_string(),
+    }
+}
+
+pub async fn connect(database_url: &str) -> anyhow::Result<DbPool> {
     let options = SqliteConnectOptions::from_str(database_url)?
         .create_if_missing(true)
         .journal_mode(SqliteJournalMode::Wal)
@@ -41,13 +83,13 @@ pub async fn connect(database_url: &str) -> anyhow::Result<SqlitePool> {
     Ok(pool)
 }
 
-pub async fn migrate(pool: &SqlitePool) -> anyhow::Result<()> {
+pub async fn migrate(pool: &DbPool) -> anyhow::Result<()> {
     sqlx::migrate!().run(pool).await?;
     Ok(())
 }
 
 pub async fn ensure_bootstrap(
-    pool: &SqlitePool,
+    pool: &DbPool,
     admin_user: &str,
     admin_password: &str,
 ) -> anyhow::Result<()> {
@@ -88,7 +130,7 @@ pub async fn ensure_bootstrap(
             .ok()
             .filter(|s| !s.is_empty())
     {
-        sqlx::query_as(
+        query_as(
             "SELECT id, operation, payload FROM tasks \
                  WHERE status = 'running' AND (claimed_by = ? OR claimed_by IS NULL)",
         )
@@ -96,7 +138,7 @@ pub async fn ensure_bootstrap(
         .fetch_all(pool)
         .await?
     } else {
-        sqlx::query_as(
+        query_as(
             "SELECT id, operation, payload FROM tasks \
                  WHERE status = 'running' \
                    AND (claimed_by IS NULL OR updated_at < datetime('now', '-60 minutes'))",
@@ -134,24 +176,24 @@ pub async fn ensure_bootstrap(
     // violation instead of just no-op'ing. Use INSERT OR IGNORE so the loser
     // of the race silently defers to whichever controller won it, instead of
     // failing to start.
-    let cluster_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM clusters")
+    let cluster_count: i64 = query_scalar("SELECT COUNT(*) FROM clusters")
         .fetch_one(pool)
         .await?;
     if cluster_count == 0 {
         let cluster_id = Uuid::new_v4();
-        sqlx::query("INSERT OR IGNORE INTO clusters (id, name) VALUES (?, ?)")
+        query("INSERT OR IGNORE INTO clusters (id, name) VALUES (?, ?)")
             .bind(cluster_id)
             .bind("default")
             .execute(pool)
             .await?;
     }
 
-    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+    let user_count: i64 = query_scalar("SELECT COUNT(*) FROM users")
         .fetch_one(pool)
         .await?;
     if user_count == 0 {
         let hash = bcrypt::hash(admin_password, bcrypt::DEFAULT_COST)?;
-        sqlx::query(
+        query(
             "INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES (?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4())
@@ -162,14 +204,14 @@ pub async fn ensure_bootstrap(
         .await?;
     }
 
-    let host_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+    let host_count: i64 = query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await?;
     if host_count == 0 {
-        let cluster_id: Uuid = sqlx::query_scalar::<_, Uuid>("SELECT id FROM clusters LIMIT 1")
+        let cluster_id: Uuid = query_scalar::<_, Uuid>("SELECT id FROM clusters LIMIT 1")
             .fetch_one(pool)
             .await?;
-        sqlx::query(
+        query(
             "INSERT OR IGNORE INTO hosts (id, cluster_id, hostname, address, state, agent_grpc_addr)
              VALUES (?, ?, ?, ?, ?, ?)",
         )
@@ -200,8 +242,8 @@ pub async fn ensure_bootstrap(
 /// build membership/roles on top of. Runs every boot (INSERT OR IGNORE), matching
 /// `ensure_default_templates`, so a project name introduced later via the legacy
 /// free-text path gets backfilled on the next restart.
-async fn ensure_native_projects(pool: &SqlitePool) -> anyhow::Result<()> {
-    let names: Vec<String> = sqlx::query_scalar(
+async fn ensure_native_projects(pool: &DbPool) -> anyhow::Result<()> {
+    let names: Vec<String> = query_scalar(
         "SELECT DISTINCT name FROM (
             SELECT COALESCE(NULLIF(project, ''), 'default') AS name FROM vms
             UNION
@@ -214,7 +256,7 @@ async fn ensure_native_projects(pool: &SqlitePool) -> anyhow::Result<()> {
     .await?;
 
     for name in names {
-        sqlx::query("INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)")
+        query("INSERT OR IGNORE INTO projects (id, name) VALUES (?, ?)")
             .bind(Uuid::new_v4())
             .bind(&name)
             .execute(pool)
@@ -226,4 +268,17 @@ async fn ensure_native_projects(pool: &SqlitePool) -> anyhow::Result<()> {
 
 pub async fn ensure_machina_db_ownership() -> anyhow::Result<()> {
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::redact_url;
+
+    #[test]
+    fn passwords_are_removed_from_urls_that_are_logged() {
+        assert_eq!(redact_url("postgres://machina:s3cret@db.internal:5432/machina"), "postgres://machina:<redacted>@db.internal:5432/machina");
+        assert_eq!(redact_url("postgres://machina@db.internal/machina"), "postgres://machina@db.internal/machina");
+        assert_eq!(redact_url("sqlite:///var/lib/machina/controller.db"), "sqlite:///var/lib/machina/controller.db");
+        assert_eq!(redact_url("postgres://u:p%40ss@h/d"), "postgres://u:<redacted>@h/d");
+    }
 }

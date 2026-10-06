@@ -166,7 +166,7 @@ pub async fn list_stacks(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<StackRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, StackRow>(&format!("{STACK_SELECT} ORDER BY created_at DESC"))
+    let rows = crate::db::query_as::<_, StackRow>(&format!("{STACK_SELECT} ORDER BY created_at DESC"))
         .fetch_all(&state.pool)
         .await?;
     Ok(Json(rows))
@@ -182,7 +182,7 @@ pub async fn get_stack(
 }
 
 async fn load_row(state: &AppState, id: Uuid) -> Result<StackRow, ApiError> {
-    sqlx::query_as::<_, StackRow>(&format!("{STACK_SELECT} WHERE id = ?"))
+    crate::db::query_as::<_, StackRow>(&format!("{STACK_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_optional(&state.pool)
         .await?
@@ -231,13 +231,13 @@ async fn validate_template(
 }
 
 /// Flavors and images a template may name. Networks are not checked here.
-pub async fn catalog(pool: &sqlx::SqlitePool) -> sp::Catalog {
+pub async fn catalog(pool: &crate::db::DbPool) -> sp::Catalog {
     let flavors: Vec<(String, i64, i64, i64)> =
-        sqlx::query_as("SELECT name, vcpus, memory_mib, disk_gib FROM flavors")
+        crate::db::query_as("SELECT name, vcpus, memory_mib, disk_gib FROM flavors")
             .fetch_all(pool)
             .await
             .unwrap_or_default();
-    let images: Vec<String> = sqlx::query_scalar(
+    let images: Vec<String> = crate::db::query_scalar(
         "SELECT DISTINCT name FROM templates WHERE COALESCE(approval_status, 'approved') = 'approved'",
     )
     .fetch_all(pool)
@@ -282,7 +282,7 @@ async fn resolve_project(
     // vms.project is matched by free-text NAME (see Phase A's backward-compat note),
     // not by projects.id — resolve the name once so VM creation stays consistent with
     // every other project-scoped query in the codebase.
-    let project_name: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = ?")
+    let project_name: String = crate::db::query_scalar("SELECT name FROM projects WHERE id = ?")
         .bind(project_id)
         .fetch_optional(&state.pool)
         .await?
@@ -291,7 +291,7 @@ async fn resolve_project(
 }
 
 async fn ensure_name_free(state: &AppState, name: &str) -> Result<(), ApiError> {
-    let taken: Option<Uuid> = sqlx::query_scalar("SELECT id FROM stacks WHERE name = ?")
+    let taken: Option<Uuid> = crate::db::query_scalar("SELECT id FROM stacks WHERE name = ?")
         .bind(name)
         .fetch_optional(&state.pool)
         .await?;
@@ -360,7 +360,7 @@ async fn insert_row(
 ) -> Result<(), ApiError> {
     let template_json =
         serde_json::to_value(template).map_err(|e| ApiError::internal(e.to_string()))?;
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO stacks (id, project_id, name, template_json, status) VALUES (?, ?, ?, ?, 'creating')",
     )
     .bind(ctx.id)
@@ -381,7 +381,7 @@ async fn save_resources(
 ) -> Result<(), ApiError> {
     let resources_json =
         serde_json::to_value(refs).map_err(|e| ApiError::internal(e.to_string()))?;
-    sqlx::query(
+    crate::db::query(
         "UPDATE stacks SET status = ?, resources_json = ?, last_error = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
     )
     .bind(status)
@@ -548,7 +548,7 @@ async fn build_stack(
         .map_err(|e| (created.clone(), e))?;
         let task_uuid = Uuid::parse_str(&task.0.task_id)
             .map_err(|e| (created.clone(), ApiError::internal(e.to_string())))?;
-        let vm_id: Uuid = sqlx::query_scalar("SELECT resource_id FROM tasks WHERE id = ?")
+        let vm_id: Uuid = crate::db::query_scalar("SELECT resource_id FROM tasks WHERE id = ?")
             .bind(task_uuid)
             .fetch_one(&state.pool)
             .await
@@ -641,19 +641,19 @@ pub(crate) async fn delete_stack_id(
     id: Uuid,
 ) -> Result<Vec<String>, ApiError> {
     let resources_json: sqlx::types::Json<Vec<StackResourceRef>> =
-        sqlx::query_scalar("SELECT resources_json FROM stacks WHERE id = ?")
+        crate::db::query_scalar("SELECT resources_json FROM stacks WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
             .ok_or_else(|| ApiError::not_found("stack not found"))?;
     let errors = teardown(state, actor, &resources_json.0).await;
     if errors.is_empty() {
-        sqlx::query("DELETE FROM stacks WHERE id = ?")
+        crate::db::query("DELETE FROM stacks WHERE id = ?")
             .bind(id)
             .execute(&state.pool)
             .await?;
     } else {
-        sqlx::query("UPDATE stacks SET status = 'delete_failed', last_error = ? WHERE id = ?")
+        crate::db::query("UPDATE stacks SET status = 'delete_failed', last_error = ? WHERE id = ?")
             .bind(errors.join("; "))
             .bind(id)
             .execute(&state.pool)
@@ -697,7 +697,7 @@ pub(crate) async fn teardown(
                     .map(|_| ())
                     .map_err(|e| ApiError::internal(e.to_string()))
             }
-            "backup_schedule" => sqlx::query("DELETE FROM backup_schedules WHERE id = ?")
+            "backup_schedule" => crate::db::query("DELETE FROM backup_schedules WHERE id = ?")
                 .bind(res.id)
                 .execute(&state.pool)
                 .await
@@ -718,7 +718,7 @@ pub(crate) async fn teardown(
 }
 
 async fn delete_vm_and_wait(state: &AppState, actor: &AuthUser, id: Uuid) -> Result<(), ApiError> {
-    let exists: Option<Uuid> = sqlx::query_scalar("SELECT id FROM vms WHERE id = ?")
+    let exists: Option<Uuid> = crate::db::query_scalar("SELECT id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?;
@@ -802,7 +802,7 @@ fn item(kind: &str, name: &str, detail: impl Into<String>, fixed: bool) -> Drift
     }
 }
 
-async fn stack_policies(pool: &sqlx::SqlitePool, stack: &str) -> Vec<VmNetworkPolicy> {
+async fn stack_policies(pool: &crate::db::DbPool, stack: &str) -> Vec<VmNetworkPolicy> {
     vm_netpol::policies(pool)
         .await
         .unwrap_or_default()
@@ -815,13 +815,13 @@ async fn stack_policies(pool: &sqlx::SqlitePool, stack: &str) -> Vec<VmNetworkPo
 type VmRow = (Uuid, String, i64, i64, Option<String>);
 
 async fn instance_rows(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     refs: &[StackResourceRef],
 ) -> Result<BTreeMap<String, VmRow>, ApiError> {
     let mut out = BTreeMap::new();
     for r in refs.iter().filter(|r| r.kind == "instance") {
         let row: Option<VmRow> =
-            sqlx::query_as("SELECT id, name, vcpus, memory_mib, labels FROM vms WHERE id = ?")
+            crate::db::query_as("SELECT id, name, vcpus, memory_mib, labels FROM vms WHERE id = ?")
                 .bind(r.id)
                 .fetch_optional(pool)
                 .await?;
@@ -873,7 +873,7 @@ async fn create_instance(
     .await?;
     let task_uuid =
         Uuid::parse_str(&task.0.task_id).map_err(|e| ApiError::internal(e.to_string()))?;
-    let vm_id: Uuid = sqlx::query_scalar("SELECT resource_id FROM tasks WHERE id = ?")
+    let vm_id: Uuid = crate::db::query_scalar("SELECT resource_id FROM tasks WHERE id = ?")
         .bind(task_uuid)
         .fetch_one(&state.pool)
         .await?;
@@ -903,7 +903,7 @@ async fn write_settings(
 ) -> Result<(), ApiError> {
     let mut labels = existing.clone();
     labels.extend(p.labels.clone());
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET labels = ?, sleep_after_minutes = ?, restore_point_minutes = ?, restore_point_keep = ? WHERE id = ?",
     )
     .bind(serde_json::to_string(&labels).unwrap_or_else(|_| "{}".into()))
@@ -956,7 +956,7 @@ pub(crate) async fn apply_v2(
             continue;
         }
         let taken: Option<(Uuid, Option<String>)> =
-            sqlx::query_as("SELECT id, labels FROM vms WHERE name = ?")
+            crate::db::query_as("SELECT id, labels FROM vms WHERE name = ?")
                 .bind(name)
                 .fetch_optional(&state.pool)
                 .await?;
@@ -1148,7 +1148,7 @@ async fn sync_backups(
             .map(|r| r.id);
         let row: Option<(i64, i64)> = match existing {
             Some(id) => {
-                sqlx::query_as(
+                crate::db::query_as(
                     "SELECT interval_hours, retain_count FROM backup_schedules WHERE id = ?",
                 )
                 .bind(id)
@@ -1161,7 +1161,7 @@ async fn sync_backups(
             (Some(id), Some((ih, rc))) => {
                 if (ih, rc) != (i64::from(b.interval_hours), i64::from(b.retain)) {
                     if fix {
-                        sqlx::query("UPDATE backup_schedules SET interval_hours = ?, retain_count = ? WHERE id = ?")
+                        crate::db::query("UPDATE backup_schedules SET interval_hours = ?, retain_count = ? WHERE id = ?")
                             .bind(b.interval_hours)
                             .bind(b.retain)
                             .bind(id)
@@ -1185,7 +1185,7 @@ async fn sync_backups(
                 }
                 refs.retain(|r| Some(r.id) != existing || r.kind != "backup_schedule");
                 let id = Uuid::new_v4();
-                sqlx::query(
+                crate::db::query(
                     "INSERT INTO backup_schedules (id, name, project, tag_filter, backup_type, interval_hours, retain_count, enabled)
                      VALUES (?, ?, ?, ?, 'full', ?, ?, 1)",
                 )
@@ -1218,7 +1218,7 @@ async fn sync_backups(
             items.push(item("backup", &r.name, "not in the template", false));
             continue;
         }
-        sqlx::query("DELETE FROM backup_schedules WHERE id = ?")
+        crate::db::query("DELETE FROM backup_schedules WHERE id = ?")
             .bind(r.id)
             .execute(&state.pool)
             .await?;
@@ -1230,7 +1230,7 @@ async fn sync_backups(
 async fn store_drift(state: &AppState, id: Uuid, items: &[DriftItem]) {
     let open = items.iter().filter(|i| !i.fixed).count();
     let drift = json!({ "in_sync": open == 0, "open": open, "items": items });
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "UPDATE stacks SET drift_json = ?, checked_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?",
     )
     .bind(drift)
@@ -1250,7 +1250,7 @@ fn ctx_of(row: &StackRow, project_name: String) -> StackCtx {
 
 async fn row_ctx(state: &AppState, row: &StackRow) -> Result<StackCtx, ApiError> {
     let project_name: String = match row.project_id {
-        Some(p) => sqlx::query_scalar("SELECT name FROM projects WHERE id = ?")
+        Some(p) => crate::db::query_scalar("SELECT name FROM projects WHERE id = ?")
             .bind(p)
             .fetch_optional(&state.pool)
             .await?
@@ -1294,7 +1294,7 @@ pub(crate) async fn reconcile_stack(
     if heal && refs != refs_of(&row) {
         let resources_json =
             serde_json::to_value(&refs).map_err(|e| ApiError::internal(e.to_string()))?;
-        sqlx::query("UPDATE stacks SET resources_json = ? WHERE id = ?")
+        crate::db::query("UPDATE stacks SET resources_json = ? WHERE id = ?")
             .bind(resources_json)
             .bind(id)
             .execute(&state.pool)
@@ -1315,7 +1315,7 @@ pub(crate) async fn run_update(
 ) -> Result<(), ApiError> {
     let row = load_row(state, id).await?;
     let previous: Option<sqlx::types::Json<StackTemplate>> =
-        sqlx::query_scalar("SELECT previous_template_json FROM stacks WHERE id = ?")
+        crate::db::query_scalar("SELECT previous_template_json FROM stacks WHERE id = ?")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
@@ -1342,7 +1342,7 @@ pub(crate) async fn run_update(
             }
             let template_json =
                 serde_json::to_value(&old).map_err(|e| ApiError::internal(e.to_string()))?;
-            sqlx::query("UPDATE stacks SET template_json = ? WHERE id = ?")
+            crate::db::query("UPDATE stacks SET template_json = ? WHERE id = ?")
                 .bind(template_json)
                 .bind(id)
                 .execute(&state.pool)
@@ -1377,7 +1377,7 @@ async fn begin_update(
     }
     let template_json =
         serde_json::to_value(template).map_err(|e| ApiError::internal(e.to_string()))?;
-    sqlx::query(
+    crate::db::query(
         "UPDATE stacks SET previous_template_json = template_json, template_json = ?, status = 'updating' WHERE id = ?",
     )
     .bind(template_json)
@@ -1459,7 +1459,7 @@ pub async fn set_auto_heal(
     Json(body): Json<AutoHealBody>,
 ) -> Result<Json<StackRow>, ApiError> {
     require_operator(&actor)?;
-    sqlx::query("UPDATE stacks SET auto_heal = ? WHERE id = ?")
+    crate::db::query("UPDATE stacks SET auto_heal = ? WHERE id = ?")
         .bind(body.enabled)
         .bind(id)
         .execute(&state.pool)
@@ -1599,7 +1599,7 @@ pub(crate) async fn build_plan(
         None => {
             if template.is_v2() {
                 let taken: Option<Uuid> =
-                    sqlx::query_scalar("SELECT id FROM stacks WHERE name = ?")
+                    crate::db::query_scalar("SELECT id FROM stacks WHERE name = ?")
                         .bind(name)
                         .fetch_optional(&state.pool)
                         .await?;
@@ -1616,7 +1616,7 @@ pub(crate) async fn build_plan(
     };
     if diff.is_none() {
         for p in &planned {
-            let taken: Option<Uuid> = sqlx::query_scalar("SELECT id FROM vms WHERE name = ?")
+            let taken: Option<Uuid> = crate::db::query_scalar("SELECT id FROM vms WHERE name = ?")
                 .bind(&p.name)
                 .fetch_optional(&state.pool)
                 .await?;
@@ -1626,7 +1626,7 @@ pub(crate) async fn build_plan(
         }
     }
 
-    let (vcpu_rate, gib_rate): (f64, f64) = sqlx::query_as(
+    let (vcpu_rate, gib_rate): (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(&state.pool)
@@ -2050,7 +2050,7 @@ pub(crate) async fn execute_deploy(
         );
     }
     ensure_name_free(state, &r.name).await?;
-    let project_name: String = sqlx::query_scalar("SELECT name FROM projects WHERE id = ?")
+    let project_name: String = crate::db::query_scalar("SELECT name FROM projects WHERE id = ?")
         .bind(r.project_id)
         .fetch_optional(&state.pool)
         .await?
@@ -2160,17 +2160,17 @@ mod tests {
     async fn seed(state: &AppState) -> Uuid {
         let pool = &state.pool;
         seed_host(pool, Uuid::from_u128(7)).await;
-        sqlx::query("UPDATE hosts SET memory_total_mib = 65536, memory_used_mib = 0")
+        crate::db::query("UPDATE hosts SET memory_total_mib = 65536, memory_used_mib = 0")
             .execute(pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO clusters (id, name) VALUES (?, 'c1')")
+        crate::db::query("INSERT INTO clusters (id, name) VALUES (?, 'c1')")
             .bind(Uuid::from_u128(1))
             .execute(pool)
             .await
             .unwrap();
         let project = Uuid::from_u128(9);
-        sqlx::query("INSERT INTO projects (id, name) VALUES (?, 'dev')")
+        crate::db::query("INSERT INTO projects (id, name) VALUES (?, 'dev')")
             .bind(project)
             .execute(pool)
             .await
@@ -2214,7 +2214,7 @@ mod tests {
         assert!(plan.policy_yaml.contains("stack-shop-db"));
         assert!(plan.blocked().is_none());
 
-        sqlx::query("INSERT INTO project_quotas (project, max_vms) VALUES ('dev', 2)")
+        crate::db::query("INSERT INTO project_quotas (project, max_vms) VALUES ('dev', 2)")
             .execute(&state.pool)
             .await
             .unwrap();
@@ -2224,7 +2224,7 @@ mod tests {
         assert!(!plan.quota.ok);
         assert!(plan.blocked().unwrap().contains("VM count quota"));
 
-        sqlx::query("UPDATE hosts SET memory_used_mib = 64000")
+        crate::db::query("UPDATE hosts SET memory_used_mib = 64000")
             .execute(&state.pool)
             .await
             .unwrap();

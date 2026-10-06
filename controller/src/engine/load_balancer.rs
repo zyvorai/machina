@@ -9,7 +9,7 @@
 //! reconcile loop here because, unlike a VM's libvirt state, nothing external can drift
 //! this rule set out from under us between calls.
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client::LbMemberDto;
@@ -25,9 +25,9 @@ struct LoadBalancerRow {
 /// Push the current enabled-member set for `lb_id` to its host's agent, then persist the
 /// resulting status. Returns the failure so the caller can decide whether to surface it
 /// (e.g. reject the mutation that triggered this) or just let the row show `status=error`.
-pub async fn apply(pool: &SqlitePool, cfg: &ControllerConfig, lb_id: Uuid) -> anyhow::Result<()> {
+pub async fn apply(pool: &DbPool, cfg: &ControllerConfig, lb_id: Uuid) -> anyhow::Result<()> {
     let (host_id, protocol, listener_port): (Uuid, String, i64) =
-        sqlx::query_as("SELECT host_id, protocol, listener_port FROM load_balancers WHERE id = ?")
+        crate::db::query_as("SELECT host_id, protocol, listener_port FROM load_balancers WHERE id = ?")
             .bind(lb_id)
             .fetch_one(pool)
             .await?;
@@ -37,7 +37,7 @@ pub async fn apply(pool: &SqlitePool, cfg: &ControllerConfig, lb_id: Uuid) -> an
         listener_port,
     };
 
-    let members: Vec<(String, i64, i64)> = sqlx::query_as(
+    let members: Vec<(String, i64, i64)> = crate::db::query_as(
         "SELECT v.guest_ip, m.port, m.weight
          FROM lb_members m
          JOIN vms v ON v.id = m.vm_id
@@ -75,7 +75,7 @@ pub async fn apply(pool: &SqlitePool, cfg: &ControllerConfig, lb_id: Uuid) -> an
 
     match &result {
         Ok(()) => {
-            sqlx::query(
+            crate::db::query(
                 "UPDATE load_balancers SET status = 'active', status_message = '' WHERE id = ?",
             )
             .bind(lb_id)
@@ -83,7 +83,7 @@ pub async fn apply(pool: &SqlitePool, cfg: &ControllerConfig, lb_id: Uuid) -> an
             .await?;
         }
         Err(e) => {
-            sqlx::query(
+            crate::db::query(
                 "UPDATE load_balancers SET status = 'error', status_message = ? WHERE id = ?",
             )
             .bind(e.to_string())
@@ -98,9 +98,9 @@ pub async fn apply(pool: &SqlitePool, cfg: &ControllerConfig, lb_id: Uuid) -> an
 /// Tear down the iptables rule set for a load balancer that's about to be deleted from the DB.
 /// Best-effort by design (mirrors `host_network::delete_load_balancer_rules`) -- an
 /// unreachable host shouldn't block deleting the DB row.
-pub async fn teardown(pool: &SqlitePool, cfg: &ControllerConfig, lb_id: Uuid) {
+pub async fn teardown(pool: &DbPool, cfg: &ControllerConfig, lb_id: Uuid) {
     let row: Result<(Uuid, String, i64), _> =
-        sqlx::query_as("SELECT host_id, protocol, listener_port FROM load_balancers WHERE id = ?")
+        crate::db::query_as("SELECT host_id, protocol, listener_port FROM load_balancers WHERE id = ?")
             .bind(lb_id)
             .fetch_one(pool)
             .await;

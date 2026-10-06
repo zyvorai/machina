@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::api::ApiError;
@@ -28,7 +28,7 @@ pub struct AutopilotProposal {
     pub actions: Vec<ProposedAction>,
 }
 
-pub async fn propose(pool: &SqlitePool, vm_id: Option<Uuid>) -> anyhow::Result<AutopilotProposal> {
+pub async fn propose(pool: &DbPool, vm_id: Option<Uuid>) -> anyhow::Result<AutopilotProposal> {
     let settings = super::settings::get_ai_settings(pool).await?;
     let mut actions = Vec::new();
 
@@ -143,7 +143,7 @@ pub async fn execute(
                 let vm_id =
                     Uuid::parse_str(id_str).map_err(|_| ApiError::bad_request("invalid vm_id"))?;
                 let host_id: Option<Uuid> =
-                    sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+                    crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
                         .bind(vm_id)
                         .fetch_optional(&state.pool)
                         .await?;
@@ -156,7 +156,7 @@ pub async fn execute(
                         .begin()
                         .await
                         .map_err(|e| ApiError::internal(e.to_string()))?;
-                    sqlx::query(
+                    crate::db::query(
                         "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES (?, ?, 'full', 'pending')",
                     )
                     .bind(backup_id)
@@ -164,7 +164,7 @@ pub async fn execute(
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| ApiError::internal(e.to_string()))?;
-                    sqlx::query(
+                    crate::db::query(
                         "INSERT INTO tasks (id, operation, status, resource_type, resource_id, host_id, payload)
                          VALUES (?, 'vm.backup', 'pending', 'vm', ?, ?, ?)",
                     )
@@ -195,7 +195,7 @@ pub async fn execute(
         }
         "create_backup" => {
             let vm_id = parse_vm_id(&body.object_ref)?;
-            let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .fetch_optional(&state.pool)
                 .await?;
@@ -208,7 +208,7 @@ pub async fn execute(
                     .begin()
                     .await
                     .map_err(|e| ApiError::internal(e.to_string()))?;
-                sqlx::query(
+                crate::db::query(
                     "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES (?, ?, 'full', 'pending')",
                 )
                 .bind(backup_id)
@@ -216,7 +216,7 @@ pub async fn execute(
                 .execute(&mut *tx)
                 .await
                 .map_err(|e| ApiError::internal(e.to_string()))?;
-                sqlx::query(
+                crate::db::query(
                     "INSERT INTO tasks (id, operation, status, resource_type, resource_id, host_id, payload)
                      VALUES (?, 'vm.backup', 'pending', 'vm', ?, ?, ?)",
                 )
@@ -272,7 +272,7 @@ pub async fn execute(
         }
         "install_guest_tools" => {
             let vm_id = parse_vm_id(&body.object_ref)?;
-            let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .fetch_optional(&state.pool)
                 .await?;
@@ -290,7 +290,7 @@ pub async fn execute(
         }
         "start_vm" => {
             let vm_id = parse_vm_id(&body.object_ref)?;
-            let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .fetch_optional(&state.pool)
                 .await?;
@@ -309,7 +309,7 @@ pub async fn execute(
         // A clean guest shutdown (never a power-off). Reversible: undo starts it again.
         "stop_vm" => {
             let vm_id = parse_vm_id(&body.object_ref)?;
-            let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .fetch_optional(&state.pool)
                 .await?
@@ -328,7 +328,7 @@ pub async fn execute(
         }
         "sync_hosts" => {
             let hosts: Vec<Uuid> =
-                sqlx::query_scalar("SELECT id FROM hosts WHERE state = 'online'")
+                crate::db::query_scalar("SELECT id FROM hosts WHERE state = 'online'")
                     .fetch_all(&state.pool)
                     .await?;
             for hid in hosts {
@@ -361,7 +361,7 @@ pub async fn execute(
                     "managed VM: delete it from the VM page instead",
                 ));
             }
-            sqlx::query("DELETE FROM vms WHERE id = ?")
+            crate::db::query("DELETE FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .execute(&state.pool)
                 .await?;
@@ -492,11 +492,11 @@ pub struct AutopilotHistoryEntry {
 }
 
 pub async fn list_history(
-    pool: &SqlitePool,
+    pool: &DbPool,
     limit: i64,
 ) -> anyhow::Result<Vec<AutopilotHistoryEntry>> {
     let cap = limit.clamp(1, 100);
-    let rows = sqlx::query_as::<_, AutopilotHistoryEntry>(
+    let rows = crate::db::query_as::<_, AutopilotHistoryEntry>(
         "SELECT id, actor, action, created_at, COALESCE(detail, '{}') AS detail
          FROM audit_logs
          WHERE action LIKE 'ai.autopilot%'

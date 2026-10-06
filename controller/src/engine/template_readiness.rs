@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::host_shell;
 use super::template_catalog;
@@ -32,11 +32,11 @@ pub struct MissingTemplateImage {
 }
 
 pub async fn check_template_readiness(
-    pool: &SqlitePool,
+    pool: &DbPool,
     name: &str,
     version: &str,
 ) -> anyhow::Result<TemplateReadiness> {
-    let row: Option<(String, bool)> = sqlx::query_as(
+    let row: Option<(String, bool)> = crate::db::query_as(
         "SELECT source_disk, cloud_init FROM templates WHERE name = ? AND version = ?",
     )
     .bind(name)
@@ -46,7 +46,7 @@ pub async fn check_template_readiness(
 
     let (source_disk, cloud_init) = row.ok_or_else(|| anyhow::anyhow!("template not found"))?;
 
-    let host_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+    let host_online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(pool)
         .await?;
 
@@ -91,9 +91,9 @@ pub async fn check_template_readiness(
 
 /// Marketplace templates whose golden disk is absent on all online hosts.
 pub async fn list_missing_marketplace_images(
-    pool: &SqlitePool,
+    pool: &DbPool,
 ) -> anyhow::Result<Vec<MissingTemplateImage>> {
-    let rows: Vec<(String, String, String, String, Option<String>)> = sqlx::query_as(
+    let rows: Vec<(String, String, String, String, Option<String>)> = crate::db::query_as(
         "SELECT name, version, source_disk, category, icon FROM templates WHERE marketplace = TRUE ORDER BY featured DESC, name LIMIT 200",
     )
     .fetch_all(pool)
@@ -125,11 +125,11 @@ pub async fn disk_exists_at(path: &str) -> bool {
     Path::new(path).is_file()
 }
 
-pub async fn disk_exists_on_hosts(pool: &SqlitePool, path: &str) -> bool {
+pub async fn disk_exists_on_hosts(pool: &DbPool, path: &str) -> bool {
     if disk_exists_at(path).await {
         return true;
     }
-    let hosts: Vec<String> = sqlx::query_scalar(
+    let hosts: Vec<String> = crate::db::query_scalar(
         "SELECT COALESCE(NULLIF(address, ''), hostname) FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 200",
     )
     .fetch_all(pool)

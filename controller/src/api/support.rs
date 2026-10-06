@@ -28,17 +28,17 @@ pub async fn support_bundle(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<impl IntoResponse, ApiError> {
     require_admin(&actor)?;
-    let task_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tasks")
+    let task_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM tasks")
         .fetch_one(&state.pool)
         .await?;
-    let host_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+    let host_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(&state.pool)
         .await?;
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(&state.pool)
         .await?;
 
-    let recent_failures: serde_json::Value = sqlx::query_scalar(
+    let recent_failures: serde_json::Value = crate::db::query_scalar(
         "SELECT COALESCE(json_group_array(json_object('id',id,'operation',operation,'status',status,'message',message,'created_at',created_at)), '[]')
          FROM (SELECT id, operation, status, message, created_at FROM tasks WHERE status = 'failed' ORDER BY created_at DESC LIMIT 20)",
     )
@@ -46,7 +46,7 @@ pub async fn support_bundle(
     .await
     .unwrap_or(serde_json::json!([]));
 
-    let audit_tail: serde_json::Value = sqlx::query_scalar(
+    let audit_tail: serde_json::Value = crate::db::query_scalar(
         "SELECT COALESCE(json_group_array(json_object('actor',actor,'action',action,'resource_type',resource_type,'resource_id',resource_id,'created_at',created_at)), '[]')
          FROM (SELECT actor, action, resource_type, resource_id, created_at FROM audit_logs ORDER BY created_at DESC LIMIT 50)",
     )
@@ -54,7 +54,7 @@ pub async fn support_bundle(
     .await
     .unwrap_or(serde_json::json!([]));
 
-    let version_matrix: serde_json::Value = sqlx::query_scalar(
+    let version_matrix: serde_json::Value = crate::db::query_scalar(
         "SELECT COALESCE(json_group_array(json_object('hostname',hostname,'agent_version',agent_version,'libvirt_version',libvirt_version,'qemu_version',qemu_version,'cpu_model',cpu_model,'state',state)), '[]')
          FROM (SELECT hostname, agent_version, libvirt_version, qemu_version, cpu_model, state FROM hosts ORDER BY hostname)",
     )

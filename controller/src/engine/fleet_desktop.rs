@@ -4,7 +4,7 @@
 // Fleet desktop aggregator (Phase 35).
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::config::ControllerConfig;
 use crate::engine::ai::zyra_summary;
@@ -31,7 +31,7 @@ pub struct FleetDesktopOverview {
 }
 
 pub async fn overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FleetDesktopOverview> {
     let zeus = zyra_summary::summarize(pool).await?;
@@ -47,23 +47,23 @@ pub async fn overview(
                 hosts: vec![],
                 summary: "Linux health unavailable".into(),
             });
-    let hosts_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+    let hosts_total: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await?;
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
         .await?;
     let active_tasks: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'running')")
+        crate::db::query_scalar("SELECT COUNT(*) FROM tasks WHERE status IN ('pending', 'running')")
             .fetch_one(pool)
             .await?;
-    let failed_tasks_24h: i64 = sqlx::query_scalar(
+    let failed_tasks_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE status = 'failed' AND created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await?;
     let unread_notifications: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM notification_outbox WHERE delivered = FALSE")
+        crate::db::query_scalar("SELECT COUNT(*) FROM notification_outbox WHERE delivered = FALSE")
             .fetch_one(pool)
             .await
             .unwrap_or(0);

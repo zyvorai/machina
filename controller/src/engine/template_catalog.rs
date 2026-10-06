@@ -1,7 +1,7 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 struct CatalogTemplate {
@@ -424,10 +424,10 @@ const RETIRED_TEMPLATE_NAMES: &[&str] = &[
 ];
 
 /// Remove marketplace rows that are no longer in the bundled catalog (e.g. fedora-40).
-pub async fn prune_stale_marketplace_templates(pool: &SqlitePool) -> anyhow::Result<u64> {
+pub async fn prune_stale_marketplace_templates(pool: &DbPool) -> anyhow::Result<u64> {
     let retired_json = serde_json::to_string(RETIRED_TEMPLATE_NAMES).unwrap_or_default();
     let retired =
-        sqlx::query("DELETE FROM templates WHERE name IN (SELECT value FROM json_each(?))")
+        crate::db::query("DELETE FROM templates WHERE name IN (SELECT value FROM json_each(?))")
             .bind(retired_json)
             .execute(pool)
             .await?
@@ -440,7 +440,7 @@ pub async fn prune_stale_marketplace_templates(pool: &SqlitePool) -> anyhow::Res
             .collect::<Vec<_>>(),
     )
     .unwrap_or_else(|_| "[]".into());
-    let result = sqlx::query(
+    let result = crate::db::query(
         "DELETE FROM templates
          WHERE marketplace = TRUE
            AND NOT EXISTS (
@@ -456,7 +456,7 @@ pub async fn prune_stale_marketplace_templates(pool: &SqlitePool) -> anyhow::Res
 }
 
 /// Insert bundled marketplace templates (idempotent).
-pub async fn seed_default_templates(pool: &SqlitePool) -> anyhow::Result<usize> {
+pub async fn seed_default_templates(pool: &DbPool) -> anyhow::Result<usize> {
     let mut inserted = 0usize;
     // Seed the whole catalog in ONE transaction. Committing each row separately
     // meant N fsyncs at boot (one insert tripped the >1s slow-query log); a single
@@ -464,7 +464,7 @@ pub async fn seed_default_templates(pool: &SqlitePool) -> anyhow::Result<usize> 
     let mut tx = pool.begin().await?;
     for t in CATALOG {
         let fw = catalog_firewall_profile(t);
-        let result = sqlx::query(
+        let result = crate::db::query(
             "INSERT INTO templates (id, name, version, source_disk, cloud_init, os_family, category, workload, description, featured, marketplace, icon, firewall_profile, approval_status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, ?, 'approved')
              ON CONFLICT (name, version) DO UPDATE SET
@@ -516,7 +516,7 @@ pub fn download_url_for_ref(template_ref: &str) -> Option<&'static str> {
     download_url_for(name, version)
 }
 
-pub async fn ensure_default_templates(pool: &SqlitePool) -> anyhow::Result<()> {
+pub async fn ensure_default_templates(pool: &DbPool) -> anyhow::Result<()> {
     seed_default_templates(pool).await?;
     Ok(())
 }

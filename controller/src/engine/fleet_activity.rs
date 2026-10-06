@@ -4,7 +4,7 @@
 // Fleet Activity Monitor aggregator (Phase 37).
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -46,15 +46,15 @@ pub struct FleetActivityOverview {
 }
 
 pub async fn overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FleetActivityOverview> {
     let running_vms: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
             .fetch_one(pool)
             .await?;
 
-    let vm_rows: Vec<(Uuid, String, Option<Uuid>, String, f32, i64, i64)> = sqlx::query_as(
+    let vm_rows: Vec<(Uuid, String, Option<Uuid>, String, f32, i64, i64)> = crate::db::query_as(
         "SELECT v.id, v.name, v.host_id, v.observed_state,
                 COALESCE(m.cpu_percent, 0.0), COALESCE(m.memory_used_mib, 0), v.memory_mib
          FROM vms v
@@ -83,7 +83,7 @@ pub async fn overview(
         )
         .collect();
 
-    let host_rows: Vec<(Uuid, String, String, f32, i64, i64, i32)> = sqlx::query_as(
+    let host_rows: Vec<(Uuid, String, String, f32, i64, i64, i32)> = crate::db::query_as(
         "SELECT id, hostname, state, cpu_percent, memory_used_mib, memory_total_mib, vm_count
          FROM hosts
          ORDER BY cpu_percent DESC, hostname

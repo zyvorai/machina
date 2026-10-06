@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::config::ControllerConfig;
@@ -48,20 +48,20 @@ pub struct VmBrief {
 }
 
 pub async fn assemble(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     vm_id: Option<Uuid>,
     host_id: Option<Uuid>,
 ) -> anyhow::Result<AssembledContext> {
-    let cluster_vms: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let cluster_vms: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(pool)
         .await?;
     let cluster_hosts_online: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
             .fetch_one(pool)
             .await?;
 
-    let recent_tasks: Vec<TaskBrief> = sqlx::query_as(
+    let recent_tasks: Vec<TaskBrief> = crate::db::query_as(
         "SELECT operation, status, progress FROM tasks ORDER BY created_at DESC LIMIT 8",
     )
     .fetch_all(pool)
@@ -74,7 +74,7 @@ pub async fn assemble(
     })
     .collect();
 
-    let recent_events: Vec<String> = sqlx::query_scalar(
+    let recent_events: Vec<String> = crate::db::query_scalar(
         "SELECT kind || ': ' || COALESCE(message, '') FROM events ORDER BY created_at DESC LIMIT 6",
     )
     .fetch_all(pool)
@@ -87,7 +87,7 @@ pub async fn assemble(
         .unwrap_or(0);
 
     let vm = if let Some(id) = vm_id {
-        sqlx::query_as::<_, (Uuid, String, String, i32, i64)>(
+        crate::db::query_as::<_, (Uuid, String, String, i32, i64)>(
             "SELECT id, name, observed_state, vcpus, memory_mib FROM vms WHERE id = ?",
         )
         .bind(id)
@@ -106,7 +106,7 @@ pub async fn assemble(
 
     let host = if let Some(id) = host_id {
         let row: Option<(String, String)> =
-            sqlx::query_as("SELECT hostname, state FROM hosts WHERE id = ?")
+            crate::db::query_as("SELECT hostname, state FROM hosts WHERE id = ?")
                 .bind(id)
                 .fetch_optional(pool)
                 .await?;

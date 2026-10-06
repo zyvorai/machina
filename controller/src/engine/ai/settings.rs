@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AiSettings {
@@ -30,7 +30,7 @@ pub struct AiSettingsPatch {
     pub fleet_peer_urls: Option<Vec<String>>,
 }
 
-pub async fn get_ai_settings(pool: &SqlitePool) -> anyhow::Result<AiSettings> {
+pub async fn get_ai_settings(pool: &DbPool) -> anyhow::Result<AiSettings> {
     let row: (
         bool,
         String,
@@ -41,7 +41,7 @@ pub async fn get_ai_settings(pool: &SqlitePool) -> anyhow::Result<AiSettings> {
         Option<chrono::DateTime<chrono::Utc>>,
         i32,
         serde_json::Value,
-    ) = sqlx::query_as(
+    ) = crate::db::query_as(
         "SELECT ai_enabled, ai_mode, ai_provider, ai_model, COALESCE(ai_api_key, ''),
          ai_autopilot_interval_secs, ai_autopilot_last_run, ai_autopilot_max_actions,
          COALESCE(ai_fleet_peer_urls, '[]')
@@ -64,30 +64,30 @@ pub async fn get_ai_settings(pool: &SqlitePool) -> anyhow::Result<AiSettings> {
 }
 
 pub async fn patch_ai_settings(
-    pool: &SqlitePool,
+    pool: &DbPool,
     patch: &AiSettingsPatch,
 ) -> anyhow::Result<AiSettings> {
     let mut tx = pool.begin().await?;
     if let Some(v) = patch.enabled {
-        sqlx::query("UPDATE clusters SET ai_enabled = ?")
+        crate::db::query("UPDATE clusters SET ai_enabled = ?")
             .bind(v)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &patch.mode {
-        sqlx::query("UPDATE clusters SET ai_mode = ?")
+        crate::db::query("UPDATE clusters SET ai_mode = ?")
             .bind(v)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &patch.provider {
-        sqlx::query("UPDATE clusters SET ai_provider = ?")
+        crate::db::query("UPDATE clusters SET ai_provider = ?")
             .bind(v)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &patch.model {
-        sqlx::query("UPDATE clusters SET ai_model = ?")
+        crate::db::query("UPDATE clusters SET ai_model = ?")
             .bind(v)
             .execute(&mut *tx)
             .await?;
@@ -98,26 +98,26 @@ pub async fn patch_ai_settings(
         // legacy_resolve reads it back through crypto::load_api_key, which
         // transparently handles both encrypted and (dev/legacy) plaintext values.
         let stored = super::crypto::store_api_key(v.trim())?;
-        sqlx::query("UPDATE clusters SET ai_api_key = ?")
+        crate::db::query("UPDATE clusters SET ai_api_key = ?")
             .bind(stored)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = patch.autopilot_interval_secs {
-        sqlx::query("UPDATE clusters SET ai_autopilot_interval_secs = ?")
+        crate::db::query("UPDATE clusters SET ai_autopilot_interval_secs = ?")
             .bind(v.clamp(0, 86400))
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = patch.autopilot_max_actions {
-        sqlx::query("UPDATE clusters SET ai_autopilot_max_actions = ?")
+        crate::db::query("UPDATE clusters SET ai_autopilot_max_actions = ?")
             .bind(v.clamp(1, 10))
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &patch.fleet_peer_urls {
         let json = serde_json::to_value(v)?;
-        sqlx::query("UPDATE clusters SET ai_fleet_peer_urls = ?")
+        crate::db::query("UPDATE clusters SET ai_fleet_peer_urls = ?")
             .bind(json)
             .execute(&mut *tx)
             .await?;
@@ -126,18 +126,18 @@ pub async fn patch_ai_settings(
     get_ai_settings(pool).await
 }
 
-pub async fn get_fleet_peer_urls(pool: &SqlitePool) -> anyhow::Result<Vec<String>> {
+pub async fn get_fleet_peer_urls(pool: &DbPool) -> anyhow::Result<Vec<String>> {
     Ok(get_ai_settings(pool).await?.fleet_peer_urls)
 }
 
-pub async fn autopilot_max_actions(pool: &SqlitePool) -> anyhow::Result<usize> {
+pub async fn autopilot_max_actions(pool: &DbPool) -> anyhow::Result<usize> {
     Ok(get_ai_settings(pool)
         .await?
         .autopilot_max_actions
         .clamp(1, 10) as usize)
 }
 
-pub async fn api_key(pool: &SqlitePool) -> anyhow::Result<Option<String>> {
+pub async fn api_key(pool: &DbPool) -> anyhow::Result<Option<String>> {
     if std::env::var("MACHINA_AI_DISABLED").ok().as_deref() == Some("1") {
         return Ok(None);
     }
@@ -146,7 +146,7 @@ pub async fn api_key(pool: &SqlitePool) -> anyhow::Result<Option<String>> {
             return Ok(Some(k));
         }
     }
-    let key: String = sqlx::query_scalar(
+    let key: String = crate::db::query_scalar(
         "SELECT COALESCE(ai_api_key, '') FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)
@@ -162,7 +162,7 @@ pub async fn api_key(pool: &SqlitePool) -> anyhow::Result<Option<String>> {
     }
 }
 
-pub async fn llm_enabled(pool: &SqlitePool) -> anyhow::Result<bool> {
+pub async fn llm_enabled(pool: &DbPool) -> anyhow::Result<bool> {
     let s = get_ai_settings(pool).await?;
     Ok(s.enabled && s.api_key_configured && api_key(pool).await?.is_some())
 }

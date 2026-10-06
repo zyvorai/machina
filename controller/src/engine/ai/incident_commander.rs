@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::knowledge_runbook;
@@ -32,7 +32,7 @@ pub struct IncidentRoom {
     pub correlated_count: usize,
 }
 
-pub async fn list_active(pool: &SqlitePool) -> anyhow::Result<Vec<ActiveIncident>> {
+pub async fn list_active(pool: &DbPool) -> anyhow::Result<Vec<ActiveIncident>> {
     let rows: Vec<(
         Uuid,
         String,
@@ -44,7 +44,7 @@ pub async fn list_active(pool: &SqlitePool) -> anyhow::Result<Vec<ActiveIncident
         DateTime<Utc>,
         Option<DateTime<Utc>>,
         Option<DateTime<Utc>>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, title, summary, severity, status, affected_resources, root_cause,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at,
                 strftime('%Y-%m-%dT%H:%M:%SZ', window_start) AS window_start,
@@ -96,7 +96,7 @@ pub async fn list_active(pool: &SqlitePool) -> anyhow::Result<Vec<ActiveIncident
         .collect())
 }
 
-pub async fn open_room(pool: &SqlitePool, incident_id: Uuid) -> anyhow::Result<IncidentRoom> {
+pub async fn open_room(pool: &DbPool, incident_id: Uuid) -> anyhow::Result<IncidentRoom> {
     let row: Option<(
         String,
         String,
@@ -107,7 +107,7 @@ pub async fn open_room(pool: &SqlitePool, incident_id: Uuid) -> anyhow::Result<I
         DateTime<Utc>,
         Option<DateTime<Utc>>,
         Option<DateTime<Utc>>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT title, summary, severity, status, affected_resources, root_cause,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at,
                 strftime('%Y-%m-%dT%H:%M:%SZ', window_start) AS window_start,
@@ -165,7 +165,7 @@ pub async fn open_room(pool: &SqlitePool, incident_id: Uuid) -> anyhow::Result<I
     };
 
     let pending: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM ai_actions WHERE status = 'pending'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM ai_actions WHERE status = 'pending'")
             .fetch_one(pool)
             .await
             .unwrap_or(0);
@@ -190,8 +190,8 @@ pub async fn open_room(pool: &SqlitePool, incident_id: Uuid) -> anyhow::Result<I
     })
 }
 
-pub async fn ack(pool: &SqlitePool, incident_id: Uuid) -> anyhow::Result<()> {
-    sqlx::query(
+pub async fn ack(pool: &DbPool, incident_id: Uuid) -> anyhow::Result<()> {
+    crate::db::query(
         "UPDATE ai_incidents SET status = 'investigating', updated_at = datetime('now') WHERE id = ?",
     )
     .bind(incident_id)
@@ -211,9 +211,9 @@ pub struct CreateIncidentRequest {
     pub window_end: Option<DateTime<Utc>>,
 }
 
-pub async fn create(pool: &SqlitePool, req: &CreateIncidentRequest) -> anyhow::Result<Uuid> {
+pub async fn create(pool: &DbPool, req: &CreateIncidentRequest) -> anyhow::Result<Uuid> {
     let resources = serde_json::json!(req.affected_resources);
-    let id: Uuid = sqlx::query_scalar(
+    let id: Uuid = crate::db::query_scalar(
         "INSERT INTO ai_incidents (id, title, summary, severity, status, affected_resources, root_cause, window_start, window_end) VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?) RETURNING id",
     )
     .bind(uuid::Uuid::new_v4())
@@ -230,13 +230,13 @@ pub async fn create(pool: &SqlitePool, req: &CreateIncidentRequest) -> anyhow::R
 }
 
 /// Correlate recent failures into a new incident if none open.
-pub async fn correlate_and_open(pool: &SqlitePool) -> anyhow::Result<Option<Uuid>> {
+pub async fn correlate_and_open(pool: &DbPool) -> anyhow::Result<Option<Uuid>> {
     let active = list_active(pool).await?;
     if !active.is_empty() {
         return Ok(None);
     }
 
-    let failed_events: i64 = sqlx::query_scalar(
+    let failed_events: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM events WHERE created_at > datetime('now', '-1 hour')
          AND (kind LIKE '%fail%' OR kind LIKE '%error%')",
     )
@@ -244,7 +244,7 @@ pub async fn correlate_and_open(pool: &SqlitePool) -> anyhow::Result<Option<Uuid
     .await
     .unwrap_or(0);
 
-    let failed_tasks: i64 = sqlx::query_scalar(
+    let failed_tasks: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE status = 'failed' AND created_at > datetime('now', '-1 hour')",
     )
     .fetch_one(pool)

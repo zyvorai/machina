@@ -13,25 +13,25 @@ pub async fn prometheus_metrics(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<impl IntoResponse, crate::api::ApiError> {
     require_operator(&actor)?;
-    let hosts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+    let hosts: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(&state.pool)
         .await
         .unwrap_or(0);
-    let vms: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms")
+    let vms: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms")
         .fetch_one(&state.pool)
         .await
         .unwrap_or(0);
     let running: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
             .fetch_one(&state.pool)
             .await
             .unwrap_or(0);
     let tasks_pending: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE status = 'pending'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM tasks WHERE status = 'pending'")
             .fetch_one(&state.pool)
             .await
             .unwrap_or(0);
-    let offline: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
+    let offline: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'offline'")
         .fetch_one(&state.pool)
         .await
         .unwrap_or(0);
@@ -43,7 +43,7 @@ pub async fn prometheus_metrics(
         cpu_percent: f32,
         memory_used_mib: i64,
     }
-    let vm_rows: Vec<VmMetricRow> = sqlx::query_as(
+    let vm_rows: Vec<VmMetricRow> = crate::db::query_as(
         "SELECT m.vm_id, v.name, m.cpu_percent, m.memory_used_mib
          FROM vm_metrics m JOIN vms v ON v.id = m.vm_id",
     )

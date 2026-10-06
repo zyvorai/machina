@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use machina_bpf::api::{Request, VmWake, VmWakeEntry};
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::bpf;
@@ -55,8 +55,8 @@ pub fn effective_minutes(vm: Option<i64>, project: Option<i64>) -> i64 {
 
 /// Stamp `last_active_at` when an inventory sample shows activity (or when
 /// the idle clock has not started yet). Runs before vm_metrics is overwritten.
-pub async fn observe_activity(pool: &SqlitePool, vm_id: Uuid, cpu_percent: f32, net_bytes: u64) {
-    let prev: Option<(i64, f64)> = sqlx::query_as(
+pub async fn observe_activity(pool: &DbPool, vm_id: Uuid, cpu_percent: f32, net_bytes: u64) {
+    let prev: Option<(i64, f64)> = crate::db::query_as(
         "SELECT net_bytes, (julianday('now') - julianday(updated_at)) * 86400.0
          FROM vm_metrics WHERE vm_id = ?",
     )
@@ -75,11 +75,11 @@ pub async fn observe_activity(pool: &SqlitePool, vm_id: Uuid, cpu_percent: f32, 
     } else {
         "UPDATE vms SET last_active_at = datetime('now') WHERE id = ? AND last_active_at IS NULL"
     };
-    let _ = sqlx::query(q).bind(vm_id).execute(pool).await;
+    let _ = crate::db::query(q).bind(vm_id).execute(pool).await;
 }
 
-pub async fn record(pool: &SqlitePool, vm_id: Uuid, kind: &str, reason: &str) {
-    let _ = sqlx::query("INSERT INTO vm_sleep_events (vm_id, kind, reason) VALUES (?, ?, ?)")
+pub async fn record(pool: &DbPool, vm_id: Uuid, kind: &str, reason: &str) {
+    let _ = crate::db::query("INSERT INTO vm_sleep_events (vm_id, kind, reason) VALUES (?, ?, ?)")
         .bind(vm_id)
         .bind(kind)
         .bind(reason)
@@ -101,8 +101,8 @@ fn addresses(guest_ip: &str, guest_ips: &str) -> Vec<String> {
 }
 
 /// Every sleeping VM on the host with the addresses that wake it.
-pub async fn wake_set(pool: &SqlitePool, host_id: Uuid) -> VmWake {
-    let rows: Vec<(String, String, String)> = sqlx::query_as(
+pub async fn wake_set(pool: &DbPool, host_id: Uuid) -> VmWake {
+    let rows: Vec<(String, String, String)> = crate::db::query_as(
         "SELECT name, COALESCE(guest_ip, ''), COALESCE(guest_ips, '[]') FROM vms
          WHERE host_id = ? AND desired_state = 'sleeping' AND preempted_at IS NULL ORDER BY name",
     )
@@ -126,7 +126,7 @@ pub async fn wake_set(pool: &SqlitePool, host_id: Uuid) -> VmWake {
     }
 }
 
-async fn push(pool: &SqlitePool, host_id: Uuid, force: bool) -> anyhow::Result<()> {
+async fn push(pool: &DbPool, host_id: Uuid, force: bool) -> anyhow::Result<()> {
     let set = wake_set(pool, host_id).await;
     if !force {
         let g = PUSHED.lock().unwrap_or_else(|e| e.into_inner());
@@ -180,14 +180,14 @@ pub fn spawn(state: AppState) {
 
 pub async fn tick(state: &AppState) -> anyhow::Result<()> {
     let pool = &state.pool;
-    let woken: Vec<(Uuid, String)> = sqlx::query_as(
+    let woken: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT id, name FROM vms
          WHERE desired_state = 'sleeping' AND observed_state IN ('running', 'blocked')",
     )
     .fetch_all(pool)
     .await?;
     for (vm_id, name) in woken {
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET desired_state = 'running', slept_at = NULL, preempted_at = NULL,
              last_active_at = datetime('now') WHERE id = ? AND desired_state = 'sleeping'",
         )
@@ -209,7 +209,7 @@ pub async fn tick(state: &AppState) -> anyhow::Result<()> {
         String,
         String,
     );
-    let rows: Vec<Candidate> = sqlx::query_as(
+    let rows: Vec<Candidate> = crate::db::query_as(
         "SELECT v.id, v.name, v.host_id, v.sleep_after_minutes, p.sleep_after_minutes,
                 (julianday('now') - julianday(v.last_active_at)) * 1440.0,
                 COALESCE(v.guest_ip, ''), COALESCE(v.guest_ips, '[]')
@@ -230,7 +230,7 @@ pub async fn tick(state: &AppState) -> anyhow::Result<()> {
         if addresses(&ip, &ips).is_empty() {
             continue;
         }
-        let inflight: i64 = sqlx::query_scalar(
+        let inflight: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'vm.power'
              AND status IN ('pending', 'running')",
         )
@@ -261,7 +261,7 @@ pub async fn tick(state: &AppState) -> anyhow::Result<()> {
         }
     }
 
-    let hosts: Vec<(Uuid,)> = sqlx::query_as(
+    let hosts: Vec<(Uuid,)> = crate::db::query_as(
         "SELECT DISTINCT host_id FROM vms WHERE host_id IS NOT NULL AND desired_state = 'sleeping'",
     )
     .fetch_all(pool)
@@ -312,7 +312,7 @@ pub struct SleepPolicyView {
 }
 
 pub async fn policy_view(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Uuid,
 ) -> anyhow::Result<Option<SleepPolicyView>> {
     type Row = (
@@ -327,7 +327,7 @@ pub async fn policy_view(
         String,
         String,
     );
-    let row: Option<Row> = sqlx::query_as(
+    let row: Option<Row> = crate::db::query_as(
         "SELECT v.desired_state, v.observed_state, v.sleep_after_minutes, v.project,
                 p.sleep_after_minutes, v.last_active_at,
                 (julianday('now') - julianday(v.last_active_at)) * 1440.0,
@@ -341,7 +341,7 @@ pub async fn policy_view(
     let Some((desired, observed, own, project, pdef, last, idle, slept, ip, ips)) = row else {
         return Ok(None);
     };
-    let events: Vec<(String, String, String)> = sqlx::query_as(
+    let events: Vec<(String, String, String)> = crate::db::query_as(
         "SELECT kind, reason, at FROM vm_sleep_events WHERE vm_id = ? ORDER BY id DESC LIMIT 20",
     )
     .bind(vm_id)
@@ -400,14 +400,14 @@ mod tests {
     }
 
     async fn seed_vm(
-        pool: &SqlitePool,
+        pool: &DbPool,
         host: Uuid,
         id: u128,
         desired: &str,
         observed: &str,
     ) -> Uuid {
         let vm_id = Uuid::from_u128(id);
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vms (id, host_id, name, desired_state, observed_state, guest_ip, lifecycle_phase, inventory_source)
              VALUES (?, ?, ?, ?, ?, ?, 'running', 'libvirt')",
         )
@@ -430,13 +430,13 @@ mod tests {
         let vm = seed_vm(&state.pool, host, 2, "sleeping", "running").await;
         let asleep = seed_vm(&state.pool, host, 3, "sleeping", "shutoff").await;
         tick(&state).await.unwrap();
-        let d: String = sqlx::query_scalar("SELECT desired_state FROM vms WHERE id = ?")
+        let d: String = crate::db::query_scalar("SELECT desired_state FROM vms WHERE id = ?")
             .bind(vm)
             .fetch_one(&state.pool)
             .await
             .unwrap();
         assert_eq!(d, "running");
-        let d: String = sqlx::query_scalar("SELECT desired_state FROM vms WHERE id = ?")
+        let d: String = crate::db::query_scalar("SELECT desired_state FROM vms WHERE id = ?")
             .bind(asleep)
             .fetch_one(&state.pool)
             .await
@@ -455,21 +455,21 @@ mod tests {
         let idle = seed_vm(&state.pool, host, 4, "running", "running").await;
         let busy = seed_vm(&state.pool, host, 5, "running", "running").await;
         let never = seed_vm(&state.pool, host, 6, "running", "running").await;
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET sleep_after_minutes = 10, last_active_at = datetime('now', '-30 minutes') WHERE id = ?",
         )
         .bind(idle)
         .execute(&state.pool)
         .await
         .unwrap();
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET sleep_after_minutes = 10, last_active_at = datetime('now', '-2 minutes') WHERE id = ?",
         )
         .bind(busy)
         .execute(&state.pool)
         .await
         .unwrap();
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET sleep_after_minutes = 0, last_active_at = datetime('now', '-300 minutes') WHERE id = ?",
         )
         .bind(never)
@@ -479,7 +479,7 @@ mod tests {
         tick(&state).await.unwrap();
         tick(&state).await.unwrap();
         let tasks: Vec<(Option<Uuid>, serde_json::Value)> =
-            sqlx::query_as("SELECT resource_id, payload FROM tasks WHERE operation = 'vm.power'")
+            crate::db::query_as("SELECT resource_id, payload FROM tasks WHERE operation = 'vm.power'")
                 .fetch_all(&state.pool)
                 .await
                 .unwrap();
@@ -493,14 +493,14 @@ mod tests {
         let (state, _rx) = test_state().await;
         let host = seed_host(&state.pool, Uuid::from_u128(1)).await;
         let vm = seed_vm(&state.pool, host, 7, "running", "running").await;
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET project = 'dev', last_active_at = datetime('now', '-45 minutes') WHERE id = ?",
         )
         .bind(vm)
         .execute(&state.pool)
         .await
         .unwrap();
-        sqlx::query("INSERT INTO vm_sleep_project_policies (project, sleep_after_minutes) VALUES ('dev', 30)")
+        crate::db::query("INSERT INTO vm_sleep_project_policies (project, sleep_after_minutes) VALUES ('dev', 30)")
             .execute(&state.pool)
             .await
             .unwrap();
@@ -508,7 +508,7 @@ mod tests {
         assert_eq!(v.effective_minutes, 30);
         assert!(v.wakeable);
         tick(&state).await.unwrap();
-        let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE operation = 'vm.power'")
+        let n: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM tasks WHERE operation = 'vm.power'")
             .fetch_one(&state.pool)
             .await
             .unwrap();

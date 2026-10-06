@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -40,9 +40,9 @@ pub struct GitOpsSyncResult {
     pub manual_conflicts: Vec<String>,
 }
 
-pub async fn export_policies(pool: &SqlitePool) -> anyhow::Result<GitOpsExport> {
+pub async fn export_policies(pool: &DbPool) -> anyhow::Result<GitOpsExport> {
     let rows: Vec<(String, String)> =
-        sqlx::query_as("SELECT name, spec_yaml FROM firewall_policies ORDER BY name")
+        crate::db::query_as("SELECT name, spec_yaml FROM firewall_policies ORDER BY name")
             .fetch_all(pool)
             .await?;
 
@@ -58,7 +58,7 @@ pub async fn export_policies(pool: &SqlitePool) -> anyhow::Result<GitOpsExport> 
 }
 
 pub async fn sync_policies(
-    pool: &SqlitePool,
+    pool: &DbPool,
     req: GitOpsSyncRequest,
     actor: &str,
 ) -> anyhow::Result<GitOpsSyncResult> {
@@ -76,13 +76,13 @@ pub async fn sync_policies(
     if req.replace {
         let names: Vec<String> = req.policies.iter().map(|p| p.name.clone()).collect();
         if names.is_empty() {
-            let r = sqlx::query("DELETE FROM firewall_policies WHERE source = 'git'")
+            let r = crate::db::query("DELETE FROM firewall_policies WHERE source = 'git'")
                 .execute(&mut *tx)
                 .await?;
             removed = r.rows_affected() as usize;
         } else {
             let names_json = serde_json::to_string(&names).unwrap_or_default();
-            let r = sqlx::query(
+            let r = crate::db::query(
                 "DELETE FROM firewall_policies WHERE source = 'git' \
                  AND name NOT IN (SELECT value FROM json_each(?))",
             )
@@ -95,7 +95,7 @@ pub async fn sync_policies(
 
     for policy in &req.policies {
         let existing: Option<(Uuid, String)> =
-            sqlx::query_as("SELECT id, source FROM firewall_policies WHERE name = ?")
+            crate::db::query_as("SELECT id, source FROM firewall_policies WHERE name = ?")
                 .bind(&policy.name)
                 .fetch_optional(&mut *tx)
                 .await?;
@@ -114,7 +114,7 @@ pub async fn sync_policies(
                 manual_conflicts.push(policy.name.clone());
                 continue;
             }
-            sqlx::query(
+            crate::db::query(
                 "UPDATE firewall_policies SET spec_yaml = ?, source = 'git', updated_at = datetime('now') WHERE id = ?",
             )
             .bind(&policy.spec_yaml)
@@ -122,7 +122,7 @@ pub async fn sync_policies(
             .execute(&mut *tx)
             .await?;
         } else {
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO firewall_policies (id, name, spec_yaml, source) VALUES (?, ?, ?, 'git')",
             )
             .bind(Uuid::new_v4())
@@ -135,7 +135,7 @@ pub async fn sync_policies(
     }
 
     let sync_id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO firewall_policy_sync_log (id, direction, policy_count, actor, detail_json)
          VALUES (?, 'import', ?, ?, ?)",
     )

@@ -44,7 +44,7 @@ pub async fn get_schedule(
     Path(id): Path<Uuid>,
 ) -> Result<Json<MaintenanceScheduleRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, MaintenanceScheduleRow>(
+    let row = crate::db::query_as::<_, MaintenanceScheduleRow>(
         "SELECT id, host_id, action, evacuate, run_at, status FROM maintenance_schedules WHERE id = ?",
     )
     .bind(id)
@@ -59,7 +59,7 @@ pub async fn list_schedules(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<MaintenanceScheduleRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, MaintenanceScheduleRow>(
+    let rows = crate::db::query_as::<_, MaintenanceScheduleRow>(
         "SELECT id, host_id, action, evacuate, run_at, status FROM maintenance_schedules
          ORDER BY run_at DESC LIMIT 100",
     )
@@ -75,7 +75,7 @@ pub async fn create_schedule(
 ) -> Result<Json<MaintenanceScheduleRow>, ApiError> {
     require_admin(&actor)?;
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO maintenance_schedules (id, host_id, action, evacuate, run_at)
          VALUES (?, ?, ?, ?, ?)",
     )
@@ -86,7 +86,7 @@ pub async fn create_schedule(
     .bind(body.run_at)
     .execute(&state.pool)
     .await?;
-    let row = sqlx::query_as::<_, MaintenanceScheduleRow>(
+    let row = crate::db::query_as::<_, MaintenanceScheduleRow>(
         "SELECT id, host_id, action, evacuate, run_at, status FROM maintenance_schedules WHERE id = ?",
     )
     .bind(id)
@@ -102,7 +102,7 @@ pub async fn delete_schedule(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
     let deleted =
-        sqlx::query("DELETE FROM maintenance_schedules WHERE id = ? AND status = 'pending'")
+        crate::db::query("DELETE FROM maintenance_schedules WHERE id = ? AND status = 'pending'")
             .bind(id)
             .execute(&state.pool)
             .await?;

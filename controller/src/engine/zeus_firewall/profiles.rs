@@ -3,7 +3,7 @@
 
 use machina_core::{profile_by_name, FirewallPlanRequest, FirewallProfile};
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProfileListItem {
@@ -14,9 +14,9 @@ pub struct ProfileListItem {
     pub stealth_level: String,
 }
 
-pub async fn list_profiles(pool: &SqlitePool) -> anyhow::Result<Vec<ProfileListItem>> {
+pub async fn list_profiles(pool: &DbPool) -> anyhow::Result<Vec<ProfileListItem>> {
     let rows: Vec<(String, String, serde_json::Value)> =
-        sqlx::query_as("SELECT name, display_name, spec_json FROM firewall_profiles ORDER BY name")
+        crate::db::query_as("SELECT name, display_name, spec_json FROM firewall_profiles ORDER BY name")
             .fetch_all(pool)
             .await
             .unwrap_or_default();

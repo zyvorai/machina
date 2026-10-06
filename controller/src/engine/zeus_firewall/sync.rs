@@ -3,7 +3,7 @@
 
 // Auto-sync firewall posture during host.inventory.
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -12,7 +12,7 @@ use crate::config::ControllerConfig;
 use super::drift;
 
 pub async fn sync_host_posture(
-    pool: &SqlitePool,
+    pool: &DbPool,
     _cfg: &ControllerConfig,
     host_id: Uuid,
     agent_addr: &str,
@@ -29,7 +29,7 @@ pub async fn sync_host_posture(
     // produced hundreds of indistinguishable rows. Keep the newest legacy row
     // per host and remove only those pre-fingerprint duplicates. New events
     // include `actual` and retain their full history.
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "DELETE FROM events
          WHERE kind = 'firewall.drift' AND resource_type = 'host' AND resource_id = ?
            AND CAST(payload AS TEXT) NOT LIKE '%\"actual\"%'
@@ -47,7 +47,7 @@ pub async fn sync_host_posture(
 
     let report = drift::detect_drift(pool, "host", host_id, &inv).await?;
     if report.drift_detected {
-        let recent_detail: Option<serde_json::Value> = sqlx::query_scalar(
+        let recent_detail: Option<serde_json::Value> = crate::db::query_scalar(
             "SELECT detail_json FROM firewall_timeline
              WHERE target_kind = 'host' AND target_id = ? AND kind = 'drift'
                AND created_at > datetime('now', '-1 hour')
@@ -64,7 +64,7 @@ pub async fn sync_host_posture(
             == Some(report.actual.as_str());
 
         if !duplicate {
-            let _ = sqlx::query(
+            let _ = crate::db::query(
                 "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, 'host', ?, 'drift', ?, ?, 'system')",
             )
             .bind(uuid::Uuid::new_v4())
@@ -77,12 +77,12 @@ pub async fn sync_host_posture(
             .execute(pool)
             .await;
 
-            let hostname: String = sqlx::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
+            let hostname: String = crate::db::query_scalar("SELECT hostname FROM hosts WHERE id = ?")
                 .bind(host_id)
                 .fetch_one(pool)
                 .await
                 .unwrap_or_else(|_| host_id.to_string());
-            let _ = sqlx::query(
+            let _ = crate::db::query(
                 "INSERT INTO events (id, kind, message, resource_type, resource_id, payload) VALUES (?, 'firewall.drift', ?, 'host', ?, ?)",
             )
             .bind(uuid::Uuid::new_v4())

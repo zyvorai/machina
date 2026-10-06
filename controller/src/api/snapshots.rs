@@ -52,7 +52,7 @@ pub async fn list_vm_timeline(
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<Vec<VmTimelineRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, VmTimelineRow>(
+    let rows = crate::db::query_as::<_, VmTimelineRow>(
         r#"
         SELECT * FROM (
             SELECT 'backup' AS kind, b.id,
@@ -97,7 +97,7 @@ pub async fn list_vm_snapshots(
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<Vec<SnapshotRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, SnapshotRow>(
+    let rows = crate::db::query_as::<_, SnapshotRow>(
         "SELECT id, vm_id, name, status, message, COALESCE(snapshot_path, '') AS snapshot_path,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
          FROM snapshot_records WHERE vm_id = ? ORDER BY created_at DESC",
@@ -116,13 +116,13 @@ pub async fn create_vm_snapshot(
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
     machina_spec::validate_name(&body.name).map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO snapshot_records (id, vm_id, name, status) VALUES (?, ?, ?, 'pending')",
     )
     .bind(id)
@@ -151,7 +151,7 @@ pub async fn create_vm_snapshot(
     .inspect_err(|_e| {
         let pool = state.pool.clone();
         tokio::spawn(async move {
-            let _ = sqlx::query("DELETE FROM snapshot_records WHERE id = ?")
+            let _ = crate::db::query("DELETE FROM snapshot_records WHERE id = ?")
                 .bind(id)
                 .execute(&pool)
                 .await;
@@ -171,7 +171,7 @@ pub async fn delete_vm_snapshot(
     Path((vm_id, name)): Path<(Uuid, String)>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -202,7 +202,7 @@ pub async fn revert_vm_snapshot(
     Path((vm_id, name)): Path<(Uuid, String)>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -252,7 +252,7 @@ pub async fn clone_vm_snapshot(
     machina_spec::validate_name(&body.new_name)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;

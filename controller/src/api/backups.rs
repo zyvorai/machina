@@ -46,7 +46,7 @@ pub async fn list_vm_backups(
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<Vec<BackupRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, BackupRow>(
+    let rows = crate::db::query_as::<_, BackupRow>(
         "SELECT id, vm_id, backup_type, status, message, COALESCE(backup_path, '') AS backup_path,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at,
                 verify_status,
@@ -66,7 +66,7 @@ pub async fn create_vm_backup(
     Json(body): Json<CreateBackupBody>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -76,7 +76,7 @@ pub async fn create_vm_backup(
     // this id and hard-fails "backup record not found" if absent, so a worker
     // (possibly another node) must never dequeue vm.backup before the row commits.
     // Compensate with a delete if the enqueue fails. Mirrors create_vm_snapshot.
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES (?, ?, ?, 'pending')",
     )
     .bind(id)
@@ -101,7 +101,7 @@ pub async fn create_vm_backup(
     .inspect_err(|_e| {
         let pool = state.pool.clone();
         tokio::spawn(async move {
-            let _ = sqlx::query("DELETE FROM backup_records WHERE id = ?")
+            let _ = crate::db::query("DELETE FROM backup_records WHERE id = ?")
                 .bind(id)
                 .execute(&pool)
                 .await;
@@ -168,7 +168,7 @@ pub async fn verify_vm_backup(
     Path((vm_id, backup_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let owns: Option<Uuid> = sqlx::query_scalar("SELECT vm_id FROM backup_records WHERE id = ?")
+    let owns: Option<Uuid> = crate::db::query_scalar("SELECT vm_id FROM backup_records WHERE id = ?")
         .bind(backup_id)
         .fetch_optional(&state.pool)
         .await?;
@@ -186,7 +186,7 @@ pub async fn list_backup_schedules(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<BackupScheduleRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, BackupScheduleRow>(
+    let rows = crate::db::query_as::<_, BackupScheduleRow>(
         "SELECT id, name, project, tag_filter, backup_type, target_id,
                 interval_hours, retain_count, enabled,
                 last_run_at, created_at
@@ -215,7 +215,7 @@ pub async fn create_backup_schedule(
         return Err(ApiError::bad_request("retain_count must be 0–1000"));
     }
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO backup_schedules
            (id, name, project, tag_filter, backup_type, target_id, interval_hours, retain_count, enabled)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -231,7 +231,7 @@ pub async fn create_backup_schedule(
     .bind(body.enabled)
     .execute(&state.pool)
     .await?;
-    let row = sqlx::query_as::<_, BackupScheduleRow>(
+    let row = crate::db::query_as::<_, BackupScheduleRow>(
         "SELECT id, name, project, tag_filter, backup_type, target_id,
                 interval_hours, retain_count, enabled, last_run_at, created_at
          FROM backup_schedules WHERE id = ?",
@@ -248,7 +248,7 @@ pub async fn delete_backup_schedule(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    sqlx::query("DELETE FROM backup_schedules WHERE id = ?")
+    crate::db::query("DELETE FROM backup_schedules WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -265,7 +265,7 @@ pub async fn restore_vm_backup(
     // isn't completed — the worker enforces the same guard, but this gives the
     // caller a proper error instead of a task that fails asynchronously, and
     // prevents restoring one VM's image onto another (data loss + cross-tenant).
-    let owns_backup: Option<i64> = sqlx::query_scalar(
+    let owns_backup: Option<i64> = crate::db::query_scalar(
         "SELECT 1 FROM backup_records
          WHERE id = ? AND vm_id = ? AND status IN ('completed', 'succeeded')",
     )
@@ -278,7 +278,7 @@ pub async fn restore_vm_backup(
             "completed backup {backup_id} not found for VM {vm_id}"
         )));
     }
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -319,7 +319,7 @@ pub async fn list_backup_timeline(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<BackupTimelineRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, BackupTimelineRow>(
+    let rows = crate::db::query_as::<_, BackupTimelineRow>(
         r#"
         SELECT * FROM (
             SELECT 'backup' AS kind, b.id, b.vm_id, v.name AS vm_name,
@@ -353,8 +353,8 @@ mod tests {
     // SQL predicate used by both the API handler (restore_vm_backup) and the
     // worker (vm_backup_restore) — a cross-VM restore is data loss + cross-tenant
     // exposure, so a regression here is catastrophic.
-    async fn owns_completed(pool: &sqlx::SqlitePool, backup: Uuid, vm: Uuid) -> bool {
-        let hit: Option<i64> = sqlx::query_scalar(
+    async fn owns_completed(pool: &crate::db::DbPool, backup: Uuid, vm: Uuid) -> bool {
+        let hit: Option<i64> = crate::db::query_scalar(
             "SELECT 1 FROM backup_records
              WHERE id = ? AND vm_id = ? AND status IN ('completed', 'succeeded')",
         )
@@ -368,13 +368,13 @@ mod tests {
 
     #[tokio::test]
     async fn restore_guard_rejects_cross_vm_and_incomplete_backups() {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool = crate::db::DbPool::connect("sqlite::memory:").await.unwrap();
         sqlx::migrate!().run(&pool).await.unwrap();
 
         let vm_a = Uuid::new_v4();
         let vm_b = Uuid::new_v4();
         for (id, name) in [(vm_a, "vm-a"), (vm_b, "vm-b")] {
-            sqlx::query("INSERT INTO vms (id, name) VALUES (?, ?)")
+            crate::db::query("INSERT INTO vms (id, name) VALUES (?, ?)")
                 .bind(id)
                 .bind(name)
                 .execute(&pool)
@@ -384,13 +384,13 @@ mod tests {
 
         let good = Uuid::new_v4(); // completed backup of vm_a
         let pending = Uuid::new_v4(); // pending backup of vm_a
-        sqlx::query("INSERT INTO backup_records (id, vm_id, status) VALUES (?, ?, 'completed')")
+        crate::db::query("INSERT INTO backup_records (id, vm_id, status) VALUES (?, ?, 'completed')")
             .bind(good)
             .bind(vm_a)
             .execute(&pool)
             .await
             .unwrap();
-        sqlx::query("INSERT INTO backup_records (id, vm_id, status) VALUES (?, ?, 'pending')")
+        crate::db::query("INSERT INTO backup_records (id, vm_id, status) VALUES (?, ?, 'pending')")
             .bind(pending)
             .bind(vm_a)
             .execute(&pool)

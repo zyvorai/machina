@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct KnowledgeRunbook {
@@ -14,7 +14,7 @@ pub struct KnowledgeRunbook {
     pub summary: String,
 }
 
-pub async fn from_query(pool: &SqlitePool, query: &str) -> anyhow::Result<KnowledgeRunbook> {
+pub async fn from_query(pool: &DbPool, query: &str) -> anyhow::Result<KnowledgeRunbook> {
     let diagnosis = super::knowledge_diagnose::diagnose(pool, query).await?;
 
     let incident = if query.to_lowercase().contains("backup") {

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct Runbook {
@@ -15,7 +15,7 @@ pub struct Runbook {
 }
 
 pub async fn generate(
-    pool: &SqlitePool,
+    pool: &DbPool,
     incident: &str,
     context: &serde_json::Value,
 ) -> anyhow::Result<Runbook> {

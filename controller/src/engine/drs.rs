@@ -3,7 +3,7 @@
 
 use std::time::Duration;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -27,7 +27,7 @@ pub fn spawn(state: AppState) {
 
 async fn run_auto_migrate(state: &AppState) -> anyhow::Result<()> {
     let Some(enabled): Option<bool> =
-        sqlx::query_scalar("SELECT drs_auto_migrate FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_scalar("SELECT drs_auto_migrate FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_optional(&state.pool)
             .await?
     else {
@@ -67,7 +67,7 @@ async fn run_auto_migrate(state: &AppState) -> anyhow::Result<()> {
         // every 120s against metrics that don't change until the (slow) live
         // migration completes, so it would otherwise re-select the same VM and
         // enqueue duplicate, competing migrations. Mirrors reconcile's guard.
-        let inflight: i64 = sqlx::query_scalar(
+        let inflight: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'vm.migrate' AND status IN ('pending', 'running')",
         )
         .bind(vm_id)
@@ -89,7 +89,7 @@ async fn run_auto_migrate(state: &AppState) -> anyhow::Result<()> {
         // table itself (any pending/running vm.migrate targeting this dest,
         // regardless of which tick or actor enqueued it) to close that cross-tick
         // gap.
-        let dest_busy: i64 = sqlx::query_scalar(
+        let dest_busy: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM tasks
              WHERE operation = 'vm.migrate' AND status IN ('pending', 'running')
                AND json_extract(payload, '$.dest_host_id') = ?",
@@ -114,7 +114,7 @@ async fn run_auto_migrate(state: &AppState) -> anyhow::Result<()> {
             continue;
         }
 
-        let source_host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+        let source_host: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await?
@@ -191,8 +191,8 @@ fn drs_migrate_payload(
     })
 }
 
-pub async fn get_cluster_settings(pool: &SqlitePool) -> anyhow::Result<ClusterSettings> {
-    sqlx::query_as(
+pub async fn get_cluster_settings(pool: &DbPool) -> anyhow::Result<ClusterSettings> {
+    crate::db::query_as(
         "SELECT drs_auto_migrate, drs_cpu_threshold, ha_enabled, ha_allow_unfenced_recovery,
                 placement_policy,
                 inventory_sync_interval_secs, require_vm_delete_approval,
@@ -205,8 +205,8 @@ pub async fn get_cluster_settings(pool: &SqlitePool) -> anyhow::Result<ClusterSe
     .ok_or_else(|| anyhow::anyhow!("no cluster configured — run machina-controller bootstrap"))
 }
 
-pub async fn get_inventory_sync_interval_secs(pool: &SqlitePool) -> anyhow::Result<i32> {
-    sqlx::query_scalar(
+pub async fn get_inventory_sync_interval_secs(pool: &DbPool) -> anyhow::Result<i32> {
+    crate::db::query_scalar(
         "SELECT inventory_sync_interval_secs FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(pool)
@@ -215,11 +215,11 @@ pub async fn get_inventory_sync_interval_secs(pool: &SqlitePool) -> anyhow::Resu
 }
 
 pub async fn update_cluster_settings(
-    pool: &SqlitePool,
+    pool: &DbPool,
     settings: &ClusterSettingsPatch,
 ) -> anyhow::Result<()> {
     let cluster_id: Option<uuid::Uuid> =
-        sqlx::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_optional(pool)
             .await?;
     let Some(cluster_id) = cluster_id else {
@@ -227,70 +227,70 @@ pub async fn update_cluster_settings(
     };
     let mut tx = pool.begin().await?;
     if let Some(v) = settings.drs_auto_migrate {
-        sqlx::query("UPDATE clusters SET drs_auto_migrate = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET drs_auto_migrate = ? WHERE id = ?")
             .bind(v)
             .bind(cluster_id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.drs_cpu_threshold {
-        sqlx::query("UPDATE clusters SET drs_cpu_threshold = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET drs_cpu_threshold = ? WHERE id = ?")
             .bind(v)
             .bind(cluster_id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.ha_enabled {
-        sqlx::query("UPDATE clusters SET ha_enabled = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET ha_enabled = ? WHERE id = ?")
             .bind(v)
             .bind(cluster_id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.ha_allow_unfenced_recovery {
-        sqlx::query("UPDATE clusters SET ha_allow_unfenced_recovery = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET ha_allow_unfenced_recovery = ? WHERE id = ?")
             .bind(v)
             .bind(cluster_id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &settings.placement_policy {
-        sqlx::query("UPDATE clusters SET placement_policy = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET placement_policy = ? WHERE id = ?")
             .bind(v)
             .bind(cluster_id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.inventory_sync_interval_secs {
-        sqlx::query("UPDATE clusters SET inventory_sync_interval_secs = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET inventory_sync_interval_secs = ? WHERE id = ?")
             .bind(v.clamp(0, 86400))
             .bind(cluster_id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.require_vm_delete_approval {
-        sqlx::query("UPDATE clusters SET require_vm_delete_approval = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET require_vm_delete_approval = ? WHERE id = ?")
             .bind(v)
             .bind(cluster_id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.firewall_approval_sla_hours {
-        sqlx::query("UPDATE clusters SET firewall_approval_sla_hours = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET firewall_approval_sla_hours = ? WHERE id = ?")
             .bind(v.clamp(1, 720))
             .bind(cluster_id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.finops_vcpu_hour_usd {
-        sqlx::query("UPDATE clusters SET finops_vcpu_hour_usd = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET finops_vcpu_hour_usd = ? WHERE id = ?")
             .bind(v)
             .bind(cluster_id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = settings.finops_gib_hour_usd {
-        sqlx::query("UPDATE clusters SET finops_gib_hour_usd = ? WHERE id = ?")
+        crate::db::query("UPDATE clusters SET finops_gib_hour_usd = ? WHERE id = ?")
             .bind(v)
             .bind(cluster_id)
             .execute(&mut *tx)
@@ -346,7 +346,7 @@ pub async fn fence_host(state: &AppState, host_id: Uuid) -> anyhow::Result<bool>
         String,
         String,
         String,
-    ) = sqlx::query_as(
+    ) = crate::db::query_as(
         "SELECT hostname, agent_grpc_addr, COALESCE(fence_method, 'shell'), COALESCE(ipmi_address, ''),
                 COALESCE(ipmi_username, ''), COALESCE(ipmi_password, '') FROM hosts WHERE id = ?",
     )
@@ -384,7 +384,7 @@ pub async fn fence_host(state: &AppState, host_id: Uuid) -> anyhow::Result<bool>
         Err(e) => format!("{e:#}"),
     };
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO fence_events (id, host_id, action, command, success, message)
          VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -398,7 +398,7 @@ pub async fn fence_host(state: &AppState, host_id: Uuid) -> anyhow::Result<bool>
     .await?;
 
     if ok {
-        sqlx::query("UPDATE hosts SET fenced = TRUE WHERE id = ?")
+        crate::db::query("UPDATE hosts SET fenced = TRUE WHERE id = ?")
             .bind(host_id)
             .execute(&state.pool)
             .await?;

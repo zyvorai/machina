@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct ComplianceCheck {
@@ -23,14 +23,14 @@ pub struct ComplianceReport {
     pub finding_count: usize,
 }
 
-pub async fn generate(pool: &SqlitePool) -> anyhow::Result<ComplianceReport> {
+pub async fn generate(pool: &DbPool) -> anyhow::Result<ComplianceReport> {
     let total_vms: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE COALESCE(managed, TRUE) = TRUE")
+        crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE COALESCE(managed, TRUE) = TRUE")
             .fetch_one(pool)
             .await
             .unwrap_or(0);
 
-    let prod_vms: i64 = sqlx::query_scalar(
+    let prod_vms: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM vms WHERE EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value='prod')
          OR EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value='production')",
     )
@@ -38,7 +38,7 @@ pub async fn generate(pool: &SqlitePool) -> anyhow::Result<ComplianceReport> {
     .await
     .unwrap_or(0);
 
-    let prod_with_backup: i64 = sqlx::query_scalar(
+    let prod_with_backup: i64 = crate::db::query_scalar(
         "SELECT COUNT(DISTINCT v.id) FROM vms v
          WHERE (EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='prod') OR EXISTS (SELECT 1 FROM json_each(COALESCE(v.tags,'[]')) WHERE value='production'))
            AND EXISTS (SELECT 1 FROM backup_records b WHERE b.vm_id = v.id AND b.status = 'completed')",
@@ -55,11 +55,11 @@ pub async fn generate(pool: &SqlitePool) -> anyhow::Result<ComplianceReport> {
     let backup_passed = backup_pct >= 80;
 
     let running: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
+        crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE observed_state = 'running'")
             .fetch_one(pool)
             .await
             .unwrap_or(0);
-    let with_guest: i64 = sqlx::query_scalar(
+    let with_guest: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM vms WHERE observed_state = 'running'
          AND guest_tools_status NOT IN ('unknown', 'not_installed')",
     )
@@ -73,11 +73,11 @@ pub async fn generate(pool: &SqlitePool) -> anyhow::Result<ComplianceReport> {
     };
     let guest_passed = guest_pct >= 70;
 
-    let hosts_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+    let hosts_total: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
-    let hosts_online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+    let hosts_online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(pool)
         .await
         .unwrap_or(0);
@@ -88,7 +88,7 @@ pub async fn generate(pool: &SqlitePool) -> anyhow::Result<ComplianceReport> {
     };
     let host_passed = host_pct == 100;
 
-    let prod_ha: i64 = sqlx::query_scalar(
+    let prod_ha: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM vms v
          JOIN ha_policies hp ON hp.vm_id = v.id AND hp.enabled = TRUE
          WHERE v.observed_state = 'running'

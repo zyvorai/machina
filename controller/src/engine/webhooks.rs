@@ -1,12 +1,12 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
-pub async fn dispatch_webhooks(pool: &SqlitePool, event_kind: &str, payload: serde_json::Value) {
+pub async fn dispatch_webhooks(pool: &DbPool, event_kind: &str, payload: serde_json::Value) {
     let rows: Vec<(Uuid, String, String, sqlx::types::Json<Vec<String>>)> =
-        match sqlx::query_as("SELECT id, url, secret, events FROM webhooks WHERE enabled = TRUE")
+        match crate::db::query_as("SELECT id, url, secret, events FROM webhooks WHERE enabled = TRUE")
             .fetch_all(pool)
             .await
         {
@@ -23,7 +23,7 @@ pub async fn dispatch_webhooks(pool: &SqlitePool, event_kind: &str, payload: ser
         if !events.is_empty() && !events.iter().any(|e| event_matches(e, event_kind)) {
             continue;
         }
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO webhook_deliveries (id, webhook_id, url, secret, body, event_kind)
              VALUES (?, ?, ?, ?, ?, ?)",
         )
@@ -37,7 +37,7 @@ pub async fn dispatch_webhooks(pool: &SqlitePool, event_kind: &str, payload: ser
         .await;
     }
 
-    let _ = sqlx::query("INSERT INTO notification_outbox (id, kind, payload) VALUES (?, ?, ?)")
+    let _ = crate::db::query("INSERT INTO notification_outbox (id, kind, payload) VALUES (?, ?, ?)")
         .bind(Uuid::new_v4())
         .bind(event_kind)
         .bind(&payload)
@@ -49,11 +49,11 @@ pub async fn dispatch_webhooks(pool: &SqlitePool, event_kind: &str, payload: ser
 
 /// Fan an event out to configured notification channels (Slack/email/webhook), filtered by
 /// each channel's event list. Creates channel_deliveries rows delivered by channel_worker.
-pub async fn dispatch_channels(pool: &SqlitePool, event_kind: &str, payload: &serde_json::Value) {
+pub async fn dispatch_channels(pool: &DbPool, event_kind: &str, payload: &serde_json::Value) {
     // NOTE: `id` must be decoded as Uuid, not String — the codebase stores UUID ids as
     // 16-byte BLOBs (.bind(Uuid)), so a String tuple element fails to decode, the whole
     // query_as returns Err, and this function would silently drop every delivery.
-    let rows: Vec<(Uuid, String, String, sqlx::types::Json<Vec<String>>)> = match sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, sqlx::types::Json<Vec<String>>)> = match crate::db::query_as(
         "SELECT id, kind, target, events FROM notification_channels WHERE enabled = TRUE",
     )
     .fetch_all(pool)
@@ -70,7 +70,7 @@ pub async fn dispatch_channels(pool: &SqlitePool, event_kind: &str, payload: &se
         if !events.is_empty() && !events.iter().any(|e| event_matches(e, event_kind)) {
             continue;
         }
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO channel_deliveries (id, channel_id, kind, target, subject, body, event_kind)
              VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
@@ -141,12 +141,12 @@ mod tests {
     // real path end-to-end against an in-memory DB with the actual migrations.
     #[tokio::test]
     async fn dispatch_channels_delivers_to_matching_channels_only() {
-        let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
+        let pool = crate::db::DbPool::connect("sqlite::memory:").await.unwrap();
         sqlx::migrate!().run(&pool).await.unwrap();
 
         let match_id = uuid::Uuid::new_v4();
         let skip_id = uuid::Uuid::new_v4();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO notification_channels (id, name, kind, target, events, enabled)
              VALUES (?, 'm', 'slack', 'https://example.com/x', '[\"alert.*\"]', 1)",
         )
@@ -154,7 +154,7 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO notification_channels (id, name, kind, target, events, enabled)
              VALUES (?, 's', 'slack', 'https://example.com/y', '[\"cert.*\"]', 1)",
         )
@@ -171,13 +171,13 @@ mod tests {
         .await;
 
         let matched: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM channel_deliveries WHERE channel_id = ?")
+            crate::db::query_scalar("SELECT COUNT(*) FROM channel_deliveries WHERE channel_id = ?")
                 .bind(match_id)
                 .fetch_one(&pool)
                 .await
                 .unwrap();
         let skipped: i64 =
-            sqlx::query_scalar("SELECT COUNT(*) FROM channel_deliveries WHERE channel_id = ?")
+            crate::db::query_scalar("SELECT COUNT(*) FROM channel_deliveries WHERE channel_id = ?")
                 .bind(skip_id)
                 .fetch_one(&pool)
                 .await

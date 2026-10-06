@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use serde::Deserialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize)]
@@ -33,7 +33,7 @@ fn default_category() -> String {
 }
 
 /// Scan `dir/*.json` and upsert into `templates` with `git_ref` set.
-pub async fn sync_templates_from_git(pool: &SqlitePool, dir: &Path) -> anyhow::Result<usize> {
+pub async fn sync_templates_from_git(pool: &DbPool, dir: &Path) -> anyhow::Result<usize> {
     let dir = dir.to_path_buf();
     // File scanning is blocking — run it off the async executor.
     let manifests: Vec<(String, GitTemplateManifest)> = tokio::task::spawn_blocking(move || {
@@ -65,7 +65,7 @@ pub async fn sync_templates_from_git(pool: &SqlitePool, dir: &Path) -> anyhow::R
 
     let mut synced = 0usize;
     for (git_ref, m) in manifests {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO templates (id, name, version, source_disk, cloud_init, os_family, category, workload, description, featured, marketplace, git_ref, approval_status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE, TRUE, ?, 'approved')
              ON CONFLICT (name, version) DO UPDATE SET

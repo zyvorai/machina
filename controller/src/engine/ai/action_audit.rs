@@ -88,7 +88,7 @@ pub fn undo_kind(action_type: &str, before: &serde_json::Value) -> Option<&'stat
 pub async fn record_before(state: &AppState, action: &ZyraActionRow) {
     if action.action_type == crate::engine::rightsizing::RESIZE_ACTION {
         let snapshot = crate::engine::rightsizing::before(state, &action.object_ref).await;
-        let _ = sqlx::query("UPDATE ai_actions SET before_state = ? WHERE id = ?")
+        let _ = crate::db::query("UPDATE ai_actions SET before_state = ? WHERE id = ?")
             .bind(&snapshot)
             .bind(action.id)
             .execute(&state.pool)
@@ -97,7 +97,7 @@ pub async fn record_before(state: &AppState, action: &ZyraActionRow) {
     }
     if action.action_type == crate::api::stacks::DEPLOY_ACTION {
         let snapshot = crate::api::stacks::deploy_before(state, &action.object_ref).await;
-        let _ = sqlx::query("UPDATE ai_actions SET before_state = ? WHERE id = ?")
+        let _ = crate::db::query("UPDATE ai_actions SET before_state = ? WHERE id = ?")
             .bind(&snapshot)
             .bind(action.id)
             .execute(&state.pool)
@@ -108,14 +108,14 @@ pub async fn record_before(state: &AppState, action: &ZyraActionRow) {
         return;
     };
     let vm: Option<(String, Option<String>)> =
-        sqlx::query_as("SELECT observed_state, guest_tools_status FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT observed_state, guest_tools_status FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await
             .ok()
             .flatten();
     let ha_enabled: Option<bool> =
-        sqlx::query_scalar("SELECT enabled FROM ha_policies WHERE vm_id = ?")
+        crate::db::query_scalar("SELECT enabled FROM ha_policies WHERE vm_id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await
@@ -127,7 +127,7 @@ pub async fn record_before(state: &AppState, action: &ZyraActionRow) {
         "guest_tools_status": vm.and_then(|v| v.1),
         "ha_enabled": ha_enabled.unwrap_or(false),
     });
-    let _ = sqlx::query("UPDATE ai_actions SET before_state = ? WHERE id = ?")
+    let _ = crate::db::query("UPDATE ai_actions SET before_state = ? WHERE id = ?")
         .bind(&snapshot)
         .bind(action.id)
         .execute(&state.pool)
@@ -148,7 +148,7 @@ pub async fn history(state: &AppState, limit: i64) -> anyhow::Result<Vec<ActionH
         serde_json::Value,
         serde_json::Value,
         Option<String>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, action_type, label, status, requested_by, approved_by, executed_at,
                 object_ref, before_state, verify_result, undone_at
          FROM ai_actions
@@ -217,7 +217,7 @@ async fn check(state: &AppState, action: &ZyraActionRow) -> (&'static str, Strin
     match action.action_type.as_str() {
         "start_vm" => {
             let s: Option<String> =
-                sqlx::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
+                crate::db::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
                     .bind(vm_id)
                     .fetch_optional(&state.pool)
                     .await
@@ -234,7 +234,7 @@ async fn check(state: &AppState, action: &ZyraActionRow) -> (&'static str, Strin
         }
         "stop_vm" => {
             let s: Option<String> =
-                sqlx::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
+                crate::db::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
                     .bind(vm_id)
                     .fetch_optional(&state.pool)
                     .await
@@ -251,7 +251,7 @@ async fn check(state: &AppState, action: &ZyraActionRow) -> (&'static str, Strin
         }
         "enable_ha" => {
             let on: Option<bool> =
-                sqlx::query_scalar("SELECT enabled FROM ha_policies WHERE vm_id = ?")
+                crate::db::query_scalar("SELECT enabled FROM ha_policies WHERE vm_id = ?")
                     .bind(vm_id)
                     .fetch_optional(&state.pool)
                     .await
@@ -264,7 +264,7 @@ async fn check(state: &AppState, action: &ZyraActionRow) -> (&'static str, Strin
             }
         }
         "create_backup" => {
-            let n: i64 = sqlx::query_scalar(
+            let n: i64 = crate::db::query_scalar(
                 "SELECT COUNT(*) FROM backup_records
                  WHERE vm_id = ? AND status = 'completed' AND datetime(created_at) >= datetime('now', '-1 day')",
             )
@@ -282,7 +282,7 @@ async fn check(state: &AppState, action: &ZyraActionRow) -> (&'static str, Strin
             }
         }
         "install_guest_tools" => {
-            let s: Option<String> = sqlx::query_scalar::<_, Option<String>>(
+            let s: Option<String> = crate::db::query_scalar::<_, Option<String>>(
                 "SELECT guest_tools_status FROM vms WHERE id = ?",
             )
             .bind(vm_id)
@@ -325,7 +325,7 @@ pub async fn verify(state: &AppState, id: Uuid) -> anyhow::Result<serde_json::Va
         "detail": detail,
         "checked_at": chrono::Utc::now().to_rfc3339(),
     });
-    sqlx::query("UPDATE ai_actions SET verify_result = ? WHERE id = ?")
+    crate::db::query("UPDATE ai_actions SET verify_result = ? WHERE id = ?")
         .bind(&result)
         .bind(id)
         .execute(&state.pool)
@@ -346,7 +346,7 @@ pub async fn undo(
         return Err(anyhow::anyhow!("Only executed actions can be undone"));
     }
     let (before, undone_at): (serde_json::Value, Option<String>) =
-        sqlx::query_as("SELECT before_state, undone_at FROM ai_actions WHERE id = ?")
+        crate::db::query_as("SELECT before_state, undone_at FROM ai_actions WHERE id = ?")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
@@ -382,7 +382,7 @@ pub async fn undo(
         }
         "start_vm" => {
             let vm_id = vm_id()?;
-            let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .fetch_optional(&state.pool)
                 .await?
@@ -404,7 +404,7 @@ pub async fn undo(
         }
         "shutdown_vm" => {
             let vm_id = vm_id()?;
-            let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+            let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .fetch_optional(&state.pool)
                 .await?
@@ -428,11 +428,11 @@ pub async fn undo(
     };
 
     let mut tx = state.pool.begin().await?;
-    sqlx::query("UPDATE ai_actions SET undone_at = datetime('now') WHERE id = ?")
+    crate::db::query("UPDATE ai_actions SET undone_at = datetime('now') WHERE id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail) VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(Uuid::new_v4())

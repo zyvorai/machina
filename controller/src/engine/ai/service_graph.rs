@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::digital_twin::TwinEdge;
 
@@ -22,7 +22,7 @@ pub struct ServiceGraph {
     pub service_count: usize,
 }
 
-pub async fn build(pool: &SqlitePool) -> anyhow::Result<ServiceGraph> {
+pub async fn build(pool: &DbPool) -> anyhow::Result<ServiceGraph> {
     let twin = super::digital_twin::build_graph(pool).await?;
     let mut nodes: Vec<ServiceGraphNode> = twin
         .nodes
@@ -36,7 +36,7 @@ pub async fn build(pool: &SqlitePool) -> anyhow::Result<ServiceGraph> {
         .collect();
 
     let apps: Vec<(uuid::Uuid, String)> =
-        sqlx::query_as("SELECT id, name FROM application_groups ORDER BY name")
+        crate::db::query_as("SELECT id, name FROM application_groups ORDER BY name")
             .fetch_all(pool)
             .await?;
 
@@ -53,7 +53,7 @@ pub async fn build(pool: &SqlitePool) -> anyhow::Result<ServiceGraph> {
         });
         service_count += 1;
 
-        let vms: Vec<(uuid::Uuid, String)> = sqlx::query_as(
+        let vms: Vec<(uuid::Uuid, String)> = crate::db::query_as(
             "SELECT v.id, v.name FROM application_group_vms agv
              JOIN vms v ON v.id = agv.vm_id WHERE agv.group_id = ?",
         )

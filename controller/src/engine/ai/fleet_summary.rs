@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FleetClusterSlice {
@@ -25,7 +25,7 @@ pub struct FleetZyraSummary {
     pub reachable_peers: usize,
 }
 
-pub async fn summarize(pool: &SqlitePool) -> anyhow::Result<FleetZyraSummary> {
+pub async fn summarize(pool: &DbPool) -> anyhow::Result<FleetZyraSummary> {
     let mut clusters = vec![local_slice(pool).await?];
     let peer_urls = super::settings::get_fleet_peer_urls(pool).await?;
     let mut reachable_peers = 0usize;
@@ -50,8 +50,8 @@ pub async fn summarize(pool: &SqlitePool) -> anyhow::Result<FleetZyraSummary> {
     })
 }
 
-async fn local_slice(pool: &SqlitePool) -> anyhow::Result<FleetClusterSlice> {
-    let name: String = sqlx::query_scalar("SELECT name FROM clusters ORDER BY created_at LIMIT 1")
+async fn local_slice(pool: &DbPool) -> anyhow::Result<FleetClusterSlice> {
+    let name: String = crate::db::query_scalar("SELECT name FROM clusters ORDER BY created_at LIMIT 1")
         .fetch_one(pool)
         .await?;
     let cost = super::cost::analyze(pool).await?;
@@ -180,6 +180,6 @@ fn unreachable_peer(label: &str) -> FleetClusterSlice {
     }
 }
 
-pub async fn local_export(pool: &SqlitePool) -> anyhow::Result<FleetClusterSlice> {
+pub async fn local_export(pool: &DbPool) -> anyhow::Result<FleetClusterSlice> {
     local_slice(pool).await
 }

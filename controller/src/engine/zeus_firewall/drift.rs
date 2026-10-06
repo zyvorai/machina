@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use machina_core::FirewallInventory;
@@ -46,13 +46,13 @@ pub fn checksum_inventory(inv: &FirewallInventory) -> String {
 }
 
 pub async fn save_snapshot(
-    pool: &SqlitePool,
+    pool: &DbPool,
     target_kind: &str,
     target_id: Uuid,
     inv: &FirewallInventory,
 ) -> anyhow::Result<()> {
     let checksum = checksum_inventory(inv);
-    let unchanged = sqlx::query_scalar::<_, String>(
+    let unchanged = crate::db::query_scalar::<_, String>(
         "SELECT checksum FROM firewall_posture_snapshots
          WHERE target_kind = ? AND target_id = ? ORDER BY captured_at DESC LIMIT 1",
     )
@@ -65,7 +65,7 @@ pub async fn save_snapshot(
     if unchanged {
         return Ok(());
     }
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO firewall_posture_snapshots (id, target_kind, target_id, checksum, posture_json) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(uuid::Uuid::new_v4())
@@ -79,12 +79,12 @@ pub async fn save_snapshot(
 }
 
 pub async fn detect_drift(
-    pool: &SqlitePool,
+    pool: &DbPool,
     target_kind: &str,
     target_id: Uuid,
     current: &FirewallInventory,
 ) -> anyhow::Result<DriftReport> {
-    let row: Option<(String, serde_json::Value)> = sqlx::query_as(
+    let row: Option<(String, serde_json::Value)> = crate::db::query_as(
         "SELECT checksum, posture_json FROM firewall_posture_snapshots
          WHERE target_kind = ? AND target_id = ? ORDER BY captured_at DESC LIMIT 1",
     )

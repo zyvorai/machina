@@ -8,7 +8,7 @@ use axum::Json;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::api::ApiError;
@@ -121,7 +121,7 @@ pub async fn list_events(
 ) -> Result<Json<Vec<SocEventRow>>, ApiError> {
     require_operator(&actor)?;
     let limit = q.limit.unwrap_or(100).clamp(1, 500);
-    let rows = sqlx::query_as::<_, SocEventRow>(
+    let rows = crate::db::query_as::<_, SocEventRow>(
         "SELECT id, occurred_at, source, category, severity, host_id, vm_id, actor, summary
          FROM soc_events ORDER BY occurred_at DESC LIMIT ?",
     )
@@ -139,7 +139,7 @@ pub async fn list_alerts(
     require_operator(&actor)?;
     let limit = q.limit.unwrap_or(100).clamp(1, 500);
     let rows = if let Some(status) = q.status.filter(|s| !s.is_empty()) {
-        sqlx::query_as::<_, SocAlertRow>(
+        crate::db::query_as::<_, SocAlertRow>(
             "SELECT id, rule_id, title, severity, status, assigned_to,
                     strftime('%Y-%m-%dT%H:%M:%SZ', first_seen) AS first_seen,
                     strftime('%Y-%m-%dT%H:%M:%SZ', last_seen) AS last_seen, event_count
@@ -150,7 +150,7 @@ pub async fn list_alerts(
         .fetch_all(&state.pool)
         .await?
     } else {
-        sqlx::query_as::<_, SocAlertRow>(
+        crate::db::query_as::<_, SocAlertRow>(
             "SELECT id, rule_id, title, severity, status, assigned_to,
                     strftime('%Y-%m-%dT%H:%M:%SZ', first_seen) AS first_seen,
                     strftime('%Y-%m-%dT%H:%M:%SZ', last_seen) AS last_seen, event_count
@@ -181,14 +181,14 @@ pub async fn patch_alert(
     require_operator(&actor)?;
     let mut tx = state.pool.begin().await?;
     if let Some(status) = &body.status {
-        sqlx::query("UPDATE soc_alerts SET status = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE soc_alerts SET status = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(status)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(assignee) = &body.assigned_to {
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_alerts SET assigned_to = ?, updated_at = datetime('now') WHERE id = ?",
         )
         .bind(assignee)
@@ -200,8 +200,8 @@ pub async fn patch_alert(
     fetch_alert(&state.pool, id).await
 }
 
-async fn fetch_alert(pool: &SqlitePool, id: Uuid) -> Result<Json<SocAlertRow>, ApiError> {
-    let row = sqlx::query_as::<_, SocAlertRow>(
+async fn fetch_alert(pool: &DbPool, id: Uuid) -> Result<Json<SocAlertRow>, ApiError> {
+    let row = crate::db::query_as::<_, SocAlertRow>(
         "SELECT id, rule_id, title, severity, status, assigned_to,
                 strftime('%Y-%m-%dT%H:%M:%SZ', first_seen) AS first_seen,
                 strftime('%Y-%m-%dT%H:%M:%SZ', last_seen) AS last_seen, event_count
@@ -220,7 +220,7 @@ pub async fn delete_alert(
     Path(id): Path<Uuid>,
 ) -> Result<axum::http::StatusCode, ApiError> {
     require_admin(&actor)?;
-    let deleted = sqlx::query("DELETE FROM soc_alerts WHERE id = ?")
+    let deleted = crate::db::query("DELETE FROM soc_alerts WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?
@@ -236,7 +236,7 @@ pub async fn list_rules(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<SocRuleRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, SocRuleRow>(
+    let rows = crate::db::query_as::<_, SocRuleRow>(
         "SELECT id, name, description, enabled, severity, query_json, throttle_minutes, builtin
          FROM soc_detection_rules ORDER BY name LIMIT 500",
     )
@@ -252,7 +252,7 @@ pub async fn create_rule(
 ) -> Result<Json<SocRuleRow>, ApiError> {
     require_admin(&actor)?;
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes)
          VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -277,7 +277,7 @@ pub async fn patch_rule(
     require_admin(&actor)?;
     let mut tx = state.pool.begin().await?;
     if let Some(enabled) = body.enabled {
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_detection_rules SET enabled = ?, updated_at = datetime('now') WHERE id = ?",
         )
         .bind(enabled)
@@ -286,21 +286,21 @@ pub async fn patch_rule(
         .await?;
     }
     if let Some(sev) = &body.severity {
-        sqlx::query("UPDATE soc_detection_rules SET severity = ?, updated_at = datetime('now') WHERE id = ? AND builtin = FALSE")
+        crate::db::query("UPDATE soc_detection_rules SET severity = ?, updated_at = datetime('now') WHERE id = ? AND builtin = FALSE")
             .bind(sev)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(q) = &body.query_json {
-        sqlx::query("UPDATE soc_detection_rules SET query_json = ?, updated_at = datetime('now') WHERE id = ? AND builtin = FALSE")
+        crate::db::query("UPDATE soc_detection_rules SET query_json = ?, updated_at = datetime('now') WHERE id = ? AND builtin = FALSE")
             .bind(q)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(t) = body.throttle_minutes {
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_detection_rules SET throttle_minutes = ?, updated_at = datetime('now') WHERE id = ? AND builtin = FALSE",
         )
         .bind(t)
@@ -312,8 +312,8 @@ pub async fn patch_rule(
     fetch_rule(&state.pool, id).await
 }
 
-async fn fetch_rule(pool: &SqlitePool, id: Uuid) -> Result<Json<SocRuleRow>, ApiError> {
-    let row = sqlx::query_as::<_, SocRuleRow>(
+async fn fetch_rule(pool: &DbPool, id: Uuid) -> Result<Json<SocRuleRow>, ApiError> {
+    let row = crate::db::query_as::<_, SocRuleRow>(
         "SELECT id, name, description, enabled, severity, query_json, throttle_minutes, builtin
          FROM soc_detection_rules WHERE id = ?",
     )
@@ -330,7 +330,7 @@ pub async fn delete_rule(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     require_admin(&actor)?;
-    let deleted = sqlx::query("DELETE FROM soc_detection_rules WHERE id = ? AND builtin = FALSE")
+    let deleted = crate::db::query("DELETE FROM soc_detection_rules WHERE id = ? AND builtin = FALSE")
         .bind(id)
         .execute(&state.pool)
         .await?
@@ -391,7 +391,7 @@ pub async fn put_splunk_integration(
     });
     if body.token.is_empty() {
         let existing: Value =
-            sqlx::query_scalar("SELECT config_json FROM soc_integrations WHERE id = ?")
+            crate::db::query_scalar("SELECT config_json FROM soc_integrations WHERE id = ?")
                 .bind(id)
                 .fetch_one(&state.pool)
                 .await?;
@@ -399,7 +399,7 @@ pub async fn put_splunk_integration(
             cfg["token"] = t.clone();
         }
     }
-    sqlx::query(
+    crate::db::query(
         "UPDATE soc_integrations SET config_json = ?, enabled = ?, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(cfg)
@@ -428,7 +428,7 @@ pub async fn list_integrations(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<IntegrationPublic>>, ApiError> {
     require_admin(&actor)?;
-    let rows: Vec<IntegrationDbRow> = sqlx::query_as(
+    let rows: Vec<IntegrationDbRow> = crate::db::query_as(
         "SELECT id, integration_type, name, enabled, config_json,
                 strftime('%Y-%m-%dT%H:%M:%SZ', last_success_at) AS last_success_at, last_error
          FROM soc_integrations ORDER BY integration_type LIMIT 100",
@@ -447,7 +447,7 @@ pub async fn patch_integration(
     require_admin(&actor)?;
     let mut tx = state.pool.begin().await?;
     if let Some(cfg) = body.config_json {
-        let existing: Value = sqlx::query_scalar(
+        let existing: Value = crate::db::query_scalar(
             "SELECT config_json FROM soc_integrations WHERE integration_type = ? AND name = 'default'",
         )
         .bind(&integration_type)
@@ -455,7 +455,7 @@ pub async fn patch_integration(
         .await
         .unwrap_or(Value::Null);
         let merged = merge_integration_config(&existing, &cfg);
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_integrations SET config_json = ?, updated_at = datetime('now') WHERE integration_type = ? AND name = 'default'",
         )
         .bind(merged)
@@ -464,7 +464,7 @@ pub async fn patch_integration(
         .await?;
     }
     if let Some(enabled) = body.enabled {
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_integrations SET enabled = ?, updated_at = datetime('now') WHERE integration_type = ? AND name = 'default'",
         )
         .bind(enabled)
@@ -657,7 +657,7 @@ pub async fn list_playbooks(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<PlaybookRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, PlaybookRow>(
+    let rows = crate::db::query_as::<_, PlaybookRow>(
         "SELECT id, name, description, enabled, trigger_json, steps_json FROM soc_playbooks ORDER BY name LIMIT 500",
     )
     .fetch_all(&state.pool)
@@ -685,7 +685,7 @@ pub async fn create_playbook(
     let trigger = body
         .trigger_json
         .unwrap_or_else(|| serde_json::json!({ "min_severity": "medium", "rule_names": [] }));
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO soc_playbooks (id, name, description, enabled, trigger_json, steps_json)
          VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -716,7 +716,7 @@ pub async fn patch_playbook(
     require_admin(&actor)?;
     let mut tx = state.pool.begin().await?;
     if let Some(desc) = &body.description {
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_playbooks SET description = ?, updated_at = datetime('now') WHERE id = ?",
         )
         .bind(desc)
@@ -725,7 +725,7 @@ pub async fn patch_playbook(
         .await?;
     }
     if let Some(enabled) = body.enabled {
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_playbooks SET enabled = ?, updated_at = datetime('now') WHERE id = ?",
         )
         .bind(enabled)
@@ -734,7 +734,7 @@ pub async fn patch_playbook(
         .await?;
     }
     if let Some(trigger) = &body.trigger_json {
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_playbooks SET trigger_json = ?, updated_at = datetime('now') WHERE id = ?",
         )
         .bind(trigger)
@@ -743,7 +743,7 @@ pub async fn patch_playbook(
         .await?;
     }
     if let Some(steps) = &body.steps_json {
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_playbooks SET steps_json = ?, updated_at = datetime('now') WHERE id = ?",
         )
         .bind(steps)
@@ -761,7 +761,7 @@ pub async fn delete_playbook(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     require_admin(&actor)?;
-    let name: String = sqlx::query_scalar("SELECT name FROM soc_playbooks WHERE id = ?")
+    let name: String = crate::db::query_scalar("SELECT name FROM soc_playbooks WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await
@@ -769,7 +769,7 @@ pub async fn delete_playbook(
     if name == "notify_on_critical" {
         return Err(ApiError::bad_request("built-in playbook cannot be deleted"));
     }
-    sqlx::query("DELETE FROM soc_playbooks WHERE id = ?")
+    crate::db::query("DELETE FROM soc_playbooks WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
@@ -792,7 +792,7 @@ pub async fn patch_soc_settings(
 ) -> Result<Json<SocSettingsPublic>, ApiError> {
     require_admin(&actor)?;
     if let Some(url) = body.webhook_url {
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO soc_settings (id, webhook_url, updated_at) VALUES (1, ?, datetime('now'))
              ON CONFLICT (id) DO UPDATE SET webhook_url = EXCLUDED.webhook_url, updated_at = datetime('now')",
         )
@@ -811,7 +811,7 @@ pub async fn list_playbook_runs(
 ) -> Result<Json<Vec<PlaybookRunRow>>, ApiError> {
     require_operator(&actor)?;
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
-    let rows = sqlx::query_as::<_, PlaybookRunRow>(
+    let rows = crate::db::query_as::<_, PlaybookRunRow>(
         "SELECT id, playbook_id, alert_id, status,
                 strftime('%Y-%m-%dT%H:%M:%SZ', started_at) AS started_at,
                 strftime('%Y-%m-%dT%H:%M:%SZ', finished_at) AS finished_at
@@ -828,17 +828,17 @@ pub async fn overview(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Value>, ApiError> {
     require_operator(&actor)?;
-    let open_alerts: i64 = sqlx::query_scalar(
+    let open_alerts: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM soc_alerts WHERE status IN ('open', 'acknowledged')",
     )
     .fetch_one(&state.pool)
     .await?;
-    let events_24h: i64 = sqlx::query_scalar(
+    let events_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM soc_events WHERE occurred_at > datetime('now', '-24 hours')",
     )
     .fetch_one(&state.pool)
     .await?;
-    let critical: i64 = sqlx::query_scalar(
+    let critical: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM soc_alerts WHERE status IN ('open', 'acknowledged') AND severity IN ('critical', 'high')",
     )
     .fetch_one(&state.pool)
@@ -890,10 +890,10 @@ fn merge_integration_config(existing: &Value, patch: &Value) -> Value {
 }
 
 async fn fetch_integration_db(
-    pool: &SqlitePool,
+    pool: &DbPool,
     integration_type: &str,
 ) -> Result<IntegrationDbRow, ApiError> {
-    sqlx::query_as(
+    crate::db::query_as(
         "SELECT id, integration_type, name, enabled, config_json,
                 strftime('%Y-%m-%dT%H:%M:%SZ', last_success_at) AS last_success_at, last_error
          FROM soc_integrations WHERE integration_type = ? AND name = 'default'",
@@ -938,8 +938,8 @@ fn redact_integration_config(cfg: &Value) -> Value {
     cfg
 }
 
-async fn fetch_playbook(pool: &SqlitePool, id: Uuid) -> Result<Json<PlaybookRow>, ApiError> {
-    sqlx::query_as::<_, PlaybookRow>(
+async fn fetch_playbook(pool: &DbPool, id: Uuid) -> Result<Json<PlaybookRow>, ApiError> {
+    crate::db::query_as::<_, PlaybookRow>(
         "SELECT id, name, description, enabled, trigger_json, steps_json FROM soc_playbooks WHERE id = ?",
     )
     .bind(id)
@@ -949,9 +949,9 @@ async fn fetch_playbook(pool: &SqlitePool, id: Uuid) -> Result<Json<PlaybookRow>
     .map_err(|_| ApiError::not_found("playbook not found"))
 }
 
-async fn load_soc_webhook_url(pool: &SqlitePool) -> String {
+async fn load_soc_webhook_url(pool: &DbPool) -> String {
     if let Ok(url) =
-        sqlx::query_scalar::<_, String>("SELECT webhook_url FROM soc_settings WHERE id = 1")
+        crate::db::query_scalar::<_, String>("SELECT webhook_url FROM soc_settings WHERE id = 1")
             .fetch_one(pool)
             .await
     {
@@ -963,8 +963,8 @@ async fn load_soc_webhook_url(pool: &SqlitePool) -> String {
     std::env::var("MACHINA_SOC_WEBHOOK_URL").unwrap_or_default()
 }
 
-async fn build_alert_detail(pool: &SqlitePool, id: Uuid) -> Result<Json<SocAlertDetail>, ApiError> {
-    let row: AlertDetailDbRow = sqlx::query_as(
+async fn build_alert_detail(pool: &DbPool, id: Uuid) -> Result<Json<SocAlertDetail>, ApiError> {
+    let row: AlertDetailDbRow = crate::db::query_as(
         "SELECT a.id, a.rule_id, a.title, a.severity, a.status, a.assigned_to,
                 strftime('%Y-%m-%dT%H:%M:%SZ', a.first_seen) AS first_seen,
                 strftime('%Y-%m-%dT%H:%M:%SZ', a.last_seen) AS last_seen,
@@ -989,7 +989,7 @@ async fn build_alert_detail(pool: &SqlitePool, id: Uuid) -> Result<Json<SocAlert
             "SELECT id, occurred_at, source, category, severity, summary, ecs_json
              FROM soc_events WHERE id IN ({placeholders}) ORDER BY occurred_at DESC LIMIT 50"
         );
-        let mut q = sqlx::query_as::<_, SocEventDetailRow>(&sql);
+        let mut q = crate::db::query_as::<_, SocEventDetailRow>(&sql);
         for id in &event_ids {
             q = q.bind(id);
         }
@@ -1007,7 +1007,7 @@ async fn build_alert_detail(pool: &SqlitePool, id: Uuid) -> Result<Json<SocAlert
         }
     }
 
-    let playbook_runs: Vec<PlaybookRunDetailRow> = sqlx::query_as(
+    let playbook_runs: Vec<PlaybookRunDetailRow> = crate::db::query_as(
         "SELECT r.id, r.playbook_id, p.name AS playbook_name, r.status,
                 strftime('%Y-%m-%dT%H:%M:%SZ', r.started_at) AS started_at,
                 strftime('%Y-%m-%dT%H:%M:%SZ', r.finished_at) AS finished_at,
@@ -1092,8 +1092,8 @@ fn extract_mitre_tags(ecs: &Value) -> Vec<MitreTag> {
     out
 }
 
-async fn splunk_integration_id(pool: &SqlitePool) -> Result<Uuid, ApiError> {
-    sqlx::query_scalar("SELECT id FROM soc_integrations WHERE integration_type = 'splunk_hec' AND name = 'default'")
+async fn splunk_integration_id(pool: &DbPool) -> Result<Uuid, ApiError> {
+    crate::db::query_scalar("SELECT id FROM soc_integrations WHERE integration_type = 'splunk_hec' AND name = 'default'")
         .fetch_optional(pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?

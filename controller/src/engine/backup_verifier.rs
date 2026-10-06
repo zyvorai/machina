@@ -6,7 +6,7 @@
 //! is recorded on the backup, shown in the UI, and written to the audit log when it fails. Atlas-backed backups
 //! are verified by Atlas itself and are skipped here.
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -40,8 +40,8 @@ fn recheck_days() -> i64 {
 }
 
 /// Completed local backups never verified, or last verified more than `recheck_days` ago. Oldest check first.
-async fn due(pool: &SqlitePool) -> anyhow::Result<Vec<Uuid>> {
-    Ok(sqlx::query_scalar(
+async fn due(pool: &DbPool) -> anyhow::Result<Vec<Uuid>> {
+    Ok(crate::db::query_scalar(
         "SELECT id FROM backup_records
          WHERE status = 'completed' AND backup_path != '' AND backup_path NOT LIKE 'atlas%'
            AND (verified_at IS NULL OR verified_at < datetime('now', printf('-%d days', ?)))
@@ -68,7 +68,7 @@ pub async fn verify_one(
     backup_id: Uuid,
     actor: &str,
 ) -> anyhow::Result<(bool, String)> {
-    let row: Option<(String, Option<Uuid>, Uuid, String)> = sqlx::query_as(
+    let row: Option<(String, Option<Uuid>, Uuid, String)> = crate::db::query_as(
         "SELECT COALESCE(br.backup_path, ''), v.host_id, br.vm_id, v.name
          FROM backup_records br JOIN vms v ON v.id = br.vm_id
          WHERE br.id = ? AND br.status = 'completed'",
@@ -82,7 +82,7 @@ pub async fn verify_one(
     let Some(host_id) = host_id else {
         anyhow::bail!("the machine has no host");
     };
-    let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+    let addr: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(&state.pool)
         .await?;
@@ -96,7 +96,7 @@ pub async fn verify_one(
     // An unreachable agent says nothing about the backup, so do not mark it failed — leave it due for next time.
     let unreachable = message.starts_with("could not reach the host agent");
     if !unreachable {
-        sqlx::query(
+        crate::db::query(
             "UPDATE backup_records SET verified_at = datetime('now'), verify_status = ?, verify_message = ? WHERE id = ?",
         )
         .bind(if ok { "ok" } else { "failed" })

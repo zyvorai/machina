@@ -8,7 +8,7 @@ pub(crate) use network::reserve_address;
 use crate::{api::ApiError, auth::AuthUser, state::AppState};
 use axum::routing::{get, post};
 use axum::Router;
-use sqlx::SqliteConnection;
+use crate::db::DbConn;
 use uuid::Uuid;
 
 pub fn routes() -> Router<AppState> {
@@ -89,12 +89,12 @@ pub fn routes() -> Router<AppState> {
 /// Cloud APIs always enforce membership, even when legacy project RBAC is off.
 /// Unknown identities (including unscoped API keys) fail closed for non-admins.
 pub(crate) async fn access(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     actor: &AuthUser,
     project: Uuid,
     write: bool,
 ) -> Result<(), ApiError> {
-    let enabled: Option<bool> = sqlx::query_scalar("SELECT enabled FROM projects WHERE id = ?")
+    let enabled: Option<bool> = crate::db::query_scalar("SELECT enabled FROM projects WHERE id = ?")
         .bind(project)
         .fetch_optional(&mut *conn)
         .await?;
@@ -110,13 +110,13 @@ pub(crate) async fn access(
     // A project-scoped API key may use exactly the projects it was issued for (its own role still caps write access).
     let scope = crate::api::apikeys::scope_of_conn(conn, &actor.username).await;
     if !scope.is_empty() {
-        let name: Option<String> = sqlx::query_scalar("SELECT name FROM projects WHERE id = ?").bind(project).fetch_optional(&mut *conn).await?;
+        let name: Option<String> = crate::db::query_scalar("SELECT name FROM projects WHERE id = ?").bind(project).fetch_optional(&mut *conn).await?;
         return match name {
             Some(n) if scope.contains(&n) => Ok(()),
             _ => Err(ApiError::forbidden("this API key is not scoped to that project").with_code("key_scope_forbidden")),
         };
     }
-    let roles: Vec<String> = sqlx::query_scalar("SELECT a.role FROM project_role_assignments a JOIN users u ON u.id = a.user_id WHERE u.username = ? AND a.project_id = ?")
+    let roles: Vec<String> = crate::db::query_scalar("SELECT a.role FROM project_role_assignments a JOIN users u ON u.id = a.user_id WHERE u.username = ? AND a.project_id = ?")
         .bind(&actor.username).bind(project).fetch_all(&mut *conn).await?;
     let allowed = roles
         .iter()
@@ -130,12 +130,12 @@ pub(crate) async fn access(
 }
 
 pub(crate) async fn audit(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     actor: &AuthUser,
     action: &str,
     id: Uuid,
 ) -> Result<(), ApiError> {
-    sqlx::query("INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail) VALUES (?, ?, ?, 'cloud', ?, '{}')")
+    crate::db::query("INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail) VALUES (?, ?, ?, 'cloud', ?, '{}')")
         .bind(Uuid::new_v4()).bind(&actor.username).bind(action).bind(id).execute(conn).await?;
     Ok(())
 }
@@ -162,7 +162,7 @@ pub(crate) async fn authorize_attachment(
     host: Option<Uuid>,
 ) -> Result<bool, ApiError> {
     let mut conn = state.pool.acquire().await?;
-    let owner: Option<(Uuid, String, Uuid, String)> = sqlx::query_as("SELECT v.project_id,p.name,v.host_id,s.status FROM cloud_subnets s JOIN networks n ON n.id=s.network_id JOIN cloud_vpcs v ON v.id=s.vpc_id JOIN projects p ON p.id=v.project_id WHERE n.name=?")
+    let owner: Option<(Uuid, String, Uuid, String)> = crate::db::query_as("SELECT v.project_id,p.name,v.host_id,s.status FROM cloud_subnets s JOIN networks n ON n.id=s.network_id JOIN cloud_vpcs v ON v.id=s.vpc_id JOIN projects p ON p.id=v.project_id WHERE n.name=?")
         .bind(network).fetch_optional(&mut *conn).await?;
     if let Some((project_id, name, expected_host, status)) = owner {
         access(&mut conn, actor, project_id, true).await?;
@@ -178,7 +178,7 @@ pub(crate) async fn authorize_attachment(
 
 pub(crate) async fn protect_network(state: &AppState, id: Uuid) -> Result<(), ApiError> {
     let owned: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cloud_subnets WHERE network_id=?)")
+        crate::db::query_scalar("SELECT EXISTS(SELECT 1 FROM cloud_subnets WHERE network_id=?)")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
@@ -195,11 +195,11 @@ pub(crate) async fn protect_network(state: &AppState, id: Uuid) -> Result<(), Ap
 /// boundary as well as public APIs so DRS, HA and old queued tasks cannot move
 /// an endpoint to an unprovisioned network.
 pub(crate) async fn check_vm_host(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     vm: Uuid,
     host: Uuid,
 ) -> Result<(), ApiError> {
-    let hosts: Vec<Uuid> = sqlx::query_scalar("SELECT DISTINCT c.host_id FROM vms v, json_each(json_extract(v.spec_json,'$.spec.network')) nic JOIN networks n ON n.name=json_extract(nic.value,'$.network') JOIN cloud_subnets s ON s.network_id=n.id JOIN cloud_vpcs c ON c.id=s.vpc_id WHERE v.id=?")
+    let hosts: Vec<Uuid> = crate::db::query_scalar("SELECT DISTINCT c.host_id FROM vms v, json_each(json_extract(v.spec_json,'$.spec.network')) nic JOIN networks n ON n.name=json_extract(nic.value,'$.network') JOIN cloud_subnets s ON s.network_id=n.id JOIN cloud_vpcs c ON c.id=s.vpc_id WHERE v.id=?")
         .bind(vm).fetch_all(pool).await?;
     if hosts.iter().any(|h| *h != host) {
         return Err(ApiError::conflict(

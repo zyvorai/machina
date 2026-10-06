@@ -4,7 +4,7 @@
 // SLO dashboards + API trace inventory (Phase 31).
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -54,8 +54,8 @@ pub struct TraceQuery {
     pub limit: Option<i64>,
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<ObservabilityOverview> {
-    let policies = sqlx::query_as(
+pub async fn overview(pool: &DbPool) -> anyhow::Result<ObservabilityOverview> {
+    let policies = crate::db::query_as(
         "SELECT id, name, target, objective_pct, window_hours, description FROM slo_policies ORDER BY name",
     )
     .fetch_all(pool)
@@ -66,14 +66,14 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<ObservabilityOverview
         slos.push(evaluate_slo(pool, &p).await?);
     }
 
-    let trace_count_1h: i64 = sqlx::query_scalar(
+    let trace_count_1h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM api_trace_spans WHERE recorded_at > datetime('now', '-1 hours')",
     )
     .fetch_one(pool)
     .await?;
 
     let p95_offset = ((trace_count_1h * 5 / 100) - 1).max(0);
-    let p95: Option<i32> = sqlx::query_scalar(
+    let p95: Option<i32> = crate::db::query_scalar(
         "SELECT duration_ms FROM api_trace_spans
          WHERE recorded_at > datetime('now', '-1 hours')
          ORDER BY duration_ms DESC
@@ -103,7 +103,7 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<ObservabilityOverview
     })
 }
 
-async fn evaluate_slo(pool: &SqlitePool, policy: &SloPolicyRow) -> anyhow::Result<SloStatusItem> {
+async fn evaluate_slo(pool: &DbPool, policy: &SloPolicyRow) -> anyhow::Result<SloStatusItem> {
     let (current_pct, burn_rate) = match policy.name.as_str() {
         "api-availability" => api_availability_slo(pool, policy.window_hours).await?,
         "task-success" => task_success_slo(pool, policy.window_hours).await?,
@@ -130,8 +130,8 @@ async fn evaluate_slo(pool: &SqlitePool, policy: &SloPolicyRow) -> anyhow::Resul
     })
 }
 
-async fn api_availability_slo(pool: &SqlitePool, window_hours: i32) -> anyhow::Result<(f64, f64)> {
-    let total: i64 = sqlx::query_scalar(
+async fn api_availability_slo(pool: &DbPool, window_hours: i32) -> anyhow::Result<(f64, f64)> {
+    let total: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM api_trace_spans WHERE recorded_at > datetime('now', '-' || ? || ' hours')",
     )
     .bind(window_hours)
@@ -140,7 +140,7 @@ async fn api_availability_slo(pool: &SqlitePool, window_hours: i32) -> anyhow::R
     if total == 0 {
         return Ok((100.0, 0.0));
     }
-    let ok: i64 = sqlx::query_scalar(
+    let ok: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM api_trace_spans
          WHERE recorded_at > datetime('now', '-' || ? || ' hours') AND status_code < 500",
     )
@@ -151,8 +151,8 @@ async fn api_availability_slo(pool: &SqlitePool, window_hours: i32) -> anyhow::R
     Ok((pct, ((100.0 - pct) / 100.0).max(0.0)))
 }
 
-async fn task_success_slo(pool: &SqlitePool, window_hours: i32) -> anyhow::Result<(f64, f64)> {
-    let total: i64 = sqlx::query_scalar(
+async fn task_success_slo(pool: &DbPool, window_hours: i32) -> anyhow::Result<(f64, f64)> {
+    let total: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE created_at > datetime('now', '-' || ? || ' hours') AND status IN ('completed', 'failed')",
     )
     .bind(window_hours)
@@ -161,7 +161,7 @@ async fn task_success_slo(pool: &SqlitePool, window_hours: i32) -> anyhow::Resul
     if total == 0 {
         return Ok((100.0, 0.0));
     }
-    let ok: i64 = sqlx::query_scalar(
+    let ok: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE created_at > datetime('now', '-' || ? || ' hours') AND status = 'completed'",
     )
     .bind(window_hours)
@@ -171,22 +171,22 @@ async fn task_success_slo(pool: &SqlitePool, window_hours: i32) -> anyhow::Resul
     Ok((pct, ((100.0 - pct) / 100.0).max(0.0)))
 }
 
-async fn host_availability_slo(pool: &SqlitePool) -> anyhow::Result<(f64, f64)> {
-    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts")
+async fn host_availability_slo(pool: &DbPool) -> anyhow::Result<(f64, f64)> {
+    let total: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts")
         .fetch_one(pool)
         .await?;
     if total == 0 {
         return Ok((100.0, 0.0));
     }
-    let online: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
+    let online: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM hosts WHERE state = 'online'")
         .fetch_one(pool)
         .await?;
     let pct = (online as f64 / total as f64) * 100.0;
     Ok((pct, ((100.0 - pct) / 100.0).max(0.0)))
 }
 
-pub async fn list_traces(pool: &SqlitePool, limit: i64) -> anyhow::Result<Vec<TraceSpanRow>> {
-    sqlx::query_as(
+pub async fn list_traces(pool: &DbPool, limit: i64) -> anyhow::Result<Vec<TraceSpanRow>> {
+    crate::db::query_as(
         "SELECT id, method, path, status_code, duration_ms,
                 strftime('%Y-%m-%dT%H:%M:%SZ', recorded_at) AS recorded_at
          FROM api_trace_spans ORDER BY recorded_at DESC LIMIT ?",
@@ -222,7 +222,7 @@ static TRACE_TX: OnceLock<mpsc::Sender<PendingSpan>> = OnceLock::new();
 /// size or per-request concurrency at all, it just reduces how often this
 /// path needs the writer lock in the first place, from N times/sec (N =
 /// request rate) down to at most once per second.
-pub fn spawn_trace_writer(pool: SqlitePool) {
+pub fn spawn_trace_writer(pool: DbPool) {
     let (tx, mut rx) = mpsc::channel::<PendingSpan>(2000);
     if TRACE_TX.set(tx).is_err() {
         return; // already spawned
@@ -244,7 +244,7 @@ pub fn spawn_trace_writer(pool: SqlitePool) {
             // to sit at exactly 5000 rows every second, so prune only every
             // 20th flush (~20s) rather than on every one.
             if flush_count.is_multiple_of(20) {
-                let _ = sqlx::query(
+                let _ = crate::db::query(
                     "DELETE FROM api_trace_spans WHERE id NOT IN (
                         SELECT id FROM api_trace_spans ORDER BY recorded_at DESC LIMIT 5000
                      )",
@@ -256,7 +256,7 @@ pub fn spawn_trace_writer(pool: SqlitePool) {
     });
 }
 
-async fn insert_batch(pool: &SqlitePool, batch: &[PendingSpan]) {
+async fn insert_batch(pool: &DbPool, batch: &[PendingSpan]) {
     let mut sql = String::from(
         "INSERT INTO api_trace_spans (id, method, path, status_code, duration_ms, recorded_at) VALUES ",
     );
@@ -266,7 +266,7 @@ async fn insert_batch(pool: &SqlitePool, batch: &[PendingSpan]) {
         }
         sql.push_str("(?, ?, ?, ?, ?, strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))");
     }
-    let mut query = sqlx::query(&sql);
+    let mut query = crate::db::query(&sql);
     for span in batch {
         query = query
             .bind(Uuid::new_v4())
@@ -305,7 +305,7 @@ pub fn record_trace(method: &str, path: &str, status_code: i32, duration_ms: i32
     }
 }
 
-pub async fn prometheus_slo_gauges(pool: &SqlitePool) -> String {
+pub async fn prometheus_slo_gauges(pool: &DbPool) -> String {
     let ov = overview(pool).await.ok();
     let Some(ov) = ov else {
         return String::new();

@@ -45,7 +45,7 @@ async fn sync_all_hosts(state: &AppState) -> anyhow::Result<()> {
     // sync" (set by the host_inventory task handler on success), so ordering by
     // it rotates coverage across the whole fleet over time instead of wedging
     // on the same subset.
-    let host_ids: Vec<Uuid> = sqlx::query_scalar(
+    let host_ids: Vec<Uuid> = crate::db::query_scalar(
         "SELECT id FROM hosts ORDER BY last_heartbeat_at ASC NULLS FIRST LIMIT 200",
     )
     .fetch_all(&state.pool)
@@ -63,7 +63,7 @@ async fn sync_all_hosts(state: &AppState) -> anyhow::Result<()> {
         // (e.g. dropped by an in-memory-bus restart) — without the bound one such row
         // would block this host's sync FOREVER, so its heartbeat never refreshes and
         // it falls offline, breaking VM placement.
-        let inflight: i64 = sqlx::query_scalar(
+        let inflight: i64 = crate::db::query_scalar(
             "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'host.inventory' \
              AND status IN ('pending', 'running') AND created_at > datetime('now', '-5 minutes')",
         )
@@ -92,7 +92,7 @@ async fn sync_all_hosts(state: &AppState) -> anyhow::Result<()> {
 
 async fn sync_kubevirt_inventory(state: &AppState) -> anyhow::Result<()> {
     let cluster_id: Option<Uuid> =
-        sqlx::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_optional(&state.pool)
             .await?;
     let Some(cluster_id) = cluster_id else {
@@ -100,7 +100,7 @@ async fn sync_kubevirt_inventory(state: &AppState) -> anyhow::Result<()> {
     };
     // Same anti-backlog guard as host.inventory, with the same staleness bound so an
     // orphaned pending row can't wedge kubevirt sync forever.
-    let inflight: i64 = sqlx::query_scalar(
+    let inflight: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'kubevirt.inventory' \
          AND status IN ('pending', 'running') AND created_at > datetime('now', '-5 minutes')",
     )

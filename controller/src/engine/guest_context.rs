@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use tokio::sync::{RwLock, Semaphore};
 use uuid::Uuid;
 
@@ -240,7 +240,7 @@ pub fn context_chip(s: &GuestAiSnapshot) -> String {
 }
 
 pub async fn snapshot_for_vm(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     vm_id: Uuid,
     refresh: bool,
@@ -254,7 +254,7 @@ pub async fn snapshot_for_vm(
         }
     }
 
-    let row: (String, String, String) = sqlx::query_as(
+    let row: (String, String, String) = crate::db::query_as(
         "SELECT name, observed_state, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(vm_id)
@@ -287,7 +287,7 @@ pub async fn invalidate_vm(vm_id: Uuid) {
 }
 
 pub async fn gather_fleet_snapshots(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     vm_ids: Vec<Uuid>,
     refresh: bool,
@@ -300,7 +300,7 @@ pub async fn gather_fleet_snapshots(
         let sem = sem.clone();
         handles.push(tokio::spawn(async move {
             let _permit = sem.acquire().await.ok();
-            let row: Option<(String, String)> = sqlx::query_as(
+            let row: Option<(String, String)> = crate::db::query_as(
                 "SELECT observed_state, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
             )
             .bind(id)

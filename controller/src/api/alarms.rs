@@ -128,7 +128,7 @@ pub async fn list_alarms(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<AlarmRow>>, ApiError> {
     require_operator(&actor)?;
-    Ok(Json(sqlx::query_as(&format!("{SELECT} ORDER BY name")).fetch_all(&state.pool).await?))
+    Ok(Json(crate::db::query_as(&format!("{SELECT} ORDER BY name")).fetch_all(&state.pool).await?))
 }
 
 pub async fn get_alarm(
@@ -137,7 +137,7 @@ pub async fn get_alarm(
     Path(id): Path<Uuid>,
 ) -> Result<Json<AlarmRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as(&format!("{SELECT} WHERE id = ?")).bind(id).fetch_optional(&state.pool).await?;
+    let row = crate::db::query_as(&format!("{SELECT} WHERE id = ?")).bind(id).fetch_optional(&state.pool).await?;
     row.map(Json).ok_or_else(|| ApiError::not_found("alarm not found"))
 }
 
@@ -150,7 +150,7 @@ pub async fn create_alarm(
     validate(&b).map_err(ApiError::bad_request)?;
     let mut conn = state.pool.acquire().await?;
     if let Some(g) = b.group_id {
-        let project: Option<Uuid> = sqlx::query_scalar("SELECT project_id FROM cloud_instance_groups WHERE id = ?")
+        let project: Option<Uuid> = crate::db::query_scalar("SELECT project_id FROM cloud_instance_groups WHERE id = ?")
             .bind(g)
             .fetch_optional(&mut *conn)
             .await?;
@@ -158,7 +158,7 @@ pub async fn create_alarm(
         access(&mut conn, &actor, project, true).await?;
     }
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO cloud_alarms (id, name, subject, metric, statistic, period_secs, evaluation_periods, comparator, threshold, \
          action, group_id, step, cooldown_secs, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -201,7 +201,7 @@ pub async fn set_alarm_enabled(
 ) -> Result<Json<AlarmRow>, ApiError> {
     require_operator(&actor)?;
     // Re-enabling starts from "no data" so a stale ALARM cannot fire an action on the first tick.
-    let r = sqlx::query("UPDATE cloud_alarms SET enabled = ?, state = CASE WHEN ? THEN 'INSUFFICIENT_DATA' ELSE state END WHERE id = ?")
+    let r = crate::db::query("UPDATE cloud_alarms SET enabled = ?, state = CASE WHEN ? THEN 'INSUFFICIENT_DATA' ELSE state END WHERE id = ?")
         .bind(b.enabled)
         .bind(b.enabled)
         .bind(id)
@@ -219,7 +219,7 @@ pub async fn delete_alarm(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let r = sqlx::query("DELETE FROM cloud_alarms WHERE id = ?").bind(id).execute(&state.pool).await?;
+    let r = crate::db::query("DELETE FROM cloud_alarms WHERE id = ?").bind(id).execute(&state.pool).await?;
     if r.rows_affected() == 0 {
         return Err(ApiError::not_found("alarm not found"));
     }

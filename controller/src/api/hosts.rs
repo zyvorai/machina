@@ -110,7 +110,7 @@ pub async fn list_hosts(
 ) -> Result<Json<Vec<HostRow>>, ApiError> {
     require_operator(&actor)?;
     let rows =
-        sqlx::query_as::<_, HostRow>(&format!("{HOST_LIST_SQL} ORDER BY hostname LIMIT 500"))
+        crate::db::query_as::<_, HostRow>(&format!("{HOST_LIST_SQL} ORDER BY hostname LIMIT 500"))
             .fetch_all(&state.pool)
             .await?;
     Ok(Json(rows.into_iter().map(apply_stale_host_state).collect()))
@@ -130,7 +130,7 @@ fn apply_stale_host_state(mut row: HostRow) -> HostRow {
 }
 
 async fn fetch_host_row(state: &AppState, id: Uuid) -> Result<HostRow, ApiError> {
-    let row = sqlx::query_as::<_, HostRow>(&format!("{HOST_LIST_SQL} WHERE id = ?"))
+    let row = crate::db::query_as::<_, HostRow>(&format!("{HOST_LIST_SQL} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -152,7 +152,7 @@ pub async fn get_host_gpus(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let agent_addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+    let agent_addr: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -182,7 +182,7 @@ pub async fn get_host_gpus(
 }
 
 async fn fetch_host_detail_row(state: &AppState, id: Uuid) -> Result<HostDetailRow, ApiError> {
-    let row = sqlx::query_as::<_, HostDetailRow>(&format!("{HOST_DETAIL_SQL} WHERE id = ?"))
+    let row = crate::db::query_as::<_, HostDetailRow>(&format!("{HOST_DETAIL_SQL} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -213,7 +213,7 @@ pub async fn create_host(
     Json(req): Json<CreateHostRequest>,
 ) -> Result<Json<HostRow>, ApiError> {
     require_operator(&actor)?;
-    let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
+    let cluster_id: Uuid = crate::db::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_one(&state.pool)
         .await?;
     let id = Uuid::new_v4();
@@ -224,7 +224,7 @@ pub async fn create_host(
         .libvirt_uri
         .unwrap_or_else(|| state.config.default_libvirt_uri.clone());
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO hosts (id, cluster_id, hostname, address, agent_grpc_addr, libvirt_uri, state, validation_status)
          VALUES (?, ?, ?, ?, ?, ?, 'pending_validation', 'pending')",
     )
@@ -304,7 +304,7 @@ pub async fn sync_host(
     require_operator(&actor)?;
     // tasks.host_id REFERENCES hosts(id) — enqueueing a missing host yields a raw
     // SQLite FK 500. 404 before insert so callers (and regression) get a clean miss.
-    let exists: Option<(Uuid,)> = sqlx::query_as("SELECT id FROM hosts WHERE id = ?")
+    let exists: Option<(Uuid,)> = crate::db::query_as("SELECT id FROM hosts WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.pool)
         .await?;
@@ -368,7 +368,7 @@ pub async fn join_host(
     // concurrent joins can't both observe it unused and each enroll a host
     // (the old flow validated with a read outside any tx, then stamped used_at
     // unconditionally — a TOCTOU that let one token enroll N hosts).
-    let consumed: Option<(Uuid,)> = sqlx::query_as(
+    let consumed: Option<(Uuid,)> = crate::db::query_as(
         "UPDATE enrollment_tokens SET used_at = datetime('now')
          WHERE token = ? AND used_at IS NULL
            AND (expires_at IS NULL OR expires_at > datetime('now'))
@@ -380,7 +380,7 @@ pub async fn join_host(
     let (cluster_id,) =
         consumed.ok_or_else(|| ApiError::bad_request("invalid or expired join token"))?;
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO hosts (id, cluster_id, hostname, address, agent_grpc_addr, agent_console_addr, libvirt_uri, state, validation_status)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_validation', 'pending')
          ON CONFLICT (cluster_id, hostname) DO UPDATE SET
@@ -412,7 +412,7 @@ pub async fn join_host(
     .await?;
 
     let host_id: Uuid =
-        sqlx::query_scalar("SELECT id FROM hosts WHERE cluster_id = ? AND hostname = ?")
+        crate::db::query_scalar("SELECT id FROM hosts WHERE cluster_id = ? AND hostname = ?")
             .bind(cluster_id)
             .bind(&req.hostname)
             .fetch_one(&mut *tx)
@@ -437,9 +437,9 @@ pub async fn join_host(
     fetch_host_row(&state, host_id).await.map(Json)
 }
 
-async fn link_baremetal_firewall_on_join(pool: &sqlx::SqlitePool, host_id: Uuid, hostname: &str) {
+async fn link_baremetal_firewall_on_join(pool: &crate::db::DbPool, host_id: Uuid, hostname: &str) {
     if let Ok(Some(metal_id)) =
-        sqlx::query_scalar::<_, Uuid>("SELECT id FROM baremetal_servers WHERE hostname = ? LIMIT 1")
+        crate::db::query_scalar::<_, Uuid>("SELECT id FROM baremetal_servers WHERE hostname = ? LIMIT 1")
             .bind(hostname)
             .fetch_optional(pool)
             .await
@@ -506,7 +506,7 @@ pub async fn cordon_host(
     Json(req): Json<CordonRequest>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let res = sqlx::query("UPDATE hosts SET schedulable = ? WHERE id = ?")
+    let res = crate::db::query("UPDATE hosts SET schedulable = ? WHERE id = ?")
         .bind(!req.cordon)
         .bind(id)
         .execute(&state.pool)
@@ -541,7 +541,7 @@ pub async fn sync_all_hosts(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<TaskResponse>>, ApiError> {
     require_operator(&actor)?;
-    let ids: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM hosts ORDER BY hostname LIMIT 500")
+    let ids: Vec<Uuid> = crate::db::query_scalar("SELECT id FROM hosts ORDER BY hostname LIMIT 500")
         .fetch_all(&state.pool)
         .await?;
     let mut out = Vec::new();
@@ -589,7 +589,7 @@ pub async fn patch_host(
     require_operator(&actor)?;
     let mut tx = state.pool.begin().await?;
     if let Some(v) = &body.address {
-        sqlx::query("UPDATE hosts SET address = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET address = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
@@ -599,7 +599,7 @@ pub async fn patch_host(
         let incoming_loopback =
             v.is_empty() || v.starts_with("127.0.0.1:") || v.starts_with("localhost:");
         let existing_addr: String =
-            sqlx::query_scalar("SELECT COALESCE(address, '') FROM hosts WHERE id = ?")
+            crate::db::query_scalar("SELECT COALESCE(address, '') FROM hosts WHERE id = ?")
                 .bind(id)
                 .fetch_one(&mut *tx)
                 .await
@@ -617,7 +617,7 @@ pub async fn patch_host(
                 "ignoring host patch that would downgrade a routable agent address to loopback"
             );
         } else {
-            sqlx::query("UPDATE hosts SET agent_grpc_addr = ? WHERE id = ?")
+            crate::db::query("UPDATE hosts SET agent_grpc_addr = ? WHERE id = ?")
                 .bind(v)
                 .bind(id)
                 .execute(&mut *tx)
@@ -625,42 +625,42 @@ pub async fn patch_host(
         }
     }
     if let Some(v) = &body.libvirt_uri {
-        sqlx::query("UPDATE hosts SET libvirt_uri = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET libvirt_uri = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.notes {
-        sqlx::query("UPDATE hosts SET notes = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET notes = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(tags) = &body.tags {
-        sqlx::query("UPDATE hosts SET tags = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET tags = ? WHERE id = ?")
             .bind(serde_json::to_string(tags).unwrap_or_else(|_| "[]".into()))
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.fence_method {
-        sqlx::query("UPDATE hosts SET fence_method = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET fence_method = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.ipmi_address {
-        sqlx::query("UPDATE hosts SET ipmi_address = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET ipmi_address = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.ipmi_username {
-        sqlx::query("UPDATE hosts SET ipmi_username = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET ipmi_username = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
@@ -668,7 +668,7 @@ pub async fn patch_host(
     }
     if let Some(v) = &body.ipmi_password {
         if !v.is_empty() && v != "***" {
-            sqlx::query("UPDATE hosts SET ipmi_password = ? WHERE id = ?")
+            crate::db::query("UPDATE hosts SET ipmi_password = ? WHERE id = ?")
                 .bind(v)
                 .bind(id)
                 .execute(&mut *tx)
@@ -676,21 +676,21 @@ pub async fn patch_host(
         }
     }
     if let Some(v) = &body.site {
-        sqlx::query("UPDATE hosts SET site = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET site = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = &body.rack {
-        sqlx::query("UPDATE hosts SET rack = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET rack = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
             .await?;
     }
     if let Some(v) = body.rack_u {
-        sqlx::query("UPDATE hosts SET rack_u = ? WHERE id = ?")
+        crate::db::query("UPDATE hosts SET rack_u = ? WHERE id = ?")
             .bind(v)
             .bind(id)
             .execute(&mut *tx)
@@ -726,7 +726,7 @@ pub async fn delete_host(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
     // A cloud VPC lives on exactly one host (RESTRICT foreign key); refuse clearly instead of failing on the constraint.
-    let vpcs: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cloud_vpcs WHERE host_id = ?")
+    let vpcs: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM cloud_vpcs WHERE host_id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -737,7 +737,7 @@ pub async fn delete_host(
         )
         .with_code("host_has_vpcs"));
     }
-    let vm_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE host_id = ?")
+    let vm_count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE host_id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -754,7 +754,7 @@ pub async fn delete_host(
         // running VMs of their controller records. Only permit force when the host
         // is offline or its heartbeat is stale (>2m), matching the staleness rule
         // used to render host status elsewhere in this file.
-        let row = sqlx::query_as::<_, (String, Option<chrono::DateTime<chrono::Utc>>)>(
+        let row = crate::db::query_as::<_, (String, Option<chrono::DateTime<chrono::Utc>>)>(
             "SELECT COALESCE(state, 'unknown'), last_heartbeat_at FROM hosts WHERE id = ?",
         )
         .bind(id)
@@ -786,7 +786,7 @@ pub async fn delete_host(
     // order, so the host (and any assigned VM records) can be removed without tripping
     // a FOREIGN KEY constraint. VM-owned rows with ON DELETE CASCADE (snapshots, tags,
     // port-forwards, …) are removed automatically when their vms row goes.
-    sqlx::query(
+    crate::db::query(
         "DELETE FROM migration_jobs
          WHERE source_host_id = ? OR dest_host_id = ?
             OR vm_id IN (SELECT id FROM vms WHERE host_id = ?)",
@@ -796,7 +796,7 @@ pub async fn delete_host(
     .bind(id)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("DELETE FROM placement_recommendations WHERE from_host_id = ? OR to_host_id = ?")
+    crate::db::query("DELETE FROM placement_recommendations WHERE from_host_id = ? OR to_host_id = ?")
         .bind(id)
         .bind(id)
         .execute(&mut *tx)
@@ -806,14 +806,14 @@ pub async fn delete_host(
         "DELETE FROM maintenance_windows WHERE host_id = ?",
         "DELETE FROM tasks WHERE host_id = ?",
     ] {
-        sqlx::query(stmt).bind(id).execute(&mut *tx).await?;
+        crate::db::query(stmt).bind(id).execute(&mut *tx).await?;
     }
-    let pruned = sqlx::query("DELETE FROM vms WHERE host_id = ?")
+    let pruned = crate::db::query("DELETE FROM vms WHERE host_id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?
         .rows_affected();
-    let deleted = sqlx::query("DELETE FROM hosts WHERE id = ?")
+    let deleted = crate::db::query("DELETE FROM hosts WHERE id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?
@@ -857,7 +857,7 @@ pub async fn host_lldp(
     // to any operator, so align it with that precedent instead of standing
     // out as the one admin-only inventory read.
     require_operator(&actor)?;
-    let row: (String, String) = sqlx::query_as(
+    let row: (String, String) = crate::db::query_as(
         "SELECT hostname, COALESCE(NULLIF(agent_console_addr, ''), agent_grpc_addr)
          FROM hosts WHERE id = ?",
     )
@@ -870,7 +870,7 @@ pub async fn host_lldp(
         Ok(lldp) => lldp,
         Err(e) => {
             tracing::warn!("{} LLDP live fetch failed: {e}", row.0);
-            if let Ok(Some(cached)) = sqlx::query_as::<_, (String, serde_json::Value, String)>(
+            if let Ok(Some(cached)) = crate::db::query_as::<_, (String, serde_json::Value, String)>(
                 "SELECT source, neighbors_json, summary FROM host_lldp_cache WHERE host_id = ?",
             )
             .bind(id)
@@ -896,7 +896,7 @@ pub async fn host_lldp(
         }
     };
     if let Ok(neighbors_json) = serde_json::to_value(&lldp.neighbors) {
-        let _ = sqlx::query(
+        let _ = crate::db::query(
             "INSERT INTO host_lldp_cache (host_id, source, neighbors_json, summary, fetched_at)
              VALUES (?, ?, ?, ?, datetime('now'))
              ON CONFLICT (host_id) DO UPDATE SET

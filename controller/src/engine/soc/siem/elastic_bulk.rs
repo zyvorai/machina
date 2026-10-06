@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde_json::json;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use super::{
     fetch_unexported_events, integration_err, integration_ok, mark_exported, EventRow,
@@ -10,7 +10,7 @@ use super::{
 };
 
 pub async fn forward(
-    pool: &SqlitePool,
+    pool: &DbPool,
     integ: &IntegrationRow,
     _controller_id: &str,
 ) -> anyhow::Result<usize> {

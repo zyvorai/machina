@@ -33,7 +33,7 @@ pub async fn list_webhooks(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<WebhookRow>>, ApiError> {
     require_admin(&actor)?;
-    let rows = sqlx::query_as::<_, WebhookRow>(
+    let rows = crate::db::query_as::<_, WebhookRow>(
         "SELECT id, url, events, enabled, created_at FROM webhooks ORDER BY created_at DESC",
     )
     .fetch_all(&state.pool)
@@ -120,14 +120,14 @@ pub async fn create_webhook(
     require_admin(&actor)?;
     validate_webhook_url(&body.url)?;
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO webhooks (id, url, events, secret) VALUES (?, ?, ?, ?)")
+    crate::db::query("INSERT INTO webhooks (id, url, events, secret) VALUES (?, ?, ?, ?)")
         .bind(id)
         .bind(&body.url)
         .bind(serde_json::to_string(&body.events).unwrap_or_else(|_| "[]".into()))
         .bind(&body.secret)
         .execute(&state.pool)
         .await?;
-    let row = sqlx::query_as::<_, WebhookRow>(
+    let row = crate::db::query_as::<_, WebhookRow>(
         "SELECT id, url, events, enabled, created_at FROM webhooks WHERE id = ?",
     )
     .bind(id)
@@ -143,11 +143,11 @@ pub async fn delete_webhook(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
     let mut tx = state.pool.begin().await?;
-    sqlx::query("DELETE FROM webhook_deliveries WHERE webhook_id = ?")
+    crate::db::query("DELETE FROM webhook_deliveries WHERE webhook_id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM webhooks WHERE id = ?")
+    crate::db::query("DELETE FROM webhooks WHERE id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?;
@@ -161,11 +161,11 @@ pub async fn toggle_webhook(
     Path(id): Path<Uuid>,
 ) -> Result<Json<WebhookRow>, ApiError> {
     require_admin(&actor)?;
-    sqlx::query("UPDATE webhooks SET enabled = NOT enabled WHERE id = ?")
+    crate::db::query("UPDATE webhooks SET enabled = NOT enabled WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?;
-    let row = sqlx::query_as::<_, WebhookRow>(
+    let row = crate::db::query_as::<_, WebhookRow>(
         "SELECT id, url, events, enabled, created_at FROM webhooks WHERE id = ?",
     )
     .bind(id)
@@ -208,7 +208,7 @@ pub async fn list_webhook_deliveries(
     require_admin(&actor)?;
     let limit = q.limit.clamp(1, 200);
     let rows = if let Some(status) = &q.status {
-        sqlx::query_as::<_, WebhookDeliveryRow>(
+        crate::db::query_as::<_, WebhookDeliveryRow>(
             "SELECT id, webhook_id, url, event_kind, attempts, max_attempts, status, last_error,
                     next_retry_at, created_at
              FROM webhook_deliveries WHERE status = ?
@@ -219,7 +219,7 @@ pub async fn list_webhook_deliveries(
         .fetch_all(&state.pool)
         .await?
     } else {
-        sqlx::query_as::<_, WebhookDeliveryRow>(
+        crate::db::query_as::<_, WebhookDeliveryRow>(
             "SELECT id, webhook_id, url, event_kind, attempts, max_attempts, status, last_error,
                     next_retry_at, created_at
              FROM webhook_deliveries ORDER BY created_at DESC LIMIT ?",
@@ -248,20 +248,20 @@ pub async fn purge_webhook_deliveries(
     let status = body.status.as_deref();
     let url_pat = body.url_contains.as_deref().map(|s| format!("%{s}%"));
     let deleted = if let (Some(st), Some(url)) = (status, url_pat.as_deref()) {
-        sqlx::query("DELETE FROM webhook_deliveries WHERE status = ? AND url LIKE ?")
+        crate::db::query("DELETE FROM webhook_deliveries WHERE status = ? AND url LIKE ?")
             .bind(st)
             .bind(url)
             .execute(&state.pool)
             .await?
             .rows_affected()
     } else if let Some(st) = status {
-        sqlx::query("DELETE FROM webhook_deliveries WHERE status = ?")
+        crate::db::query("DELETE FROM webhook_deliveries WHERE status = ?")
             .bind(st)
             .execute(&state.pool)
             .await?
             .rows_affected()
     } else if let Some(url) = url_pat.as_deref() {
-        sqlx::query("DELETE FROM webhook_deliveries WHERE url LIKE ?")
+        crate::db::query("DELETE FROM webhook_deliveries WHERE url LIKE ?")
             .bind(url)
             .execute(&state.pool)
             .await?
@@ -280,14 +280,14 @@ pub async fn retry_webhook_delivery(
     Path(id): Path<Uuid>,
 ) -> Result<Json<WebhookDeliveryRow>, ApiError> {
     require_admin(&actor)?;
-    sqlx::query(
+    crate::db::query(
         "UPDATE webhook_deliveries SET status = 'pending', attempts = 0, last_error = '',
          next_retry_at = datetime('now') WHERE id = ?",
     )
     .bind(id)
     .execute(&state.pool)
     .await?;
-    let row = sqlx::query_as::<_, WebhookDeliveryRow>(
+    let row = crate::db::query_as::<_, WebhookDeliveryRow>(
         "SELECT id, webhook_id, url, event_kind, attempts, max_attempts, status, last_error,
                 next_retry_at, created_at FROM webhook_deliveries WHERE id = ?",
     )

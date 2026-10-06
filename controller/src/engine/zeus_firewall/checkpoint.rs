@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use machina_core::FirewallInventory;
@@ -16,7 +16,7 @@ pub struct CheckpointSummary {
 }
 
 pub async fn save_checkpoint(
-    pool: &SqlitePool,
+    pool: &DbPool,
     target_kind: &str,
     target_id: Uuid,
     label: &str,
@@ -25,7 +25,7 @@ pub async fn save_checkpoint(
 ) -> anyhow::Result<Uuid> {
     let adapter_state = serde_json::to_value(inv)?;
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO firewall_checkpoints (id, target_kind, target_id, label, adapter_state, created_by)
          VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -41,11 +41,11 @@ pub async fn save_checkpoint(
 }
 
 pub async fn list_checkpoints(
-    pool: &SqlitePool,
+    pool: &DbPool,
     target_kind: &str,
     target_id: Uuid,
 ) -> anyhow::Result<Vec<CheckpointSummary>> {
-    let rows: Vec<(Uuid, String, chrono::DateTime<chrono::Utc>, Option<String>)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, chrono::DateTime<chrono::Utc>, Option<String>)> = crate::db::query_as(
         "SELECT id, label, created_at, created_by FROM firewall_checkpoints
          WHERE target_kind = ? AND target_id = ? ORDER BY created_at DESC LIMIT 20",
     )
@@ -66,13 +66,13 @@ pub async fn list_checkpoints(
 }
 
 pub async fn rollback_checkpoint(
-    pool: &SqlitePool,
+    pool: &DbPool,
     target_kind: &str,
     target_id: Uuid,
     checkpoint_id: Uuid,
     actor: &str,
 ) -> anyhow::Result<serde_json::Value> {
-    let row: Option<(serde_json::Value, String)> = sqlx::query_as(
+    let row: Option<(serde_json::Value, String)> = crate::db::query_as(
         "SELECT adapter_state, label FROM firewall_checkpoints
          WHERE id = ? AND target_kind = ? AND target_id = ?",
     )
@@ -86,7 +86,7 @@ pub async fn rollback_checkpoint(
         anyhow::bail!("checkpoint not found");
     };
 
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, ?, ?, 'rollback', ?, ?, ?)",
     )
     .bind(uuid::Uuid::new_v4())

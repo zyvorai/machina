@@ -13,7 +13,7 @@
 
 use serde::Serialize;
 use serde_json::{json, Value};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::actions::{self, CreateActionBody};
@@ -186,9 +186,9 @@ fn arg_limit(args: &Value, default: i64, max: i64) -> i64 {
 }
 
 /// Resolve a machine by exact name or id.
-async fn resolve_vm(pool: &SqlitePool, vm: &str) -> anyhow::Result<(Uuid, String)> {
+async fn resolve_vm(pool: &DbPool, vm: &str) -> anyhow::Result<(Uuid, String)> {
     if let Ok(id) = Uuid::parse_str(vm) {
-        let name: Option<String> = sqlx::query_scalar("SELECT name FROM vms WHERE id = ?")
+        let name: Option<String> = crate::db::query_scalar("SELECT name FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(pool)
             .await?;
@@ -196,7 +196,7 @@ async fn resolve_vm(pool: &SqlitePool, vm: &str) -> anyhow::Result<(Uuid, String
             return Ok((id, name));
         }
     }
-    let row: Option<(Uuid, String)> = sqlx::query_as("SELECT id, name FROM vms WHERE name = ?")
+    let row: Option<(Uuid, String)> = crate::db::query_as("SELECT id, name FROM vms WHERE name = ?")
         .bind(vm)
         .fetch_optional(pool)
         .await?;
@@ -226,7 +226,7 @@ async fn exec_tool(
                     String,
                     Option<bool>,
                     Option<String>,
-                )> = sqlx::query_as(
+                )> = crate::db::query_as(
                     "SELECT id, name, observed_state, vcpus, memory_mib, guest_ip, guest_tools_status,
                             (SELECT enabled FROM ha_policies h WHERE h.vm_id = vms.id) AS ha,
                             (SELECT MAX(created_at) FROM backup_records b
@@ -255,7 +255,7 @@ async fn exec_tool(
                 Ok(json!({ "count": items.len(), "vms": items }).to_string())
             }
             "list_hosts" => {
-                let rows: Vec<(Uuid, String, String, bool, f64, i64, i64, i64)> = sqlx::query_as(
+                let rows: Vec<(Uuid, String, String, bool, f64, i64, i64, i64)> = crate::db::query_as(
                     "SELECT id, hostname, state, maintenance_mode, cpu_percent, memory_used_mib,
                             memory_total_mib, vm_count
                      FROM hosts ORDER BY hostname LIMIT 50",
@@ -275,7 +275,7 @@ async fn exec_tool(
             }
             "recent_events" => {
                 let limit = arg_limit(&call.args, 20, 50);
-                let rows: Vec<(String, String, String)> = sqlx::query_as(
+                let rows: Vec<(String, String, String)> = crate::db::query_as(
                     "SELECT kind, message, created_at FROM events ORDER BY datetime(created_at) DESC LIMIT ?",
                 )
                 .bind(limit)
@@ -409,8 +409,8 @@ async fn exec_tool(
 }
 
 /// The environment planner's answer as plain JSON (no side effects).
-async fn environment_plan(pool: &sqlx::SqlitePool, query: &str) -> anyhow::Result<Value> {
-    let rates: (f64, f64) = sqlx::query_as(
+async fn environment_plan(pool: &crate::db::DbPool, query: &str) -> anyhow::Result<Value> {
+    let rates: (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)

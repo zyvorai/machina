@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize)]
@@ -30,30 +30,30 @@ pub struct FleetBackupOverview {
     pub recent: Vec<FleetBackupEvent>,
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetBackupOverview> {
-    let backups_completed_24h: i64 = sqlx::query_scalar(
+pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetBackupOverview> {
+    let backups_completed_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM backup_records WHERE status = 'completed' AND created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await?;
 
-    let backups_failed_24h: i64 = sqlx::query_scalar(
+    let backups_failed_24h: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM backup_records WHERE status = 'failed' AND created_at > datetime('now', '-24 hours')",
     )
     .fetch_one(pool)
     .await?;
 
-    let snapshots_total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM snapshot_records")
+    let snapshots_total: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM snapshot_records")
         .fetch_one(pool)
         .await?;
 
-    let vms_with_backup_7d: i64 = sqlx::query_scalar(
+    let vms_with_backup_7d: i64 = crate::db::query_scalar(
         "SELECT COUNT(DISTINCT vm_id) FROM backup_records WHERE status = 'completed' AND created_at > datetime('now', '-7 days')",
     )
     .fetch_one(pool)
     .await?;
 
-    let total_events: i64 = sqlx::query_scalar(
+    let total_events: i64 = crate::db::query_scalar(
         r#"
         SELECT (
             (SELECT COUNT(*) FROM backup_records) +
@@ -64,7 +64,7 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetBackupOverview> 
     .fetch_one(pool)
     .await?;
 
-    let rows: Vec<(String, Uuid, Uuid, String, String, String, DateTime<Utc>)> = sqlx::query_as(
+    let rows: Vec<(String, Uuid, Uuid, String, String, String, DateTime<Utc>)> = crate::db::query_as(
         r#"
         SELECT kind, id, vm_id, vm_name, label, status, created_at FROM (
             SELECT 'backup' AS kind, b.id, b.vm_id, v.name AS vm_name,

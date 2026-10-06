@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Deserialize)]
 pub struct AutonomousPlanBody {
@@ -33,7 +33,7 @@ pub struct AutonomousPlanResult {
 }
 
 pub async fn plan(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &crate::config::ControllerConfig,
     body: &AutonomousPlanBody,
 ) -> anyhow::Result<AutonomousPlanResult> {
@@ -46,7 +46,7 @@ pub async fn plan(
 }
 
 async fn plan_with_agent(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &crate::config::ControllerConfig,
     body: &AutonomousPlanBody,
     agent_id: &str,
@@ -155,7 +155,7 @@ pub struct AutonomousExecuteBody {
 }
 
 pub async fn execute_approved_plan(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &crate::config::ControllerConfig,
     _state: &crate::state::AppState,
     actor: &crate::auth::AuthUser,

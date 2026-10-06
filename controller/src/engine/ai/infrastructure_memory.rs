@@ -3,7 +3,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -21,12 +21,12 @@ pub struct InfrastructureMemory {
     pub runbook_hints: Vec<String>,
 }
 
-pub async fn recall(pool: &SqlitePool, limit: i64) -> anyhow::Result<InfrastructureMemory> {
+pub async fn recall(pool: &DbPool, limit: i64) -> anyhow::Result<InfrastructureMemory> {
     let cap = limit.clamp(1, 50);
 
     let mut incidents = Vec::new();
 
-    let structured: Vec<(DateTime<Utc>, String, String, String, Option<String>)> = sqlx::query_as(
+    let structured: Vec<(DateTime<Utc>, String, String, String, Option<String>)> = crate::db::query_as(
         "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), severity, title, summary, root_cause FROM ai_incidents
          ORDER BY created_at DESC LIMIT ?",
     )
@@ -49,7 +49,7 @@ pub async fn recall(pool: &SqlitePool, limit: i64) -> anyhow::Result<Infrastruct
         });
     }
 
-    let rows: Vec<(DateTime<Utc>, String, String, Option<serde_json::Value>)> = sqlx::query_as(
+    let rows: Vec<(DateTime<Utc>, String, String, Option<serde_json::Value>)> = crate::db::query_as(
         "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), actor, action, detail FROM audit_logs
          WHERE action LIKE '%fail%'
             OR action LIKE 'ai.autopilot%'
@@ -123,14 +123,14 @@ fn escape_like(s: &str) -> String {
 }
 
 pub async fn similar(
-    pool: &SqlitePool,
+    pool: &DbPool,
     query: &str,
     limit: i64,
 ) -> anyhow::Result<SimilarIncidentsResult> {
     let cap = limit.clamp(1, 20);
     let pattern = format!("%{}%", escape_like(query.trim()));
 
-    let rows: Vec<(DateTime<Utc>, String, String, Option<serde_json::Value>)> = sqlx::query_as(
+    let rows: Vec<(DateTime<Utc>, String, String, Option<serde_json::Value>)> = crate::db::query_as(
         "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), action, actor, detail FROM audit_logs
          WHERE action LIKE ? ESCAPE '\\' OR actor LIKE ? ESCAPE '\\'
             OR detail LIKE ? ESCAPE '\\'
@@ -183,12 +183,12 @@ pub struct ChangeBeforeOutage {
 }
 
 pub async fn changes_before_outage(
-    pool: &SqlitePool,
+    pool: &DbPool,
     incident_id: Option<Uuid>,
     hours_before: i32,
 ) -> anyhow::Result<ChangeBeforeOutage> {
     let window_start = if let Some(id) = incident_id {
-        sqlx::query_scalar::<_, DateTime<Utc>>(
+        crate::db::query_scalar::<_, DateTime<Utc>>(
             "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', COALESCE(window_start, created_at)) FROM ai_incidents WHERE id = ?",
         )
         .bind(id)
@@ -201,7 +201,7 @@ pub async fn changes_before_outage(
     let end = window_start.unwrap_or_else(Utc::now);
     let start = end - chrono::Duration::hours(hours_before.clamp(1, 48) as i64);
 
-    let rows: Vec<(DateTime<Utc>, String, String, Option<serde_json::Value>)> = sqlx::query_as(
+    let rows: Vec<(DateTime<Utc>, String, String, Option<serde_json::Value>)> = crate::db::query_as(
         "SELECT strftime('%Y-%m-%dT%H:%M:%SZ', created_at), actor, action, detail FROM audit_logs
          WHERE created_at BETWEEN ? AND ?
            AND (action LIKE '%network%' OR action LIKE '%firewall%' OR action LIKE '%migrate%'

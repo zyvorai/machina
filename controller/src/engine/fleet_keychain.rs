@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::engine::enterprise_security;
@@ -27,11 +27,11 @@ pub struct FleetKeychainOverview {
     pub entries: Vec<FleetKeychainEntry>,
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetKeychainOverview> {
+pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetKeychainOverview> {
     let sec = enterprise_security::overview(pool).await?;
     let bundles = enterprise_security::list_air_gap_bundles(pool).await?;
 
-    let api_rows: Vec<(Uuid, String, String, Option<DateTime<Utc>>)> = sqlx::query_as(
+    let api_rows: Vec<(Uuid, String, String, Option<DateTime<Utc>>)> = crate::db::query_as(
         "SELECT id, name, role, strftime('%Y-%m-%dT%H:%M:%SZ', last_used_at) AS last_used_at FROM api_keys ORDER BY created_at DESC LIMIT 24",
     )
     .fetch_all(pool)

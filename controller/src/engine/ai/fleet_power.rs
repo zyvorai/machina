@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct PowerOptimization {
@@ -19,9 +19,9 @@ pub struct FleetPowerReport {
     pub summary: String,
 }
 
-pub async fn optimize(pool: &SqlitePool) -> anyhow::Result<FleetPowerReport> {
+pub async fn optimize(pool: &DbPool) -> anyhow::Result<FleetPowerReport> {
     let heat = super::fleet_heatmap::heatmap(pool).await?;
-    let rates: (f64, f64) = sqlx::query_as(
+    let rates: (f64, f64) = crate::db::query_as(
         "SELECT finops_vcpu_hour_usd, finops_gib_hour_usd FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_one(pool)

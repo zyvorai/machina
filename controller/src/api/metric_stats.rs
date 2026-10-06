@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use axum::extract::{Query, State};
@@ -77,21 +77,21 @@ pub(crate) fn classify(subject: &str) -> (Vec<SubjectKey>, Option<String>, Optio
 }
 
 /// Every key the samples of `subject` may be stored under.
-pub(crate) async fn subject_keys(pool: &SqlitePool, subject: &str) -> Vec<SubjectKey> {
+pub(crate) async fn subject_keys(pool: &DbPool, subject: &str) -> Vec<SubjectKey> {
     let (mut keys, name, ec2_hex, group_hex) = classify(subject);
     if let Some(n) = name {
-        if let Ok(Some(id)) = sqlx::query_scalar::<_, Uuid>("SELECT id FROM vms WHERE name = ?").bind(n).fetch_optional(pool).await {
+        if let Ok(Some(id)) = crate::db::query_scalar::<_, Uuid>("SELECT id FROM vms WHERE name = ?").bind(n).fetch_optional(pool).await {
             keys.push(SubjectKey::Id(id));
         }
     }
     if let Some(hex) = ec2_hex {
-        if let Ok(ids) = sqlx::query_scalar::<_, Uuid>("SELECT id FROM vms WHERE lower(hex(id)) LIKE ?").bind(format!("{hex}%")).fetch_all(pool).await {
+        if let Ok(ids) = crate::db::query_scalar::<_, Uuid>("SELECT id FROM vms WHERE lower(hex(id)) LIKE ?").bind(format!("{hex}%")).fetch_all(pool).await {
             keys.extend(ids.into_iter().take(1).map(SubjectKey::Id));
         }
     }
     if let Some(hex) = group_hex {
         // a group's metric is its members' samples
-        if let Ok(ids) = sqlx::query_scalar::<_, Uuid>("SELECT vm_id FROM cloud_group_members WHERE lower(hex(group_id)) = ? AND vm_id IS NOT NULL")
+        if let Ok(ids) = crate::db::query_scalar::<_, Uuid>("SELECT vm_id FROM cloud_group_members WHERE lower(hex(group_id)) = ? AND vm_id IS NOT NULL")
             .bind(hex)
             .fetch_all(pool)
             .await
@@ -103,11 +103,11 @@ pub(crate) async fn subject_keys(pool: &SqlitePool, subject: &str) -> Vec<Subjec
 }
 
 /// `(ts, value)` samples of `metric` for all `keys` in `[start, end)`.
-pub(crate) async fn fetch_samples(pool: &SqlitePool, keys: &[SubjectKey], metric: &str, start: i64, end: i64) -> Result<Vec<(i64, f64)>, sqlx::Error> {
+pub(crate) async fn fetch_samples(pool: &DbPool, keys: &[SubjectKey], metric: &str, start: i64, end: i64) -> Result<Vec<(i64, f64)>, sqlx::Error> {
     let sql = "SELECT ts, value FROM metric_samples WHERE subject = ? AND metric = ? AND ts >= ? AND ts < ? ORDER BY ts";
     let mut out = Vec::new();
     for k in keys {
-        let q = sqlx::query_as::<_, (i64, f64)>(sql);
+        let q = crate::db::query_as::<_, (i64, f64)>(sql);
         let q = match k {
             SubjectKey::Text(t) => q.bind(t.clone()),
             SubjectKey::Id(u) => q.bind(*u),
@@ -256,9 +256,9 @@ mod tests {
     async fn samples_stored_under_the_machine_id_are_found_by_name_ec2_id_and_uuid() {
         let (state, _rx) = crate::engine::test_support::test_state().await;
         let id = Uuid::parse_str("0123456789abcdef0123456789abcdef").unwrap();
-        sqlx::query("INSERT INTO vms (id, name) VALUES (?, 'web-1')").bind(id).execute(&state.pool).await.unwrap();
+        crate::db::query("INSERT INTO vms (id, name) VALUES (?, 'web-1')").bind(id).execute(&state.pool).await.unwrap();
         // the sampler stores a machine's samples under its 16-byte id
-        sqlx::query("INSERT INTO metric_samples (subject, metric, ts, value) VALUES (?, 'cpu_percent', 100, 42.0)")
+        crate::db::query("INSERT INTO metric_samples (subject, metric, ts, value) VALUES (?, 'cpu_percent', 100, 42.0)")
             .bind(id)
             .execute(&state.pool)
             .await

@@ -40,7 +40,7 @@ pub struct PreemptEvent {
 
 pub async fn overview(State(state): State<AppState>) -> Result<Json<Value>, ApiError> {
     let s = preempt::settings(&state.pool).await;
-    let vms: Vec<PreemptibleVm> = sqlx::query_as(
+    let vms: Vec<PreemptibleVm> = crate::db::query_as(
         "SELECT v.id, v.name, v.host_id, h.hostname AS host, v.project, v.memory_mib,
                 v.preempt_priority AS priority, v.desired_state, v.observed_state, v.preempted_at
          FROM vms v LEFT JOIN hosts h ON h.id = v.host_id
@@ -76,7 +76,7 @@ pub async fn overview(State(state): State<AppState>) -> Result<Json<Value>, ApiE
             })
         })
         .collect();
-    let events: Vec<PreemptEvent> = sqlx::query_as(
+    let events: Vec<PreemptEvent> = crate::db::query_as(
         "SELECT v.name AS vm, e.kind, e.reason, e.at FROM vm_sleep_events e
          JOIN vms v ON v.id = e.vm_id
          WHERE e.reason LIKE 'preempted%' OR e.reason = 'capacity freed'
@@ -104,7 +104,7 @@ pub async fn update_settings(
             "reserve_pct must be 0..={MAX_RESERVE_PCT}"
         )));
     }
-    sqlx::query(
+    crate::db::query(
         "UPDATE preempt_settings SET enabled = ?, reserve_pct = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
     )
     .bind(b.enabled)
@@ -144,14 +144,14 @@ pub async fn set_vm(
         )));
     }
     let row: Option<(Option<Uuid>, bool)> =
-        sqlx::query_as("SELECT host_id, preempted_at IS NOT NULL FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT host_id, preempted_at IS NOT NULL FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
     let Some((host, was_preempted)) = row else {
         return Err(ApiError::not_found("vm not found"));
     };
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET preemptible = ?, preempt_priority = ?,
          preempted_at = CASE WHEN ? THEN preempted_at ELSE NULL END WHERE id = ?",
     )

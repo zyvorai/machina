@@ -4,7 +4,7 @@
 // Maintenance Mission plan — 7-step guided patch timeline (Phase 55 v1).
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -209,18 +209,18 @@ fn build_steps(
 }
 
 pub async fn overview(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<FleetMaintenanceMissionOverview> {
     let updates = fleet_updates::overview(pool, cfg).await?;
 
-    let host_rows: Vec<(Uuid, String, String, bool, String)> = sqlx::query_as(
+    let host_rows: Vec<(Uuid, String, String, bool, String)> = crate::db::query_as(
         "SELECT id, hostname, state, maintenance_mode, COALESCE(validation_status, 'pending') FROM hosts ORDER BY hostname",
     )
     .fetch_all(pool)
     .await?;
 
-    let schedule_rows: Vec<(Uuid, bool, String)> = sqlx::query_as(
+    let schedule_rows: Vec<(Uuid, bool, String)> = crate::db::query_as(
         "SELECT host_id, evacuate, status FROM maintenance_schedules WHERE status IN ('pending', 'queued')",
     )
     .fetch_all(pool)

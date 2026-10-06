@@ -7,7 +7,7 @@
 //! approvals but never switches it on by itself.
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::auth::AuthUser;
 use crate::state::AppState;
@@ -61,12 +61,12 @@ pub fn tally(statuses: &[String]) -> (usize, usize, usize) {
     (streak, approved, rejected)
 }
 
-pub async fn classes(pool: &SqlitePool) -> anyhow::Result<Vec<TrustClass>> {
+pub async fn classes(pool: &DbPool) -> anyhow::Result<Vec<TrustClass>> {
     let rules: Vec<(String, String, i64)> =
-        sqlx::query_as("SELECT action_type, level, max_per_run FROM ai_trust_rules")
+        crate::db::query_as("SELECT action_type, level, max_per_run FROM ai_trust_rules")
             .fetch_all(pool)
             .await?;
-    let rows: Vec<(String, String)> = sqlx::query_as(
+    let rows: Vec<(String, String)> = crate::db::query_as(
         "SELECT action_type, status FROM ai_actions ORDER BY created_at DESC LIMIT 5000",
     )
     .fetch_all(pool)
@@ -96,7 +96,7 @@ pub async fn classes(pool: &SqlitePool) -> anyhow::Result<Vec<TrustClass>> {
 }
 
 pub async fn set_rule(
-    pool: &SqlitePool,
+    pool: &DbPool,
     actor: &str,
     action_type: &str,
     level: &str,
@@ -109,7 +109,7 @@ pub async fn set_rule(
         anyhow::bail!("level must be 'ask' or 'auto'");
     }
     let cap = max_per_run.unwrap_or(DEFAULT_MAX_PER_RUN).clamp(1, 10);
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO ai_trust_rules (action_type, level, max_per_run, updated_by, updated_at)
          VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
          ON CONFLICT(action_type) DO UPDATE SET level = excluded.level, max_per_run = excluded.max_per_run,
@@ -132,7 +132,7 @@ pub async fn run_trusted_pending(state: &AppState) -> anyhow::Result<usize> {
         return Ok(0);
     }
     let auto: Vec<(String, i64)> =
-        sqlx::query_as("SELECT action_type, max_per_run FROM ai_trust_rules WHERE level = 'auto'")
+        crate::db::query_as("SELECT action_type, max_per_run FROM ai_trust_rules WHERE level = 'auto'")
             .fetch_all(&state.pool)
             .await?;
     if auto.is_empty() {

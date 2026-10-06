@@ -43,7 +43,7 @@ pub async fn get_vm_watchdog(
     Path(vm_id): Path<Uuid>,
 ) -> Result<Json<WatchdogPolicy>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, WatchdogPolicy>(
+    let row = crate::db::query_as::<_, WatchdogPolicy>(
         "SELECT vm_id, enabled, failure_threshold_secs, cooldown_secs, max_restarts_per_hour,
                 unhealthy_since, last_restart_at, restarts_this_hour
          FROM vm_watchdog WHERE vm_id = ?",
@@ -72,7 +72,7 @@ pub async fn set_vm_watchdog(
 ) -> Result<Json<WatchdogPolicy>, ApiError> {
     require_operator(&actor)?;
     // Validate the VM exists so we don't create a dangling policy row.
-    let exists: Option<i64> = sqlx::query_scalar("SELECT 1 FROM vms WHERE id = ?")
+    let exists: Option<i64> = crate::db::query_scalar("SELECT 1 FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_optional(&state.pool)
         .await?;
@@ -83,7 +83,7 @@ pub async fn set_vm_watchdog(
     let cooldown = body.cooldown_secs.unwrap_or(600).clamp(60, 86400);
     let max_per_hour = body.max_restarts_per_hour.unwrap_or(3).clamp(1, 60);
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vm_watchdog (vm_id, enabled, failure_threshold_secs, cooldown_secs, max_restarts_per_hour)
          VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(vm_id) DO UPDATE SET
@@ -100,7 +100,7 @@ pub async fn set_vm_watchdog(
     .execute(&state.pool)
     .await?;
 
-    let row = sqlx::query_as::<_, WatchdogPolicy>(
+    let row = crate::db::query_as::<_, WatchdogPolicy>(
         "SELECT vm_id, enabled, failure_threshold_secs, cooldown_secs, max_restarts_per_hour,
                 unhealthy_since, last_restart_at, restarts_this_hour
          FROM vm_watchdog WHERE vm_id = ?",

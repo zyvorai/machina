@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -45,7 +45,7 @@ pub async fn scan(state: &AppState) -> anyhow::Result<()> {
 /// on every scan (idempotent — fence_host is a no-op-safe power-off command)
 /// until it succeeds or the host comes back online.
 async fn retry_pending_fences(state: &AppState) -> anyhow::Result<()> {
-    let pending: Vec<(Uuid, String)> = sqlx::query_as(
+    let pending: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT DISTINCT h.id, h.hostname FROM hosts h
          JOIN ha_policies hp ON hp.enabled = TRUE
          JOIN vms v ON v.id = hp.vm_id AND v.host_id = h.id
@@ -73,7 +73,7 @@ async fn retry_pending_fences(state: &AppState) -> anyhow::Result<()> {
 
 async fn mark_stale_hosts(state: &AppState) -> anyhow::Result<()> {
     let pool = &state.pool;
-    let stale: Vec<(Uuid, String)> = sqlx::query_as(
+    let stale: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT id, hostname FROM hosts
          WHERE state = 'online'
            AND last_heartbeat_at IS NOT NULL
@@ -85,11 +85,11 @@ async fn mark_stale_hosts(state: &AppState) -> anyhow::Result<()> {
 
     for (id, hostname) in stale {
         let mut tx = pool.begin().await?;
-        sqlx::query("UPDATE hosts SET state = 'offline' WHERE id = ?")
+        crate::db::query("UPDATE hosts SET state = 'offline' WHERE id = ?")
             .bind(id)
             .execute(&mut *tx)
             .await?;
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO ha_events (id, vm_id, host_id, action, message) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4())
@@ -113,7 +113,7 @@ async fn mark_stale_hosts(state: &AppState) -> anyhow::Result<()> {
 }
 
 async fn recover_vms(state: &AppState) -> anyhow::Result<()> {
-    let Some((ha_enabled, allow_unfenced)): Option<(bool, bool)> = sqlx::query_as(
+    let Some((ha_enabled, allow_unfenced)): Option<(bool, bool)> = crate::db::query_as(
         "SELECT ha_enabled, ha_allow_unfenced_recovery FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(&state.pool)
@@ -125,7 +125,7 @@ async fn recover_vms(state: &AppState) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let victims: Vec<(Uuid, String, Uuid, i32, i32, String, bool, bool, i64)> = sqlx::query_as(
+    let victims: Vec<(Uuid, String, Uuid, i32, i32, String, bool, bool, i64)> = crate::db::query_as(
         "SELECT v.id, v.name, v.host_id, v.ha_recovery_count, hp.restart_attempts, v.desired_state,
                 h.fenced, hp.fence_on_failure, v.memory_mib
          FROM vms v
@@ -205,7 +205,7 @@ async fn recover_vms(state: &AppState) -> anyhow::Result<()> {
         // calls apply_vm directly with no precheck (unlike vm.migrate). We gate on
         // memory (the hard OOM constraint) and leave CPU soft so an emergency
         // recovery isn't stranded merely because the surviving hosts run warm.
-        let candidates: Vec<(Uuid, i64)> = sqlx::query_as(
+        let candidates: Vec<(Uuid, i64)> = crate::db::query_as(
             "SELECT id, (memory_total_mib - memory_used_mib) AS headroom FROM hosts
              WHERE id != ? AND state = 'online' AND maintenance_mode = FALSE AND schedulable = TRUE
              ORDER BY vm_count, memory_used_mib",
@@ -229,7 +229,7 @@ async fn recover_vms(state: &AppState) -> anyhow::Result<()> {
         *reserved.entry(dest_host).or_insert(0) += vm_memory_mib;
 
         let mut tx = state.pool.begin().await?;
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET host_id = ?, ha_recovery_count = ha_recovery_count + 1, updated_at = datetime('now')
              WHERE id = ?",
         )
@@ -237,7 +237,7 @@ async fn recover_vms(state: &AppState) -> anyhow::Result<()> {
         .bind(vm_id)
         .execute(&mut *tx)
         .await?;
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO ha_events (id, vm_id, host_id, action, message) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4())
@@ -268,7 +268,7 @@ async fn recover_vms(state: &AppState) -> anyhow::Result<()> {
         .await
         {
             tracing::error!(vm_id = %vm_id, dest_host = %dest_host, "HA: failed to enqueue ha.recover task: {e:?} — resetting host_id and recovery_count so HA can retry");
-            if let Err(undo_err) = sqlx::query(
+            if let Err(undo_err) = crate::db::query(
                 "UPDATE vms SET host_id = ?, ha_recovery_count = ha_recovery_count - 1 WHERE id = ?",
             )
             .bind(failed_host)
@@ -296,14 +296,14 @@ async fn recover_vms(state: &AppState) -> anyhow::Result<()> {
 /// want to record the *transition* into that state once; a later `ha.recover`
 /// (or manual intervention) resets the last-action so a fresh episode records.
 async fn record_ha_event_deduped(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Option<Uuid>,
     host_id: Option<Uuid>,
     action: &str,
     message: &str,
 ) -> anyhow::Result<()> {
     if let Some(vid) = vm_id {
-        let last: Option<String> = sqlx::query_scalar(
+        let last: Option<String> = crate::db::query_scalar(
             "SELECT action FROM ha_events WHERE vm_id = ? ORDER BY created_at DESC, rowid DESC LIMIT 1",
         )
         .bind(vid)
@@ -338,13 +338,13 @@ pub(crate) fn pick_ha_dest(
 }
 
 async fn record_ha_event(
-    pool: &SqlitePool,
+    pool: &DbPool,
     vm_id: Option<Uuid>,
     host_id: Option<Uuid>,
     action: &str,
     message: &str,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO ha_events (id, vm_id, host_id, action, message) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(Uuid::new_v4())
@@ -364,8 +364,8 @@ pub struct HaStatusRow {
     pub recent_events: i64,
 }
 
-pub async fn ha_status(pool: &SqlitePool) -> anyhow::Result<(HaStatusRow, Vec<HaEventRow>)> {
-    let status: HaStatusRow = sqlx::query_as(
+pub async fn ha_status(pool: &DbPool) -> anyhow::Result<(HaStatusRow, Vec<HaEventRow>)> {
+    let status: HaStatusRow = crate::db::query_as(
         "SELECT
            (SELECT COUNT(*) FROM ha_policies WHERE enabled = TRUE) AS enabled_vms,
            (SELECT COUNT(*) FROM hosts WHERE state = 'offline') AS offline_hosts,
@@ -374,7 +374,7 @@ pub async fn ha_status(pool: &SqlitePool) -> anyhow::Result<(HaStatusRow, Vec<Ha
     .fetch_one(pool)
     .await?;
 
-    let events = sqlx::query_as::<_, HaEventRow>(
+    let events = crate::db::query_as::<_, HaEventRow>(
         "SELECT id, vm_id, host_id, action, message,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
          FROM ha_events ORDER BY created_at DESC LIMIT 50",

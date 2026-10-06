@@ -42,7 +42,7 @@ pub async fn list_applications(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<ApplicationGroupRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, ApplicationGroupRow>(
+    let rows = crate::db::query_as::<_, ApplicationGroupRow>(
         "SELECT id, name, description,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
          FROM application_groups ORDER BY name LIMIT 500",
@@ -58,7 +58,7 @@ pub async fn get_application(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ApplicationGroupDetail>, ApiError> {
     require_operator(&actor)?;
-    let group = sqlx::query_as::<_, ApplicationGroupRow>(
+    let group = crate::db::query_as::<_, ApplicationGroupRow>(
         "SELECT id, name, description,
                 strftime('%Y-%m-%dT%H:%M:%SZ', created_at) AS created_at
          FROM application_groups WHERE id = ?",
@@ -68,7 +68,7 @@ pub async fn get_application(
     .await?
     .ok_or_else(|| ApiError::not_found("application not found"))?;
 
-    let vms: Vec<(Uuid, String)> = sqlx::query_as(
+    let vms: Vec<(Uuid, String)> = crate::db::query_as(
         "SELECT v.id, v.name FROM application_group_vms agv
          JOIN vms v ON v.id = agv.vm_id WHERE agv.group_id = ? ORDER BY v.name",
     )
@@ -91,12 +91,12 @@ pub async fn create_application(
     require_operator(&actor)?;
     let name = body.name.trim();
     machina_spec::validate_label(name).map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
+    let cluster_id: Uuid = crate::db::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_one(&state.pool)
         .await?;
     let id = Uuid::new_v4();
     let mut tx = state.pool.begin().await?;
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO application_groups (id, cluster_id, name, description) VALUES (?, ?, ?, ?)",
     )
     .bind(id)
@@ -106,7 +106,7 @@ pub async fn create_application(
     .execute(&mut *tx)
     .await?;
     for vm_id in &body.vm_ids {
-        sqlx::query("INSERT INTO application_group_vms (group_id, vm_id) VALUES (?, ?) ON CONFLICT DO NOTHING")
+        crate::db::query("INSERT INTO application_group_vms (group_id, vm_id) VALUES (?, ?) ON CONFLICT DO NOTHING")
             .bind(id)
             .bind(vm_id)
             .execute(&mut *tx)
@@ -124,18 +124,18 @@ pub async fn delete_application(
     require_operator(&actor)?;
     let mut tx = state.pool.begin().await?;
     let existed: Option<String> =
-        sqlx::query_scalar("SELECT name FROM application_groups WHERE id = ?")
+        crate::db::query_scalar("SELECT name FROM application_groups WHERE id = ?")
             .bind(id)
             .fetch_optional(&mut *tx)
             .await?;
     let Some(name) = existed else {
         return Err(ApiError::not_found("application not found"));
     };
-    sqlx::query("DELETE FROM application_group_vms WHERE group_id = ?")
+    crate::db::query("DELETE FROM application_group_vms WHERE group_id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?;
-    sqlx::query("DELETE FROM application_groups WHERE id = ?")
+    crate::db::query("DELETE FROM application_groups WHERE id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?;
@@ -159,7 +159,7 @@ pub async fn run_application_action(
     Json(body): Json<ApplicationActionBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let vms: Vec<(Uuid, Option<Uuid>)> = sqlx::query_as(
+    let vms: Vec<(Uuid, Option<Uuid>)> = crate::db::query_as(
         "SELECT agv.vm_id, v.host_id FROM application_group_vms agv
          JOIN vms v ON v.id = agv.vm_id WHERE agv.group_id = ?",
     )

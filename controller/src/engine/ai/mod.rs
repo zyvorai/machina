@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 pub mod action_audit;
@@ -43,7 +43,7 @@ pub struct CopilotResponse {
 use crate::config::ControllerConfig;
 
 pub async fn copilot_chat(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     message: &str,
     vm_id: Option<Uuid>,
@@ -87,7 +87,7 @@ pub struct CopilotBase {
 }
 
 pub async fn build_copilot_base(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
     message: &str,
     vm_id: Option<Uuid>,
@@ -145,7 +145,7 @@ pub async fn build_copilot_base(
                     }
                 }
             }
-        } else if let Ok(Some((id, name))) = sqlx::query_as::<_, (Uuid, String)>(
+        } else if let Ok(Some((id, name))) = crate::db::query_as::<_, (Uuid, String)>(
             "SELECT id, name FROM vms WHERE name LIKE ? ESCAPE '\\' LIMIT 1",
         )
         .bind(format!(
@@ -377,7 +377,7 @@ pub fn chunk_text(text: &str, chunk_size: usize) -> Vec<String> {
 }
 
 pub async fn explain_screen(
-    pool: &SqlitePool,
+    pool: &DbPool,
     screen: &str,
     object_ref: &serde_json::Value,
 ) -> anyhow::Result<String> {

@@ -112,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
         // side effects (e.g. ha.recover writing the VM's new host_id) before this
         // restart, and a bare status write skips set_vm_error/ha.recover's host_id
         // revert/webhook dispatch — the same gap fixed for ensure_bootstrap's reap.
-        match sqlx::query_as::<_, (uuid::Uuid, String, serde_json::Value)>(
+        match machina_controller::db::query_as::<_, (uuid::Uuid, String, serde_json::Value)>(
             "SELECT id, operation, payload FROM tasks WHERE status IN ('pending', 'running')",
         )
         .fetch_all(&pool)

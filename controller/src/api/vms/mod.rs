@@ -89,7 +89,7 @@ pub async fn list_vms(
     State(state): State<AppState>,
     Query(q): Query<VmListQuery>,
 ) -> Result<Json<Vec<VmRow>>, ApiError> {
-    let rows = sqlx::query_as::<_, VmRow>(
+    let rows = crate::db::query_as::<_, VmRow>(
         "SELECT v.id, v.name, v.host_id, v.desired_state, v.observed_state,
                 COALESCE(v.lifecycle_phase, 'idle') AS lifecycle_phase,
                 COALESCE(v.last_error, '') AS last_error,
@@ -160,7 +160,7 @@ pub async fn get_vm(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<VmRow>, ApiError> {
-    let row = sqlx::query_as::<_, VmRow>(
+    let row = crate::db::query_as::<_, VmRow>(
         "SELECT v.id, v.name, v.host_id, v.desired_state, v.observed_state,
                 COALESCE(v.lifecycle_phase, 'idle') AS lifecycle_phase,
                 COALESCE(v.last_error, '') AS last_error,
@@ -182,7 +182,7 @@ pub async fn get_vm_spec(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
-    let spec: serde_json::Value = sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
+    let spec: serde_json::Value = crate::db::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -236,7 +236,7 @@ pub async fn create_vm(
         .validate_operator_submission()
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-    let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
+    let cluster_id: Uuid = crate::db::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(|| ApiError::bad_request("no cluster configured — add a host first"))?;
@@ -321,7 +321,7 @@ pub async fn create_vm(
         return Err(ApiError::policy_violation(v.message, v.remediation));
     }
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO vms (id, cluster_id, host_id, name, project, spec_json, desired_state, lifecycle_phase, vcpus, memory_mib, tags, flavor_id, preemptible, preempt_priority)
          VALUES (?, ?, ?, ?, ?, ?, ?, 'creating', ?, ?, ?, ?, ?, ?)",
     )
@@ -348,7 +348,7 @@ pub async fn create_vm(
     for vol in &body.vm.spec.storage {
         let size_gib = machina_spec::parse_size_gib(&vol.size)
             .map_err(|e| ApiError::bad_request(e.to_string()))? as i64;
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(Uuid::new_v4())
@@ -402,7 +402,7 @@ pub async fn create_vm(
                         // previous `let _ =`) would leave the stored spec pointing at
                         // no/local source while the real data lives in the Atlas
                         // volume — the VM boots wrong and the volume is orphaned.
-                        sqlx::query("UPDATE vms SET spec_json = ? WHERE id = ?")
+                        crate::db::query("UPDATE vms SET spec_json = ? WHERE id = ?")
                             .bind(&spec)
                             .bind(vm_id)
                             .execute(&state.pool)
@@ -421,11 +421,11 @@ pub async fn create_vm(
                         // paying for an Atlas volume the VM never attaches to — the
                         // same silent-fallback this function's Err(e) arm explicitly
                         // refuses to do. Fail the same way.
-                        let _ = sqlx::query("DELETE FROM vm_disks WHERE vm_id = ?")
+                        let _ = crate::db::query("DELETE FROM vm_disks WHERE vm_id = ?")
                             .bind(vm_id)
                             .execute(&state.pool)
                             .await;
-                        let _ = sqlx::query("DELETE FROM vms WHERE id = ?")
+                        let _ = crate::db::query("DELETE FROM vms WHERE id = ?")
                             .bind(vm_id)
                             .execute(&state.pool)
                             .await;
@@ -442,11 +442,11 @@ pub async fn create_vm(
             Err(e) => {
                 // The operator explicitly asked for Atlas storage; don't silently
                 // fall back to a local disk. Roll back the VM row and fail.
-                let _ = sqlx::query("DELETE FROM vm_disks WHERE vm_id = ?")
+                let _ = crate::db::query("DELETE FROM vm_disks WHERE vm_id = ?")
                     .bind(vm_id)
                     .execute(&state.pool)
                     .await;
-                let _ = sqlx::query("DELETE FROM vms WHERE id = ?")
+                let _ = crate::db::query("DELETE FROM vms WHERE id = ?")
                     .bind(vm_id)
                     .execute(&state.pool)
                     .await;
@@ -496,18 +496,18 @@ pub async fn create_vm(
         // Compensate: delete the zombie VM row so the name is free to retry.
         let pool = state.pool.clone();
         tokio::spawn(async move {
-            let _ = sqlx::query("DELETE FROM vm_disks WHERE vm_id = ?")
+            let _ = crate::db::query("DELETE FROM vm_disks WHERE vm_id = ?")
                 .bind(vm_id)
                 .execute(&pool)
                 .await;
-            let _ = sqlx::query("DELETE FROM vms WHERE id = ?")
+            let _ = crate::db::query("DELETE FROM vms WHERE id = ?")
                 .bind(vm_id)
                 .execute(&pool)
                 .await;
         });
     })?;
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
          VALUES (?, ?, ?, ?, ?, ?)",
     )
@@ -522,7 +522,7 @@ pub async fn create_vm(
 
     if let Some(net) = body.vm.spec.network.first() {
         if let Some(profile) = &net.firewall_profile {
-            let _ = sqlx::query(
+            let _ = crate::db::query(
                 "INSERT INTO firewall_timeline (id, target_kind, target_id, kind, summary, detail_json, actor) VALUES (?, 'vm', ?, 'profile_requested', ?, ?, ?)",
             )
             .bind(uuid::Uuid::new_v4())
@@ -614,7 +614,7 @@ pub async fn create_from_template(
     let template_ref = apply(&body.template_ref);
     let flavor: Option<(i32, i64)> = match body.flavor_id {
         Some(flavor_id) => Some(
-            sqlx::query_as("SELECT vcpus, memory_mib FROM flavors WHERE id = ?")
+            crate::db::query_as("SELECT vcpus, memory_mib FROM flavors WHERE id = ?")
                 .bind(flavor_id)
                 .fetch_optional(&state.pool)
                 .await?
@@ -672,7 +672,7 @@ pub async fn create_from_template(
     };
     let resp = create_vm(State(state), Extension(actor), Json(create_body)).await?;
     if let (Some(m), Ok(task_id)) = (sleep_after, Uuid::parse_str(&resp.task_id)) {
-        sqlx::query(
+        crate::db::query(
             "UPDATE vms SET sleep_after_minutes = ? WHERE id = (SELECT resource_id FROM tasks WHERE id = ?)",
         )
         .bind(m)
@@ -725,7 +725,7 @@ pub async fn create_from_iso(
             "iso_path must be an absolute path on the hypervisor",
         ));
     }
-    let approved: i64 = sqlx::query_scalar(
+    let approved: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM content_images WHERE path = ? AND status = 'available'",
     )
     .bind(iso_path)
@@ -1183,7 +1183,7 @@ pub async fn set_vm_sleep_policy(
             )));
         }
     }
-    let res = sqlx::query("UPDATE vms SET sleep_after_minutes = ? WHERE id = ?")
+    let res = crate::db::query("UPDATE vms SET sleep_after_minutes = ? WHERE id = ?")
         .bind(body.sleep_after_minutes)
         .bind(id)
         .execute(&state.pool)
@@ -1213,7 +1213,7 @@ pub async fn install_vm(
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
-    let meta: (Option<Uuid>, String, String) = sqlx::query_as(
+    let meta: (Option<Uuid>, String, String) = crate::db::query_as(
         "SELECT host_id, COALESCE(inventory_source, 'libvirt'), observed_state FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -1256,7 +1256,7 @@ pub async fn get_vm_domain_xml(
     // console-credential-bearing reads (get_vm_viewer_vv, get_vm_qemu_logs)
     // rather than leaving it open to any authenticated (including viewer) role.
     require_operator(&actor)?;
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -1284,10 +1284,10 @@ pub async fn get_vm_domain_xml(
 }
 
 pub(crate) async fn delete_vm_inventory_row(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     vm_id: Uuid,
 ) -> Result<String, ApiError> {
-    let name: Option<String> = sqlx::query_scalar("DELETE FROM vms WHERE id = ? RETURNING name")
+    let name: Option<String> = crate::db::query_scalar("DELETE FROM vms WHERE id = ? RETURNING name")
         .bind(vm_id)
         .fetch_optional(pool)
         .await?;
@@ -1301,7 +1301,7 @@ pub async fn delete_vm(
     body: Option<Json<DeleteVmBody>>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
-    let require: bool = sqlx::query_scalar(
+    let require: bool = crate::db::query_scalar(
         "SELECT require_vm_delete_approval FROM clusters ORDER BY created_at LIMIT 1",
     )
     .fetch_optional(&state.pool)
@@ -1314,7 +1314,7 @@ pub async fn delete_vm(
     }
 
     let meta: (Option<Uuid>, String) =
-        sqlx::query_as("SELECT host_id, observed_state FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT host_id, observed_state FROM vms WHERE id = ?")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
@@ -1376,7 +1376,7 @@ pub async fn install_guest_tools(
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -1409,7 +1409,7 @@ pub(crate) async fn power_action(
     operation: &str,
     mode: Option<String>,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let meta: (Option<Uuid>, String, String, String) = sqlx::query_as(
+    let meta: (Option<Uuid>, String, String, String) = crate::db::query_as(
         "SELECT host_id, COALESCE(inventory_source, 'libvirt'), observed_state, COALESCE(lifecycle_phase, 'idle') FROM vms WHERE id = ?",
     )
     .bind(vm_id)
@@ -1452,7 +1452,7 @@ pub(crate) async fn power_action(
         _ => None,
     };
     if let Some(desired) = desired_state {
-        sqlx::query("UPDATE vms SET desired_state = ? WHERE id = ?")
+        crate::db::query("UPDATE vms SET desired_state = ? WHERE id = ?")
             .bind(desired)
             .bind(vm_id)
             .execute(&state.pool)
@@ -1526,7 +1526,7 @@ pub async fn migrate_vm(
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
     crate::api::cloud::check_vm_host(&state.pool, id, body.dest_host_id).await?;
-    let source_host: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let source_host: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -1581,7 +1581,7 @@ pub async fn clone_vm(
     machina_spec::validate_name(&body.new_name)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -1624,21 +1624,21 @@ pub async fn patch_vm(
 ) -> Result<Json<VmRow>, ApiError> {
     require_operator(&actor)?;
     if let Some(ds) = &body.desired_state {
-        sqlx::query("UPDATE vms SET desired_state = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE vms SET desired_state = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(ds)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(project) = &body.project {
-        sqlx::query("UPDATE vms SET project = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE vms SET project = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(project)
             .bind(id)
             .execute(&state.pool)
             .await?;
     }
     if let Some(tags) = &body.tags {
-        sqlx::query("UPDATE vms SET tags = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE vms SET tags = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(serde_json::to_string(tags).unwrap_or_else(|_| "[]".into()))
             .bind(id)
             .execute(&state.pool)
@@ -1646,7 +1646,7 @@ pub async fn patch_vm(
     }
     if let Some(labels) = &body.labels {
         super::vm_network_policies::validate_labels(labels)?;
-        sqlx::query("UPDATE vms SET labels = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE vms SET labels = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(serde_json::to_string(labels).unwrap_or_else(|_| "{}".into()))
             .bind(id)
             .execute(&state.pool)
@@ -1654,7 +1654,7 @@ pub async fn patch_vm(
     }
     if let Some(desc) = &body.description {
         let mut spec: serde_json::Value =
-            sqlx::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
+            crate::db::query_scalar("SELECT spec_json FROM vms WHERE id = ?")
                 .bind(id)
                 .fetch_one(&state.pool)
                 .await?;
@@ -1674,7 +1674,7 @@ pub async fn patch_vm(
         } else {
             spec["metadata"]["labels"] = serde_json::json!({ "description": desc.trim() });
         }
-        sqlx::query("UPDATE vms SET spec_json = ?, updated_at = datetime('now') WHERE id = ?")
+        crate::db::query("UPDATE vms SET spec_json = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(&spec)
             .bind(id)
             .execute(&state.pool)
@@ -1696,7 +1696,7 @@ pub async fn list_vm_disks(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<VmDiskRow>>, ApiError> {
-    let rows = sqlx::query_as::<_, VmDiskRow>(
+    let rows = crate::db::query_as::<_, VmDiskRow>(
         "SELECT id, name, size_gib, storage_class, path FROM vm_disks WHERE vm_id = ? LIMIT 200",
     )
     .bind(id)
@@ -1719,7 +1719,7 @@ pub async fn list_vm_disks(
 }
 
 async fn live_vm_disks_fallback(state: &AppState, id: Uuid) -> Result<Vec<VmDiskRow>, ApiError> {
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -1784,7 +1784,7 @@ pub async fn list_vm_nics(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<Vec<VmNicRow>>, ApiError> {
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -1834,7 +1834,7 @@ pub async fn get_vm_metrics(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<VmMetricsRow>, ApiError> {
-    let row = sqlx::query_as::<_, VmMetricsRow>(
+    let row = crate::db::query_as::<_, VmMetricsRow>(
         "SELECT vm_id, cpu_percent, memory_used_mib, disk_read_iops, disk_write_iops, updated_at
          FROM vm_metrics WHERE vm_id = ?",
     )
@@ -1852,7 +1852,7 @@ pub async fn adopt_vm(
 ) -> Result<Json<VmRow>, ApiError> {
     require_operator(&actor)?;
     let row: Option<(bool, String)> =
-        sqlx::query_as("SELECT managed, observed_state FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT managed, observed_state FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -1863,7 +1863,7 @@ pub async fn adopt_vm(
         return Err(ApiError::bad_request("VM is already managed"));
     }
     let source: String =
-        sqlx::query_scalar("SELECT COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?")
+        crate::db::query_scalar("SELECT COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
@@ -1889,7 +1889,7 @@ pub async fn adopt_vm(
     // one affects a row and proceeds to write the audit/event; the loser gets the
     // same "already managed" error instead of a duplicate audit entry (TOCTOU on
     // the SELECT-then-UPDATE above).
-    let adopted = sqlx::query(
+    let adopted = crate::db::query(
         "UPDATE vms SET managed = TRUE, desired_state = ?, lifecycle_phase = ?, last_error = '', updated_at = datetime('now') WHERE id = ? AND managed = FALSE",
     )
     .bind(desired)
@@ -1926,7 +1926,7 @@ pub async fn prune_missing_vms(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<PruneMissingResponse>, ApiError> {
     crate::auth::require_admin(&actor)?;
-    let result = sqlx::query("DELETE FROM vms WHERE observed_state = 'missing' RETURNING id")
+    let result = crate::db::query("DELETE FROM vms WHERE observed_state = 'missing' RETURNING id")
         .execute(&state.pool)
         .await?;
     let deleted = result.rows_affected();
@@ -1951,7 +1951,7 @@ pub async fn prune_vm_inventory_record(
     Path(id): Path<Uuid>,
 ) -> Result<Json<PruneVmInventoryResponse>, ApiError> {
     require_operator(&actor)?;
-    let observed: String = sqlx::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
+    let observed: String = crate::db::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -2019,13 +2019,13 @@ pub(crate) async fn attach_vm_disk_trusted(
     id: Uuid,
     body: AttachDiskBody,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
     let disk_id = if let Some(size) = body.size_gib {
         let disk_id = Uuid::new_v4();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO vm_disks (id, vm_id, name, size_gib, storage_class, path)
              VALUES (?, ?, ?, ?, 'silver', ?)",
         )
@@ -2057,7 +2057,7 @@ pub(crate) async fn attach_vm_disk_trusted(
         if let Some(did) = disk_id {
             let pool = state.pool.clone();
             tokio::spawn(async move {
-                let _ = sqlx::query("DELETE FROM vm_disks WHERE id = ?")
+                let _ = crate::db::query("DELETE FROM vm_disks WHERE id = ?")
                     .bind(did)
                     .execute(&pool)
                     .await;
@@ -2075,7 +2075,7 @@ pub async fn get_vm_libvirt_details(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::state::VmDetails>, ApiError> {
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -2106,7 +2106,7 @@ pub async fn get_vm_hardware_summary(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::libvirt::hardware_summary::VmHardwareSummaryReport>, ApiError> {
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -2144,7 +2144,7 @@ pub async fn get_vm_hardware_compat(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::libvirt::hardware_summary::HardwareCompatReport>, ApiError> {
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -2182,7 +2182,7 @@ pub async fn get_vm_domain_caps(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::libvirt::hardware_summary::DomainCapabilitiesReport>, ApiError> {
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -2220,7 +2220,7 @@ pub async fn get_vm_pending_config(
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
 ) -> Result<Json<machina_core::libvirt::pending_config::PendingConfig>, ApiError> {
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -2275,7 +2275,7 @@ pub async fn batch_vm_parity_summary(
     require_operator(&actor)?;
     let mut items = serde_json::Map::new();
     for vm_id in body.vm_ids.iter().take(64) {
-        let row: Result<(String, Option<Uuid>, String), sqlx::Error> = sqlx::query_as(
+        let row: Result<(String, Option<Uuid>, String), sqlx::Error> = crate::db::query_as(
             "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
         )
         .bind(vm_id)
@@ -2365,7 +2365,7 @@ pub async fn batch_vm_guest_ips(
     require_operator(&actor)?;
     let mut items = serde_json::Map::new();
     for vm_id in body.vm_ids.iter().take(64) {
-        let row: Result<(String, Option<Uuid>, String), sqlx::Error> = sqlx::query_as(
+        let row: Result<(String, Option<Uuid>, String), sqlx::Error> = crate::db::query_as(
             "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
         )
         .bind(vm_id)
@@ -2421,7 +2421,7 @@ pub async fn get_vm_viewer_vv(
     headers: HeaderMap,
 ) -> Result<impl IntoResponse, ApiError> {
     require_operator(&actor)?;
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -2531,7 +2531,7 @@ pub async fn rename_platform_vm(
         return Err(ApiError::bad_request("new_name is required"));
     }
     machina_spec::validate_name(&new_name).map_err(|e| ApiError::bad_request(e.to_string()))?;
-    let row: (String, Option<Uuid>, String, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt'), observed_state FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -2548,7 +2548,7 @@ pub async fn rename_platform_vm(
         .ok_or_else(|| ApiError::bad_request("VM has no host assigned"))?;
     let old_name = row.0.clone();
     // Update DB first — if libvirt rename then fails we can roll back the DB row safely.
-    sqlx::query("UPDATE vms SET name = ?, updated_at = datetime('now') WHERE id = ?")
+    crate::db::query("UPDATE vms SET name = ?, updated_at = datetime('now') WHERE id = ?")
         .bind(&new_name)
         .bind(id)
         .execute(&state.pool)
@@ -2569,7 +2569,7 @@ pub async fn rename_platform_vm(
     .await
     {
         // Libvirt rename failed — roll back the DB name to keep them in sync.
-        let _ = sqlx::query("UPDATE vms SET name = ?, updated_at = datetime('now') WHERE id = ?")
+        let _ = crate::db::query("UPDATE vms SET name = ?, updated_at = datetime('now') WHERE id = ?")
             .bind(&old_name)
             .bind(id)
             .execute(&state.pool)
@@ -2619,7 +2619,7 @@ async fn enqueue_vm_host_task(
     operation: &str,
     payload: serde_json::Value,
 ) -> Result<Json<TaskResponse>, ApiError> {
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(vm_id)
         .fetch_one(&state.pool)
         .await?;
@@ -2693,7 +2693,7 @@ pub async fn attach_vm_nic(
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
     let (project, host): (String, Option<Uuid>) =
-        sqlx::query_as("SELECT COALESCE(project,'default'),host_id FROM vms WHERE id=?")
+        crate::db::query_as("SELECT COALESCE(project,'default'),host_id FROM vms WHERE id=?")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
@@ -2787,7 +2787,7 @@ pub struct ChangeTypeBody {
 /// relabels the machine); the identical flavor at the identical size is refused so a click does not cost a restart.
 /// Resolve EC2-style `key_name` to the saved key pair's public key. Both a name and a literal key is ambiguous.
 pub(crate) async fn resolve_key_name(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     key_name: Option<&str>,
     literal: Option<String>,
 ) -> Result<Option<String>, ApiError> {
@@ -2797,7 +2797,7 @@ pub(crate) async fn resolve_key_name(
     if literal.as_deref().is_some_and(|k| !k.trim().is_empty()) {
         return Err(ApiError::bad_request("give either key_name or cloud_init_ssh_pubkey, not both"));
     }
-    let key: Option<String> = sqlx::query_scalar("SELECT public_key FROM keypairs WHERE name = ? ORDER BY created_at LIMIT 1")
+    let key: Option<String> = crate::db::query_scalar("SELECT public_key FROM keypairs WHERE name = ? ORDER BY created_at LIMIT 1")
         .bind(name)
         .fetch_optional(pool)
         .await?;
@@ -2832,7 +2832,7 @@ pub async fn change_vm_type(
 ) -> Result<Json<TaskResponse>, ApiError> {
     require_operator(&actor)?;
     let vm: Option<(i32, i64, Option<String>, Option<Uuid>)> =
-        sqlx::query_as("SELECT vcpus, memory_mib, project, flavor_id FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT vcpus, memory_mib, project, flavor_id FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -2840,7 +2840,7 @@ pub async fn change_vm_type(
         return Err(ApiError::not_found("vm not found"));
     };
     let flavor: Option<(i32, i64)> =
-        sqlx::query_as("SELECT vcpus, memory_mib FROM flavors WHERE id = ?")
+        crate::db::query_as("SELECT vcpus, memory_mib FROM flavors WHERE id = ?")
             .bind(body.flavor_id)
             .fetch_optional(&state.pool)
             .await?;
@@ -2855,7 +2855,7 @@ pub async fn change_vm_type(
         return Err(ApiError::bad_request(why));
     }
     let in_group: Option<i64> =
-        sqlx::query_scalar("SELECT 1 FROM cloud_group_members WHERE vm_id = ?")
+        crate::db::query_scalar("SELECT 1 FROM cloud_group_members WHERE vm_id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?;
@@ -2949,7 +2949,7 @@ pub async fn publish_vm_template(
     machina_spec::validate_name(&body.template_name)
         .map_err(|e| ApiError::bad_request(e.to_string()))?;
 
-    let row: (String, Option<Uuid>, String) = sqlx::query_as(
+    let row: (String, Option<Uuid>, String) = crate::db::query_as(
         "SELECT name, host_id, COALESCE(inventory_source, 'libvirt') FROM vms WHERE id = ?",
     )
     .bind(id)
@@ -2992,7 +2992,7 @@ pub async fn publish_vm_template(
         body.description.clone()
     };
     let tpl_id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO templates (id, name, version, source_disk, cloud_init, os_family, category, workload, description, featured, marketplace, daemon_json_path, approval_status, project)
          VALUES (?, ?, ?, ?, TRUE, 'linux', ?, ?, ?, FALSE, ?, ?, ?, ?)
          ON CONFLICT (name, version) DO UPDATE SET
@@ -3017,7 +3017,7 @@ pub async fn publish_vm_template(
     .execute(&state.pool)
     .await?;
 
-    let template_row = sqlx::query_as::<_, crate::api::templates::TemplateRow>(
+    let template_row = crate::db::query_as::<_, crate::api::templates::TemplateRow>(
         "SELECT id, name, version, source_disk, cloud_init, os_family, category, COALESCE(workload, '') AS workload, description, featured, marketplace, icon, firewall_profile, COALESCE(approval_status, 'approved') AS approval_status, COALESCE(git_ref, '') AS git_ref, COALESCE(daemon_json_path, '') AS daemon_json_path, COALESCE(project, '') AS project FROM templates WHERE name = ? AND version = ?",
     )
     .bind(&body.template_name)
@@ -3042,11 +3042,11 @@ pub async fn retire_vm(
 ) -> Result<Json<TaskResponse>, ApiError> {
     crate::auth::require_operator(&actor)?;
     let row: (String, Option<Uuid>, String) =
-        sqlx::query_as("SELECT name, host_id, observed_state FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, host_id, observed_state FROM vms WHERE id = ?")
             .bind(id)
             .fetch_one(&state.pool)
             .await?;
-    sqlx::query(
+    crate::db::query(
         "UPDATE vms SET lifecycle_phase = ?, desired_state = 'stopped',
          tags = CASE WHEN tags IS NULL THEN '[\"retired\"]' ELSE json_insert(tags, '$[#]', 'retired') END
          WHERE id = ? AND NOT EXISTS (SELECT 1 FROM json_each(COALESCE(tags,'[]')) WHERE value = 'retired')",
@@ -3073,7 +3073,7 @@ pub async fn retire_vm(
     }
     if body.final_backup {
         let backup_id = Uuid::new_v4();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES (?, ?, 'full', 'pending')",
         )
         .bind(backup_id)
@@ -3095,7 +3095,7 @@ pub async fn retire_vm(
         .inspect_err(|_e| {
             let pool = state.pool.clone();
             tokio::spawn(async move {
-                let _ = sqlx::query("DELETE FROM backup_records WHERE id = ?")
+                let _ = crate::db::query("DELETE FROM backup_records WHERE id = ?")
                     .bind(backup_id)
                     .execute(&pool)
                     .await;
@@ -3117,12 +3117,12 @@ pub async fn export_vm_disk(
     Path(id): Path<Uuid>,
 ) -> Result<Json<TaskResponse>, ApiError> {
     crate::auth::require_operator(&actor)?;
-    let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+    let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
     let backup_id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO backup_records (id, vm_id, backup_type, status) VALUES (?, ?, 'export', 'pending')",
     )
     .bind(backup_id)
@@ -3145,7 +3145,7 @@ pub async fn export_vm_disk(
     .inspect_err(|_e| {
         let pool = state.pool.clone();
         tokio::spawn(async move {
-            let _ = sqlx::query("DELETE FROM backup_records WHERE id = ?")
+            let _ = crate::db::query("DELETE FROM backup_records WHERE id = ?")
                 .bind(backup_id)
                 .execute(&pool)
                 .await;

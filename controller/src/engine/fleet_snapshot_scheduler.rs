@@ -1,7 +1,7 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -23,7 +23,7 @@ pub fn spawn(state: AppState) {
 }
 
 async fn tick(state: &AppState) -> anyhow::Result<()> {
-    let rows: Vec<(Uuid, String, String, String, bool, bool, i32)> = sqlx::query_as(
+    let rows: Vec<(Uuid, String, String, String, bool, bool, i32)> = crate::db::query_as(
         "SELECT id, name, project, tag_filter, disk_only, quiesce, retain_count
          FROM fleet_snapshot_schedules
          WHERE enabled = TRUE
@@ -51,7 +51,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
             tracing::warn!("fleet snapshot scheduler: schedule {sched_id} enqueue failed: {e:#}");
             continue;
         }
-        sqlx::query(
+        crate::db::query(
             "UPDATE fleet_snapshot_schedules SET last_run_at = datetime('now') WHERE id = ?",
         )
         .bind(sched_id)
@@ -62,7 +62,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
 }
 
 async fn enqueue_snapshots_for_schedule(
-    pool: &SqlitePool,
+    pool: &DbPool,
     app: &AppState,
     _sched_id: Uuid,
     project: &str,
@@ -71,7 +71,7 @@ async fn enqueue_snapshots_for_schedule(
     quiesce: bool,
 ) -> anyhow::Result<()> {
     let vms: Vec<(Uuid, String, Option<Uuid>)> = if !project.is_empty() && !tag_filter.is_empty() {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, name, host_id FROM vms
              WHERE managed = TRUE AND COALESCE(inventory_source, 'libvirt') = 'libvirt'
                AND lifecycle_phase NOT IN ('retired', 'deleting')
@@ -82,7 +82,7 @@ async fn enqueue_snapshots_for_schedule(
         .fetch_all(pool)
         .await?
     } else if !project.is_empty() {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, name, host_id FROM vms
              WHERE managed = TRUE AND COALESCE(inventory_source, 'libvirt') = 'libvirt'
                AND lifecycle_phase NOT IN ('retired', 'deleting')
@@ -92,7 +92,7 @@ async fn enqueue_snapshots_for_schedule(
         .fetch_all(pool)
         .await?
     } else {
-        sqlx::query_as(
+        crate::db::query_as(
             "SELECT id, name, host_id FROM vms
              WHERE managed = TRUE AND COALESCE(inventory_source, 'libvirt') = 'libvirt'
                AND lifecycle_phase NOT IN ('retired', 'deleting')",
@@ -105,7 +105,7 @@ async fn enqueue_snapshots_for_schedule(
     for (vm_id, vm_name, host_id) in vms {
         let snap_name = format!("fleet-{stamp}");
         let record_id = Uuid::new_v4();
-        sqlx::query(
+        crate::db::query(
             "INSERT INTO snapshot_records (id, vm_id, name, status) VALUES (?, ?, ?, 'pending')",
         )
         .bind(record_id)
@@ -131,7 +131,7 @@ async fn enqueue_snapshots_for_schedule(
         )
         .await
         {
-            let _ = sqlx::query("DELETE FROM snapshot_records WHERE id = ?")
+            let _ = crate::db::query("DELETE FROM snapshot_records WHERE id = ?")
                 .bind(record_id)
                 .execute(pool)
                 .await;

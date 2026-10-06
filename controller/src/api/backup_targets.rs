@@ -38,7 +38,7 @@ pub async fn list_backup_targets(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<BackupTargetRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, BackupTargetRow>(
+    let rows = crate::db::query_as::<_, BackupTargetRow>(
         "SELECT id, name, kind, config_json FROM backup_targets ORDER BY name LIMIT 200",
     )
     .fetch_all(&state.pool)
@@ -60,14 +60,14 @@ pub async fn create_backup_target(
         )));
     }
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO backup_targets (id, name, kind, config_json) VALUES (?, ?, ?, ?)")
+    crate::db::query("INSERT INTO backup_targets (id, name, kind, config_json) VALUES (?, ?, ?, ?)")
         .bind(id)
         .bind(&body.name)
         .bind(&body.kind)
         .bind(&body.config_json)
         .execute(&state.pool)
         .await?;
-    let row = sqlx::query_as::<_, BackupTargetRow>(
+    let row = crate::db::query_as::<_, BackupTargetRow>(
         "SELECT id, name, kind, config_json FROM backup_targets WHERE id = ?",
     )
     .bind(id)
@@ -82,7 +82,7 @@ pub async fn delete_backup_target(
     Path(id): Path<Uuid>,
 ) -> Result<StatusCode, ApiError> {
     require_operator(&actor)?;
-    let deleted = sqlx::query("DELETE FROM backup_targets WHERE id = ?")
+    let deleted = crate::db::query("DELETE FROM backup_targets WHERE id = ?")
         .bind(id)
         .execute(&state.pool)
         .await?

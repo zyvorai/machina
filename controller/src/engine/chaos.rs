@@ -417,7 +417,7 @@ struct Target {
 async fn load_vm(state: &AppState, id: Uuid) -> anyhow::Result<Target> {
     type Row = (String, Option<Uuid>, Option<String>, Option<String>);
     let (name, host, ip, ips): Row =
-        sqlx::query_as("SELECT name, host_id, guest_ip, guest_ips FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, host_id, guest_ip, guest_ips FROM vms WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
             .await?
@@ -442,7 +442,7 @@ async fn load_vm(state: &AppState, id: Uuid) -> anyhow::Result<Target> {
 }
 
 async fn observed(state: &AppState, id: Uuid) -> String {
-    sqlx::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
+    crate::db::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
         .bind(id)
         .fetch_optional(&state.pool)
         .await
@@ -700,7 +700,7 @@ pub async fn start(
 ) -> anyhow::Result<Uuid> {
     validate(&spec).map_err(|e| anyhow::anyhow!(e))?;
     let run = Uuid::new_v4();
-    sqlx::query("INSERT INTO chaos_runs (id, experiment_id, started_by) VALUES (?, ?, ?)")
+    crate::db::query("INSERT INTO chaos_runs (id, experiment_id, started_by) VALUES (?, ?, ?)")
         .bind(run)
         .bind(experiment)
         .bind(by)
@@ -719,7 +719,7 @@ pub async fn start(
             (None, "passed") => "passed",
             _ => "failed",
         };
-        let _ = sqlx::query("UPDATE chaos_runs SET status = ?, finished_at = CURRENT_TIMESTAMP, abort_reason = ?, report_json = ? WHERE id = ?")
+        let _ = crate::db::query("UPDATE chaos_runs SET status = ?, finished_at = CURRENT_TIMESTAMP, abort_reason = ?, report_json = ? WHERE id = ?")
             .bind(status)
             .bind(aborted.unwrap_or_default())
             .bind(serde_json::to_string(&report).unwrap_or_default())
@@ -970,7 +970,7 @@ async fn run_step(
         Step::Kill { recover_secs } => {
             for t in targets {
                 let desired: Option<String> =
-                    sqlx::query_scalar("SELECT desired_state FROM vms WHERE id = ?")
+                    crate::db::query_scalar("SELECT desired_state FROM vms WHERE id = ?")
                         .bind(t.id)
                         .fetch_optional(&state.pool)
                         .await
@@ -1047,7 +1047,7 @@ pub fn spawn(state: AppState) {
 /// A controller that restarted mid-run can't finish it: mark it and lift
 /// its network faults now rather than at lease end.
 pub async fn recover(state: &AppState) {
-    let runs: Vec<Uuid> = sqlx::query_scalar("SELECT id FROM chaos_runs WHERE status = 'running'")
+    let runs: Vec<Uuid> = crate::db::query_scalar("SELECT id FROM chaos_runs WHERE status = 'running'")
         .fetch_all(&state.pool)
         .await
         .unwrap_or_default();
@@ -1057,7 +1057,7 @@ pub async fn recover(state: &AppState) {
         }
         tracing::warn!(%run, "chaos: run interrupted by a controller restart");
         stop_faults(state, run).await;
-        let _ = sqlx::query("UPDATE chaos_runs SET status = 'interrupted', finished_at = CURRENT_TIMESTAMP, abort_reason = 'the controller restarted during the run' WHERE id = ?")
+        let _ = crate::db::query("UPDATE chaos_runs SET status = 'interrupted', finished_at = CURRENT_TIMESTAMP, abort_reason = 'the controller restarted during the run' WHERE id = ?")
             .bind(run)
             .execute(&state.pool)
             .await;

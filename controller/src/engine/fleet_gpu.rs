@@ -4,7 +4,7 @@
 // GPU Command Center rollup — host tags + VM inventory (Phase 54 v1).
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash)]
@@ -132,7 +132,7 @@ fn vgpu_slices_from_tags(tags: &[String]) -> i32 {
     }
 }
 
-pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetGpuOverview> {
+pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetGpuOverview> {
     let host_rows: Vec<(
         Uuid,
         String,
@@ -141,7 +141,7 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetGpuOverview> {
         String,
         i32,
         sqlx::types::Json<Vec<String>>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, hostname, state, COALESCE(site, ''), COALESCE(rack, ''), vm_count,
                 COALESCE(tags, '[]') AS tags
          FROM hosts ORDER BY hostname",
@@ -149,7 +149,7 @@ pub async fn overview(pool: &SqlitePool) -> anyhow::Result<FleetGpuOverview> {
     .fetch_all(pool)
     .await?;
 
-    let vm_rows: Vec<(Uuid, String, Option<Uuid>, String, sqlx::types::Json<Vec<String>>)> = sqlx::query_as(
+    let vm_rows: Vec<(Uuid, String, Option<Uuid>, String, sqlx::types::Json<Vec<String>>)> = crate::db::query_as(
         "SELECT id, name, host_id, observed_state, COALESCE(tags, '[]') AS tags FROM vms ORDER BY name",
     )
     .fetch_all(pool)

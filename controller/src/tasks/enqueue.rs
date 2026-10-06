@@ -16,7 +16,7 @@ pub async fn enqueue_task(
     host_id: Option<Uuid>,
 ) -> Result<Uuid, ApiError> {
     let task_id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO tasks (id, operation, status, resource_type, resource_id, host_id, payload)
          VALUES (?, ?, 'pending', ?, ?, ?, ?)",
     )
@@ -58,7 +58,7 @@ pub async fn write_audit(
     resource_id: Option<Uuid>,
     detail: serde_json::Value,
 ) -> Result<(), ApiError> {
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, resource_id, detail)
          VALUES (?, ?, ?, ?, ?, ?)",
     )

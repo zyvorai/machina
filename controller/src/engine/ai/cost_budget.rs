@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct BudgetAlert {
@@ -22,7 +22,7 @@ pub struct CostBudgetReport {
     pub summary: String,
 }
 
-pub async fn analyze(pool: &SqlitePool) -> anyhow::Result<CostBudgetReport> {
+pub async fn analyze(pool: &DbPool) -> anyhow::Result<CostBudgetReport> {
     let cost = super::cost::analyze(pool).await?;
     let attribution = super::cost_attribution::attribute(pool).await?;
 

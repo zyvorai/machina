@@ -3,7 +3,7 @@
 
 use chrono::{Duration, Utc};
 use serde_json::Value;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use super::playbooks;
@@ -17,8 +17,8 @@ struct RuleRow {
     throttle_minutes: i32,
 }
 
-pub async fn run_detection(pool: &SqlitePool) -> anyhow::Result<usize> {
-    let rules: Vec<RuleRow> = sqlx::query_as(
+pub async fn run_detection(pool: &DbPool) -> anyhow::Result<usize> {
+    let rules: Vec<RuleRow> = crate::db::query_as(
         "SELECT id, name, severity, query_json, throttle_minutes FROM soc_detection_rules WHERE enabled = TRUE",
     )
     .fetch_all(pool)
@@ -33,7 +33,7 @@ pub async fn run_detection(pool: &SqlitePool) -> anyhow::Result<usize> {
     Ok(fired)
 }
 
-async fn evaluate_rule(pool: &SqlitePool, rule: &RuleRow) -> anyhow::Result<bool> {
+async fn evaluate_rule(pool: &DbPool, rule: &RuleRow) -> anyhow::Result<bool> {
     let rule_type = rule
         .query_json
         .get("type")
@@ -46,7 +46,7 @@ async fn evaluate_rule(pool: &SqlitePool, rule: &RuleRow) -> anyhow::Result<bool
         .unwrap_or(60);
     let since = Utc::now() - Duration::minutes(window);
 
-    let events: Vec<(Uuid, String, String, String, Value)> = sqlx::query_as(
+    let events: Vec<(Uuid, String, String, String, Value)> = crate::db::query_as(
         "SELECT id, source, severity, summary, ecs_json FROM soc_events
          WHERE occurred_at >= ? ORDER BY occurred_at DESC LIMIT 500",
     )
@@ -160,7 +160,7 @@ fn event_matches(query: &Value, source: &str, severity: &str, ecs: &Value) -> bo
 
 #[allow(clippy::too_many_arguments)]
 async fn upsert_alert(
-    pool: &SqlitePool,
+    pool: &DbPool,
     rule_id: Uuid,
     title: &str,
     severity: &str,
@@ -169,7 +169,7 @@ async fn upsert_alert(
     detail: &Value,
     throttle_minutes: i32,
 ) -> anyhow::Result<Option<Uuid>> {
-    let existing: Option<(Uuid,)> = sqlx::query_as(
+    let existing: Option<(Uuid,)> = crate::db::query_as(
         "SELECT id FROM soc_alerts WHERE dedupe_key = ? AND status IN ('open', 'acknowledged')
          AND last_seen > datetime('now', '-' || ? || ' minutes')",
     )
@@ -179,7 +179,7 @@ async fn upsert_alert(
     .await?;
 
     if let Some((id,)) = existing {
-        sqlx::query(
+        crate::db::query(
             "UPDATE soc_alerts SET last_seen = datetime('now'), event_count = event_count + 1, updated_at = datetime('now') WHERE id = ?",
         )
         .bind(id)
@@ -189,7 +189,7 @@ async fn upsert_alert(
     }
 
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO soc_alerts (id, rule_id, title, severity, dedupe_key, event_ids, detail_json)
          VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
@@ -206,7 +206,7 @@ async fn upsert_alert(
 }
 
 async fn enqueue_notification(
-    pool: &SqlitePool,
+    pool: &DbPool,
     title: &str,
     severity: &str,
     alert_id: Uuid,
@@ -217,7 +217,7 @@ async fn enqueue_notification(
         "alert_id": alert_id.to_string(),
         "source": "soc",
     });
-    sqlx::query("INSERT INTO notification_outbox (id, kind, payload) VALUES (?, ?, ?)")
+    crate::db::query("INSERT INTO notification_outbox (id, kind, payload) VALUES (?, ?, ?)")
         .bind(Uuid::new_v4())
         .bind("soc.alert")
         .bind(payload)
@@ -227,11 +227,11 @@ async fn enqueue_notification(
 }
 
 pub async fn test_rule(
-    pool: &SqlitePool,
+    pool: &DbPool,
     rule_id: Uuid,
     hours: i32,
 ) -> anyhow::Result<serde_json::Value> {
-    let rule: RuleRow = sqlx::query_as(
+    let rule: RuleRow = crate::db::query_as(
         "SELECT id, name, severity, query_json, throttle_minutes FROM soc_detection_rules WHERE id = ?",
     )
     .bind(rule_id)
@@ -241,7 +241,7 @@ pub async fn test_rule(
 
     let hours = hours.clamp(1, 720);
     let since = Utc::now() - Duration::hours(hours as i64);
-    let events: Vec<(Uuid, String, String, Value)> = sqlx::query_as(
+    let events: Vec<(Uuid, String, String, Value)> = crate::db::query_as(
         "SELECT id, source, severity, ecs_json FROM soc_events WHERE occurred_at >= ? ORDER BY occurred_at DESC LIMIT 1000",
     )
     .bind(since)

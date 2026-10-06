@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 use crate::agent_client;
@@ -56,7 +56,7 @@ fn issue(
     }
 }
 
-pub async fn run_vm_health_check(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Result<VmHealthReport> {
+pub async fn run_vm_health_check(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<VmHealthReport> {
     let row: Option<(
         String,
         Option<Uuid>,
@@ -64,7 +64,7 @@ pub async fn run_vm_health_check(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Resu
         String,
         bool,
         sqlx::types::Json<Vec<String>>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT name, host_id, observed_state, COALESCE(guest_tools_status, 'unknown'),
                 COALESCE(managed, TRUE), COALESCE(tags, '[]')
          FROM vms WHERE id = ?",
@@ -110,7 +110,7 @@ pub async fn run_vm_health_check(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Resu
     }
 
     let ha: bool =
-        sqlx::query_scalar("SELECT COALESCE(enabled, FALSE) FROM ha_policies WHERE vm_id = ?")
+        crate::db::query_scalar("SELECT COALESCE(enabled, FALSE) FROM ha_policies WHERE vm_id = ?")
             .bind(vm_id)
             .fetch_optional(pool)
             .await?
@@ -134,7 +134,7 @@ pub async fn run_vm_health_check(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Resu
         ));
     }
 
-    let backup_count: i64 = sqlx::query_scalar(
+    let backup_count: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM backup_records WHERE vm_id = ? AND status = 'completed'",
     )
     .bind(vm_id)
@@ -160,7 +160,7 @@ pub async fn run_vm_health_check(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Resu
     // snapshot count look identical to "no snapshots", which silently PASSES this check
     // (0 <= 5) instead of surfacing that we couldn't actually check it.
     total += 1;
-    match sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM snapshot_records WHERE vm_id = ?")
+    match crate::db::query_scalar::<_, i64>("SELECT COUNT(*) FROM snapshot_records WHERE vm_id = ?")
         .bind(vm_id)
         .fetch_one(pool)
         .await
@@ -185,7 +185,7 @@ pub async fn run_vm_health_check(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Resu
     }
 
     let cpu_pressure: Option<f32> =
-        sqlx::query_scalar("SELECT cpu_percent FROM vm_metrics WHERE vm_id = ?")
+        crate::db::query_scalar("SELECT cpu_percent FROM vm_metrics WHERE vm_id = ?")
             .bind(vm_id)
             .fetch_optional(pool)
             .await
@@ -298,7 +298,7 @@ pub async fn run_vm_health_check(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Resu
         }
     }
 
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "UPDATE vms SET guest_tools_status = ?, guest_ip = ?, guest_hostname = ?,
          os_family = COALESCE(?, os_family), updated_at = datetime('now') WHERE id = ?",
     )
@@ -341,15 +341,15 @@ pub async fn run_vm_health_check(pool: &SqlitePool, vm_id: Uuid) -> anyhow::Resu
     })
 }
 
-async fn host_agent_addr(pool: &SqlitePool, host_id: Uuid) -> anyhow::Result<String> {
-    let addr: String = sqlx::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
+async fn host_agent_addr(pool: &DbPool, host_id: Uuid) -> anyhow::Result<String> {
+    let addr: String = crate::db::query_scalar("SELECT agent_grpc_addr FROM hosts WHERE id = ?")
         .bind(host_id)
         .fetch_one(pool)
         .await?;
     Ok(addr)
 }
 
-pub async fn sync_guest_tools(pool: &SqlitePool, vm_id: Uuid, vm_name: &str, host_id: Uuid) {
+pub async fn sync_guest_tools(pool: &DbPool, vm_id: Uuid, vm_name: &str, host_id: Uuid) {
     let Ok(addr) = host_agent_addr(pool, host_id).await else {
         return;
     };
@@ -368,7 +368,7 @@ pub async fn sync_guest_tools(pool: &SqlitePool, vm_id: Uuid, vm_name: &str, hos
     } else {
         "not_installed"
     };
-    let _ = sqlx::query(
+    let _ = crate::db::query(
         "UPDATE vms SET guest_tools_status = ?, guest_ip = ?, guest_hostname = ?, updated_at = datetime('now') WHERE id = ?",
     )
     .bind(status)

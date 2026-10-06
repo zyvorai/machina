@@ -26,7 +26,7 @@ pub async fn list_fence_events(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<FenceEventRow>>, ApiError> {
     require_operator(&actor)?;
-    let rows = sqlx::query_as::<_, FenceEventRow>(
+    let rows = crate::db::query_as::<_, FenceEventRow>(
         "SELECT id, host_id, action, success, message, created_at
          FROM fence_events ORDER BY created_at DESC LIMIT 100",
     )

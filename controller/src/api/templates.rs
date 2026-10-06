@@ -106,7 +106,7 @@ pub async fn list_templates(
     } else {
         format!(" WHERE {}", preds.join(" AND "))
     };
-    let rows = sqlx::query_as::<_, TemplateRow>(&format!(
+    let rows = crate::db::query_as::<_, TemplateRow>(&format!(
         "{TEMPLATE_SELECT}{where_clause} ORDER BY featured DESC, name, version"
     ))
     .bind(q.project.as_deref())
@@ -149,7 +149,7 @@ pub async fn list_marketplace_templates(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<serde_json::Value>>, ApiError> {
     require_operator(&actor)?;
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM templates WHERE marketplace = TRUE")
+    let count: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM templates WHERE marketplace = TRUE")
         .fetch_one(&state.pool)
         .await?;
     if count == 0 {
@@ -158,7 +158,7 @@ pub async fn list_marketplace_templates(
         let _ =
             crate::engine::template_catalog::prune_stale_marketplace_templates(&state.pool).await;
     }
-    let rows = sqlx::query_as::<_, TemplateRow>(&format!(
+    let rows = crate::db::query_as::<_, TemplateRow>(&format!(
         "{TEMPLATE_SELECT} WHERE marketplace = TRUE ORDER BY featured DESC, category, name, version"
     ))
     .fetch_all(&state.pool)
@@ -177,7 +177,7 @@ pub async fn seed_templates(
     let pruned = crate::engine::template_catalog::prune_stale_marketplace_templates(&state.pool)
         .await
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    let rows = sqlx::query_as::<_, TemplateRow>(&format!(
+    let rows = crate::db::query_as::<_, TemplateRow>(&format!(
         "{TEMPLATE_SELECT} WHERE marketplace = TRUE ORDER BY featured DESC, category, name, version"
     ))
     .fetch_all(&state.pool)
@@ -196,7 +196,7 @@ pub async fn create_template(
 ) -> Result<Json<TemplateRow>, ApiError> {
     require_operator(&actor)?;
     let id = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO templates (id, name, version, source_disk, cloud_init, os_family, category, description, featured, marketplace, icon)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -223,7 +223,7 @@ pub async fn get_template(
     AxumPath((name, version)): AxumPath<(String, String)>,
 ) -> Result<Json<TemplateRow>, ApiError> {
     require_operator(&actor)?;
-    let row = sqlx::query_as::<_, TemplateRow>(&format!(
+    let row = crate::db::query_as::<_, TemplateRow>(&format!(
         "{TEMPLATE_SELECT} WHERE name = ? AND version = ?"
     ))
     .bind(&name)
@@ -262,7 +262,7 @@ pub async fn prefetch_missing_template_images(
     let host_id = if let Some(id) = body.host_id {
         id
     } else {
-        sqlx::query_scalar("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1")
+        crate::db::query_scalar("SELECT id FROM hosts WHERE state = 'online' ORDER BY hostname LIMIT 1")
             .fetch_optional(&state.pool)
             .await?
             .ok_or_else(|| ApiError::bad_request("no online hosts"))?
@@ -317,7 +317,7 @@ pub async fn delete_template(
     AxumPath((name, version)): AxumPath<(String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    let deleted = sqlx::query("DELETE FROM templates WHERE name = ? AND version = ?")
+    let deleted = crate::db::query("DELETE FROM templates WHERE name = ? AND version = ?")
         .bind(&name)
         .bind(&version)
         .execute(&state.pool)
@@ -329,7 +329,7 @@ pub async fn delete_template(
 }
 
 async fn fetch_template_by_id(state: &AppState, id: Uuid) -> Result<Json<TemplateRow>, ApiError> {
-    let row = sqlx::query_as::<_, TemplateRow>(&format!("{TEMPLATE_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, TemplateRow>(&format!("{TEMPLATE_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -341,7 +341,7 @@ pub struct ApproveTemplateBody {
     pub approval_status: String,
 }
 
-async fn run_git_template_sync(pool: &sqlx::SqlitePool) -> Result<usize, ApiError> {
+async fn run_git_template_sync(pool: &crate::db::DbPool) -> Result<usize, ApiError> {
     let dir = std::env::var("MACHINA_TEMPLATES_GIT_DIR")
         .map_err(|_| ApiError::bad_request("MACHINA_TEMPLATES_GIT_DIR not set"))?;
     crate::engine::template_git::sync_templates_from_git(pool, std::path::Path::new(&dir))
@@ -400,13 +400,13 @@ pub async fn approve_template(
             "approval_status must be approved|pending|draft|rejected",
         ));
     }
-    sqlx::query("UPDATE templates SET approval_status = ? WHERE name = ? AND version = ?")
+    crate::db::query("UPDATE templates SET approval_status = ? WHERE name = ? AND version = ?")
         .bind(status)
         .bind(&name)
         .bind(&version)
         .execute(&state.pool)
         .await?;
-    let row = sqlx::query_as::<_, TemplateRow>(&format!(
+    let row = crate::db::query_as::<_, TemplateRow>(&format!(
         "{TEMPLATE_SELECT} WHERE name = ? AND version = ?"
     ))
     .bind(&name)
@@ -426,11 +426,11 @@ pub(crate) fn valid_visibility(v: &str) -> bool {
 }
 
 async fn template_id(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     name: &str,
     version: &str,
 ) -> Result<Uuid, ApiError> {
-    sqlx::query_scalar("SELECT id FROM templates WHERE name = ? AND version = ?")
+    crate::db::query_scalar("SELECT id FROM templates WHERE name = ? AND version = ?")
         .bind(name)
         .bind(version)
         .fetch_optional(pool)
@@ -449,12 +449,12 @@ pub async fn set_template_visibility(
         return Err(ApiError::bad_request("visibility must be public or private"));
     }
     let id = template_id(&state.pool, &name, &version).await?;
-    sqlx::query("UPDATE templates SET visibility = ? WHERE id = ?")
+    crate::db::query("UPDATE templates SET visibility = ? WHERE id = ?")
         .bind(&body.visibility)
         .bind(id)
         .execute(&state.pool)
         .await?;
-    let row = sqlx::query_as::<_, TemplateRow>(&format!("{TEMPLATE_SELECT} WHERE id = ?"))
+    let row = crate::db::query_as::<_, TemplateRow>(&format!("{TEMPLATE_SELECT} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
         .await?;
@@ -469,7 +469,7 @@ pub async fn list_template_shares(
     require_operator(&actor)?;
     let id = template_id(&state.pool, &name, &version).await?;
     let rows: Vec<String> =
-        sqlx::query_scalar("SELECT project FROM image_shares WHERE template_id = ? ORDER BY project")
+        crate::db::query_scalar("SELECT project FROM image_shares WHERE template_id = ? ORDER BY project")
             .bind(id)
             .fetch_all(&state.pool)
             .await?;
@@ -482,7 +482,7 @@ pub async fn share_template(
     AxumPath((name, version, project)): AxumPath<(String, String, String)>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let known: Option<String> = sqlx::query_scalar("SELECT name FROM projects WHERE name = ?")
+    let known: Option<String> = crate::db::query_scalar("SELECT name FROM projects WHERE name = ?")
         .bind(&project)
         .fetch_optional(&state.pool)
         .await?;
@@ -490,7 +490,7 @@ pub async fn share_template(
         return Err(ApiError::bad_request("no project with that name"));
     }
     let id = template_id(&state.pool, &name, &version).await?;
-    sqlx::query("INSERT OR IGNORE INTO image_shares (template_id, project) VALUES (?, ?)")
+    crate::db::query("INSERT OR IGNORE INTO image_shares (template_id, project) VALUES (?, ?)")
         .bind(id)
         .bind(&project)
         .execute(&state.pool)
@@ -505,7 +505,7 @@ pub async fn unshare_template(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
     let id = template_id(&state.pool, &name, &version).await?;
-    sqlx::query("DELETE FROM image_shares WHERE template_id = ? AND project = ?")
+    crate::db::query("DELETE FROM image_shares WHERE template_id = ? AND project = ?")
         .bind(id)
         .bind(&project)
         .execute(&state.pool)

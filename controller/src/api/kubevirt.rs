@@ -25,7 +25,7 @@ pub async fn sync_inventory(
 ) -> Result<Json<KubeVirtSyncResponse>, ApiError> {
     require_operator(&actor)?;
     let cluster_id: Uuid =
-        sqlx::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
+        crate::db::query_scalar("SELECT id FROM clusters ORDER BY created_at LIMIT 1")
             .fetch_optional(&state.pool)
             .await?
             .ok_or_else(|| ApiError::bad_request("no cluster configured"))?;

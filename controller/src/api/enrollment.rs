@@ -41,12 +41,12 @@ pub async fn create_enrollment_token(
     };
     let token = format!("join-{}", Uuid::new_v4());
     let expires = Utc::now() + Duration::hours(ttl);
-    let cluster_id: Uuid = sqlx::query_scalar("SELECT id FROM clusters LIMIT 1")
+    let cluster_id: Uuid = crate::db::query_scalar("SELECT id FROM clusters LIMIT 1")
         .fetch_optional(&state.pool)
         .await?
         .ok_or_else(|| ApiError::internal("no cluster configured"))?;
 
-    sqlx::query("INSERT INTO enrollment_tokens (token, cluster_id, expires_at) VALUES (?, ?, ?)")
+    crate::db::query("INSERT INTO enrollment_tokens (token, cluster_id, expires_at) VALUES (?, ?, ?)")
         .bind(&token)
         .bind(cluster_id)
         .bind(expires)
@@ -65,7 +65,7 @@ pub async fn create_enrollment_token(
         "curl -fsSL {controller_base}/install.sh | sudo bash -s -- --controller {controller_base} --token {token}"
     );
 
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO audit_logs (id, actor, action, resource_type, detail)
          VALUES (?, ?, ?, ?, ?)",
     )
@@ -125,7 +125,7 @@ pub async fn list_enrollment_tokens(
     Extension(actor): Extension<AuthUser>,
 ) -> Result<Json<Vec<EnrollmentTokenRow>>, ApiError> {
     require_admin(&actor)?;
-    let rows = sqlx::query_as::<_, EnrollmentTokenRow>(
+    let rows = crate::db::query_as::<_, EnrollmentTokenRow>(
         "SELECT token, expires_at, used_at, created_at FROM enrollment_tokens
          ORDER BY created_at DESC LIMIT 50",
     )
@@ -140,7 +140,7 @@ pub async fn revoke_enrollment_token(
     Path(token): Path<String>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    let revoked = sqlx::query("DELETE FROM enrollment_tokens WHERE token = ? AND used_at IS NULL")
+    let revoked = crate::db::query("DELETE FROM enrollment_tokens WHERE token = ? AND used_at IS NULL")
         .bind(&token)
         .execute(&state.pool)
         .await?

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 #[derive(Debug, Serialize)]
 pub struct ComplianceRemediation {
@@ -21,7 +21,7 @@ pub struct ComplianceRemediationReport {
     pub summary: String,
 }
 
-pub async fn propose(pool: &SqlitePool) -> anyhow::Result<ComplianceRemediationReport> {
+pub async fn propose(pool: &DbPool) -> anyhow::Result<ComplianceRemediationReport> {
     let report = super::compliance_frameworks::scan(pool).await?;
     let mut remediations = Vec::new();
 

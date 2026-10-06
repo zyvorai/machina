@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde_json::Value;
-use sqlx::{SqliteConnection, SqlitePool};
+use crate::db::{DbConn, DbPool};
 use uuid::Uuid;
 
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub struct PolicyViolation {
 /// Quota and policy check on its own connection. Prefer [`evaluate_vm_create_tx`] when the caller is about to insert
 /// the VM: only a check made inside the same write transaction as the insert is race-free.
 pub async fn evaluate_vm_create(
-    pool: &SqlitePool,
+    pool: &DbPool,
     project: &str,
     tags: &[String],
     vcpus: i32,
@@ -39,7 +39,7 @@ pub async fn evaluate_vm_create(
 /// Same check, run on the caller's connection. Call it inside a `BEGIN IMMEDIATE` transaction, right before inserting
 /// the VM: SQLite then serialises concurrent creates, so two requests at a project's limit cannot both pass.
 pub async fn evaluate_vm_create_tx(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     project: &str,
     tags: &[String],
     vcpus: i32,
@@ -50,7 +50,7 @@ pub async fn evaluate_vm_create_tx(
     check_project_quota(conn, project, 1, vcpus, memory_mib, storage_gib).await?;
 
     let rows: Vec<(String, Value)> =
-        sqlx::query_as("SELECT name, rule_json FROM policy_rules WHERE enabled = TRUE")
+        crate::db::query_as("SELECT name, rule_json FROM policy_rules WHERE enabled = TRUE")
             .fetch_all(&mut *conn)
             .await
             .map_err(unavailable)?;
@@ -74,7 +74,7 @@ fn unavailable(e: sqlx::Error) -> PolicyViolation {
 
 /// Whether `vms` more VMs with these totals fit the project's quota.
 pub async fn check_project_quota_batch(
-    pool: &SqlitePool,
+    pool: &DbPool,
     project: &str,
     vms: i64,
     vcpus: i32,
@@ -89,10 +89,10 @@ type QuotaRow = (i32, i32, i64, i64, i64, i64, i64, i64);
 
 /// (limits, current usage) for a project, or None when it has no quota row.
 async fn load_quota(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     project: &str,
 ) -> Result<Option<QuotaRow>, PolicyViolation> {
-    sqlx::query_as(
+    crate::db::query_as(
         "SELECT q.max_vms, q.max_vcpu, q.max_memory_mib, q.max_storage_gib,
                 COALESCE((SELECT COUNT(*) FROM vms WHERE COALESCE(project, 'default') = ?), 0),
                 COALESCE((SELECT SUM(vcpus) FROM vms WHERE COALESCE(project, 'default') = ?), 0),
@@ -112,7 +112,7 @@ async fn load_quota(
 
 /// Quota check for making an existing machine bigger: only increases count, and the machine count does not change.
 pub async fn evaluate_vm_resize_tx(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     project: &str,
     add_vcpus: i64,
     add_memory_mib: i64,
@@ -140,7 +140,7 @@ pub async fn evaluate_vm_resize_tx(
 }
 
 async fn check_project_quota(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     project: &str,
     vms: i64,
     vcpus: i32,
@@ -221,14 +221,14 @@ fn check_rule(
 }
 
 pub async fn upsert_project_quota(
-    pool: &SqlitePool,
+    pool: &DbPool,
     project: &str,
     max_vms: i32,
     max_vcpu: i32,
     max_memory_mib: i64,
     max_storage_gib: i64,
 ) -> anyhow::Result<()> {
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO project_quotas (project, max_vms, max_vcpu, max_memory_mib, max_storage_gib, updated_at)
          VALUES (?, ?, ?, ?, ?, datetime('now'))
          ON CONFLICT (project) DO UPDATE SET
@@ -249,10 +249,10 @@ pub async fn upsert_project_quota(
 }
 
 pub async fn list_policy_rules(
-    pool: &SqlitePool,
+    pool: &DbPool,
 ) -> anyhow::Result<Vec<(Uuid, String, bool, Value)>> {
     Ok(
-        sqlx::query_as("SELECT id, name, enabled, rule_json FROM policy_rules ORDER BY name")
+        crate::db::query_as("SELECT id, name, enabled, rule_json FROM policy_rules ORDER BY name")
             .fetch_all(pool)
             .await?,
     )
@@ -265,13 +265,13 @@ mod quota_race_tests {
     use std::sync::Arc;
 
     /// The create path: take the write lock, check the quota on that connection, insert, commit.
-    async fn create_one(pool: &SqlitePool, n: usize) -> bool {
+    async fn create_one(pool: &DbPool, n: usize) -> bool {
         let mut tx = pool.begin_with("BEGIN IMMEDIATE").await.unwrap();
         let ok = evaluate_vm_create_tx(&mut tx, "p", &[], 1, 512, 10, false)
             .await
             .is_ok();
         if ok {
-            sqlx::query(
+            crate::db::query(
                 "INSERT INTO vms (id, name, project, vcpus, memory_mib) VALUES (?, ?, 'p', 1, 512)",
             )
             .bind(format!("id{n}"))
@@ -304,7 +304,7 @@ mod quota_race_tests {
             "CREATE TABLE project_quotas (project TEXT, max_vms INTEGER, max_vcpu INTEGER, max_memory_mib INTEGER, max_storage_gib INTEGER)",
             "INSERT INTO project_quotas VALUES ('p', 3, 0, 0, 0)",
         ] {
-            sqlx::query(ddl).execute(&*pool).await.unwrap();
+            crate::db::query(ddl).execute(&*pool).await.unwrap();
         }
         let mut tasks = Vec::new();
         for n in 0..12 {
@@ -339,7 +339,7 @@ mod quota_race_tests {
             "INSERT INTO vms VALUES ('a', 'a', 'p', 4, 8192)",
             "INSERT INTO vms VALUES ('b', 'b', 'p', 3, 4096)",
         ] {
-            sqlx::query(ddl).execute(&pool).await.unwrap();
+            crate::db::query(ddl).execute(&pool).await.unwrap();
         }
         let mut c = pool.acquire().await.unwrap();
         // 7 of 8 vCPU and 12288 of 16384 MiB used

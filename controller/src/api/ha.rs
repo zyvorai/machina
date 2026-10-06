@@ -75,7 +75,7 @@ pub async fn set_vm_ha_policy(
     Json(body): Json<SetHaPolicyBody>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
-    let _exists: Uuid = sqlx::query_scalar("SELECT id FROM vms WHERE id = ?")
+    let _exists: Uuid = crate::db::query_scalar("SELECT id FROM vms WHERE id = ?")
         .bind(id)
         .fetch_one(&state.pool)
         .await?;

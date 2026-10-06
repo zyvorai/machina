@@ -24,7 +24,7 @@ pub fn spawn(state: AppState) {
 }
 
 async fn tick(state: &AppState) -> anyhow::Result<()> {
-    let due: Vec<(Uuid, Uuid, String, i64, Option<i64>)> = sqlx::query_as(
+    let due: Vec<(Uuid, Uuid, String, i64, Option<i64>)> = crate::db::query_as(
         "SELECT id, vm_id, action, interval_minutes, retention
          FROM vm_schedules
          WHERE enabled = 1 AND next_run_at <= datetime('now')
@@ -34,7 +34,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
     .await?;
 
     for (sched_id, vm_id, action, _interval_minutes, retention) in due {
-        let host_id: Option<Uuid> = sqlx::query_scalar("SELECT host_id FROM vms WHERE id = ?")
+        let host_id: Option<Uuid> = crate::db::query_scalar("SELECT host_id FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(&state.pool)
             .await?
@@ -59,7 +59,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
             "snapshot" => {
                 let snap_name = format!("sched-{}", chrono::Utc::now().format("%Y%m%d-%H%M"));
                 let record_id = Uuid::new_v4();
-                if let Err(e) = sqlx::query(
+                if let Err(e) = crate::db::query(
                     "INSERT INTO snapshot_records (id, vm_id, name, status) VALUES (?, ?, ?, 'pending')",
                 )
                 .bind(record_id)
@@ -99,7 +99,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
             continue;
         }
 
-        if let Err(e) = sqlx::query(
+        if let Err(e) = crate::db::query(
             // Advance from max(next_run_at, now): if the schedule fell far behind
             // (controller downtime), advancing from the stale next_run_at leaves
             // it in the past and it re-fires every tick until it catches up — a

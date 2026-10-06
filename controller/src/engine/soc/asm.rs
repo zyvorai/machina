@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::config::ControllerConfig;
 use crate::engine::ai::security_graph;
@@ -26,7 +26,7 @@ pub struct AsmFinding {
 }
 
 pub async fn build_asm_summary(
-    pool: &SqlitePool,
+    pool: &DbPool,
     cfg: &ControllerConfig,
 ) -> anyhow::Result<AsmSummary> {
     let overview = zeus_firewall::overview(pool, cfg).await?;

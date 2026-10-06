@@ -76,14 +76,14 @@ pub struct VmExportBundle {
 }
 
 pub async fn export_vm_bundle(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     agent_addr: &str,
     vm_id: uuid::Uuid,
 ) -> anyhow::Result<VmExportBundle> {
     // Inventory rows may have empty/`{}` spec_json (imported/libvirt-synced VMs).
     // Fall back to columnar vcpus/memory/project so IaC export still works.
     let row: (String, Option<String>, i32, i64, serde_json::Value) =
-        sqlx::query_as("SELECT name, project, vcpus, memory_mib, spec_json FROM vms WHERE id = ?")
+        crate::db::query_as("SELECT name, project, vcpus, memory_mib, spec_json FROM vms WHERE id = ?")
             .bind(vm_id)
             .fetch_optional(pool)
             .await?
@@ -158,7 +158,7 @@ pub async fn export_vm_bundle(
 
 /// Zip bundle with terraform.tf, ansible, cloud-init, domain.xml, and manifest.json.
 pub async fn export_vm_bundle_zip(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     agent_addr: &str,
     vm_id: uuid::Uuid,
 ) -> anyhow::Result<(String, Vec<u8>)> {

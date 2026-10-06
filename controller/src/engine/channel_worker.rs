@@ -8,11 +8,11 @@
 
 use std::time::Duration;
 
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 
 use crate::leader::LeaderHandle;
 
-pub fn spawn(pool: SqlitePool, leader: LeaderHandle) {
+pub fn spawn(pool: DbPool, leader: LeaderHandle) {
     tokio::spawn(async move {
         let client = match reqwest::Client::builder()
             .timeout(Duration::from_secs(10))
@@ -38,7 +38,7 @@ pub fn spawn(pool: SqlitePool, leader: LeaderHandle) {
     });
 }
 
-async fn process_batch(pool: &SqlitePool, client: &reqwest::Client) -> anyhow::Result<()> {
+async fn process_batch(pool: &DbPool, client: &reqwest::Client) -> anyhow::Result<()> {
     // Atomically claim the due rows in one statement (mirroring the
     // webhook_deliveries.claimed_by pattern in webhook_worker.rs::process_batch)
     // instead of a separate SELECT followed by an UPDATE-by-id later. A plain
@@ -46,7 +46,7 @@ async fn process_batch(pool: &SqlitePool, client: &reqwest::Client) -> anyhow::R
     // mid-batch, a second controller could select and deliver the same rows
     // before the first one updated them.
     let claim_id = uuid::Uuid::new_v4().to_string();
-    let rows: Vec<(uuid::Uuid, String, String, String, String, i32, i32)> = sqlx::query_as(
+    let rows: Vec<(uuid::Uuid, String, String, String, String, i32, i32)> = crate::db::query_as(
         "UPDATE channel_deliveries SET status = 'processing', claimed_by = ?
          WHERE id IN (
              SELECT id FROM channel_deliveries
@@ -67,7 +67,7 @@ async fn process_batch(pool: &SqlitePool, client: &reqwest::Client) -> anyhow::R
         };
         match result {
             Ok(()) => {
-                sqlx::query(
+                crate::db::query(
                     "UPDATE channel_deliveries SET status = 'delivered', last_error = '', attempts = attempts + 1 WHERE id = ?",
                 )
                 .bind(id)
@@ -145,7 +145,7 @@ async fn deliver_email(to: &str, subject: &str, body: &str) -> anyhow::Result<()
 }
 
 async fn mark_retry(
-    pool: &SqlitePool,
+    pool: &DbPool,
     id: uuid::Uuid,
     attempts: i32,
     max_attempts: i32,
@@ -153,7 +153,7 @@ async fn mark_retry(
 ) -> anyhow::Result<()> {
     let next = attempts + 1;
     if next >= max_attempts {
-        sqlx::query(
+        crate::db::query(
             "UPDATE channel_deliveries SET status = 'failed', attempts = ?, last_error = ? WHERE id = ?",
         )
         .bind(next)
@@ -166,7 +166,7 @@ async fn mark_retry(
         // Release the claim back to 'pending' (clearing claimed_by, same as
         // webhook_worker.rs does) so the row is eligible to be claimed again
         // once next_retry_at elapses.
-        sqlx::query(
+        crate::db::query(
             "UPDATE channel_deliveries SET status = 'pending', claimed_by = NULL, attempts = ?, last_error = ?,
              next_retry_at = datetime('now', '+' || ? || ' seconds') WHERE id = ?",
         )

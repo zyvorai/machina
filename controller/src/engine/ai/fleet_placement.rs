@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 use serde::Serialize;
-use sqlx::SqlitePool;
+use crate::db::DbPool;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -22,7 +22,7 @@ pub struct GpuPlacementReport {
     pub summary: String,
 }
 
-pub async fn advise_gpu(pool: &SqlitePool, workload: &str) -> anyhow::Result<GpuPlacementReport> {
+pub async fn advise_gpu(pool: &DbPool, workload: &str) -> anyhow::Result<GpuPlacementReport> {
     let rows: Vec<(
         Uuid,
         String,
@@ -31,7 +31,7 @@ pub async fn advise_gpu(pool: &SqlitePool, workload: &str) -> anyhow::Result<Gpu
         i64,
         i32,
         sqlx::types::Json<Vec<String>>,
-    )> = sqlx::query_as(
+    )> = crate::db::query_as(
         "SELECT id, hostname, cpu_percent, memory_used_mib, memory_total_mib, vm_count,
                 COALESCE(tags, '[]') AS tags
          FROM hosts WHERE state = 'online' AND maintenance_mode = FALSE ORDER BY hostname",

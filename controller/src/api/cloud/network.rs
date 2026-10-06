@@ -10,7 +10,7 @@ use axum::{
 use machina_spec::CloudCidr;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::SqliteConnection;
+use crate::db::DbConn;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -37,12 +37,12 @@ const SUBNETS: &str =
     "SELECT id, vpc_id, network_id, name, cidr, status, last_error, nat_enabled FROM cloud_subnets";
 
 pub(crate) async fn vpc(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     actor: &AuthUser,
     id: Uuid,
     write: bool,
 ) -> Result<Vpc, ApiError> {
-    let row: Vpc = sqlx::query_as(&format!("{VPCS} WHERE id = ?"))
+    let row: Vpc = crate::db::query_as(&format!("{VPCS} WHERE id = ?"))
         .bind(id)
         .fetch_one(&mut *conn)
         .await?;
@@ -50,12 +50,12 @@ pub(crate) async fn vpc(
     Ok(row)
 }
 async fn subnet_vpc(
-    conn: &mut SqliteConnection,
+    conn: &mut DbConn,
     actor: &AuthUser,
     id: Uuid,
     write: bool,
 ) -> Result<(Subnet, Vpc), ApiError> {
-    let subnet: Subnet = sqlx::query_as(&format!("{SUBNETS} WHERE id = ?"))
+    let subnet: Subnet = crate::db::query_as(&format!("{SUBNETS} WHERE id = ?"))
         .bind(id)
         .fetch_one(&mut *conn)
         .await?;
@@ -82,14 +82,14 @@ pub async fn create_vpc(
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     access(&mut tx, &actor, project, true).await?;
     let online: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM hosts WHERE id = ? AND state = 'online')")
+        crate::db::query_scalar("SELECT EXISTS(SELECT 1 FROM hosts WHERE id = ? AND state = 'online')")
             .bind(body.host_id)
             .fetch_one(&mut *tx)
             .await?;
     if !online {
         return Err(invalid("online host required"));
     }
-    let others: Vec<String> = sqlx::query_scalar("SELECT cidr FROM cloud_vpcs WHERE host_id = ?")
+    let others: Vec<String> = crate::db::query_scalar("SELECT cidr FROM cloud_vpcs WHERE host_id = ?")
         .bind(body.host_id)
         .fetch_all(&mut *tx)
         .await?;
@@ -99,7 +99,7 @@ pub async fn create_vpc(
     {
         return Err(conflict("CIDR overlaps another VPC on this host"));
     }
-    let duplicate: bool = sqlx::query_scalar(
+    let duplicate: bool = crate::db::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM cloud_vpcs WHERE project_id = ? AND name = ?)",
     )
     .bind(project)
@@ -116,7 +116,7 @@ pub async fn create_vpc(
         name: body.name,
         cidr: body.cidr,
     };
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO cloud_vpcs (id, project_id, host_id, name, cidr) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(row.id)
@@ -138,7 +138,7 @@ pub async fn list_vpcs(
     let mut conn = state.pool.acquire().await?;
     access(&mut conn, &actor, project, false).await?;
     Ok(Json(
-        sqlx::query_as(&format!(
+        crate::db::query_as(&format!(
             "{VPCS} WHERE project_id = ? ORDER BY name LIMIT 500"
         ))
         .bind(project)
@@ -161,11 +161,11 @@ pub async fn delete_vpc(
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     vpc(&mut tx, &actor, id, true).await?;
-    let count: i64 = sqlx::query_scalar("SELECT (SELECT COUNT(*) FROM cloud_subnets WHERE vpc_id = ?) + (SELECT COUNT(*) FROM cloud_peerings WHERE requester_id = ? OR accepter_id = ?)").bind(id).bind(id).bind(id).fetch_one(&mut *tx).await?;
+    let count: i64 = crate::db::query_scalar("SELECT (SELECT COUNT(*) FROM cloud_subnets WHERE vpc_id = ?) + (SELECT COUNT(*) FROM cloud_peerings WHERE requester_id = ? OR accepter_id = ?)").bind(id).bind(id).bind(id).fetch_one(&mut *tx).await?;
     if count > 0 {
         return Err(conflict("VPC has subnet or peering dependencies"));
     }
-    sqlx::query("DELETE FROM cloud_vpcs WHERE id = ?")
+    crate::db::query("DELETE FROM cloud_vpcs WHERE id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?;
@@ -200,7 +200,7 @@ pub async fn create_subnet(
         return Err(invalid("subnet must fit inside VPC"));
     }
     let existing: Vec<(String, String)> =
-        sqlx::query_as("SELECT cidr, name FROM cloud_subnets WHERE vpc_id = ?")
+        crate::db::query_as("SELECT cidr, name FROM cloud_subnets WHERE vpc_id = ?")
             .bind(id)
             .fetch_all(&mut *tx)
             .await?;
@@ -210,15 +210,15 @@ pub async fn create_subnet(
     {
         return Err(conflict("subnet overlaps or name is already used"));
     }
-    let cluster: Uuid = sqlx::query_scalar("SELECT cluster_id FROM hosts WHERE id = ?")
+    let cluster: Uuid = crate::db::query_scalar("SELECT cluster_id FROM hosts WHERE id = ?")
         .bind(parent.host_id)
         .fetch_one(&mut *tx)
         .await?;
     let sid = Uuid::new_v4();
     let network = Uuid::new_v4();
     let compact = sid.simple().to_string();
-    sqlx::query("INSERT INTO networks (id, cluster_id, name, backend, bridge) VALUES (?, ?, ?, 'cloud-isolated', ?)").bind(network).bind(cluster).bind(format!("mc-{sid}")).bind(format!("mc{}",&compact[..12])).execute(&mut *tx).await?;
-    sqlx::query("INSERT INTO cloud_subnets (id,vpc_id,network_id,name,cidr) VALUES (?,?,?,?,?)")
+    crate::db::query("INSERT INTO networks (id, cluster_id, name, backend, bridge) VALUES (?, ?, ?, 'cloud-isolated', ?)").bind(network).bind(cluster).bind(format!("mc-{sid}")).bind(format!("mc{}",&compact[..12])).execute(&mut *tx).await?;
+    crate::db::query("INSERT INTO cloud_subnets (id,vpc_id,network_id,name,cidr) VALUES (?,?,?,?,?)")
         .bind(sid)
         .bind(id)
         .bind(network)
@@ -230,7 +230,7 @@ pub async fn create_subnet(
     // republishes pending jobs through the existing worker after a bus outage.
     let task = Uuid::new_v4();
     let payload = json!({"subnet_id":sid,"host_id":parent.host_id});
-    sqlx::query("INSERT INTO tasks (id,operation,status,resource_type,resource_id,host_id,payload) VALUES (?, 'cloud.subnet.provision', 'pending', 'cloud_subnet', ?, ?, ?)").bind(task).bind(sid).bind(parent.host_id).bind(&payload).execute(&mut *tx).await?;
+    crate::db::query("INSERT INTO tasks (id,operation,status,resource_type,resource_id,host_id,payload) VALUES (?, 'cloud.subnet.provision', 'pending', 'cloud_subnet', ?, ?, ?)").bind(task).bind(sid).bind(parent.host_id).bind(&payload).execute(&mut *tx).await?;
     audit(&mut tx, &actor, "cloud.subnet.create", sid).await?;
     tx.commit().await?;
     // Failure is recoverable: the committed outbox row remains pending.
@@ -257,7 +257,7 @@ pub async fn list_subnets(
     let mut conn = state.pool.acquire().await?;
     vpc(&mut conn, &actor, id, false).await?;
     Ok(Json(
-        sqlx::query_as(&format!(
+        crate::db::query_as(&format!(
             "{SUBNETS} WHERE vpc_id = ? ORDER BY name LIMIT 500"
         ))
         .bind(id)
@@ -284,7 +284,7 @@ pub async fn set_subnet_nat(
     if body.enabled && sub.status != "ready" {
         return Err(conflict("the subnet is not ready yet"));
     }
-    sqlx::query("UPDATE cloud_subnets SET nat_enabled = ? WHERE id = ?").bind(body.enabled).bind(id).execute(&mut *tx).await?;
+    crate::db::query("UPDATE cloud_subnets SET nat_enabled = ? WHERE id = ?").bind(body.enabled).bind(id).execute(&mut *tx).await?;
     audit(&mut tx, &actor, if body.enabled { "cloud.subnet.nat.enable" } else { "cloud.subnet.nat.disable" }, id).await?;
     tx.commit().await?;
     let (applied, error) = match crate::engine::natgw::push_host(&state.pool, parent.host_id).await {
@@ -312,12 +312,12 @@ pub(crate) fn subnet_delete_blocker(addresses: i64, ports: i64, groups: i64, ins
     (!parts.is_empty()).then(|| format!("the subnet still has {}; remove them first", parts.join(", ")))
 }
 
-async fn subnet_dependents(conn: &mut SqliteConnection, id: Uuid, network_id: Uuid, network_name: &str) -> Result<(i64, i64, i64, i64), ApiError> {
-    let addresses: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cloud_ip_allocations WHERE subnet_id = ?").bind(id).fetch_one(&mut *conn).await?;
-    let ports: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ports WHERE network_id = ?").bind(network_id).fetch_one(&mut *conn).await?;
-    let groups: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM cloud_instance_groups WHERE subnet_id = ?").bind(id).fetch_one(&mut *conn).await?;
+async fn subnet_dependents(conn: &mut DbConn, id: Uuid, network_id: Uuid, network_name: &str) -> Result<(i64, i64, i64, i64), ApiError> {
+    let addresses: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM cloud_ip_allocations WHERE subnet_id = ?").bind(id).fetch_one(&mut *conn).await?;
+    let ports: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM ports WHERE network_id = ?").bind(network_id).fetch_one(&mut *conn).await?;
+    let groups: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM cloud_instance_groups WHERE subnet_id = ?").bind(id).fetch_one(&mut *conn).await?;
     // Instances whose spec names the libvirt network (created on the subnet directly or through a group).
-    let instances: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM vms WHERE spec_json LIKE ?")
+    let instances: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM vms WHERE spec_json LIKE ?")
         .bind(format!("%\"network\":\"{network_name}\"%"))
         .fetch_one(&mut *conn)
         .await?;
@@ -333,7 +333,7 @@ pub async fn delete_subnet(
 ) -> Result<Json<Value>, ApiError> {
     let mut conn = state.pool.acquire().await?;
     let (sub, parent) = subnet_vpc(&mut conn, &actor, id, true).await?;
-    let (network_name, agent_addr): (String, String) = sqlx::query_as(
+    let (network_name, agent_addr): (String, String) = crate::db::query_as(
         "SELECT n.name, h.agent_grpc_addr FROM networks n JOIN hosts h ON h.id = ? WHERE n.id = ?",
     )
     .bind(parent.host_id)
@@ -360,8 +360,8 @@ pub async fn delete_subnet(
     if let Some(why) = subnet_delete_blocker(a, p, g, i) {
         return Err(conflict(why));
     }
-    sqlx::query("DELETE FROM cloud_subnets WHERE id = ?").bind(id).execute(&mut *tx).await?;
-    sqlx::query("DELETE FROM networks WHERE id = ?").bind(sub.network_id).execute(&mut *tx).await?;
+    crate::db::query("DELETE FROM cloud_subnets WHERE id = ?").bind(id).execute(&mut *tx).await?;
+    crate::db::query("DELETE FROM networks WHERE id = ?").bind(sub.network_id).execute(&mut *tx).await?;
     audit(&mut tx, &actor, "cloud.subnet.delete", id).await?;
     tx.commit().await?;
     Ok(Json(json!({"deleted":true})))
@@ -387,17 +387,17 @@ pub async fn retry_subnet(
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let (sub, parent) = subnet_vpc(&mut tx, &actor, id, true).await?;
-    let pending: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'cloud.subnet.provision' AND status IN ('pending','running')").bind(id).fetch_one(&mut *tx).await?;
+    let pending: i64 = crate::db::query_scalar("SELECT COUNT(*) FROM tasks WHERE resource_id = ? AND operation = 'cloud.subnet.provision' AND status IN ('pending','running')").bind(id).fetch_one(&mut *tx).await?;
     if pending > 0 || sub.status == "ready" {
         return Err(conflict("subnet is ready or provisioning"));
     }
-    sqlx::query("UPDATE cloud_subnets SET status = 'pending', last_error = '' WHERE id = ?")
+    crate::db::query("UPDATE cloud_subnets SET status = 'pending', last_error = '' WHERE id = ?")
         .bind(id)
         .execute(&mut *tx)
         .await?;
     let tid = Uuid::new_v4();
     let payload = json!({"subnet_id":id,"host_id":parent.host_id});
-    sqlx::query("INSERT INTO tasks (id,operation,status,resource_type,resource_id,host_id,payload) VALUES (?, 'cloud.subnet.provision','pending','cloud_subnet',?,?,?)").bind(tid).bind(id).bind(parent.host_id).bind(&payload).execute(&mut *tx).await?;
+    crate::db::query("INSERT INTO tasks (id,operation,status,resource_type,resource_id,host_id,payload) VALUES (?, 'cloud.subnet.provision','pending','cloud_subnet',?,?,?)").bind(tid).bind(id).bind(parent.host_id).bind(&payload).execute(&mut *tx).await?;
     audit(&mut tx, &actor, "cloud.subnet.retry", id).await?;
     tx.commit().await?;
     Ok(Json(json!({"task_id":tid,"status":"pending"})))
@@ -426,13 +426,13 @@ pub async fn allocate_address(
     }
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     let (sub, _) = subnet_vpc(&mut tx, &actor, id, true).await?;
-    let prior = sqlx::query_as("SELECT id,subnet_id,request_key,address FROM cloud_ip_allocations WHERE subnet_id = ? AND request_key = ?").bind(id).bind(&body.request_key).fetch_optional(&mut *tx).await?;
+    let prior = crate::db::query_as("SELECT id,subnet_id,request_key,address FROM cloud_ip_allocations WHERE subnet_id = ? AND request_key = ?").bind(id).bind(&body.request_key).fetch_optional(&mut *tx).await?;
     if let Some(prior) = prior {
         return Ok(Json(prior));
     }
     let cidr: CloudCidr = sub.cidr.parse().map_err(invalid)?;
     let used: Vec<String> =
-        sqlx::query_scalar("SELECT address FROM cloud_ip_allocations WHERE subnet_id = ?")
+        crate::db::query_scalar("SELECT address FROM cloud_ip_allocations WHERE subnet_id = ?")
             .bind(id)
             .fetch_all(&mut *tx)
             .await?;
@@ -447,7 +447,7 @@ pub async fn allocate_address(
         request_key: body.request_key,
         address,
     };
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO cloud_ip_allocations (id,subnet_id,request_key,address) VALUES (?,?,?,?)",
     )
     .bind(row.id)
@@ -485,13 +485,13 @@ pub(crate) fn pick_address(
 
 /// Reserve an address of `subnet_id` for a network interface (idempotent per `request_key`).
 pub(crate) async fn reserve_address(
-    pool: &sqlx::SqlitePool,
+    pool: &crate::db::DbPool,
     subnet_id: Uuid,
     request_key: &str,
     wanted: Option<&str>,
 ) -> Result<String, ApiError> {
     let mut tx = pool.begin_with("BEGIN IMMEDIATE").await?;
-    let prior: Option<String> = sqlx::query_scalar(
+    let prior: Option<String> = crate::db::query_scalar(
         "SELECT address FROM cloud_ip_allocations WHERE subnet_id = ? AND request_key = ?",
     )
     .bind(subnet_id)
@@ -501,20 +501,20 @@ pub(crate) async fn reserve_address(
     if let Some(a) = prior {
         return Ok(a);
     }
-    let cidr: String = sqlx::query_scalar("SELECT cidr FROM cloud_subnets WHERE id = ?")
+    let cidr: String = crate::db::query_scalar("SELECT cidr FROM cloud_subnets WHERE id = ?")
         .bind(subnet_id)
         .fetch_one(&mut *tx)
         .await?;
     let cidr: CloudCidr = cidr.parse().map_err(invalid)?;
     let used: std::collections::HashSet<String> =
-        sqlx::query_scalar("SELECT address FROM cloud_ip_allocations WHERE subnet_id = ?")
+        crate::db::query_scalar("SELECT address FROM cloud_ip_allocations WHERE subnet_id = ?")
             .bind(subnet_id)
             .fetch_all(&mut *tx)
             .await?
             .into_iter()
             .collect();
     let address = pick_address(&cidr, &used, wanted).map_err(conflict)?;
-    sqlx::query("INSERT INTO cloud_ip_allocations (id,subnet_id,request_key,address) VALUES (?,?,?,?)")
+    crate::db::query("INSERT INTO cloud_ip_allocations (id,subnet_id,request_key,address) VALUES (?,?,?,?)")
         .bind(Uuid::new_v4())
         .bind(subnet_id)
         .bind(request_key)
@@ -560,7 +560,7 @@ pub async fn list_addresses(
 ) -> Result<Json<Vec<Address>>, ApiError> {
     let mut conn = state.pool.acquire().await?;
     subnet_vpc(&mut conn, &actor, id, false).await?;
-    Ok(Json(sqlx::query_as("SELECT id,subnet_id,request_key,address FROM cloud_ip_allocations WHERE subnet_id = ? ORDER BY address LIMIT 500").bind(id).fetch_all(&mut *conn).await?))
+    Ok(Json(crate::db::query_as("SELECT id,subnet_id,request_key,address FROM cloud_ip_allocations WHERE subnet_id = ? ORDER BY address LIMIT 500").bind(id).fetch_all(&mut *conn).await?))
 }
 pub async fn release_address(
     State(state): State<AppState>,
@@ -569,7 +569,7 @@ pub async fn release_address(
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     subnet_vpc(&mut tx, &actor, id, true).await?;
-    let n = sqlx::query("DELETE FROM cloud_ip_allocations WHERE subnet_id = ? AND id = ?")
+    let n = crate::db::query("DELETE FROM cloud_ip_allocations WHERE subnet_id = ? AND id = ?")
         .bind(id)
         .bind(allocation)
         .execute(&mut *tx)
@@ -614,7 +614,7 @@ pub async fn create_peering(
     {
         return Err(invalid("distinct VPCs with non-overlapping CIDRs required"));
     }
-    let exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM cloud_peerings WHERE (requester_id=? AND accepter_id=?) OR (requester_id=? AND accepter_id=?))").bind(id).bind(b.id).bind(b.id).bind(id).fetch_one(&mut *tx).await?;
+    let exists: bool = crate::db::query_scalar("SELECT EXISTS(SELECT 1 FROM cloud_peerings WHERE (requester_id=? AND accepter_id=?) OR (requester_id=? AND accepter_id=?))").bind(id).bind(b.id).bind(b.id).bind(id).fetch_one(&mut *tx).await?;
     if exists {
         return Err(conflict("peering already exists"));
     }
@@ -624,7 +624,7 @@ pub async fn create_peering(
         accepter_id: b.id,
         status: "pending_acceptance".into(),
     };
-    sqlx::query("INSERT INTO cloud_peerings (id,requester_id,accepter_id) VALUES (?,?,?)")
+    crate::db::query("INSERT INTO cloud_peerings (id,requester_id,accepter_id) VALUES (?,?,?)")
         .bind(row.id)
         .bind(id)
         .bind(b.id)
@@ -640,12 +640,12 @@ pub async fn accept_peering(
     Path(id): Path<Uuid>,
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
-    let accepter: Uuid = sqlx::query_scalar("SELECT accepter_id FROM cloud_peerings WHERE id=?")
+    let accepter: Uuid = crate::db::query_scalar("SELECT accepter_id FROM cloud_peerings WHERE id=?")
         .bind(id)
         .fetch_one(&mut *tx)
         .await?;
     vpc(&mut tx, &actor, accepter, true).await?;
-    sqlx::query("UPDATE cloud_peerings SET status='planned' WHERE id=?")
+    crate::db::query("UPDATE cloud_peerings SET status='planned' WHERE id=?")
         .bind(id)
         .execute(&mut *tx)
         .await?;
@@ -660,7 +660,7 @@ pub async fn list_peerings(
 ) -> Result<Json<Vec<Peering>>, ApiError> {
     let mut conn = state.pool.acquire().await?;
     vpc(&mut conn, &actor, id, false).await?;
-    Ok(Json(sqlx::query_as("SELECT id,requester_id,accepter_id,status FROM cloud_peerings WHERE requester_id=? OR accepter_id=? LIMIT 500").bind(id).bind(id).fetch_all(&mut *conn).await?))
+    Ok(Json(crate::db::query_as("SELECT id,requester_id,accepter_id,status FROM cloud_peerings WHERE requester_id=? OR accepter_id=? LIMIT 500").bind(id).bind(id).fetch_all(&mut *conn).await?))
 }
 
 #[derive(Deserialize, Serialize, sqlx::FromRow)]
@@ -699,13 +699,13 @@ pub async fn create_route(
             let pid = body
                 .target_id
                 .ok_or_else(|| invalid("peering target_id required"))?;
-            let peer:Peering=sqlx::query_as("SELECT id,requester_id,accepter_id,status FROM cloud_peerings WHERE id=? AND (requester_id=? OR accepter_id=?) AND status='planned'").bind(pid).bind(id).bind(id).fetch_optional(&mut *tx).await?.ok_or_else(||invalid("accepted peering for this VPC required"))?;
+            let peer:Peering=crate::db::query_as("SELECT id,requester_id,accepter_id,status FROM cloud_peerings WHERE id=? AND (requester_id=? OR accepter_id=?) AND status='planned'").bind(pid).bind(id).bind(id).fetch_optional(&mut *tx).await?.ok_or_else(||invalid("accepted peering for this VPC required"))?;
             let other = if peer.requester_id == id {
                 peer.accepter_id
             } else {
                 peer.requester_id
             };
-            let cidr: String = sqlx::query_scalar("SELECT cidr FROM cloud_vpcs WHERE id=?")
+            let cidr: String = crate::db::query_scalar("SELECT cidr FROM cloud_vpcs WHERE id=?")
                 .bind(other)
                 .fetch_one(&mut *tx)
                 .await?;
@@ -723,7 +723,7 @@ pub async fn create_route(
             ))
         }
     }
-    let exists: bool = sqlx::query_scalar(
+    let exists: bool = crate::db::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM cloud_routes WHERE vpc_id=? AND destination=?)",
     )
     .bind(id)
@@ -734,7 +734,7 @@ pub async fn create_route(
         return Err(conflict("route destination already exists"));
     }
     let rid = Uuid::new_v4();
-    sqlx::query(
+    crate::db::query(
         "INSERT INTO cloud_routes (id,vpc_id,destination,target,target_id) VALUES (?,?,?,?,?)",
     )
     .bind(rid)
@@ -757,7 +757,7 @@ pub async fn list_routes(
 ) -> Result<Json<Vec<Route>>, ApiError> {
     let mut conn = state.pool.acquire().await?;
     vpc(&mut conn, &actor, id, false).await?;
-    Ok(Json(sqlx::query_as("SELECT id,vpc_id,destination,target,target_id FROM cloud_routes WHERE vpc_id=? ORDER BY destination LIMIT 500").bind(id).fetch_all(&mut *conn).await?))
+    Ok(Json(crate::db::query_as("SELECT id,vpc_id,destination,target,target_id FROM cloud_routes WHERE vpc_id=? ORDER BY destination LIMIT 500").bind(id).fetch_all(&mut *conn).await?))
 }
 pub async fn delete_route(
     State(state): State<AppState>,
@@ -766,7 +766,7 @@ pub async fn delete_route(
 ) -> Result<Json<Value>, ApiError> {
     let mut tx = state.pool.begin_with("BEGIN IMMEDIATE").await?;
     vpc(&mut tx, &actor, id, true).await?;
-    if sqlx::query("DELETE FROM cloud_routes WHERE id=? AND vpc_id=?")
+    if crate::db::query("DELETE FROM cloud_routes WHERE id=? AND vpc_id=?")
         .bind(rid)
         .bind(id)
         .execute(&mut *tx)

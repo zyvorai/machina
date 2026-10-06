@@ -453,7 +453,7 @@ async fn resolve_agent(state: &AppState, target_id: &str) -> anyhow::Result<Stri
     }
     let host_id = Uuid::parse_str(target_id)?;
     let addr: String =
-        sqlx::query_scalar("SELECT COALESCE(agent_grpc_addr, '') FROM hosts WHERE id = ?")
+        crate::db::query_scalar("SELECT COALESCE(agent_grpc_addr, '') FROM hosts WHERE id = ?")
             .bind(host_id)
             .fetch_one(&state.pool)
             .await?;
@@ -478,7 +478,7 @@ pub async fn list_policies(
     // DB errors instead of swallowing them into an empty 200.
     require_operator(&actor)?;
     let rows: Vec<(Uuid, String, String)> =
-        sqlx::query_as("SELECT id, name, spec_yaml FROM firewall_policies ORDER BY name")
+        crate::db::query_as("SELECT id, name, spec_yaml FROM firewall_policies ORDER BY name")
             .fetch_all(&state.pool)
             .await?;
     Ok(Json(
@@ -495,7 +495,7 @@ pub async fn create_policy(
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_operator(&actor)?;
     let id = Uuid::new_v4();
-    sqlx::query("INSERT INTO firewall_policies (id, name, spec_yaml) VALUES (?, ?, ?)")
+    crate::db::query("INSERT INTO firewall_policies (id, name, spec_yaml) VALUES (?, ?, ?)")
         .bind(id)
         .bind(&body.name)
         .bind(&body.spec_yaml)
