@@ -14,6 +14,16 @@ eBPF datapath (`machina-bpfd`) and a React web UI. The public site with the same
 | Preparing a customer pilot | [CUSTOMER_SITE_READINESS.md](CUSTOMER_SITE_READINESS.md), [PRODUCTION_READINESS.md](PRODUCTION_READINESS.md) |
 | A new engineer | [ENGINEERING_ONBOARDING.md](ENGINEERING_ONBOARDING.md), then [../CLAUDE.md](../CLAUDE.md) for architecture and conventions |
 
+## Learn and decide
+
+| You want to… | Read |
+|----------|------|
+| Try it hands-on | [tutorials/](tutorials/README.md): first cloud, EC2 in ten minutes, scale and survive |
+| Look up one Fleet Cloud feature | [guides/](guides/README.md) |
+| Get tasks done quickly | [users/cookbook.md](users/cookbook.md) |
+| Decide whether to adopt it | [buyers/why-machina.md](buyers/why-machina.md), [alternatives](buyers/machina-vs-alternatives.md), [security](buyers/security-and-compliance.md), [30-day evaluation](buyers/evaluation-guide.md) |
+| Check what is proven | [claims.md](claims.md) |
+
 ## Operate
 
 | Topic | Document |

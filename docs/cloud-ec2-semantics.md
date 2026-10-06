@@ -15,8 +15,7 @@ API (`/api/v1/...`) and the Fleet Cloud pages; the EC2-compatible Query endpoint
 **Verified on a real host.** Security-group enforcement (allow and deny on live packets, status through a `machina-bpfd`
 restart), run-instances, instance-type change, volume attach with live I/O limits and delete-on-termination, pinned DHCP
 addresses, alarm-driven group scaling, group and template delete, private-image launch checks, the EC2 endpoint through boto3,
-and the user-data path with a cirros guest. **Written and unit-tested but not yet run live:** Elastic IPs, the NAT gateway,
-the metadata service, project-scoped keys, subnet delete and load balancer health checks.
+and the user-data path with a cirros guest. **Also verified live:** the NAT gateway, the metadata service, project-scoped keys and subnet delete. **Unit-tested, live run not clean yet:** Elastic IPs (passed once, a rerun failed at associate) and load balancer health checks (a live run found and fixed a save bug; the stop-and-recover flip is unconfirmed). See [the claims ledger](claims.md).
 
 ## Tags and ids
 - `GET|PUT|DELETE /api/v1/tags/{resource_type}/{id}` stores key/value tags (≤ 50 per resource, keys ≤ 128, values ≤ 256).

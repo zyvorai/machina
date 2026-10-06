@@ -2,6 +2,7 @@
 
 Hands-on, copy-paste, each ends with what you should see and how to clean up. Resources are prefixed `tut-`.
 
+01. [Your first private cloud](01-first-private-cloud.md): install, first VM, browser console.
 02. [EC2 in ten minutes](02-ec2-in-ten-minutes.md): launch, tag, enforce a firewall, add a disk, script it with boto3.
 03. [Scale and survive](03-scale-and-survive.md): launch template, group, scaling alarm, load balancer health checks.
 
