@@ -111,7 +111,7 @@ The **web UI** proxies all `/api/...` and `/ws/...` requests to `machina-daemon`
 
 - **`api/`** — Axum route handlers; one file per feature area (e.g. `api/vms.rs`, `api/fleet.rs`, `api/ai.rs`). All routes are assembled in `api/mod.rs`.
 - **`engine/`** — Background engine modules: `ha.rs` (HA failover), `drs.rs` (distributed resource scheduling), `reconcile.rs` (desired-state reconciliation), `scheduler.rs`, `webhook_worker.rs`. The AI sub-engine lives in `engine/ai/` with dozens of specialized modules (`llm.rs`, `agents.rs`, `actions.rs`, `providers.rs`, etc.).
-- **`db/`** — database layer for both backends (SQLite default, PostgreSQL build): `Db`/`DbPool` aliases, `query*` wrappers, `dialect.rs` (SQL rewriting for PostgreSQL), `begin_write`, `testing.rs`, migrations (`controller/migrations/` and `controller/migrations_pg/`), bootstrap. See "Database backends" below.
+- **`db/`** — database layer for both backends (SQLite default, PostgreSQL build): `Db`/`DbPool` aliases, `query*` wrappers, `dialect.rs` (SQL rewriting for PostgreSQL), `begin_write`, `testing.rs`, migrations (`controller/migrations/` and `controller/migrations_pg/`), bootstrap. See "Database backends" below. `scripts/db/machina-db.sh` (`machinactl db ...`) sets up, inspects and backs up the database (managed Postgres pod, distribution packages, external server); test it with `--sandbox DIR`, never with env vars under sudo.
 - **`tasks/`** — Async task bus abstraction: `InMemoryTaskBus` + optional `NatsTaskBus`; `worker.rs` processes tasks; `nats_subscriber.rs` bridges NATS → local bus.
 - **`state.rs`** — `AppState` holds config, DB pool, task bus, and agent client.
 - **`agent_client.rs`** — gRPC client to `machina-agent`.

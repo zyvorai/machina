@@ -29,8 +29,12 @@ TEXT_IDS = {
     "clusters.oidc_client_id", "controller_leadership.holder_id", "ec2_access_keys.access_key_id", "resource_tags.resource_id",
     "ai_models.model_id", "soc_forwarder_cursors.last_event_id", "console_sessions.audit_id",
     "vm_atlas_volumes.volume_id", "vm_atlas_volumes.backend_native_id", "volume_snapshots.atlas_snapshot_id", "volumes.atlas_volume_id",
+    "security_group_rules.remote_sg_id",
 }
 TEXT_ID_PREFIXES = ("ai_",)
+# Declared as a reference to an id column, but the controller stores the *hex text* of the id there (never the 16-byte value), so
+# in PostgreSQL the column is TEXT with no foreign key (a TEXT column cannot reference a uuid one).
+HEX_TEXT_REFS = {("security_group_rules", "remote_sg_id")}
 # Tables whose queries break ties with SQLite's `rowid` ("the row inserted later"); PostgreSQL gets an explicit identity column
 # and db::dialect rewrites `rowid` to `seq`.
 SEQ_TABLES = {"tasks", "vm_restore_points", "ha_events"}
@@ -129,7 +133,7 @@ def uuid_columns(parsed):
                 if typ == "BLOB" or "randomblob(16)" in d or re.search(r"CHECK\s*\(\s*length\(\s*\"?%s\"?\s*\)\s*=\s*16\s*\)" % col, d, re.I):
                     uuid.add((t, col))
                 r = re.search(REF, d, re.I)
-                if r:
+                if r and (t, col) not in HEX_TEXT_REFS:
                     parent[find((t, col))] = find((r.group(1), r.group(2)))
             f = re.match(r"FOREIGN KEY\s*\(\s*\"?(\w+)\"?\s*\)\s*" + REF, d, re.I)
             if f:
@@ -153,7 +157,8 @@ def column(name, d, uuid, fks, review):
         typ = "BIGINT"
     ref = re.search(r"\s*" + REF_FULL, rest, re.I)
     if ref:
-        fks.append((name, col, ref.group(0).strip()))
+        if (name, col) not in HEX_TEXT_REFS:
+            fks.append((name, col, ref.group(0).strip()))
         rest = rest.replace(ref.group(0), "")
     id_like = col == "id" or col.endswith("_id")
     if typ == "TEXT" and id_like and "%s.%s" % (name, col) not in TEXT_IDS and not name.startswith(TEXT_ID_PREFIXES) and (name, col) not in uuid:

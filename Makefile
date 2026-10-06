@@ -17,6 +17,10 @@ build: ## Build in debug mode
 release: ## Build in release mode
 	$(CARGO) build --workspace --release $(CARGO_FLAGS)
 
+release-pg: ## Build the controller's PostgreSQL build to target/release/machina-controller-pg (Linux host)
+	$(CARGO) build --release -p machina-controller --no-default-features --features postgres --target-dir target/pg $(CARGO_FLAGS)
+	install -Dm755 target/pg/release/machina-controller target/release/machina-controller-pg
+
 debug: build ## Alias for build
 
 clean: web-clean ## Remove all build artifacts
@@ -390,6 +394,8 @@ install: ## Install binaries, web UI, config, systemd unit, and mkosi workspace 
 	@if [ "$(INSTALL_PLATFORM)" = "1" ]; then \
 		install -Dm755 target/release/machina-controller $(DESTDIR)$(BINDIR)/machina-controller; \
 		install -Dm755 target/release/machina-agent $(DESTDIR)$(BINDIR)/machina-agent; \
+		if [ -f target/release/machina-controller-pg ]; then install -Dm755 target/release/machina-controller-pg $(DESTDIR)$(BINDIR)/machina-controller-pg; fi; \
+		install -Dm755 scripts/db/machina-db.sh $(DESTDIR)$(BINDIR)/machina-db; \
 		install -Dm644 contrib/machina-controller.service $(DESTDIR)$(UNITDIR)/machina-controller.service; \
 		install -Dm644 contrib/machina-agent.service $(DESTDIR)$(UNITDIR)/machina-agent.service; \
 		install -Dm644 contrib/machina-platform.env $(DESTDIR)/etc/default/machina-platform; \

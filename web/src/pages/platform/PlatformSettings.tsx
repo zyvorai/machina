@@ -33,6 +33,7 @@ function SettingsBlock({
   )
 }
 import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
+import DatabaseStatus from '../../components/platform/DatabaseStatus'
 import {
   getControllerBase,
   getDirectControllerBase,
@@ -132,6 +133,10 @@ export default function PlatformSettings({ embedded }: { embedded?: boolean }) {
       actions={embedded ? undefined : <PlatformRefreshButton onClick={() => void load()} />}
       contentClassName="space-y-4"
     >
+      <SettingsBlock embedded={embedded} title="Database" subtitle="Where the controller keeps its state.">
+        <DatabaseStatus />
+      </SettingsBlock>
+
       <SettingsBlock embedded={embedded} title="Controller connection" subtitle="HTTP API base and direct WebSocket console URL.">
         <p className="text-xs text-[var(--text-muted)]">
           Daemon proxy: <code className="text-[var(--text-primary)]">{PLATFORM_CONTROLLER_PROXY}</code>

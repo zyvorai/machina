@@ -216,9 +216,11 @@ No — it uses embedded SQLite by default (`DATABASE_URL=
 sqlite:///var/lib/machina/controller.db`), created and migrated on first
 start, which is the right choice for 1 or 2 machines. For hundreds of
 machines or several controllers on different hosts there is a PostgreSQL
-build of the controller (`--no-default-features --features postgres`); it
-passes the whole unit-test suite against PostgreSQL 16 but has not run a live
-fleet yet, and the installer choice is planned. See
+build of the controller; `machinactl db setup pod|package|external` sets it
+up (a managed Postgres in a Podman container, distribution packages, or your
+own server). It passes the whole test suite against PostgreSQL 16 and has run
+live in isolation (two controllers on one database, recovery after a restart),
+but no site has run a real fleet on it yet. See
 [the database guide](../guides/database.md). NATS (`NATS_URL`) is optional,
 for fanning tasks out across several controller instances.
 

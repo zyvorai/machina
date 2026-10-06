@@ -21,6 +21,9 @@ pub async fn health(State(state): State<AppState>) -> Json<serde_json::Value> {
         "controller_id": state.config.controller_id,
         "leader": state.leader.is_leader(),
         "database": if db_ok { "ok" } else { "unavailable" },
+        // which backend this controller was built for, and its connection pool (so an operator can see the choice they made)
+        "database_backend": crate::db::BACKEND,
+        "database_pool": { "size": state.pool.size(), "idle": state.pool.num_idle() },
     }))
 }
 
