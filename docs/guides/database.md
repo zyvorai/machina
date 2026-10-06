@@ -9,21 +9,40 @@ controller is built:
   and sites that already run and back up a PostgreSQL service. SQLite has a single writer and one file; PostgreSQL has neither
   limit.
 
-**Status (be clear about what exists).** The PostgreSQL build compiles, and the controller's whole unit-test suite
-passes on it against a real PostgreSQL 16 ([claims ledger](../claims.md), C24). It has **not** yet been run as a live controller
-managing hosts, and the installer choice and managed Postgres pod described under *Planned* do not exist yet. Until they do,
-SQLite is the supported way to run Machina.
+**Status (what has actually been run).** The PostgreSQL build passes the controller's whole test suite against PostgreSQL 16, and an
+isolated PostgreSQL-backed controller was run live on the lab host: login, security groups and rules, tags, key pairs, alarms,
+the EC2 endpoint with boto3, 500 machines listed in under a second, **two controllers on one database** (one leader; killing it
+hands over within the lease and raises the epoch), and recovery after the PostgreSQL server restarted ([claims ledger](../claims.md),
+C24). The managed Postgres pod (`machina-db setup pod`) was set up, queried and backed up live. **Not done yet:** a PostgreSQL
+controller managing real hosts, `setup package` (written, never run), the one-command installer flag end to end, and the
+SQLite-to-PostgreSQL data copy. Until a site has run on it, SQLite remains the default and the safe choice.
 
 ## Configure
-**SQLite (today, nothing to do).** `DATABASE_URL` defaults to `sqlite:///var/lib/machina/controller.db`. The file is created and
-migrated on first start.
+**SQLite (the default, nothing to do).** `DATABASE_URL` is `sqlite:///var/lib/machina/controller.db`; the file is created and migrated on
+first start.
 
-**PostgreSQL (development and evaluation of the build).** Build the controller with the `postgres` feature on a Linux host
-and give it a `postgres://` URL. The database and role must exist; the controller creates the tables itself.
+**PostgreSQL, with the helper.** `machina-db` (also `machinactl db ...`) sets the database up, writes `DATABASE_URL` into
+`/etc/default/machina-platform`, points the controller's systemd unit at its PostgreSQL build (`machina-controller-pg`) and restarts it.
+It never moves data: a PostgreSQL controller starts empty.
+
+| Command | What it does |
+|---|---|
+| `machinactl db setup pod [--port 5432]` | A managed PostgreSQL 16 in a Podman container (systemd quadlet `machina-postgres`), data in `/var/lib/machina/postgres`, generated password in `/etc/machina/postgres.password`, bound to `127.0.0.1`, daily dumps to `/var/backups/machina/db`. Needs `podman`. |
+| `machinactl db setup package` | PostgreSQL from `apt` or `dnf` (creates the `machina` role and database), same daily dumps. |
+| `machinactl db setup external --url postgres://user:pw@host:5432/db` | Your own server (RDS, Patroni, ...). The login is checked with `psql` before anything is changed. |
+| `machinactl db setup sqlite` | Back to the embedded default. |
+| `machinactl db status` | Backend, reachability, login, size, migrations applied, what the controller reports. |
+| `machinactl db backup [--out DIR] [--keep DAYS]` | `pg_dump` (PostgreSQL) or an online copy (SQLite, needs `sqlite3`). |
+| `machinactl db restore FILE --yes` | `pg_restore` a dump (stops the controller while it runs). |
+
+At install time the same choice is one flag: `scripts/install-platform.sh --database pod|package|external|sqlite [--database-url URL]`.
+
+**PostgreSQL, by hand (development).** Build the controller with the `postgres` feature on a Linux host and give it a `postgres://` URL.
+The database and role must exist; the controller creates the tables itself.
 
 ```bash
-cargo build -p machina-controller --release --no-default-features --features postgres
-DATABASE_URL=postgres://machina:PASSWORD@db.internal:5432/machina ./target/release/machina-controller
+make release-pg                                   # target/release/machina-controller-pg
+DATABASE_URL=postgres://machina:PASSWORD@db.internal:5432/machina ./target/release/machina-controller-pg
 ```
 
 | Setting | Meaning |
@@ -31,10 +50,9 @@ DATABASE_URL=postgres://machina:PASSWORD@db.internal:5432/machina ./target/relea
 | `DATABASE_URL` | `sqlite://...` for the default build, `postgres://user:password@host:port/db` for the PostgreSQL build. A build refuses a URL for the other backend and says which binary to run. Passwords are never written to logs. |
 | `MACHINA_DB_MAX_CONNECTIONS` | PostgreSQL connection pool size, default 20. (SQLite stays at 4 on purpose: it has one writer.) |
 
-**Planned, not built yet:** an installer choice (`--database sqlite|postgres-pod|postgres-package|postgres-external`), a
-Podman-managed Postgres with a generated password and daily dumps, `machinactl db status|backup|switch|migrate-data`, and a
-tool to copy an existing SQLite site into PostgreSQL. These are tracked in the database plan; this page will describe them when
-they ship.
+**Trying `machina-db` safely.** Put `--sandbox DIR` first (`sudo machina-db --sandbox /var/tmp/zz setup pod --port 15440`): every file lives
+under `DIR`, the unit and container are named `zz-machina-postgres`, and the controller is never touched. Environment-variable
+overrides do not survive `sudo`, so do not rely on them.
 
 ## Use
 Nothing changes for operators or API clients: the REST API, the web UI and `machinactl` behave the same on both backends. The
@@ -58,12 +76,13 @@ Each test clones a migrated template database, so the PostgreSQL suite runs in a
 a Linux host, not on macOS.
 
 ## Limits
-- PostgreSQL has not run a live fleet yet; do not choose it for production until the live proof in the claims ledger exists.
-- Switching an existing site from SQLite to PostgreSQL needs the data-copy tool, which is not built. Today a new PostgreSQL
-  controller starts empty.
+- No site has run on PostgreSQL yet. Do not choose it for production until the live proof in the claims ledger covers real hosts.
+- Switching an existing site from SQLite to PostgreSQL needs the data-copy tool, which is not built. A new PostgreSQL controller starts empty.
+- `machina-db setup package` and the installer's `--database` flag have not been run end to end.
 - The PostgreSQL build uses a patched copy of the `sqlx-postgres` driver (`vendor/sqlx-postgres/MACHINA_PATCHES.md`) that reads
   integers of any width, JSON and timestamps stored as TEXT, as SQLite does. It is small, reviewed, and must be re-applied when
   sqlx is upgraded.
-- A few SQLite-only tests (hand-built tables, write-lock races) run on the SQLite build only.
+- A few SQLite-only tests (hand-built tables, write-lock races) run on the SQLite build only. Code paths no test exercises can still
+  hold a SQLite-ism: the live run found one (a security-group rule naming another group) that all 255 unit tests missed.
 - Backup and high availability differ: the Litestream pod in [controller-ha.md](../controller-ha.md) is for SQLite; PostgreSQL
-  uses `pg_dump`, WAL archiving and the database's own replication.
+  uses `pg_dump` (the daily timer), WAL archiving and the database's own replication.

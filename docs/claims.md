@@ -31,8 +31,9 @@ Before you quote a claim, check its row. When a live run changes a status, updat
 | C19 | Pilot-ready for a guided single-site Linux KVM deployment | verified | `docs/CUSTOMER_SITE_READINESS.md` (full lab test-all, UI sweep 130/130) |
 | C20 | Four Rust services, embedded SQLite, no SQL cluster or message queue required | verified | Architecture in `CLAUDE.md`/README; NATS is optional |
 | C23 | Disks from other hypervisors import and boot (VMDK, VDI, raw) | verified | Live: made from a cirros image, imported through `/api/v1/import/disk`, VMs created from them booted, got DHCP and answered ping; negative cases refused. VHD/`.img` fixed in #72, pending a live re-check |
-| C24 | The controller builds for PostgreSQL and its whole unit-test suite passes on PostgreSQL 16 | unit-tested | Lab host: `cargo test -p machina-controller --no-default-features --features postgres` (255 unit + 8 integration tests, the integration run includes a GET against every route; CI job `controller-postgres`); not yet run as a live controller |
-| C25 | Installer choice of database, managed Postgres pod, data move from SQLite | planned | Not built; see `docs/guides/database.md` |
+| C24 | The controller runs on PostgreSQL: whole test suite passes, and an isolated PostgreSQL-backed controller was run live | verified | Lab host: 256 unit + 8 integration tests on PostgreSQL 16 (CI job `controller-postgres`); live: API (security groups, tags, alarms, EC2 endpoint with boto3), 500 machines listed in 0.9 s, two controllers on one database elect one leader and hand over within the lease with the epoch rising, controller reconnects after PostgreSQL restarts. Not yet managing real hosts |
+| C25 | `machina-db`: managed Postgres pod, external server, SQLite switch, status and backup | verified | Lab host in a sandbox: pod set up, ready, queried and dumped; external and SQLite paths and status/backup against a local server. `setup package`, the installer `--database` flag end to end, and `restore` are not yet run |
+| C26 | Copying an existing SQLite site into PostgreSQL | planned | Not built |
 | C21 | Multi-host HA failover under real host loss | planned | Needs a customer host-loss drill (`CUSTOMER_SITE_READINESS.md`) |
 | C22 | Cross-host VPC, IGW/route-table datapath, real Rivora load balancer | planned | Not built; see `docs/cloud-ec2-semantics.md` |
 

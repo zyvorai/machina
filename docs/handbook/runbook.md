@@ -45,8 +45,10 @@ sudo journalctl -u machina-daemon -f
 - VMs: **Backups** in the UI, `sudo ./machinactl backup now`, or `POST /api/v1/backups`. Verify with
   `POST /api/v1/backups/{id}/verify`. Nightly: `sudo ./machinactl backup enable`.
 - Restore: follow the README in `/var/lib/machina/backups/<timestamp>/`, or restore from VM detail.
-- Controller: `sqlite3 /var/lib/machina/controller.db ".backup '/var/backups/controller.db'"` plus
-  `/etc/default/machina-platform`.
+- Controller database (either backend): `sudo machinactl db backup` (an online SQLite copy, or a `pg_dump` for PostgreSQL; the PostgreSQL
+  setups also install a daily timer, dumps in `/var/backups/machina/db`), plus `/etc/default/machina-platform`. Restore a PostgreSQL
+  dump with `sudo machinactl db restore FILE --yes`; for SQLite stop the controller and copy the file back. See
+  [the database guide](../guides/database.md).
 
 ## Sign-in
 
