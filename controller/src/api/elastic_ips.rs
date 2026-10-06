@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::api::ApiError;
 use crate::auth::{require_admin, require_operator, AuthUser};
-use crate::engine::eip::{in_cidr, next_free, push_host};
+use crate::engine::eip::{next_free, push_host};
 use crate::state::AppState;
 
 #[derive(Debug, Serialize, sqlx::FromRow)]

@@ -126,7 +126,7 @@ mod tests {
 
     #[test]
     fn addresses_keys_and_user_data_come_from_the_row() {
-        let spec = r#"{"spec":{"cloud_init":{"user":"ubuntu","ssh_pubkey":"ssh-ed25519 AAAA k","user_data":"#!/bin/sh\necho hi"}}}"#;
+        let spec = r##"{"spec":{"cloud_init":{"user":"ubuntu","ssh_pubkey":"ssh-ed25519 AAAA k","user_data":"#!/bin/sh\necho hi"}}}"##;
         let e = entry(&row(Some("192.168.122.5"), Some(r#"["192.168.122.5","10.0.0.9/24"]"#), Some(spec))).unwrap();
         assert_eq!(e["instance_id"], "i-0123456789abcdef0");
         assert_eq!(e["ips"], json!(["192.168.122.5", "10.0.0.9"]));
