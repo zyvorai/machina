@@ -16,10 +16,26 @@
 # `setup` writes DATABASE_URL into /etc/default/machina-platform and, for PostgreSQL, a systemd drop-in so the controller runs its
 # PostgreSQL build (machina-controller-pg). It never moves data: a PostgreSQL controller starts empty.
 #
-# For testing without touching a real install, every path and name can be overridden:
+# To try it without touching a real install, put --sandbox DIR first: every file, the unit/container name and the port live under
+# DIR (or carry a zz- prefix) and the controller is never touched. Prefer it over the environment overrides below, which
+# `sudo` usually drops, silently leaving the real paths in effect:
+#   sudo machina-db --sandbox /var/tmp/zz-db setup pod --port 15440
+# Environment overrides (for tests that run the script as the same user):
 #   MACHINA_PLATFORM_ENV, MACHINA_DB_DIR, MACHINA_DB_UNIT, MACHINA_DB_CONTAINER, MACHINA_DB_QUADLET_DIR, MACHINA_DB_DROPIN_DIR,
 #   MACHINA_DB_PW_FILE, MACHINA_DB_BACKUP_DIR, MACHINA_DB_NO_CONTROLLER=1 (do not touch the controller unit or restart it)
 set -euo pipefail
+
+SANDBOX=""
+if [[ "${1:-}" == "--sandbox" ]]; then
+  SANDBOX="${2:?--sandbox needs a directory}"
+  shift 2
+  mkdir -p "$SANDBOX"
+  SANDBOX="$(cd "$SANDBOX" && pwd)"
+  export MACHINA_PLATFORM_ENV="$SANDBOX/platform.env" MACHINA_DB_DIR="$SANDBOX/state" MACHINA_DB_PW_FILE="$SANDBOX/postgres.password"
+  export MACHINA_DB_UNIT="zz-machina-postgres" MACHINA_DB_CONTAINER="zz-machina-postgres" MACHINA_DB_BACKUP_DIR="$SANDBOX/backups"
+  export MACHINA_DB_DROPIN_DIR="$SANDBOX/dropin" MACHINA_DB_NO_CONTROLLER=1
+  mkdir -p "$MACHINA_DB_DIR"
+fi
 
 ENV_FILE="${MACHINA_PLATFORM_ENV:-/etc/default/machina-platform}"
 STATE_DIR="${MACHINA_DB_DIR:-/var/lib/machina}"
@@ -129,8 +145,11 @@ url_host() { sed -E 's#^[a-z]+://([^@]*@)?([^:/?]+).*#\2#' <<<"$1"; }
 url_port() { local p; p="$(sed -nE 's#^[a-z]+://([^@]*@)?[^:/?]+:([0-9]+).*#\2#p' <<<"$1")"; echo "${p:-5432}"; }
 
 # ---- setup -----------------------------------------------------------------------------------------------------------------------
+announce() { say "machina-db: ${SANDBOX:+SANDBOX $SANDBOX: }env file $ENV_FILE, data under $STATE_DIR"; }
+
 setup_sqlite() {
   need_root
+  announce
   set_env DATABASE_URL "$SQLITE_URL"
   remove_dropin
   restart_controller
@@ -139,6 +158,7 @@ setup_sqlite() {
 
 setup_pod() {
   need_root
+  announce
   local port=5432
   while [[ $# -gt 0 ]]; do
     case "$1" in --port) port="${2:?}"; shift 2 ;; *) die "unknown option for setup pod: $1" ;; esac
@@ -178,8 +198,10 @@ WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
   say "starting PostgreSQL (pulling $IMAGE the first time) ..."
-  systemctl start "$UNIT.service" || { journalctl -u "$UNIT.service" -n 20 --no-pager >&2 || true; die "the PostgreSQL container did not start"; }
-  wait_pg_pod || die "PostgreSQL did not become ready; see: journalctl -u $UNIT"
+  # `systemctl start` can report failure while the first image pull and database initialisation are still running; what counts is
+  # whether PostgreSQL answers
+  systemctl start "$UNIT.service" || warn "systemctl start reported a problem; waiting to see whether PostgreSQL comes up anyway"
+  wait_pg_pod || { journalctl -u "$UNIT.service" -n 20 --no-pager >&2 || true; die "PostgreSQL did not become ready; see: journalctl -u $UNIT"; }
   url="postgres://$DB_USER:$pw@127.0.0.1:$port/$DB_NAME"
   set_env DATABASE_URL "$url"
   write_dropin "$UNIT.service"
@@ -190,6 +212,8 @@ EOF
 
 setup_package() {
   need_root
+  announce
+  [[ -z "$SANDBOX" ]] || die "setup package installs system packages and cannot run in a sandbox"
   local pw url
   pw="$(ensure_pw)"
   if have apt-get; then
@@ -221,6 +245,7 @@ setup_package() {
 
 setup_external() {
   need_root
+  announce
   local url=""
   while [[ $# -gt 0 ]]; do
     case "$1" in --url) url="${2:?}"; shift 2 ;; *) die "unknown option for setup external: $1" ;; esac

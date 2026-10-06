@@ -714,3 +714,37 @@ async fn pin_dhcp(state: &AppState, network_id: Uuid, mac: &str, ip: &str, enabl
     .map(|_| ())
     .map_err(|e| format!("{e:#}"))
 }
+
+#[cfg(test)]
+mod rule_tests {
+    use super::*;
+    use crate::engine::test_support::test_state;
+
+    fn admin() -> AuthUser {
+        AuthUser { username: "admin".into(), role: "admin".into(), auth_source: None }
+    }
+
+    /// A rule whose peer is another security group stores that group's id as hex text. PostgreSQL once rejected the insert
+    /// (the column was a uuid there); the PostgreSQL run of this test is the regression check.
+    #[tokio::test]
+    async fn a_rule_can_name_another_group_as_its_peer() {
+        let (state, _rx) = test_state().await;
+        crate::db::ensure_bootstrap(&state.pool, "admin", "pw").await.unwrap();
+        let group = |name: &str| CreateSecurityGroupBody { name: name.into(), description: String::new(), project_id: None };
+        let a = create_security_group(State(state.clone()), Extension(admin()), Json(group("rule-a"))).await.unwrap().0;
+        let b = create_security_group(State(state.clone()), Extension(admin()), Json(group("rule-b"))).await.unwrap().0;
+        let body = CreateSecurityGroupRuleBody {
+            direction: "ingress".into(),
+            protocol: Some("tcp".into()),
+            port_min: Some(22),
+            port_max: Some(22),
+            remote_cidr: None,
+            remote_sg_id: Some(b.id.to_string()),
+            description: String::new(),
+        };
+        let rule = create_security_group_rule(State(state.clone()), Extension(admin()), Path(a.id), Json(body)).await.unwrap().0;
+        assert_eq!(rule.remote_sg_id.as_deref(), Some(b.id.simple().to_string().as_str()));
+        let stored: String = crate::db::query_scalar("SELECT remote_sg_id FROM security_group_rules WHERE id = ?").bind(rule.id).fetch_one(&state.pool).await.unwrap();
+        assert_eq!(stored, b.id.simple().to_string());
+    }
+}
