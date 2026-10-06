@@ -17,8 +17,9 @@ pub struct BlueprintRow {
     pub id: Uuid,
     pub name: String,
     pub description: String,
+    #[sqlx(try_from = "crate::db::JsonText")]
     pub actions: serde_json::Value,
-    pub vm_ids: sqlx::types::Json<Vec<Uuid>>,
+    pub vm_ids: crate::db::Json<Vec<Uuid>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -108,7 +109,7 @@ pub async fn run_blueprint(
     Path(id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, ApiError> {
     require_admin(&actor)?;
-    let row: (serde_json::Value, sqlx::types::Json<Vec<Uuid>>) =
+    let row: (serde_json::Value, crate::db::Json<Vec<Uuid>>) =
         crate::db::query_as("SELECT actions, vm_ids FROM blueprints WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)

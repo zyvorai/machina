@@ -120,7 +120,7 @@ fn strip_insert_or_ignore(sql: &str) -> (String, bool) {
     let trimmed = sql.trim_start();
     let lead = sql.len() - trimmed.len();
     const PREFIX: &str = "INSERT OR IGNORE";
-    if trimmed.len() >= PREFIX.len() && trimmed[..PREFIX.len()].eq_ignore_ascii_case(PREFIX) {
+    if trimmed.get(..PREFIX.len()).is_some_and(|head| head.eq_ignore_ascii_case(PREFIX)) {
         let mut s = String::with_capacity(sql.len());
         s.push_str(&sql[..lead]);
         s.push_str("INSERT");

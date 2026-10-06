@@ -46,7 +46,7 @@ pub struct VmRow {
     pub memory_mib: i64,
     pub ha_enabled: bool,
     pub project: Option<String>,
-    pub tags: sqlx::types::Json<Vec<String>>,
+    pub tags: crate::db::Json<Vec<String>>,
     pub inventory_source: String,
     pub k8s_namespace: Option<String>,
     pub last_seen_at: Option<chrono::DateTime<chrono::Utc>>,

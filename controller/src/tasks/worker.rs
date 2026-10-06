@@ -517,8 +517,10 @@ async fn vm_delete(state: &AppState, msg: &TaskMessage) -> anyhow::Result<()> {
 
     // Leave a tombstone so EC2-style clients still see the instance as `terminated` for a while.
     let _ = crate::db::query(
-        "INSERT OR REPLACE INTO terminated_instances (id, name, instance_type, project, vcpus, memory_mib) \
-         SELECT v.id, v.name, f.name, v.project, v.vcpus, v.memory_mib FROM vms v LEFT JOIN flavors f ON f.id = v.flavor_id WHERE v.id = ?",
+        "INSERT INTO terminated_instances (id, name, instance_type, project, vcpus, memory_mib) \
+         SELECT v.id, v.name, f.name, v.project, v.vcpus, v.memory_mib FROM vms v LEFT JOIN flavors f ON f.id = v.flavor_id WHERE v.id = ? \
+         ON CONFLICT(id) DO UPDATE SET name = excluded.name, instance_type = excluded.instance_type, project = excluded.project, \
+             vcpus = excluded.vcpus, memory_mib = excluded.memory_mib, terminated_at = CURRENT_TIMESTAMP",
     )
     .bind(vm_id)
     .execute(&state.pool)
@@ -610,7 +612,7 @@ async fn host_inventory(state: &AppState, msg: &TaskMessage) -> anyhow::Result<(
     crate::db::query(
         // Clear any stale fence flag: a host that just heartbeated is alive and
         // reachable, so a future failure must be fenced afresh before HA recovers it.
-        "UPDATE hosts SET vm_count = ?, state = ?, last_heartbeat_at = datetime('now'), fenced = 0,
+        "UPDATE hosts SET vm_count = ?, state = ?, last_heartbeat_at = datetime('now'), fenced = FALSE,
          cpu_percent = ?, memory_used_mib = ?, memory_total_mib = ?,
          cpu_model = COALESCE(?, cpu_model),
          libvirt_version = COALESCE(?, libvirt_version),

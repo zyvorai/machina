@@ -488,6 +488,7 @@ pub struct AutopilotHistoryEntry {
     pub actor: String,
     pub action: String,
     pub created_at: chrono::DateTime<chrono::Utc>,
+    #[sqlx(try_from = "crate::db::JsonText")]
     pub detail: serde_json::Value,
 }
 

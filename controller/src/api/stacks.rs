@@ -149,9 +149,9 @@ pub struct StackRow {
     pub name: String,
     pub status: String,
     pub last_error: Option<String>,
-    pub template_json: sqlx::types::Json<StackTemplate>,
-    pub resources_json: sqlx::types::Json<serde_json::Value>,
-    pub drift_json: sqlx::types::Json<serde_json::Value>,
+    pub template_json: crate::db::Json<StackTemplate>,
+    pub resources_json: crate::db::Json<serde_json::Value>,
+    pub drift_json: crate::db::Json<serde_json::Value>,
     pub checked_at: Option<String>,
     pub auto_heal: bool,
     pub updated_at: Option<String>,
@@ -640,7 +640,7 @@ pub(crate) async fn delete_stack_id(
     actor: &AuthUser,
     id: Uuid,
 ) -> Result<Vec<String>, ApiError> {
-    let resources_json: sqlx::types::Json<Vec<StackResourceRef>> =
+    let resources_json: crate::db::Json<Vec<StackResourceRef>> =
         crate::db::query_scalar("SELECT resources_json FROM stacks WHERE id = ?")
             .bind(id)
             .fetch_optional(&state.pool)
@@ -1314,7 +1314,7 @@ pub(crate) async fn run_update(
     template: &StackTemplate,
 ) -> Result<(), ApiError> {
     let row = load_row(state, id).await?;
-    let previous: Option<sqlx::types::Json<StackTemplate>> =
+    let previous: Option<crate::db::Json<StackTemplate>> =
         crate::db::query_scalar("SELECT previous_template_json FROM stacks WHERE id = ?")
             .bind(id)
             .fetch_one(&state.pool)

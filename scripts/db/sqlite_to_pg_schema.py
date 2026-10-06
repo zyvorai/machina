@@ -31,6 +31,16 @@ TEXT_IDS = {
     "vm_atlas_volumes.volume_id", "vm_atlas_volumes.backend_native_id", "volume_snapshots.atlas_snapshot_id", "volumes.atlas_volume_id",
 }
 TEXT_ID_PREFIXES = ("ai_",)
+# INTEGER columns the controller reads or binds as a Rust `bool` become BOOLEAN (PostgreSQL will not decode or bind a bool as a
+# bigint). Found from the FromRow structs plus the columns the PostgreSQL test run reported; a column that is flag-like but missing
+# here fails loudly ("mismatched types ... BOOL") the first time the code touches it, so add it here and regenerate.
+BOOL_NAMES = {
+    "anti_affinity", "applied", "atlas_backed", "auto_heal", "builtin", "cloud_init", "delete_on_termination", "delivered",
+    "dhcp_pinned", "disk_only", "drs_auto_migrate", "enabled", "enforced", "evacuate", "featured", "fence_on_failure", "fenced",
+    "firewall_enabled", "ha_allow_unfenced_recovery", "ha_enabled", "installed", "inventory_mark_managed_missing",
+    "inventory_prune_unmanaged", "is_public", "live", "maintenance_mode", "managed", "marketplace", "paused", "quiesce",
+    "require_vm_delete_approval", "schedulable", "success", "preemptible", "quiesced", "block",
+}
 
 
 def load():
@@ -147,6 +157,11 @@ def column(name, d, uuid, fks, review):
         review.append("-> uuid: %s.%s" % (name, col))
     if (name, col) in uuid:
         typ = "UUID"
+    elif typ == "INTEGER" and col in BOOL_NAMES:
+        typ = "BOOLEAN"
+        rest = re.sub(r"DEFAULT\s+\(?\s*1\s*\)?", "DEFAULT TRUE", rest)
+        rest = re.sub(r"DEFAULT\s+\(?\s*0\s*\)?", "DEFAULT FALSE", rest)
+        rest = re.sub(r"CHECK\s*\(\s*%s\s+IN\s*\(\s*0\s*,\s*1\s*\)\s*\)" % col, "", rest, flags=re.I)
     elif typ == "INTEGER":
         typ = "BIGINT"
     elif typ == "REAL":
@@ -158,9 +173,11 @@ def column(name, d, uuid, fks, review):
     return "    %s %s%s" % ('"%s"' % col if col.lower() in RESERVED else col, typ, rest.rstrip())
 
 
-def pg_literal(v, is_uuid, col_type):
+def pg_literal(v, is_uuid, col_type, col=""):
     if v is None:
         return "NULL"
+    if col in BOOL_NAMES and col_type.upper() == "INTEGER":
+        return "TRUE" if v else "FALSE"
     if is_uuid:
         h = v.hex() if isinstance(v, (bytes, bytearray)) else str(v)
         return "'%s-%s-%s-%s-%s'::uuid" % (h[0:8], h[8:12], h[12:16], h[16:20], h[20:32]) if len(h) == 32 else "'%s'::uuid" % h
@@ -179,7 +196,7 @@ def seed_rows(conn, tables, uuid):
         rows = conn.execute("select * from %s" % name).fetchall()
         for row in rows:
             names = ", ".join('"%s"' % c[1] if c[1].lower() in RESERVED else c[1] for c in cols)
-            vals = ", ".join(pg_literal(v, (name, c[1]) in uuid, c[2]) for v, c in zip(row, cols))
+            vals = ", ".join(pg_literal(v, (name, c[1]) in uuid, c[2], c[1]) for v, c in zip(row, cols))
             out.append("INSERT INTO %s (%s) VALUES (%s);" % (name, names, vals))
     return out
 
@@ -220,7 +237,11 @@ def main():
     out.append("  FOR EACH ROW EXECUTE FUNCTION preserve_routable_agent_addr();")
     out.append("")
     for _, sql in indexes:
-        out.append(sql.strip().rstrip(";") + ";")
+        stmt = sql.strip().rstrip(";")
+        for b in BOOL_NAMES:
+            stmt = re.sub(r"\b%s\s*=\s*1\b" % b, "%s = TRUE" % b, stmt)
+            stmt = re.sub(r"\b%s\s*=\s*0\b" % b, "%s = FALSE" % b, stmt)
+        out.append(stmt + ";")
     out.append("")
     sys.stdout.write("\n".join(out))
     sys.stderr.write("TEXT id-like columns left as TEXT (review): %d\n%s\n" % (len(review), "\n".join(review)))

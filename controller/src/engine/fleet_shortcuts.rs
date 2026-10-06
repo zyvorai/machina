@@ -33,7 +33,7 @@ pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetShortcutsOverview> {
         String,
         String,
         serde_json::Value,
-        sqlx::types::Json<Vec<Uuid>>,
+        crate::db::Json<Vec<Uuid>>,
     )> = crate::db::query_as(
         "SELECT id, name, description, actions, vm_ids FROM blueprints ORDER BY name",
     )

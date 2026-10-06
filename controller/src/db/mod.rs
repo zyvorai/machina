@@ -89,6 +89,105 @@ pub async fn begin_write(pool: &DbPool) -> Result<sqlx::Transaction<'static, Db>
     Ok(tx)
 }
 
+
+// JSON documents are stored as TEXT on both backends (SQLite has no JSON type, and the controller's SQL treats them as text).
+// PostgreSQL's driver refuses to decode `serde_json::Value` or `sqlx::types::Json<T>` from a TEXT column, so these wrap the text:
+// `Json<T>` is a drop-in for `sqlx::types::Json<T>`, and `JsonText` / `JsonTextOpt` are used with `#[sqlx(try_from = "...")]` on
+// row-struct fields that are plain `serde_json::Value` / `Option<serde_json::Value>`.
+use sqlx::encode::IsNull;
+use sqlx::error::BoxDynError;
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Json<T>(pub T);
+
+impl<T> std::ops::Deref for Json<T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+impl<T> std::ops::DerefMut for Json<T> {
+    fn deref_mut(&mut self) -> &mut T {
+        &mut self.0
+    }
+}
+impl<T> sqlx::Type<Db> for Json<T> {
+    fn type_info() -> <Db as Database>::TypeInfo {
+        <str as sqlx::Type<Db>>::type_info()
+    }
+    fn compatible(ty: &<Db as Database>::TypeInfo) -> bool {
+        <str as sqlx::Type<Db>>::compatible(ty)
+    }
+}
+impl<'r, T: serde::de::DeserializeOwned> sqlx::Decode<'r, Db> for Json<T> {
+    fn decode(value: <Db as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        let text = <&str as sqlx::Decode<Db>>::decode(value)?;
+        Ok(Json(serde_json::from_str(text)?))
+    }
+}
+impl<'q, T: serde::Serialize> sqlx::Encode<'q, Db> for Json<T> {
+    fn encode_by_ref(&self, buf: &mut <Db as Database>::ArgumentBuffer<'q>) -> Result<IsNull, BoxDynError> {
+        <String as sqlx::Encode<'q, Db>>::encode(serde_json::to_string(&self.0)?, buf)
+    }
+}
+
+/// A TEXT column holding JSON, for `#[sqlx(try_from = "crate::db::JsonText")] field: serde_json::Value`.
+pub struct JsonText(String);
+impl sqlx::Type<Db> for JsonText {
+    fn type_info() -> <Db as Database>::TypeInfo {
+        <String as sqlx::Type<Db>>::type_info()
+    }
+    fn compatible(ty: &<Db as Database>::TypeInfo) -> bool {
+        <String as sqlx::Type<Db>>::compatible(ty)
+    }
+}
+impl<'r> sqlx::Decode<'r, Db> for JsonText {
+    fn decode(value: <Db as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        Ok(JsonText(<String as sqlx::Decode<Db>>::decode(value)?))
+    }
+}
+impl TryFrom<JsonText> for serde_json::Value {
+    type Error = serde_json::Error;
+    fn try_from(t: JsonText) -> Result<Self, Self::Error> {
+        serde_json::from_str(&t.0)
+    }
+}
+
+/// The nullable form, for `field: Option<serde_json::Value>`.
+pub struct JsonTextOpt(Option<String>);
+impl sqlx::Type<Db> for JsonTextOpt {
+    fn type_info() -> <Db as Database>::TypeInfo {
+        <String as sqlx::Type<Db>>::type_info()
+    }
+    fn compatible(ty: &<Db as Database>::TypeInfo) -> bool {
+        <String as sqlx::Type<Db>>::compatible(ty)
+    }
+}
+impl<'r> sqlx::Decode<'r, Db> for JsonTextOpt {
+    fn decode(value: <Db as Database>::ValueRef<'r>) -> Result<Self, BoxDynError> {
+        Ok(JsonTextOpt(<Option<String> as sqlx::Decode<Db>>::decode(value)?))
+    }
+}
+impl TryFrom<JsonTextOpt> for Option<serde_json::Value> {
+    type Error = serde_json::Error;
+    fn try_from(t: JsonTextOpt) -> Result<Self, Self::Error> {
+        t.0.map(|s| serde_json::from_str(&s)).transpose()
+    }
+}
+
+/// The bind value for a machine in `metric_samples.subject` / `metric_hourly.subject`: its 16-byte id on SQLite, its canonical text
+/// on PostgreSQL (the column is TEXT there because it also holds group and pool subjects, and the sampler's `INSERT ... SELECT v.id`
+/// stores a uuid as that text).
+#[cfg(feature = "sqlite")]
+pub fn subject_id(id: Uuid) -> Uuid {
+    id
+}
+#[cfg(feature = "postgres")]
+pub fn subject_id(id: Uuid) -> String {
+    id.to_string()
+}
+
 /// A database URL that is safe to log: `scheme://user:password@host/db` loses the password, anything else is returned as is.
 pub fn redact_url(url: &str) -> String {
     let Some((scheme, rest)) = url.split_once("://") else { return url.to_string() };

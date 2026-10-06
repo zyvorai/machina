@@ -15,6 +15,7 @@ use crate::state::AppState;
 pub struct NotificationRow {
     pub id: Uuid,
     pub kind: String,
+    #[sqlx(try_from = "crate::db::JsonText")]
     pub payload: serde_json::Value,
     pub delivered: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,

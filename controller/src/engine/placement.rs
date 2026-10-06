@@ -14,7 +14,7 @@ struct HostLoad {
     memory_used_mib: i64,
     memory_total_mib: i64,
     vm_count: i32,
-    tags: sqlx::types::Json<Vec<String>>,
+    tags: crate::db::Json<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -56,7 +56,7 @@ pub async fn compute_recommendations(
         return Ok(Vec::new());
     }
 
-    let vms: Vec<(Uuid, String, Uuid, i64, sqlx::types::Json<Vec<String>>)> = crate::db::query_as(
+    let vms: Vec<(Uuid, String, Uuid, i64, crate::db::Json<Vec<String>>)> = crate::db::query_as(
         "SELECT v.id, v.name, v.host_id, v.memory_mib, COALESCE(v.tags, '[]') AS tags FROM vms v
          JOIN hosts h ON h.id = v.host_id
          WHERE v.desired_state = 'running' AND h.state = 'online'",
@@ -247,7 +247,7 @@ struct HostCandidate {
     memory_used_mib: i64,
     memory_total_mib: i64,
     vm_count: i32,
-    tags: sqlx::types::Json<Vec<String>>,
+    tags: crate::db::Json<Vec<String>>,
 }
 
 pub async fn pick_host_for_vm(
@@ -416,7 +416,7 @@ fn violates_anti_affinity(
 
 /// host_id -> anti-affinity tags of the running VMs currently on it.
 async fn host_anti_affinity_map(pool: &DbPool) -> anyhow::Result<AntiMap> {
-    let rows: Vec<(Uuid, sqlx::types::Json<Vec<String>>)> = crate::db::query_as(
+    let rows: Vec<(Uuid, crate::db::Json<Vec<String>>)> = crate::db::query_as(
         "SELECT host_id, COALESCE(tags, '[]') AS tags
          FROM vms WHERE desired_state = 'running' AND host_id IS NOT NULL",
     )

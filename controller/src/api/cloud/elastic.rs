@@ -371,7 +371,7 @@ pub async fn delete_group(
         .ok_or_else(|| ApiError::not_found("instance group not found"))?;
     access(&mut tx, &actor, project, true).await?;
     // Stop the reconciler touching it while we check.
-    crate::db::query("UPDATE cloud_instance_groups SET paused=1 WHERE id=?").bind(id).execute(&mut *tx).await?;
+    crate::db::query("UPDATE cloud_instance_groups SET paused = TRUE WHERE id=?").bind(id).execute(&mut *tx).await?;
     let active: i64 = crate::db::query_scalar(
         "SELECT COUNT(*) FROM cloud_group_members m JOIN vms v ON v.id = m.vm_id \
          WHERE m.group_id = ? AND v.observed_state NOT IN ('shutoff', 'stopped', 'missing')",

@@ -63,7 +63,7 @@ pub async fn run_vm_health_check(pool: &DbPool, vm_id: Uuid) -> anyhow::Result<V
         String,
         String,
         bool,
-        sqlx::types::Json<Vec<String>>,
+        crate::db::Json<Vec<String>>,
     )> = crate::db::query_as(
         "SELECT name, host_id, observed_state, COALESCE(guest_tools_status, 'unknown'),
                 COALESCE(managed, TRUE), COALESCE(tags, '[]')

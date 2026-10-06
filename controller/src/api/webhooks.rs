@@ -15,7 +15,7 @@ use crate::state::AppState;
 pub struct WebhookRow {
     pub id: Uuid,
     pub url: String,
-    pub events: sqlx::types::Json<Vec<String>>,
+    pub events: crate::db::Json<Vec<String>>,
     pub enabled: bool,
     pub created_at: chrono::DateTime<chrono::Utc>,
 }

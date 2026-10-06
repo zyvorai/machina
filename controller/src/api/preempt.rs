@@ -44,7 +44,7 @@ pub async fn overview(State(state): State<AppState>) -> Result<Json<Value>, ApiE
         "SELECT v.id, v.name, v.host_id, h.hostname AS host, v.project, v.memory_mib,
                 v.preempt_priority AS priority, v.desired_state, v.observed_state, v.preempted_at
          FROM vms v LEFT JOIN hosts h ON h.id = v.host_id
-         WHERE v.preemptible = 1 OR v.preempted_at IS NOT NULL
+         WHERE v.preemptible = TRUE OR v.preempted_at IS NOT NULL
          ORDER BY v.preempted_at IS NULL, v.preempt_priority, v.name",
     )
     .fetch_all(&state.pool)

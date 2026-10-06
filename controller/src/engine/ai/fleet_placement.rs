@@ -30,7 +30,7 @@ pub async fn advise_gpu(pool: &DbPool, workload: &str) -> anyhow::Result<GpuPlac
         i64,
         i64,
         i32,
-        sqlx::types::Json<Vec<String>>,
+        crate::db::Json<Vec<String>>,
     )> = crate::db::query_as(
         "SELECT id, hostname, cpu_percent, memory_used_mib, memory_total_mib, vm_count,
                 COALESCE(tags, '[]') AS tags

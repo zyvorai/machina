@@ -386,7 +386,7 @@ mod tests {
         for h in 1..=80 {
             for (metric, max) in [("cpu_percent", 15.0), ("mem_ratio", 0.2)] {
                 crate::db::query("INSERT INTO metric_hourly (subject, metric, hour, avg, max, n) VALUES (?, ?, ?, ?, ?, 12)")
-                    .bind(vm)
+                    .bind(crate::db::subject_id(vm))
                     .bind(metric)
                     .bind(now - h * 3600)
                     .bind(max / 2.0)

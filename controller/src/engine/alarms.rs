@@ -120,7 +120,7 @@ async fn evaluate_one(state: &AppState, a: AlarmRow, now: i64, epoch: i64) -> an
 }
 
 async fn scale_group(state: &AppState, alarm: Uuid, name: &str, group: Uuid, step: i32) -> anyhow::Result<()> {
-    let raw: Option<String> = crate::db::query_scalar("SELECT policy_json FROM cloud_instance_groups WHERE id = ? AND paused = 0")
+    let raw: Option<String> = crate::db::query_scalar("SELECT policy_json FROM cloud_instance_groups WHERE id = ? AND paused = FALSE")
         .bind(group)
         .fetch_optional(&state.pool)
         .await?;
@@ -132,7 +132,7 @@ async fn scale_group(state: &AppState, alarm: Uuid, name: &str, group: Uuid, ste
     let before = policy.desired;
     policy.desired = want;
     // Same compare-and-swap the group reconciler uses: a concurrent policy edit wins and we try again next tick.
-    let changed = crate::db::query("UPDATE cloud_instance_groups SET policy_json = ?, last_scaled_at = CURRENT_TIMESTAMP WHERE id = ? AND paused = 0 AND policy_json = ?")
+    let changed = crate::db::query("UPDATE cloud_instance_groups SET policy_json = ?, last_scaled_at = CURRENT_TIMESTAMP WHERE id = ? AND paused = FALSE AND policy_json = ?")
         .bind(serde_json::to_string(&policy)?)
         .bind(group)
         .bind(&raw)
@@ -150,7 +150,7 @@ pub async fn tick(state: &AppState, epoch: i64) -> anyhow::Result<usize> {
     let rows: Vec<AlarmRow> = crate::db::query_as(
         "SELECT id, name, subject, metric, statistic, period_secs, evaluation_periods, comparator, threshold, state, action, group_id, step, cooldown_secs, \
          CASE WHEN last_action_at IS NULL THEN NULL ELSE CAST(strftime('%s','now') AS INTEGER) - CAST(strftime('%s', last_action_at) AS INTEGER) END \
-         FROM cloud_alarms WHERE enabled = 1",
+         FROM cloud_alarms WHERE enabled = TRUE",
     )
     .fetch_all(&state.pool)
     .await?;

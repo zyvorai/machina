@@ -15,7 +15,7 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use machina_spec::VirtualMachine;
 use serde::{Deserialize, Serialize};
-use sqlx::types::Json as SqlxJson;
+use crate::db::Json as SqlxJson;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 

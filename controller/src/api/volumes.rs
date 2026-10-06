@@ -812,7 +812,7 @@ pub async fn set_volume_iotune(
 /// leave the volume behind (detached) rather than failing the instance delete.
 pub(crate) async fn purge_terminating_volumes(state: &AppState, vm_id: Uuid, host: Option<Uuid>) {
     let rows: Vec<(Uuid, Option<String>, Option<Uuid>)> = crate::db::query_as(
-        "SELECT id, atlas_volume_id, storage_pool_id FROM volumes WHERE attached_vm_id = ? AND delete_on_termination = 1",
+        "SELECT id, atlas_volume_id, storage_pool_id FROM volumes WHERE attached_vm_id = ? AND delete_on_termination = TRUE",
     )
     .bind(vm_id)
     .fetch_all(&state.pool)

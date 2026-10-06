@@ -96,7 +96,7 @@ pub async fn create_api_key(
             return Err(ApiError::conflict("an API key with that name exists", "scoped keys need a unique name"));
         }
         for p in &body.projects {
-            let known: Option<i64> = crate::db::query_scalar("SELECT 1 FROM projects WHERE name = ? AND enabled = 1").bind(p).fetch_optional(&state.pool).await?;
+            let known: Option<i64> = crate::db::query_scalar("SELECT 1 FROM projects WHERE name = ? AND enabled = TRUE").bind(p).fetch_optional(&state.pool).await?;
             if known.is_none() {
                 return Err(ApiError::bad_request(format!("no enabled project named '{p}'")));
             }

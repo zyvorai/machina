@@ -102,7 +102,7 @@ pub(crate) async fn build_topology(
         String,
         Option<Uuid>,
         String,
-        sqlx::types::Json<Vec<String>>,
+        crate::db::Json<Vec<String>>,
     )> = if let Some(vid) = vm_filter {
         crate::db::query_as(
             "SELECT id, name, host_id, observed_state, COALESCE(tags, '[]') FROM vms WHERE id = ?",

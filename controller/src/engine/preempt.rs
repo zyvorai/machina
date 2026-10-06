@@ -231,7 +231,7 @@ async fn candidates(pool: &DbPool, filter: &str) -> anyhow::Result<Vec<Candidate
 async fn running(pool: &DbPool) -> anyhow::Result<Vec<Candidate>> {
     candidates(
         pool,
-        "WHERE v.preemptible = 1 AND v.desired_state = 'running' AND v.observed_state = 'running'
+        "WHERE v.preemptible = TRUE AND v.desired_state = 'running' AND v.observed_state = 'running'
          AND v.host_id IS NOT NULL",
     )
     .await
@@ -607,7 +607,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(used, 4500);
-        crate::db::query("UPDATE preempt_settings SET enabled = 0")
+        crate::db::query("UPDATE preempt_settings SET enabled = FALSE")
             .execute(&state.pool)
             .await
             .unwrap();

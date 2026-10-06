@@ -110,7 +110,7 @@ pub(crate) async fn fetch_samples(pool: &DbPool, keys: &[SubjectKey], metric: &s
         let q = crate::db::query_as::<_, (i64, f64)>(sql);
         let q = match k {
             SubjectKey::Text(t) => q.bind(t.clone()),
-            SubjectKey::Id(u) => q.bind(*u),
+            SubjectKey::Id(u) => q.bind(crate::db::subject_id(*u)),
         };
         out.extend(q.bind(metric).bind(start).bind(end).fetch_all(pool).await?);
     }
@@ -259,7 +259,7 @@ mod tests {
         crate::db::query("INSERT INTO vms (id, name) VALUES (?, 'web-1')").bind(id).execute(&state.pool).await.unwrap();
         // the sampler stores a machine's samples under its 16-byte id
         crate::db::query("INSERT INTO metric_samples (subject, metric, ts, value) VALUES (?, 'cpu_percent', 100, 42.0)")
-            .bind(id)
+            .bind(crate::db::subject_id(id))
             .execute(&state.pool)
             .await
             .unwrap();

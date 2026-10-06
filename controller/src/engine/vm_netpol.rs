@@ -214,7 +214,7 @@ pub async fn services(pool: &DbPool) -> Vec<NetpolService> {
            FROM load_balancers lb
            JOIN hosts h ON h.id = lb.host_id
            LEFT JOIN projects p ON p.id = lb.project_id
-           LEFT JOIN lb_members m ON m.load_balancer_id = lb.id AND m.enabled = 1
+           LEFT JOIN lb_members m ON m.load_balancer_id = lb.id AND m.enabled = TRUE
            LEFT JOIN vms v ON v.id = m.vm_id
           ORDER BY lb.id",
     )

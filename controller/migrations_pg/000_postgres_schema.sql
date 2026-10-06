@@ -80,6 +80,12 @@ CREATE FUNCTION json_each(doc text) RETURNS TABLE(key text, value text, type tex
     FROM jsonb_each(CASE WHEN jsonb_typeof($1::jsonb) = 'object' THEN $1::jsonb ELSE '{}'::jsonb END) AS o
 $$;
 
+-- SQLite's two-argument max()/min() are scalar functions (the larger/smaller of two values); PostgreSQL spells them GREATEST/LEAST
+CREATE FUNCTION max(a bigint, b bigint) RETURNS bigint LANGUAGE sql IMMUTABLE AS $$ SELECT GREATEST($1, $2) $$;
+CREATE FUNCTION max(a double precision, b double precision) RETURNS double precision LANGUAGE sql IMMUTABLE AS $$ SELECT GREATEST($1, $2) $$;
+CREATE FUNCTION min(a bigint, b bigint) RETURNS bigint LANGUAGE sql IMMUTABLE AS $$ SELECT LEAST($1, $2) $$;
+CREATE FUNCTION min(a double precision, b double precision) RETURNS double precision LANGUAGE sql IMMUTABLE AS $$ SELECT LEAST($1, $2) $$;
+
 -- the current time as the controller stores it (CURRENT_TIMESTAMP in SQL text is rewritten to this)
 CREATE FUNCTION machina_now() RETURNS text LANGUAGE sql STABLE AS $$ SELECT datetime() $$;
 
@@ -121,7 +127,7 @@ CREATE TABLE ai_agent_plugins (
     description TEXT NOT NULL DEFAULT '',
     agent_id TEXT NOT NULL,
     config_schema_json TEXT NOT NULL DEFAULT '{}',
-    installed BIGINT NOT NULL DEFAULT 0,
+    installed BOOLEAN NOT NULL DEFAULT FALSE,
     published_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
 
@@ -170,7 +176,7 @@ CREATE TABLE ai_models (
     display_name TEXT NOT NULL DEFAULT '',
     capabilities_json TEXT NOT NULL DEFAULT '{}',
     context_window BIGINT NOT NULL DEFAULT 128000,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (provider_id, model_id)
 );
 
@@ -195,7 +201,7 @@ CREATE TABLE ai_providers (
     org_id TEXT NOT NULL DEFAULT '',
     deployment_name TEXT NOT NULL DEFAULT '',
     api_key_encrypted TEXT NOT NULL DEFAULT '',
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     is_default BIGINT NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -206,7 +212,7 @@ CREATE TABLE ai_routing_rules (
     provider_id UUID,
     model_id UUID,
     priority BIGINT NOT NULL DEFAULT 0,
-    enabled BIGINT NOT NULL DEFAULT 1
+    enabled BOOLEAN NOT NULL DEFAULT TRUE
 );
 
 CREATE TABLE ai_trust_rules (
@@ -246,7 +252,7 @@ CREATE TABLE alert_rules (
     scope_project TEXT NOT NULL DEFAULT '',
     scope_tag TEXT NOT NULL DEFAULT '',
     cooldown_minutes BIGINT NOT NULL DEFAULT 30,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     last_fired_at TEXT,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -318,7 +324,7 @@ CREATE TABLE backup_schedules (
     target_id UUID,
     interval_hours BIGINT NOT NULL DEFAULT 24,
     retain_count BIGINT NOT NULL DEFAULT 7,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     last_run_at TEXT,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -342,7 +348,7 @@ CREATE TABLE baremetal_servers (
     tags TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     firewall_profile TEXT NOT NULL DEFAULT 'BareMetalBmc',
-    firewall_enabled BIGINT NOT NULL DEFAULT 1,
+    firewall_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     bmc_vlan TEXT NOT NULL DEFAULT '',
     pxe_vlan TEXT NOT NULL DEFAULT '',
     posture_json TEXT,
@@ -365,7 +371,7 @@ CREATE TABLE bpf_policies (
     name TEXT NOT NULL DEFAULT '',
     kind TEXT NOT NULL,
     match_value TEXT NOT NULL,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     scope TEXT NOT NULL DEFAULT 'fleet',
     description TEXT NOT NULL DEFAULT '',
     applied_hosts TEXT NOT NULL DEFAULT '[]',
@@ -429,7 +435,7 @@ CREATE TABLE cloud_alarms (
     step BIGINT NOT NULL DEFAULT 0,
     cooldown_secs BIGINT NOT NULL DEFAULT 300,
     last_action_at TEXT,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_by TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -449,7 +455,7 @@ CREATE TABLE cloud_instance_groups (
     subnet_id UUID NOT NULL,
     name TEXT NOT NULL,
     policy_json TEXT NOT NULL,
-    paused BIGINT NOT NULL DEFAULT 0,
+    paused BOOLEAN NOT NULL DEFAULT FALSE,
     last_scaled_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     last_error TEXT NOT NULL DEFAULT '',
     UNIQUE(project_id, name)
@@ -519,10 +525,10 @@ CREATE TABLE cloud_vpcs (
 CREATE TABLE clusters (
     id UUID NOT NULL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
-    ha_enabled BIGINT NOT NULL DEFAULT 0,
+    ha_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     placement_policy TEXT NOT NULL DEFAULT 'balanced',
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
-    drs_auto_migrate BIGINT NOT NULL DEFAULT 0,
+    drs_auto_migrate BOOLEAN NOT NULL DEFAULT FALSE,
     drs_cpu_threshold DOUBLE PRECISION NOT NULL DEFAULT 85.0,
     oidc_enabled BIGINT NOT NULL DEFAULT 0,
     oidc_issuer TEXT NOT NULL DEFAULT '',
@@ -531,7 +537,7 @@ CREATE TABLE clusters (
     oidc_client_secret TEXT NOT NULL DEFAULT '',
     oidc_redirect_uri TEXT NOT NULL DEFAULT '',
     inventory_sync_interval_secs BIGINT NOT NULL DEFAULT 30,
-    require_vm_delete_approval BIGINT NOT NULL DEFAULT 0,
+    require_vm_delete_approval BOOLEAN NOT NULL DEFAULT FALSE,
     finops_vcpu_hour_usd DOUBLE PRECISION NOT NULL DEFAULT 0.02,
     finops_gib_hour_usd DOUBLE PRECISION NOT NULL DEFAULT 0.005,
     ai_enabled BIGINT NOT NULL DEFAULT 0,
@@ -544,8 +550,8 @@ CREATE TABLE clusters (
     ai_autopilot_max_actions BIGINT NOT NULL DEFAULT 5,
     ai_fleet_peer_urls TEXT NOT NULL DEFAULT '[]',
     firewall_approval_sla_hours BIGINT NOT NULL DEFAULT 72,
-    inventory_prune_unmanaged BIGINT NOT NULL DEFAULT 1,
-    inventory_mark_managed_missing BIGINT NOT NULL DEFAULT 1,
+    inventory_prune_unmanaged BOOLEAN NOT NULL DEFAULT TRUE,
+    inventory_mark_managed_missing BOOLEAN NOT NULL DEFAULT TRUE,
     zeus_multi_provider BIGINT NOT NULL DEFAULT 1,
     zeus_agents_enabled BIGINT NOT NULL DEFAULT 1,
     zeus_ambient_ux BIGINT NOT NULL DEFAULT 1,
@@ -554,7 +560,7 @@ CREATE TABLE clusters (
     zeus_memory_project_scope BIGINT NOT NULL DEFAULT 1,
     zeus_memory_retention_days BIGINT NOT NULL DEFAULT 90,
     zeus_air_gap_llm BIGINT NOT NULL DEFAULT 0,
-    ha_allow_unfenced_recovery BIGINT NOT NULL DEFAULT 0
+    ha_allow_unfenced_recovery BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE console_access_requests (
@@ -672,7 +678,7 @@ CREATE TABLE fence_events (
     host_id UUID NOT NULL,
     action TEXT NOT NULL,
     command TEXT,
-    success BIGINT NOT NULL DEFAULT 0,
+    success BOOLEAN NOT NULL DEFAULT FALSE,
     message TEXT,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -776,7 +782,7 @@ CREATE TABLE firewall_profiles (
     name TEXT NOT NULL UNIQUE,
     display_name TEXT NOT NULL,
     spec_json TEXT NOT NULL DEFAULT '{}',
-    builtin BIGINT NOT NULL DEFAULT 0,
+    builtin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
 
@@ -833,7 +839,7 @@ CREATE TABLE firewall_temporary_rules (
     owner TEXT,
     approval_id UUID,
     expires_at TEXT NOT NULL,
-    applied BIGINT NOT NULL DEFAULT 0,
+    applied BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
 
@@ -855,7 +861,7 @@ CREATE TABLE flavors (
     memory_mib BIGINT NOT NULL,
     disk_gib BIGINT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    is_public BIGINT NOT NULL DEFAULT 1,
+    is_public BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
 
@@ -865,10 +871,10 @@ CREATE TABLE fleet_snapshot_schedules (
     cron_expr TEXT NOT NULL DEFAULT '0 2 * * *',
     project TEXT NOT NULL DEFAULT '',
     tag_filter TEXT NOT NULL DEFAULT '',
-    disk_only BIGINT NOT NULL DEFAULT 1,
-    quiesce BIGINT NOT NULL DEFAULT 0,
+    disk_only BOOLEAN NOT NULL DEFAULT TRUE,
+    quiesce BOOLEAN NOT NULL DEFAULT FALSE,
     retain_count BIGINT NOT NULL DEFAULT 5,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     last_run_at TEXT,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -885,11 +891,11 @@ CREATE TABLE ha_events (
 CREATE TABLE ha_policies (
     id UUID NOT NULL PRIMARY KEY,
     vm_id UUID NOT NULL,
-    enabled BIGINT NOT NULL DEFAULT 0,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
     restart_attempts BIGINT NOT NULL DEFAULT 3,
     restart_priority TEXT NOT NULL DEFAULT 'medium',
-    anti_affinity BIGINT NOT NULL DEFAULT 0,
-    fence_on_failure BIGINT NOT NULL DEFAULT 0
+    anti_affinity BOOLEAN NOT NULL DEFAULT FALSE,
+    fence_on_failure BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE host_lldp_cache (
@@ -909,7 +915,7 @@ CREATE TABLE hosts (
     libvirt_uri TEXT NOT NULL DEFAULT 'qemu:///system',
     agent_grpc_addr TEXT NOT NULL DEFAULT '127.0.0.1:50051',
     state TEXT NOT NULL DEFAULT 'unknown',
-    maintenance_mode BIGINT NOT NULL DEFAULT 0,
+    maintenance_mode BOOLEAN NOT NULL DEFAULT FALSE,
     last_heartbeat_at TEXT,
     cpu_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
     memory_used_mib BIGINT NOT NULL DEFAULT 0,
@@ -920,7 +926,7 @@ CREATE TABLE hosts (
     cpu_model TEXT NOT NULL DEFAULT '',
     libvirt_version TEXT NOT NULL DEFAULT '',
     qemu_version TEXT NOT NULL DEFAULT '',
-    fenced BIGINT NOT NULL DEFAULT 0,
+    fenced BOOLEAN NOT NULL DEFAULT FALSE,
     notes TEXT NOT NULL DEFAULT '',
     tags TEXT NOT NULL DEFAULT '[]',
     fence_method TEXT NOT NULL DEFAULT 'shell',
@@ -935,7 +941,7 @@ CREATE TABLE hosts (
     rack_u BIGINT,
     guacamole_base_url TEXT NOT NULL DEFAULT '',
     guacamole_json_secret_hex TEXT NOT NULL DEFAULT '',
-    schedulable BIGINT NOT NULL DEFAULT 1,
+    schedulable BOOLEAN NOT NULL DEFAULT TRUE,
     UNIQUE (cluster_id, hostname)
 );
 
@@ -968,7 +974,7 @@ CREATE TABLE lb_members (
     vm_id UUID NOT NULL,
     port BIGINT NOT NULL,
     weight BIGINT NOT NULL DEFAULT 1,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     health TEXT NOT NULL DEFAULT 'unknown',
     health_ok BIGINT NOT NULL DEFAULT 0,
@@ -1003,7 +1009,7 @@ CREATE TABLE maintenance_schedules (
     id UUID NOT NULL PRIMARY KEY,
     host_id UUID NOT NULL,
     action TEXT NOT NULL DEFAULT 'enter',
-    evacuate BIGINT NOT NULL DEFAULT 1,
+    evacuate BOOLEAN NOT NULL DEFAULT TRUE,
     run_at TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
@@ -1013,7 +1019,7 @@ CREATE TABLE maintenance_windows (
     id UUID NOT NULL PRIMARY KEY,
     host_id UUID NOT NULL,
     action TEXT NOT NULL DEFAULT 'enter',
-    evacuate BIGINT NOT NULL DEFAULT 1,
+    evacuate BOOLEAN NOT NULL DEFAULT TRUE,
     status TEXT NOT NULL DEFAULT 'pending',
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -1041,7 +1047,7 @@ CREATE TABLE migration_jobs (
     vm_id UUID NOT NULL,
     source_host_id UUID NOT NULL,
     dest_host_id UUID NOT NULL,
-    live BIGINT NOT NULL DEFAULT 1,
+    live BOOLEAN NOT NULL DEFAULT TRUE,
     status TEXT NOT NULL DEFAULT 'pending',
     precheck TEXT NOT NULL DEFAULT '{}',
     progress BIGINT NOT NULL DEFAULT 0,
@@ -1099,7 +1105,7 @@ CREATE TABLE notification_channels (
     kind TEXT NOT NULL,
     target TEXT NOT NULL,
     events TEXT NOT NULL DEFAULT '["alert.*"]',
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
 
@@ -1107,7 +1113,7 @@ CREATE TABLE notification_outbox (
     id UUID NOT NULL PRIMARY KEY,
     kind TEXT NOT NULL,
     payload TEXT NOT NULL DEFAULT '{}',
-    delivered BIGINT NOT NULL DEFAULT 0,
+    delivered BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     delivered_at TEXT
 );
@@ -1125,7 +1131,7 @@ CREATE TABLE ops_runbook_catalog (
     category TEXT NOT NULL DEFAULT 'incident',
     severity TEXT NOT NULL DEFAULT 'medium',
     auto_trigger TEXT,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     last_triggered_at TEXT
 );
@@ -1168,8 +1174,8 @@ CREATE TABLE platform_plugins (
     description TEXT NOT NULL DEFAULT '',
     version TEXT NOT NULL DEFAULT '1.0.0',
     author TEXT NOT NULL DEFAULT 'Zyvor',
-    featured BIGINT NOT NULL DEFAULT 0,
-    installed BIGINT NOT NULL DEFAULT 0,
+    featured BOOLEAN NOT NULL DEFAULT FALSE,
+    installed BOOLEAN NOT NULL DEFAULT FALSE,
     config_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -1177,7 +1183,7 @@ CREATE TABLE platform_plugins (
 CREATE TABLE policy_rules (
     id UUID NOT NULL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     rule_json TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -1194,12 +1200,12 @@ CREATE TABLE ports (
     subnet_id UUID,
     private_ip TEXT,
     description TEXT NOT NULL DEFAULT '',
-    dhcp_pinned BIGINT NOT NULL DEFAULT 0
+    dhcp_pinned BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE TABLE preempt_settings (
     id BIGINT PRIMARY KEY CHECK (id = 1),
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     reserve_pct BIGINT NOT NULL DEFAULT 10,
     updated_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -1226,7 +1232,7 @@ CREATE TABLE projects (
     id UUID NOT NULL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL DEFAULT '',
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
 
@@ -1246,7 +1252,7 @@ CREATE TABLE scheduled_jobs (
     payload TEXT NOT NULL DEFAULT '{}',
     target_host_id UUID,
     interval_minutes BIGINT NOT NULL DEFAULT 60,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     last_run_at TEXT,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -1314,11 +1320,11 @@ CREATE TABLE soc_detection_rules (
     id UUID NOT NULL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL DEFAULT '',
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     severity TEXT NOT NULL DEFAULT 'medium',
     query_json TEXT NOT NULL DEFAULT '{}',
     throttle_minutes BIGINT NOT NULL DEFAULT 60,
-    builtin BIGINT NOT NULL DEFAULT 0,
+    builtin BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     updated_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
@@ -1365,7 +1371,7 @@ CREATE TABLE soc_integrations (
     id UUID NOT NULL PRIMARY KEY,
     integration_type TEXT NOT NULL,
     name TEXT NOT NULL,
-    enabled BIGINT NOT NULL DEFAULT 0,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
     config_json TEXT NOT NULL DEFAULT '{}',
     last_success_at TEXT,
     last_error TEXT,
@@ -1389,7 +1395,7 @@ CREATE TABLE soc_playbooks (
     id UUID NOT NULL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL DEFAULT '',
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     trigger_json TEXT NOT NULL DEFAULT '{}',
     steps_json TEXT NOT NULL DEFAULT '[]',
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
@@ -1401,7 +1407,7 @@ CREATE TABLE soc_saved_hunts (
     name TEXT NOT NULL,
     query_text TEXT NOT NULL,
     schedule_cron TEXT,
-    enabled BIGINT NOT NULL DEFAULT 0,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
     last_run_at TEXT,
     created_by TEXT,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
@@ -1424,7 +1430,7 @@ CREATE TABLE stacks (
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     drift_json TEXT NOT NULL DEFAULT '{}',
     checked_at TEXT,
-    auto_heal BIGINT NOT NULL DEFAULT 1,
+    auto_heal BOOLEAN NOT NULL DEFAULT TRUE,
     updated_at TEXT,
     previous_template_json TEXT
 );
@@ -1497,13 +1503,13 @@ CREATE TABLE templates (
     name TEXT NOT NULL,
     version TEXT NOT NULL,
     source_disk TEXT NOT NULL,
-    cloud_init BIGINT NOT NULL DEFAULT 0,
+    cloud_init BOOLEAN NOT NULL DEFAULT FALSE,
     os_family TEXT,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
     category TEXT NOT NULL DEFAULT 'Linux',
     description TEXT NOT NULL DEFAULT '',
-    featured BIGINT NOT NULL DEFAULT 0,
-    marketplace BIGINT NOT NULL DEFAULT 1,
+    featured BOOLEAN NOT NULL DEFAULT FALSE,
+    marketplace BOOLEAN NOT NULL DEFAULT TRUE,
     icon TEXT,
     firewall_profile TEXT,
     workload TEXT NOT NULL DEFAULT '',
@@ -1612,7 +1618,7 @@ CREATE TABLE vm_netpol_projects (
 CREATE TABLE vm_netpol_threat_feeds (
     name TEXT NOT NULL PRIMARY KEY,
     source TEXT NOT NULL DEFAULT '',
-    block BIGINT NOT NULL DEFAULT 0,
+    block BOOLEAN NOT NULL DEFAULT FALSE,
     domains TEXT NOT NULL DEFAULT '[]',
     updated_by TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
@@ -1622,7 +1628,7 @@ CREATE TABLE vm_network_policies (
     name TEXT NOT NULL PRIMARY KEY,
     kind TEXT NOT NULL DEFAULT 'VmNetworkPolicy',
     policy_json TEXT NOT NULL,
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_by TEXT NOT NULL DEFAULT '',
     generation BIGINT NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
@@ -1636,7 +1642,7 @@ CREATE TABLE vm_restore_points (
     kind TEXT NOT NULL DEFAULT 'manual',
     note TEXT,
     layers TEXT NOT NULL DEFAULT '[]',
-    quiesced BIGINT NOT NULL DEFAULT 0,
+    quiesced BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))
 );
 
@@ -1647,7 +1653,7 @@ CREATE TABLE vm_schedules (
     interval_minutes BIGINT NOT NULL DEFAULT 1440,
     retention BIGINT,
     label TEXT NOT NULL DEFAULT '',
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     next_run_at TEXT NOT NULL,
     last_run_at TEXT,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
@@ -1669,7 +1675,7 @@ CREATE TABLE vm_sleep_project_policies (
 
 CREATE TABLE vm_watchdog (
     vm_id UUID NOT NULL PRIMARY KEY,
-    enabled BIGINT NOT NULL DEFAULT 0,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
     failure_threshold_secs BIGINT NOT NULL DEFAULT 120,
     cooldown_secs BIGINT NOT NULL DEFAULT 600,
     max_restarts_per_hour BIGINT NOT NULL DEFAULT 3,
@@ -1698,7 +1704,7 @@ CREATE TABLE vms (
     tags TEXT NOT NULL DEFAULT '[]',
     lifecycle_phase TEXT NOT NULL DEFAULT 'idle',
     last_error TEXT NOT NULL DEFAULT '',
-    managed BIGINT NOT NULL DEFAULT 1,
+    managed BOOLEAN NOT NULL DEFAULT TRUE,
     guest_tools_status TEXT NOT NULL DEFAULT 'unknown',
     guest_ip TEXT,
     guest_hostname TEXT,
@@ -1715,7 +1721,7 @@ CREATE TABLE vms (
     restore_point_minutes BIGINT,
     restore_point_keep BIGINT,
     flavor_id UUID,
-    preemptible BIGINT NOT NULL DEFAULT 0,
+    preemptible BOOLEAN NOT NULL DEFAULT FALSE,
     preempt_priority BIGINT NOT NULL DEFAULT 0,
     preempted_at TEXT
 );
@@ -1742,7 +1748,7 @@ CREATE TABLE volumes (
     attached_vm_id UUID,
     attached_device TEXT,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')),
-    delete_on_termination BIGINT NOT NULL DEFAULT 0,
+    delete_on_termination BOOLEAN NOT NULL DEFAULT FALSE,
     read_iops BIGINT,
     write_iops BIGINT,
     read_bps BIGINT,
@@ -1770,83 +1776,83 @@ CREATE TABLE webhooks (
     url TEXT NOT NULL,
     events TEXT NOT NULL DEFAULT '{}',
     secret TEXT NOT NULL DEFAULT '',
-    enabled BIGINT NOT NULL DEFAULT 1,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TEXT NOT NULL DEFAULT (to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS'))
 );
 
 -- rows the SQLite migrations seed (defaults and catalogs)
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('aws-expert', 'AWS Expert', 'Cloud architecture and AWS service guidance', 'architect', '{}', 0, '2026-10-06 15:56:44');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('azure-expert', 'Azure Expert', 'Azure landing zones and NSG guidance', 'architect', '{}', 0, '2026-10-06 15:56:44');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('gcp-expert', 'GCP Expert', 'GCP networking and GKE guidance', 'architect', '{}', 0, '2026-10-06 15:56:44');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('linux-expert', 'Linux Expert', 'Host tuning and systemd diagnostics', 'sre', '{}', 0, '2026-10-06 15:56:44');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('kubernetes-expert', 'Kubernetes Expert', 'Cluster ops and workload placement', 'kubernetes', '{}', 0, '2026-10-06 15:56:44');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('terraform-expert', 'Terraform Expert', 'IaC generation and module guidance', 'architect', '{}', 0, '2026-10-06 15:56:44');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('finops-expert', 'FinOps Expert', 'Cost optimization and chargeback', 'cost', '{}', 0, '2026-10-06 15:56:44');
-INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('security-expert', 'Security Expert', 'Threat hunting and compliance', 'security', '{}', 0, '2026-10-06 15:56:44');
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('bd362935-f978-f071-9d84-f7b20665866d'::uuid, 'infrastructure', NULL, NULL, 10, 1);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('9378a4d1-e5fd-8f6a-90e7-fb5c1e26a52c'::uuid, 'code_generation', NULL, NULL, 20, 1);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('cfbaa412-7321-5763-637a-0452d428d58b'::uuid, 'security_analysis', NULL, NULL, 30, 1);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('91f382b2-55be-6551-dda9-c75539429f51'::uuid, 'research', NULL, NULL, 40, 1);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('ef34e772-c373-e740-cce8-57a6adf34317'::uuid, 'long_context', NULL, NULL, 50, 1);
-INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('79a45adf-969c-9f48-c10a-81ffca123fac'::uuid, 'fast_local', NULL, NULL, 60, 1);
-INSERT INTO controller_leadership (id, holder_id, lease_until, updated_at, epoch) VALUES (1, '', '2026-10-06 15:56:44', '2026-10-06 15:56:44', 0);
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('aws-expert', 'AWS Expert', 'Cloud architecture and AWS service guidance', 'architect', '{}', FALSE, '2026-10-06 16:51:52');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('azure-expert', 'Azure Expert', 'Azure landing zones and NSG guidance', 'architect', '{}', FALSE, '2026-10-06 16:51:52');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('gcp-expert', 'GCP Expert', 'GCP networking and GKE guidance', 'architect', '{}', FALSE, '2026-10-06 16:51:52');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('linux-expert', 'Linux Expert', 'Host tuning and systemd diagnostics', 'sre', '{}', FALSE, '2026-10-06 16:51:52');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('kubernetes-expert', 'Kubernetes Expert', 'Cluster ops and workload placement', 'kubernetes', '{}', FALSE, '2026-10-06 16:51:52');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('terraform-expert', 'Terraform Expert', 'IaC generation and module guidance', 'architect', '{}', FALSE, '2026-10-06 16:51:52');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('finops-expert', 'FinOps Expert', 'Cost optimization and chargeback', 'cost', '{}', FALSE, '2026-10-06 16:51:52');
+INSERT INTO ai_agent_plugins (slug, name, description, agent_id, config_schema_json, installed, published_at) VALUES ('security-expert', 'Security Expert', 'Threat hunting and compliance', 'security', '{}', FALSE, '2026-10-06 16:51:52');
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('37d3d701-d851-ea32-7562-236c6080c0e5'::uuid, 'infrastructure', NULL, NULL, 10, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('2cf501ef-7289-ed62-704d-f9599d3dcc85'::uuid, 'code_generation', NULL, NULL, 20, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('f0658aba-fd22-5701-fccf-c791f610d92a'::uuid, 'security_analysis', NULL, NULL, 30, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('99058a04-d218-32ef-bdfe-b6451fff3b34'::uuid, 'research', NULL, NULL, 40, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('a1899f82-54a6-1713-12ee-72ef642b2e8a'::uuid, 'long_context', NULL, NULL, 50, TRUE);
+INSERT INTO ai_routing_rules (id, task_class, provider_id, model_id, priority, enabled) VALUES ('58d5b3b7-2bf7-8dfb-82e6-c6d9a78f66a5'::uuid, 'fast_local', NULL, NULL, 60, TRUE);
+INSERT INTO controller_leadership (id, holder_id, lease_until, updated_at, epoch) VALUES (1, '', '2026-10-06 16:51:52', '2026-10-06 16:51:52', 0);
 INSERT INTO fips_crypto_profiles (id, name, tls_min_version, fips_mode, cipher_suites, notes) VALUES ('f1000000-0000-4000-8000-000000000001'::uuid, 'platform-default', '1.2', 'disabled', 'TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384', 'Controller TLS via system OpenSSL — FIPS module not selected');
 INSERT INTO fips_crypto_profiles (id, name, tls_min_version, fips_mode, cipher_suites, notes) VALUES ('f1000000-0000-4000-8000-000000000002'::uuid, 'fips-ready', '1.2', 'required', 'TLS_AES_256_GCM_SHA384', 'Target profile for FIPS 140-3 validated module rollout');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('7d0787eb-a3f4-2cd2-fe51-9e7b00ba11b2'::uuid, 'Public', 'Public', '{"default_inbound":"deny"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('004cb80d-88ac-dfb0-d277-fa8a947b8cfc'::uuid, 'Private', 'Private', '{"default_inbound":"allow"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('e5a6a957-f1b3-7853-e4db-3edec9833e26'::uuid, 'ProductionServer', 'Production Server', '{"default_inbound":"deny"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('f9e86702-f63a-0e29-d4ed-b11e31b754cd'::uuid, 'DatabaseServer', 'Database Server', '{"default_inbound":"deny"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('a8b18b3b-a2f1-e8ca-b5f4-7ddbf88723fd'::uuid, 'WebServer', 'Web Server', '{"default_inbound":"deny"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('1f374aa2-26b7-1f5a-25b3-97b12cbed7a8'::uuid, 'KubernetesNode', 'Kubernetes Node', '{"default_inbound":"deny"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('0290bd43-387f-aacd-1c0b-6a033db7a3d7'::uuid, 'StorageNode', 'Storage Node', '{"default_inbound":"deny"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('8e26f343-44b5-516c-917f-0ad849dcdd08'::uuid, 'ManagementNode', 'Management Node', '{"default_inbound":"deny"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('f5b2a2ed-b0ef-15f7-76c6-bdb28078852d'::uuid, 'DevelopmentVm', 'Development VM', '{"default_inbound":"allow"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('696c0940-1a08-e4b3-078a-e4e4c67a389b'::uuid, 'LockedDown', 'Locked Down', '{"default_inbound":"deny","default_outbound":"deny"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('57b13c53-a041-7090-9ce6-bdf7e75eba19'::uuid, 'EmergencyIsolation', 'Emergency Isolation', '{"default_inbound":"deny","default_outbound":"deny","stealth":"emergency"}', 1, '2026-10-06 15:56:44');
-INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair, created_at) VALUES ('10000000-0000-4000-8000-000000000001'::uuid, 'primary-local', 'local', 'primary', 'site-primary', 0, NULL, 'dr-replica', '2026-10-06 15:56:44');
-INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair, created_at) VALUES ('20000000-0000-4000-8000-000000000001'::uuid, 'dr-replica', 'dr', 'replica', 'site-dr', 0, NULL, 'primary-local', '2026-10-06 15:56:44');
-INSERT INTO network_ipam_pools (id, segment_id, cidr, gateway, dns_json, next_offset, created_at) VALUES ('b1000000-0000-4000-8000-000000000001'::uuid, 'a1000000-0000-4000-8000-000000000001'::uuid, '10.10.0.0/16', '10.10.0.1', '["10.10.0.1"]', 10, '2026-10-06 15:56:44');
-INSERT INTO network_ipam_pools (id, segment_id, cidr, gateway, dns_json, next_offset, created_at) VALUES ('b1000000-0000-4000-8000-000000000002'::uuid, 'a1000000-0000-4000-8000-000000000002'::uuid, '172.16.0.0/24', '172.16.0.1', '["172.16.0.1"]', 10, '2026-10-06 15:56:44');
-INSERT INTO network_segments (id, name, tier, cidr, east_west_default, firewall_profile, gitops_namespace, created_at) VALUES ('a1000000-0000-4000-8000-000000000001'::uuid, 'prod-tier1', 'tier1', '10.10.0.0/16', 'allow', 'ProductionServer', 'prod-segments', '2026-10-06 15:56:44');
-INSERT INTO network_segments (id, name, tier, cidr, east_west_default, firewall_profile, gitops_namespace, created_at) VALUES ('a1000000-0000-4000-8000-000000000002'::uuid, 'dmz-tier0', 'tier0', '172.16.0.0/24', 'deny', 'WebServer', 'dmz-segments', '2026-10-06 15:56:44');
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000001'::uuid, 'host_offline', 'Host offline recovery', 'incident', 'high', 'host.state=offline', 1, '2026-10-06 15:56:44', NULL);
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000002'::uuid, 'backup_failed', 'Backup failure triage', 'incident', 'medium', 'task.failed:backup', 1, '2026-10-06 15:56:44', NULL);
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000003'::uuid, 'migration_failed', 'Migration failure triage', 'incident', 'medium', 'task.failed:migrate', 1, '2026-10-06 15:56:44', NULL);
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000004'::uuid, 'firewall_drift', 'Firewall drift remediation', 'compliance', 'high', 'zeus.drift_detected', 1, '2026-10-06 15:56:44', NULL);
-INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000005'::uuid, 'storage_full', 'Storage pool capacity', 'capacity', 'critical', 'storage.used_pct>85', 1, '2026-10-06 15:56:44', NULL);
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000001'::uuid, 'guestkit', 'GuestKit', 'automation', 'Guest health checks, job runner, and in-VM automation bridge.', '1.0.0', 'Zyvor', 1, 0, '{}', '2026-10-06 15:56:44');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000002'::uuid, 'native-bpf', 'Native eBPF', 'observability', 'Kernel-native flows, process telemetry, enforcement, capture and QoS (machina-bpfd).', '1.0.0', 'Zyvor', 1, 1, '{}', '2026-10-06 15:56:44');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000003'::uuid, 'hypersdk', 'HyperSDK', 'migration', 'P2V migration assistant and Windows VM discovery.', '1.0.0', 'Zyvor', 1, 0, '{}', '2026-10-06 15:56:44');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000004'::uuid, 'zeus-firewall', 'Zeus Firewall', 'security', 'Fleet machine shield, profiles, and connectivity simulation.', '1.0.0', 'Zyvor', 1, 1, '{}', '2026-10-06 15:56:44');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000005'::uuid, 'kubevirt-bridge', 'KubeVirt Bridge', 'kubernetes', 'Export libvirt VMs and qcow2 bundles for Kubernetes.', '1.0.0', 'Zyvor', 0, 0, '{}', '2026-10-06 15:56:44');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000006'::uuid, 'network-overlay', 'Network Overlay', 'networking', 'NSX-class segments, IPAM pools, and micro-segmentation stubs.', '1.0.0', 'Zyvor', 0, 1, '{}', '2026-10-06 15:56:44');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000010'::uuid, 'kasm-workspaces', 'Kasm Workspaces', 'console', 'Disposable browser and isolated desktop labs (Marketplace workload — not core ConsoleHub).', '1.0.0', 'Kasm', 0, 0, '{}', '2026-10-06 15:56:44');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000011'::uuid, 'rustdesk', 'RustDesk', 'console', 'TeamViewer-style remote support sessions via Marketplace plugin.', '1.0.0', 'RustDesk', 0, 0, '{}', '2026-10-06 15:56:44');
-INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000012'::uuid, 'meshcentral', 'MeshCentral', 'console', 'Remote management and support gateway as optional Marketplace plugin.', '1.0.0', 'MeshCentral', 0, 0, '{}', '2026-10-06 15:56:44');
-INSERT INTO policy_rules (id, name, enabled, rule_json, created_at) VALUES ('00000000-0000-4000-8000-000000000001'::uuid, 'production-ha-required', 1, '{"when":{"tags_contains":"production"},"require":{"ha_enabled":true}}', '2026-10-06 15:56:44');
-INSERT INTO preempt_settings (id, enabled, reserve_pct, updated_at) VALUES (1, 1, 10, '2026-10-06 15:56:44');
-INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000001'::uuid, 'api-availability', 'controller /api/v1/*', 99.5, 720, 'HTTP 2xx/3xx rate for platform API', '2026-10-06 15:56:44');
-INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000002'::uuid, 'task-success', 'platform tasks', 98.0, 168, 'Completed vs failed task ratio', '2026-10-06 15:56:44');
-INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000003'::uuid, 'host-availability', 'online hosts', 99.0, 720, 'Hosts reporting online vs registered', '2026-10-06 15:56:44');
-INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000001'::uuid, 'critical_anomaly', 'Native eBPF critical or high severity anomaly', 1, 'high', '{"type":"match","match":{"source":"machina-bpf","severity":["critical","high"]}}', 30, 1, '2026-10-06 15:56:44', '2026-10-06 15:56:44');
-INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000002'::uuid, 'firewall_deny_spike', 'Three or more firewall deny events in 15 minutes', 1, 'medium', '{"type":"threshold","match":{"source":"firewall","category":"firewall"},"window_minutes":15,"min_count":3}', 60, 1, '2026-10-06 15:56:44', '2026-10-06 15:56:44');
-INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000003'::uuid, 'brute_force_ssh', 'Repeated failed SSH or auth audit events', 1, 'high', '{"type":"threshold","match":{"source":"audit","ecs.event.action":["auth.failure","login.failed"]},"window_minutes":10,"min_count":5}', 120, 1, '2026-10-06 15:56:44', '2026-10-06 15:56:44');
-INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000004'::uuid, 'new_admin_api_key', 'New API key created by admin actor', 1, 'medium', '{"type":"match","match":{"source":"audit","ecs.event.action":["api_key.create","api_keys.create"]}}', 60, 1, '2026-10-06 15:56:44', '2026-10-06 15:56:44');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('1e35cbdd-f70e-9365-eac2-215c021e8bfc'::uuid, 'Public', 'Public', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('0229a6c3-819b-1ce0-15d7-ef7374c34c26'::uuid, 'Private', 'Private', '{"default_inbound":"allow"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('31f004d4-7f22-ba93-1e72-a2a8ad78b861'::uuid, 'ProductionServer', 'Production Server', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('d13e9f95-d1dd-e896-952f-93e31b035372'::uuid, 'DatabaseServer', 'Database Server', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('9de7d2d0-bb01-6ed8-78b0-092a6e085f74'::uuid, 'WebServer', 'Web Server', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('1b6a5386-4817-9a3b-0a9c-b6c224dc9d01'::uuid, 'KubernetesNode', 'Kubernetes Node', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('28449cc6-a43c-9158-80cf-bc68cdeb2c6e'::uuid, 'StorageNode', 'Storage Node', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('b602c7c5-b189-d07a-a553-21c20f41755f'::uuid, 'ManagementNode', 'Management Node', '{"default_inbound":"deny"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('4e9f1fea-5ce6-0f3a-4f36-ff46923f106f'::uuid, 'DevelopmentVm', 'Development VM', '{"default_inbound":"allow"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('66984f79-aebf-8503-a7ed-48e726adbf1d'::uuid, 'LockedDown', 'Locked Down', '{"default_inbound":"deny","default_outbound":"deny"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_profiles (id, name, display_name, spec_json, builtin, created_at) VALUES ('2c2fcdf2-d15f-0512-0060-90ff6b990bbb'::uuid, 'EmergencyIsolation', 'Emergency Isolation', '{"default_inbound":"deny","default_outbound":"deny","stealth":"emergency"}', TRUE, '2026-10-06 16:51:52');
+INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair, created_at) VALUES ('10000000-0000-4000-8000-000000000001'::uuid, 'primary-local', 'local', 'primary', 'site-primary', 0, NULL, 'dr-replica', '2026-10-06 16:51:52');
+INSERT INTO firewall_sites (id, name, region, role, gitops_namespace, lockdown_enabled, geo_fence, dr_pair, created_at) VALUES ('20000000-0000-4000-8000-000000000001'::uuid, 'dr-replica', 'dr', 'replica', 'site-dr', 0, NULL, 'primary-local', '2026-10-06 16:51:52');
+INSERT INTO network_ipam_pools (id, segment_id, cidr, gateway, dns_json, next_offset, created_at) VALUES ('b1000000-0000-4000-8000-000000000001'::uuid, 'a1000000-0000-4000-8000-000000000001'::uuid, '10.10.0.0/16', '10.10.0.1', '["10.10.0.1"]', 10, '2026-10-06 16:51:52');
+INSERT INTO network_ipam_pools (id, segment_id, cidr, gateway, dns_json, next_offset, created_at) VALUES ('b1000000-0000-4000-8000-000000000002'::uuid, 'a1000000-0000-4000-8000-000000000002'::uuid, '172.16.0.0/24', '172.16.0.1', '["172.16.0.1"]', 10, '2026-10-06 16:51:52');
+INSERT INTO network_segments (id, name, tier, cidr, east_west_default, firewall_profile, gitops_namespace, created_at) VALUES ('a1000000-0000-4000-8000-000000000001'::uuid, 'prod-tier1', 'tier1', '10.10.0.0/16', 'allow', 'ProductionServer', 'prod-segments', '2026-10-06 16:51:52');
+INSERT INTO network_segments (id, name, tier, cidr, east_west_default, firewall_profile, gitops_namespace, created_at) VALUES ('a1000000-0000-4000-8000-000000000002'::uuid, 'dmz-tier0', 'tier0', '172.16.0.0/24', 'deny', 'WebServer', 'dmz-segments', '2026-10-06 16:51:52');
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000001'::uuid, 'host_offline', 'Host offline recovery', 'incident', 'high', 'host.state=offline', TRUE, '2026-10-06 16:51:52', NULL);
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000002'::uuid, 'backup_failed', 'Backup failure triage', 'incident', 'medium', 'task.failed:backup', TRUE, '2026-10-06 16:51:52', NULL);
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000003'::uuid, 'migration_failed', 'Migration failure triage', 'incident', 'medium', 'task.failed:migrate', TRUE, '2026-10-06 16:51:52', NULL);
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000004'::uuid, 'firewall_drift', 'Firewall drift remediation', 'compliance', 'high', 'zeus.drift_detected', TRUE, '2026-10-06 16:51:52', NULL);
+INSERT INTO ops_runbook_catalog (id, incident, title, category, severity, auto_trigger, enabled, created_at, last_triggered_at) VALUES ('f1000000-0000-4000-8000-000000000005'::uuid, 'storage_full', 'Storage pool capacity', 'capacity', 'critical', 'storage.used_pct>85', TRUE, '2026-10-06 16:51:52', NULL);
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000001'::uuid, 'guestkit', 'GuestKit', 'automation', 'Guest health checks, job runner, and in-VM automation bridge.', '1.0.0', 'Zyvor', TRUE, FALSE, '{}', '2026-10-06 16:51:52');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000002'::uuid, 'native-bpf', 'Native eBPF', 'observability', 'Kernel-native flows, process telemetry, enforcement, capture and QoS (machina-bpfd).', '1.0.0', 'Zyvor', TRUE, TRUE, '{}', '2026-10-06 16:51:52');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000003'::uuid, 'hypersdk', 'HyperSDK', 'migration', 'P2V migration assistant and Windows VM discovery.', '1.0.0', 'Zyvor', TRUE, FALSE, '{}', '2026-10-06 16:51:52');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000004'::uuid, 'zeus-firewall', 'Zeus Firewall', 'security', 'Fleet machine shield, profiles, and connectivity simulation.', '1.0.0', 'Zyvor', TRUE, TRUE, '{}', '2026-10-06 16:51:52');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000005'::uuid, 'kubevirt-bridge', 'KubeVirt Bridge', 'kubernetes', 'Export libvirt VMs and qcow2 bundles for Kubernetes.', '1.0.0', 'Zyvor', FALSE, FALSE, '{}', '2026-10-06 16:51:52');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000006'::uuid, 'network-overlay', 'Network Overlay', 'networking', 'NSX-class segments, IPAM pools, and micro-segmentation stubs.', '1.0.0', 'Zyvor', FALSE, TRUE, '{}', '2026-10-06 16:51:52');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000010'::uuid, 'kasm-workspaces', 'Kasm Workspaces', 'console', 'Disposable browser and isolated desktop labs (Marketplace workload — not core ConsoleHub).', '1.0.0', 'Kasm', FALSE, FALSE, '{}', '2026-10-06 16:51:52');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000011'::uuid, 'rustdesk', 'RustDesk', 'console', 'TeamViewer-style remote support sessions via Marketplace plugin.', '1.0.0', 'RustDesk', FALSE, FALSE, '{}', '2026-10-06 16:51:52');
+INSERT INTO platform_plugins (id, slug, name, category, description, version, author, featured, installed, config_json, created_at) VALUES ('c2000000-0000-4000-8000-000000000012'::uuid, 'meshcentral', 'MeshCentral', 'console', 'Remote management and support gateway as optional Marketplace plugin.', '1.0.0', 'MeshCentral', FALSE, FALSE, '{}', '2026-10-06 16:51:52');
+INSERT INTO policy_rules (id, name, enabled, rule_json, created_at) VALUES ('00000000-0000-4000-8000-000000000001'::uuid, 'production-ha-required', TRUE, '{"when":{"tags_contains":"production"},"require":{"ha_enabled":true}}', '2026-10-06 16:51:52');
+INSERT INTO preempt_settings (id, enabled, reserve_pct, updated_at) VALUES (1, TRUE, 10, '2026-10-06 16:51:52');
+INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000001'::uuid, 'api-availability', 'controller /api/v1/*', 99.5, 720, 'HTTP 2xx/3xx rate for platform API', '2026-10-06 16:51:52');
+INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000002'::uuid, 'task-success', 'platform tasks', 98.0, 168, 'Completed vs failed task ratio', '2026-10-06 16:51:52');
+INSERT INTO slo_policies (id, name, target, objective_pct, window_hours, description, created_at) VALUES ('a1000000-0000-4000-8000-000000000003'::uuid, 'host-availability', 'online hosts', 99.0, 720, 'Hosts reporting online vs registered', '2026-10-06 16:51:52');
+INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000001'::uuid, 'critical_anomaly', 'Native eBPF critical or high severity anomaly', TRUE, 'high', '{"type":"match","match":{"source":"machina-bpf","severity":["critical","high"]}}', 30, TRUE, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
+INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000002'::uuid, 'firewall_deny_spike', 'Three or more firewall deny events in 15 minutes', TRUE, 'medium', '{"type":"threshold","match":{"source":"firewall","category":"firewall"},"window_minutes":15,"min_count":3}', 60, TRUE, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
+INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000003'::uuid, 'brute_force_ssh', 'Repeated failed SSH or auth audit events', TRUE, 'high', '{"type":"threshold","match":{"source":"audit","ecs.event.action":["auth.failure","login.failed"]},"window_minutes":10,"min_count":5}', 120, TRUE, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
+INSERT INTO soc_detection_rules (id, name, description, enabled, severity, query_json, throttle_minutes, builtin, created_at, updated_at) VALUES ('a1000001-0001-4001-8001-000000000004'::uuid, 'new_admin_api_key', 'New API key created by admin actor', TRUE, 'medium', '{"type":"match","match":{"source":"audit","ecs.event.action":["api_key.create","api_keys.create"]}}', 60, TRUE, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
 INSERT INTO soc_ingest_watermarks (source, last_at) VALUES ('firewall_timeline', '1970-01-01T00:00:00Z');
 INSERT INTO soc_ingest_watermarks (source, last_at) VALUES ('audit_logs', '1970-01-01T00:00:00Z');
 INSERT INTO soc_ingest_watermarks (source, last_at) VALUES ('platform_events', '1970-01-01T00:00:00Z');
 INSERT INTO soc_ingest_watermarks (source, last_at) VALUES ('machina-bpf', '1970-01-01T00:00:00Z');
-INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000001'::uuid, 'splunk_hec', 'default', 0, '{"url":"","token":"","index":"machina","sourcetype_events":"machina:soc:ecs","sourcetype_alerts":"machina:soc:alert","host":""}', NULL, NULL, '2026-10-06 15:56:44', '2026-10-06 15:56:44');
-INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000002'::uuid, 'elastic_bulk', 'default', 0, '{"url":"","api_key":"","index":"logs-machina.soc","pipeline":""}', NULL, NULL, '2026-10-06 15:56:44', '2026-10-06 15:56:44');
-INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000003'::uuid, 'sentinel_dcr', 'default', 0, '{"dce_endpoint":"","dcr_immutable_id":"","stream_name":"","tenant_id":"","client_id":"","client_secret":""}', NULL, NULL, '2026-10-06 15:56:44', '2026-10-06 15:56:44');
-INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000004'::uuid, 'qradar_rest', 'default', 0, '{"url":"","api_token":"","log_source_id":""}', NULL, NULL, '2026-10-06 15:56:44', '2026-10-06 15:56:44');
-INSERT INTO soc_playbooks (id, name, description, enabled, trigger_json, steps_json, created_at, updated_at) VALUES ('c3000003-0003-4003-8003-000000000001'::uuid, 'notify_on_critical', 'Webhook notify when critical SOC alert opens', 1, '{"min_severity":"high","rule_names":[]}', '[{"type":"webhook","url_from_setting":"soc_webhook_url","body":{"alert_id":"{{alert_id}}","title":"{{title}}","severity":"{{severity}}"}}]', '2026-10-06 15:56:44', '2026-10-06 15:56:44');
-INSERT INTO soc_settings (id, webhook_url, updated_at) VALUES (1, '', '2026-10-06 15:56:44');
-INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000001'::uuid, 'gold-performance', 'gold', 'nvme', 'sync-mirror', 30, 4, 'Low-latency NVMe tier with synchronous mirror stub', '2026-10-06 15:56:44');
-INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000002'::uuid, 'silver-standard', 'silver', 'standard', 'local', 14, 24, 'Default production datastore tier', '2026-10-06 15:56:44');
-INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000003'::uuid, 'bronze-archive', 'bronze', 'hdd', 'local', 7, 72, 'Capacity-optimized cold tier', '2026-10-06 15:56:44');
-INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at) VALUES ('10000000-0000-4000-8000-000000000001'::uuid, 'default', 'shared', 0, 0, 0, '2026-10-06 15:56:44');
-INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at) VALUES ('10000000-0000-4000-8000-000000000002'::uuid, 'production', 'segmented', 50, 10240, 1, '2026-10-06 15:56:44');
+INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000001'::uuid, 'splunk_hec', 'default', FALSE, '{"url":"","token":"","index":"machina","sourcetype_events":"machina:soc:ecs","sourcetype_alerts":"machina:soc:alert","host":""}', NULL, NULL, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
+INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000002'::uuid, 'elastic_bulk', 'default', FALSE, '{"url":"","api_key":"","index":"logs-machina.soc","pipeline":""}', NULL, NULL, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
+INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000003'::uuid, 'sentinel_dcr', 'default', FALSE, '{"dce_endpoint":"","dcr_immutable_id":"","stream_name":"","tenant_id":"","client_id":"","client_secret":""}', NULL, NULL, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
+INSERT INTO soc_integrations (id, integration_type, name, enabled, config_json, last_success_at, last_error, created_at, updated_at) VALUES ('b2000002-0002-4002-8002-000000000004'::uuid, 'qradar_rest', 'default', FALSE, '{"url":"","api_token":"","log_source_id":""}', NULL, NULL, '2026-10-06 16:51:52', '2026-10-06 16:51:52');
+INSERT INTO soc_playbooks (id, name, description, enabled, trigger_json, steps_json, created_at, updated_at) VALUES ('c3000003-0003-4003-8003-000000000001'::uuid, 'notify_on_critical', 'Webhook notify when critical SOC alert opens', TRUE, '{"min_severity":"high","rule_names":[]}', '[{"type":"webhook","url_from_setting":"soc_webhook_url","body":{"alert_id":"{{alert_id}}","title":"{{title}}","severity":"{{severity}}"}}]', '2026-10-06 16:51:52', '2026-10-06 16:51:52');
+INSERT INTO soc_settings (id, webhook_url, updated_at) VALUES (1, '', '2026-10-06 16:51:52');
+INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000001'::uuid, 'gold-performance', 'gold', 'nvme', 'sync-mirror', 30, 4, 'Low-latency NVMe tier with synchronous mirror stub', '2026-10-06 16:51:52');
+INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000002'::uuid, 'silver-standard', 'silver', 'standard', 'local', 14, 24, 'Default production datastore tier', '2026-10-06 16:51:52');
+INSERT INTO storage_tiers (id, name, tier_class, iops_tier, replication, snapshot_retention_days, backup_rpo_hours, description, created_at) VALUES ('d1000000-0000-4000-8000-000000000003'::uuid, 'bronze-archive', 'bronze', 'hdd', 'local', 7, 72, 'Capacity-optimized cold tier', '2026-10-06 16:51:52');
+INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at) VALUES ('10000000-0000-4000-8000-000000000001'::uuid, 'default', 'shared', 0, 0, 0, '2026-10-06 16:51:52');
+INSERT INTO tenant_isolation_policies (id, project_name, network_isolation, max_vms, max_storage_gib, enforce_quotas, updated_at) VALUES ('10000000-0000-4000-8000-000000000002'::uuid, 'production', 'segmented', 50, 10240, 1, '2026-10-06 16:51:52');
 
 ALTER TABLE ai_models ADD CONSTRAINT ai_models_provider_id_fk0 FOREIGN KEY (provider_id) REFERENCES ai_providers(id) ON DELETE CASCADE;
 ALTER TABLE ai_routing_rules ADD CONSTRAINT ai_routing_rules_provider_id_fk1 FOREIGN KEY (provider_id) REFERENCES ai_providers(id) ON DELETE SET NULL;
@@ -1991,7 +1997,7 @@ CREATE INDEX idx_fw_cloud_provider ON firewall_cloud_snapshots(provider, capture
 CREATE INDEX idx_fw_posture_target ON firewall_posture_snapshots(target_kind, target_id, captured_at DESC);
 CREATE INDEX idx_fw_site_drift_site ON firewall_site_drift(site_id, captured_at DESC);
 CREATE INDEX idx_fw_site_policies_site ON firewall_site_policies(site_id);
-CREATE INDEX idx_fw_temp_expiry ON firewall_temporary_rules(expires_at) WHERE applied = 1;
+CREATE INDEX idx_fw_temp_expiry ON firewall_temporary_rules(expires_at) WHERE applied = TRUE;
 CREATE INDEX idx_fw_timeline_target ON firewall_timeline(target_kind, target_id, created_at DESC);
 CREATE INDEX idx_ha_events_created ON ha_events(created_at DESC);
 CREATE INDEX idx_host_lldp_cache_fetched ON host_lldp_cache(fetched_at DESC);
@@ -2051,7 +2057,7 @@ CREATE INDEX idx_vm_disks_vm ON vm_disks(vm_id);
 CREATE INDEX idx_vm_forks_source ON vm_forks(source_vm_id);
 CREATE INDEX idx_vm_restore_points_vm ON vm_restore_points(vm_id, created_at);
 CREATE INDEX idx_vm_schedules_next_run
-    ON vm_schedules(next_run_at) WHERE enabled = 1;
+    ON vm_schedules(next_run_at) WHERE enabled = TRUE;
 CREATE INDEX idx_vm_schedules_vm
     ON vm_schedules(vm_id);
 CREATE INDEX idx_vm_sleep_events_vm ON vm_sleep_events(vm_id, at);

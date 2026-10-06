@@ -301,7 +301,7 @@ pub async fn forks_after(
     point: Uuid,
 ) -> anyhow::Result<Vec<String>> {
     Ok(crate::db::query_scalar(
-        "SELECT COALESCE(v.name, f.fork_vm_id) FROM vm_forks f
+        "SELECT COALESCE(v.name, CAST(f.fork_vm_id AS TEXT)) FROM vm_forks f
          JOIN vm_restore_points p ON p.id = f.restore_point_id
          LEFT JOIN vms v ON v.id = f.fork_vm_id
          WHERE p.vm_id = ?1 AND p.created_at > (SELECT created_at FROM vm_restore_points WHERE id = ?2)",

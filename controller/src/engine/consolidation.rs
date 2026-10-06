@@ -139,7 +139,7 @@ pub fn plan(hosts: &[HostLoad], vms: &[VmLoad]) -> Plan {
 pub async fn load(pool: &DbPool) -> anyhow::Result<(Vec<HostLoad>, Vec<VmLoad>)> {
     let hosts: Vec<(Uuid, String, i64, i64)> = crate::db::query_as(
         "SELECT id, hostname, memory_total_mib, memory_used_mib FROM hosts
-         WHERE state = 'online' AND maintenance_mode = 0 AND schedulable = 1
+         WHERE state = 'online' AND maintenance_mode = FALSE AND schedulable = TRUE
          ORDER BY hostname",
     )
     .fetch_all(pool)

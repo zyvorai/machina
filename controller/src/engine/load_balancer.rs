@@ -41,7 +41,7 @@ pub async fn apply(pool: &DbPool, cfg: &ControllerConfig, lb_id: Uuid) -> anyhow
         "SELECT v.guest_ip, m.port, m.weight
          FROM lb_members m
          JOIN vms v ON v.id = m.vm_id
-         WHERE m.load_balancer_id = ? AND m.enabled = 1 AND m.health <> 'unhealthy'
+         WHERE m.load_balancer_id = ? AND m.enabled = TRUE AND m.health <> 'unhealthy'
          ORDER BY m.created_at",
     )
     .bind(lb_id)

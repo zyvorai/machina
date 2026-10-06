@@ -76,6 +76,12 @@ CREATE FUNCTION json_each(doc text) RETURNS TABLE(key text, value text, type tex
     FROM jsonb_each(CASE WHEN jsonb_typeof($1::jsonb) = 'object' THEN $1::jsonb ELSE '{}'::jsonb END) AS o
 $$;
 
+-- SQLite's two-argument max()/min() are scalar functions (the larger/smaller of two values); PostgreSQL spells them GREATEST/LEAST
+CREATE FUNCTION max(a bigint, b bigint) RETURNS bigint LANGUAGE sql IMMUTABLE AS $$ SELECT GREATEST($1, $2) $$;
+CREATE FUNCTION max(a double precision, b double precision) RETURNS double precision LANGUAGE sql IMMUTABLE AS $$ SELECT GREATEST($1, $2) $$;
+CREATE FUNCTION min(a bigint, b bigint) RETURNS bigint LANGUAGE sql IMMUTABLE AS $$ SELECT LEAST($1, $2) $$;
+CREATE FUNCTION min(a double precision, b double precision) RETURNS double precision LANGUAGE sql IMMUTABLE AS $$ SELECT LEAST($1, $2) $$;
+
 -- the current time as the controller stores it (CURRENT_TIMESTAMP in SQL text is rewritten to this)
 CREATE FUNCTION machina_now() RETURNS text LANGUAGE sql STABLE AS $$ SELECT datetime() $$;
 

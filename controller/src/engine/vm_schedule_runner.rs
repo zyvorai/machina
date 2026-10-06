@@ -27,7 +27,7 @@ async fn tick(state: &AppState) -> anyhow::Result<()> {
     let due: Vec<(Uuid, Uuid, String, i64, Option<i64>)> = crate::db::query_as(
         "SELECT id, vm_id, action, interval_minutes, retention
          FROM vm_schedules
-         WHERE enabled = 1 AND next_run_at <= datetime('now')
+         WHERE enabled = TRUE AND next_run_at <= datetime('now')
          LIMIT 50",
     )
     .fetch_all(&state.pool)

@@ -122,18 +122,19 @@ pub async fn rollup_hourly(pool: &DbPool, now: i64) -> anyhow::Result<()> {
     let end = now / HOUR * HOUR;
     let start = end - 2 * DAY;
     crate::db::query(
-        "INSERT OR REPLACE INTO metric_hourly (subject, metric, hour, avg, max, n)
+        "INSERT INTO metric_hourly (subject, metric, hour, avg, max, n)
          SELECT subject, metric, ts / 3600 * 3600 AS h, AVG(value), MAX(value), COUNT(*)
          FROM metric_samples
          WHERE ts >= ? AND ts < ? AND metric <> 'net_bytes'
-         GROUP BY subject, metric, h",
+         GROUP BY subject, metric, h
+         ON CONFLICT(subject, metric, hour) DO UPDATE SET avg = excluded.avg, max = excluded.max, n = excluded.n",
     )
     .bind(start)
     .bind(end)
     .execute(pool)
     .await?;
     crate::db::query(
-        "INSERT OR REPLACE INTO metric_hourly (subject, metric, hour, avg, max, n)
+        "INSERT INTO metric_hourly (subject, metric, hour, avg, max, n)
          SELECT subject, 'net_bps', ts / 3600 * 3600 AS h,
                 max(0.0, (MAX(value) - MIN(value)) * 1.0 / max(1, MAX(ts) - MIN(ts))),
                 max(0.0, (MAX(value) - MIN(value)) * 1.0 / max(1, MAX(ts) - MIN(ts))),
@@ -141,7 +142,8 @@ pub async fn rollup_hourly(pool: &DbPool, now: i64) -> anyhow::Result<()> {
          FROM metric_samples
          WHERE ts >= ? AND ts < ? AND metric = 'net_bytes'
          GROUP BY subject, h
-         HAVING COUNT(*) >= 2",
+         HAVING COUNT(*) >= 2
+         ON CONFLICT(subject, metric, hour) DO UPDATE SET avg = excluded.avg, max = excluded.max, n = excluded.n",
     )
     .bind(start)
     .bind(end)

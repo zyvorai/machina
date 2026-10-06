@@ -4,8 +4,9 @@
 //! A fresh, fully migrated database for one test, on whichever backend this build uses. Not part of the public API: it is `pub`
 //! only so the integration tests in `controller/tests` can use it too.
 //!
-//! SQLite: a private in-memory database. PostgreSQL: a new schema in the server named by `TEST_DATABASE_URL`, so tests run in
-//! parallel without seeing each other (schemas are left behind; drop them with `scripts/db/pg-test-clean.sh`).
+//! SQLite: a private in-memory database. PostgreSQL: a database cloned from a migrated template on the server named by
+//! `TEST_DATABASE_URL` (the user needs CREATEDB), so tests run in parallel without seeing each other. Databases are left
+//! behind; drop the `machina_t_*` and `machina_tpl_*` ones with `scripts/db/pg-test-clean.sh`.
 
 use super::DbPool;
 
@@ -22,14 +23,33 @@ pub async fn pool() -> DbPool {
 pub async fn pool() -> DbPool {
     use sqlx::postgres::{PgConnectOptions, PgPoolOptions};
     use std::str::FromStr;
+    use tokio::sync::OnceCell;
+
+    // Migrating ~150 tables and 300 indexes for every test is slow, so each test process migrates one template database and each
+    // test clones it (`CREATE DATABASE ... TEMPLATE`, a file copy) into a database of its own.
+    static TEMPLATE: OnceCell<String> = OnceCell::const_new();
     let url = std::env::var("TEST_DATABASE_URL")
         .expect("the PostgreSQL build's tests need TEST_DATABASE_URL, for example postgres://machina:machina@127.0.0.1:5432/machina_test");
-    let schema = format!("t_{}", uuid::Uuid::new_v4().simple());
-    let admin = PgPoolOptions::new().max_connections(1).connect(&url).await.expect("cannot reach TEST_DATABASE_URL");
-    sqlx::query(&format!("CREATE SCHEMA {schema}")).execute(&admin).await.unwrap();
+    let base = PgConnectOptions::from_str(&url).expect("TEST_DATABASE_URL is not a valid URL");
+    let admin = || PgPoolOptions::new().max_connections(1).connect_with(base.clone());
+
+    let template = TEMPLATE
+        .get_or_init(|| async {
+            let name = format!("machina_tpl_{}_{}", std::process::id(), uuid::Uuid::new_v4().simple());
+            let admin = admin().await.expect("cannot reach TEST_DATABASE_URL");
+            sqlx::query(&format!("CREATE DATABASE {name}")).execute(&admin).await.unwrap();
+            admin.close().await;
+            let pool = PgPoolOptions::new().max_connections(2).connect_with(base.clone().database(&name)).await.unwrap();
+            super::migrate(&pool).await.expect("migrate failed");
+            pool.close().await; // a template database must have no open connections
+            name
+        })
+        .await
+        .clone();
+
+    let name = format!("machina_t_{}", uuid::Uuid::new_v4().simple());
+    let admin = admin().await.expect("cannot reach TEST_DATABASE_URL");
+    sqlx::query(&format!("CREATE DATABASE {name} TEMPLATE {template}")).execute(&admin).await.unwrap();
     admin.close().await;
-    let options = PgConnectOptions::from_str(&url).unwrap().options([("search_path", schema.as_str())]);
-    let pool = PgPoolOptions::new().max_connections(4).connect_with(options).await.unwrap();
-    super::migrate(&pool).await.expect("migrate failed");
-    pool
+    PgPoolOptions::new().max_connections(4).connect_with(base.database(&name)).await.unwrap()
 }

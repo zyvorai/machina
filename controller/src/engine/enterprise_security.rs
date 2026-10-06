@@ -16,6 +16,7 @@ pub struct AirGapBundleRow {
     pub id: Uuid,
     pub name: String,
     pub checksum: String,
+    #[sqlx(try_from = "crate::db::JsonText")]
     pub manifest_json: serde_json::Value,
     pub size_bytes: i64,
     pub exported_at: chrono::DateTime<chrono::Utc>,

@@ -110,7 +110,7 @@ async fn project_roles(state: &AppState, username: &str, project: &str) -> Vec<S
     crate::db::query_scalar(
         "SELECT a.role FROM project_role_assignments a
          JOIN users u ON u.id = a.user_id JOIN projects p ON p.id = a.project_id
-         WHERE u.username = ? AND p.name = ? AND p.enabled = 1",
+         WHERE u.username = ? AND p.name = ? AND p.enabled = TRUE",
     )
     .bind(username)
     .bind(project)
@@ -124,7 +124,7 @@ async fn member_projects(state: &AppState, username: &str) -> Vec<String> {
     crate::db::query_scalar(
         "SELECT DISTINCT p.name FROM project_role_assignments a
          JOIN users u ON u.id = a.user_id JOIN projects p ON p.id = a.project_id
-         WHERE u.username = ? AND p.enabled = 1",
+         WHERE u.username = ? AND p.enabled = TRUE",
     )
     .bind(username)
     .fetch_all(&state.pool)

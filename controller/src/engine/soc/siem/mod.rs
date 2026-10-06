@@ -17,6 +17,7 @@ pub struct IntegrationRow {
     pub integration_type: String,
     pub name: String,
     pub enabled: bool,
+    #[sqlx(try_from = "crate::db::JsonText")]
     pub config_json: Value,
 }
 
@@ -129,6 +130,7 @@ pub(crate) struct EventRow {
     pub source: String,
     pub severity: String,
     pub summary: String,
+    #[sqlx(try_from = "crate::db::JsonText")]
     pub ecs_json: Value,
 }
 

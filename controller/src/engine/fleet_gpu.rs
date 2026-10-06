@@ -140,7 +140,7 @@ pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetGpuOverview> {
         String,
         String,
         i32,
-        sqlx::types::Json<Vec<String>>,
+        crate::db::Json<Vec<String>>,
     )> = crate::db::query_as(
         "SELECT id, hostname, state, COALESCE(site, ''), COALESCE(rack, ''), vm_count,
                 COALESCE(tags, '[]') AS tags
@@ -149,7 +149,7 @@ pub async fn overview(pool: &DbPool) -> anyhow::Result<FleetGpuOverview> {
     .fetch_all(pool)
     .await?;
 
-    let vm_rows: Vec<(Uuid, String, Option<Uuid>, String, sqlx::types::Json<Vec<String>>)> = crate::db::query_as(
+    let vm_rows: Vec<(Uuid, String, Option<Uuid>, String, crate::db::Json<Vec<String>>)> = crate::db::query_as(
         "SELECT id, name, host_id, observed_state, COALESCE(tags, '[]') AS tags FROM vms ORDER BY name",
     )
     .fetch_all(pool)
