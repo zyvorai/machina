@@ -1055,6 +1055,17 @@ pub async fn create_from_virt_install(
     create_vm(State(state), Extension(actor), Json(create_body)).await
 }
 
+pub async fn adaptive_migration_decision(
+    Extension(actor): Extension<AuthUser>,
+    Json(body): Json<crate::engine::adaptive_migration::MigrationTelemetry>,
+) -> Result<Json<crate::engine::adaptive_migration::AdaptiveMigrationDecision>, ApiError> {
+    require_operator(&actor)?;
+    Ok(Json(crate::engine::adaptive_migration::decide(
+        &body,
+        &crate::engine::adaptive_migration::AdaptiveMigrationPolicy::default(),
+    )))
+}
+
 pub async fn migrate_precheck(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,

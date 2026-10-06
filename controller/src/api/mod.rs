@@ -682,6 +682,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/ai/terminal/suggest", post(ai::terminal_suggest))
         .route("/api/v1/ai/network/explain", post(ai::network_explain))
         .route("/api/v1/migrations/advisor", get(ai::migration_advisor))
+        .route("/api/v1/migrations/adaptive/decision", post(vms::adaptive_migration_decision))
         .route("/api/v1/guestkit/status", get(guestkit::guestkit_status))
         .route("/api/v1/guestkit/doctor", post(guestkit::guestkit_doctor))
         .route(

@@ -47,6 +47,7 @@ pub mod kubevirt_inventory;
 pub mod kubevirt_ssh;
 pub mod load_balancer;
 pub mod migrate_precheck;
+pub mod adaptive_migration;
 pub mod network_overlay;
 pub mod network_sync;
 pub mod observability;
