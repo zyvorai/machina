@@ -90,36 +90,13 @@ pub fn next_desired(policy: &ScalingPolicy, step: i32) -> Option<u32> {
     (want != policy.desired).then_some(want)
 }
 
-async fn subjects(pool: &SqlitePool, subject: &str) -> Vec<String> {
-    let Some(hex) = subject.strip_prefix("group:") else {
-        return vec![subject.to_string()];
-    };
-    sqlx::query_scalar(
-        "SELECT v.name FROM cloud_group_members m JOIN vms v ON v.id = m.vm_id WHERE lower(hex(m.group_id)) = ?",
-    )
-    .bind(hex.to_ascii_lowercase())
-    .fetch_all(pool)
-    .await
-    .unwrap_or_default()
-}
-
 type AlarmRow = (Uuid, String, String, String, String, i64, i64, String, f64, String, String, Option<Uuid>, i64, i64, Option<i64>);
 
 async fn evaluate_one(state: &AppState, a: AlarmRow, now: i64, epoch: i64) -> anyhow::Result<()> {
     let (id, name, subject, metric, statistic, period, periods, comparator, threshold, prev, action, group, step, cooldown, since) = a;
-    let names = subjects(&state.pool, &subject).await;
     let start = now - period * periods;
-    let mut samples: Vec<(i64, f64)> = Vec::new();
-    for n in &names {
-        let mut s: Vec<(i64, f64)> = sqlx::query_as("SELECT ts, value FROM metric_samples WHERE subject = ? AND metric = ? AND ts >= ? AND ts < ?")
-            .bind(n)
-            .bind(&metric)
-            .bind(start)
-            .bind(now)
-            .fetch_all(&state.pool)
-            .await?;
-        samples.append(&mut s);
-    }
+    let keys = crate::api::metric_stats::subject_keys(&state.pool, &subject).await;
+    let samples = crate::api::metric_stats::fetch_samples(&state.pool, &keys, &metric, start, now).await?;
     let cmp = Cmp::parse(&comparator).unwrap_or(Cmp::Gt);
     let points = aggregate(&samples, period, &[statistic.as_str()]);
     let (new_state, reason) = evaluate(&points, &statistic, periods as usize, cmp, threshold);

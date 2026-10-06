@@ -113,14 +113,15 @@ worked; a failure is logged and the port still exists). Deleting the port unpins
 addresses and a port still carries one security group; per-interface groups are not enforced (groups attach to instances).
 
 ## Metric statistics
-`GET /api/v1/metrics/statistics?subject=<vm name>&metric=<metric>&period=300&statistics=Average,Maximum&start=&end=` buckets
+`GET /api/v1/metrics/statistics?subject=<vm name, i- id or uuid>&metric=<metric>&period=300&statistics=Average,Maximum&start=&end=` buckets
 the stored samples (`metric_samples`) into epoch-aligned windows of `period` seconds (a multiple of 60, 60–86400) and returns
 `Average`, `Minimum`, `Maximum`, `Sum` and `SampleCount` per window. The default range is the last hour; the limit is 15
 days and 1440 datapoints per call. Retention is whatever the sampler keeps; there are no custom dimensions or units yet.
 
 ## Alarms
-`POST /api/v1/alarms` creates a CloudWatch-style alarm over the stored metric samples: `subject` (a VM name, or
-`group:<group id, 32 hex>` for every member of an instance group), `metric`, `statistic`, `period_secs` (60–3600, multiples
+`POST /api/v1/alarms` creates a CloudWatch-style alarm over the stored metric samples: `subject` (a VM name, its `i-` id or UUID, or
+`group:<group id, 32 hex>` for every member of an instance group; the sampler records `cpu_percent`, `mem_ratio`, `disk_iops` and
+`net_bytes` per machine every minute), `metric`, `statistic`, `period_secs` (60–3600, multiples
 of 60), `evaluation_periods` (1–10), `comparator` (`gt|gte|lt|lte`) and `threshold`. It is `OK`, `ALARM` or
 `INSUFFICIENT_DATA` (fewer than `evaluation_periods` windows with data) and re-evaluated every minute on the leader; state
 changes are events and carry a reason.

@@ -5,6 +5,9 @@
 
 use std::collections::BTreeMap;
 
+use sqlx::SqlitePool;
+use uuid::Uuid;
+
 use axum::extract::{Query, State};
 use axum::{Extension, Json};
 use serde::{Deserialize, Serialize};
@@ -47,6 +50,72 @@ pub struct Datapoint {
     pub sum: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sample_count: Option<u64>,
+}
+
+/// How a sample's `subject` is stored: text (`pool:<id>`, `group:<hex>`, synthetic subjects) or, for machines, the machine's
+/// 16-byte id. A caller names a machine by name, `i-…` id or UUID, so every candidate is tried.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SubjectKey {
+    Text(String),
+    Id(Uuid),
+}
+
+/// The candidates that need no database lookup, plus the machine name / EC2 id hex / group hex still to resolve.
+pub(crate) fn classify(subject: &str) -> (Vec<SubjectKey>, Option<String>, Option<String>, Option<String>) {
+    let mut keys = vec![SubjectKey::Text(subject.to_string())];
+    if let Ok(u) = Uuid::parse_str(subject) {
+        keys.push(SubjectKey::Id(u));
+        return (keys, None, None, None);
+    }
+    if let Some(hex) = subject.strip_prefix("group:") {
+        return (keys, None, None, Some(hex.to_ascii_lowercase()));
+    }
+    if let Some((crate::resource_ids::Kind::Vm, hex)) = crate::resource_ids::parse(subject) {
+        return (keys, None, Some(hex), None);
+    }
+    (keys, Some(subject.to_string()), None, None)
+}
+
+/// Every key the samples of `subject` may be stored under.
+pub(crate) async fn subject_keys(pool: &SqlitePool, subject: &str) -> Vec<SubjectKey> {
+    let (mut keys, name, ec2_hex, group_hex) = classify(subject);
+    if let Some(n) = name {
+        if let Ok(Some(id)) = sqlx::query_scalar::<_, Uuid>("SELECT id FROM vms WHERE name = ?").bind(n).fetch_optional(pool).await {
+            keys.push(SubjectKey::Id(id));
+        }
+    }
+    if let Some(hex) = ec2_hex {
+        if let Ok(ids) = sqlx::query_scalar::<_, Uuid>("SELECT id FROM vms WHERE lower(hex(id)) LIKE ?").bind(format!("{hex}%")).fetch_all(pool).await {
+            keys.extend(ids.into_iter().take(1).map(SubjectKey::Id));
+        }
+    }
+    if let Some(hex) = group_hex {
+        // a group's metric is its members' samples
+        if let Ok(ids) = sqlx::query_scalar::<_, Uuid>("SELECT vm_id FROM cloud_group_members WHERE lower(hex(group_id)) = ? AND vm_id IS NOT NULL")
+            .bind(hex)
+            .fetch_all(pool)
+            .await
+        {
+            keys.extend(ids.into_iter().map(SubjectKey::Id));
+        }
+    }
+    keys
+}
+
+/// `(ts, value)` samples of `metric` for all `keys` in `[start, end)`.
+pub(crate) async fn fetch_samples(pool: &SqlitePool, keys: &[SubjectKey], metric: &str, start: i64, end: i64) -> Result<Vec<(i64, f64)>, sqlx::Error> {
+    let sql = "SELECT ts, value FROM metric_samples WHERE subject = ? AND metric = ? AND ts >= ? AND ts < ? ORDER BY ts";
+    let mut out = Vec::new();
+    for k in keys {
+        let q = sqlx::query_as::<_, (i64, f64)>(sql);
+        let q = match k {
+            SubjectKey::Text(t) => q.bind(t.clone()),
+            SubjectKey::Id(u) => q.bind(*u),
+        };
+        out.extend(q.bind(metric).bind(start).bind(end).fetch_all(pool).await?);
+    }
+    out.sort_by_key(|s| s.0);
+    Ok(out)
 }
 
 pub(crate) fn parse_statistics(s: Option<&str>) -> Result<Vec<&'static str>, String> {
@@ -124,15 +193,8 @@ pub async fn statistics(
     let period = q.period.unwrap_or(300);
     validate_window(period, start, end).map_err(ApiError::bad_request)?;
     let stats = parse_statistics(q.statistics.as_deref()).map_err(ApiError::bad_request)?;
-    let samples: Vec<(i64, f64)> = sqlx::query_as(
-        "SELECT ts, value FROM metric_samples WHERE subject = ? AND metric = ? AND ts >= ? AND ts < ? ORDER BY ts",
-    )
-    .bind(&q.subject)
-    .bind(&q.metric)
-    .bind(start)
-    .bind(end)
-    .fetch_all(&state.pool)
-    .await?;
+    let keys = subject_keys(&state.pool, &q.subject).await;
+    let samples = fetch_samples(&state.pool, &keys, &q.metric, start, end).await?;
     Ok(Json(serde_json::json!({
         "subject": q.subject,
         "metric": q.metric,
@@ -174,6 +236,40 @@ mod tests {
         assert_eq!(parse_statistics(Some("Sum, Sum,Maximum")).unwrap(), ["Sum", "Maximum"]);
         assert!(parse_statistics(Some("P99")).is_err());
         assert!(parse_statistics(Some(" , ")).is_err());
+    }
+
+    #[test]
+    fn classify_names_uuids_ec2_ids_and_groups() {
+        let (k, name, ec2, group) = classify("web-1");
+        assert_eq!(k, vec![SubjectKey::Text("web-1".into())]);
+        assert_eq!((name.as_deref(), ec2, group), (Some("web-1"), None, None));
+        let u = "6f9619ff-8b86-d011-b42d-00cf4fc964ff";
+        let (k, name, _, _) = classify(u);
+        assert!(k.contains(&SubjectKey::Id(Uuid::parse_str(u).unwrap())) && name.is_none());
+        let (_, name, ec2, _) = classify("i-0123456789abcdef0");
+        assert_eq!((name, ec2.as_deref()), (None, Some("0123456789abcdef0")));
+        let (_, _, _, g) = classify("group:ABCDEF");
+        assert_eq!(g.as_deref(), Some("abcdef"));
+    }
+
+    #[tokio::test]
+    async fn samples_stored_under_the_machine_id_are_found_by_name_ec2_id_and_uuid() {
+        let (state, _rx) = crate::engine::test_support::test_state().await;
+        let id = Uuid::parse_str("0123456789abcdef0123456789abcdef").unwrap();
+        sqlx::query("INSERT INTO vms (id, name) VALUES (?, 'web-1')").bind(id).execute(&state.pool).await.unwrap();
+        // the sampler stores a machine's samples under its 16-byte id
+        sqlx::query("INSERT INTO metric_samples (subject, metric, ts, value) VALUES (?, 'cpu_percent', 100, 42.0)")
+            .bind(id)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        for subject in ["web-1", "i-0123456789abcdef0", "01234567-89ab-cdef-0123-456789abcdef"] {
+            let keys = subject_keys(&state.pool, subject).await;
+            let s = fetch_samples(&state.pool, &keys, "cpu_percent", 0, 1000).await.unwrap();
+            assert_eq!(s, vec![(100, 42.0)], "subject {subject}");
+        }
+        let none = subject_keys(&state.pool, "other").await;
+        assert!(fetch_samples(&state.pool, &none, "cpu_percent", 0, 1000).await.unwrap().is_empty());
     }
 
     #[test]
