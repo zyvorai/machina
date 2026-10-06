@@ -2164,6 +2164,55 @@ pub struct ScxStatus {
     pub notes: Vec<String>,
 }
 
+
+/// One normalized item in the per-VM Black Box flight recorder.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct BlackBoxEvent {
+    pub ts: String,
+    pub topic: String,
+    pub kind: String,
+    pub severity: String,
+    pub summary: String,
+    #[serde(default)]
+    pub event: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct BlackBoxIncidentStatus {
+    pub id: String,
+    pub triggered_at: String,
+    pub reason: String,
+    pub post_secs: u64,
+    pub freeze_at: String,
+    pub frozen: bool,
+    pub automatic: bool,
+    pub events: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct BlackBoxIncident {
+    pub vm: String,
+    pub status: BlackBoxIncidentStatus,
+    pub events: Vec<BlackBoxEvent>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct BlackBoxVmStatus {
+    pub vm: String,
+    pub pre_secs: u64,
+    pub max_events: usize,
+    pub rolling_events: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub incident: Option<BlackBoxIncidentStatus>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct BlackBoxSnapshot {
+    pub status: BlackBoxVmStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub incident: Option<BlackBoxIncident>,
+}
+
 /// Who a record belongs to: `vm`, `pod`, `container` or `service`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct Workload {
@@ -2486,6 +2535,20 @@ pub enum Request {
         config: ScxConfig,
     },
     ScxStatus,
+    BlackBoxList,
+    BlackBoxGet {
+        vm: String,
+    },
+    BlackBoxTrigger {
+        vm: String,
+        #[serde(default)]
+        post_secs: Option<u64>,
+        #[serde(default)]
+        reason: String,
+    },
+    BlackBoxClear {
+        vm: String,
+    },
     /// Stream events (`net`, `dns`, `l7`, `proc`, `anomaly`) as JSON lines
     /// until the client disconnects.
     Subscribe {
