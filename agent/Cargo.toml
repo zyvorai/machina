@@ -15,6 +15,7 @@ machina-translate = { path = "../translate" }
 machina-bpf = { path = "../bpf/machina-bpf" }
 tonic = { version = "0.14", features = ["tls-ring", "tls-native-roots"] }
 tonic-prost = "0.14"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
 prost = "0.14"
 tokio = { workspace = true }
 tracing = { workspace = true }

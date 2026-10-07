@@ -75,6 +75,8 @@ enum Command {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // One process-wide TLS provider: the gRPC server (mTLS) and the join client both need it.
+    let _ = rustls::crypto::ring::default_provider().install_default();
     tracing_subscriber::fmt::init();
     let cli = Cli::parse();
 
@@ -281,12 +283,16 @@ async fn run_join(
 
 /// Restarts a systemd unit if one with this name is active; false when there is none.
 fn restart_service(unit: &str) -> bool {
-    let active = std::process::Command::new("systemctl")
-        .args(["is-active", "--quiet", unit])
+    // A unit that exists but is stopped (a freshly installed node) must be started too; only a host
+    // without the unit (a hand-run agent) falls through to serving in this process.
+    let installed = std::process::Command::new("systemctl")
+        .args(["cat", unit])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    active
+    installed
         && std::process::Command::new("systemctl")
             .args(["restart", unit])
             .status()

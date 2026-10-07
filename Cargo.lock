@@ -3527,6 +3527,7 @@ dependencies = [
  "machina-translate",
  "prost 0.14.4",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
  "tokio",
