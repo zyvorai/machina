@@ -22,6 +22,7 @@ mod content;
 pub mod cpu_compat;
 mod developer;
 mod enrollment;
+mod fleet_pki;
 pub(crate) mod join_events;
 mod enterprise_security;
 mod error;
@@ -2067,9 +2068,27 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/health/ready", get(health::ready))
         .route("/api/v1/openapi.json", get(health::openapi))
         .route("/install.sh", get(enrollment::install_script))
+        .route("/api/v1/pki/ca", get(fleet_pki::ca))
         .merge(rate_limited_public)
         .merge(console::ws_routes())
         .merge(protected)
+        .with_state(state)
+}
+
+/// What a joining node may reach over the controller's network (TLS) listener, and nothing else.
+pub fn enrollment_router(state: AppState) -> Router {
+    let rate_limiter = RateLimiter::from_env(state.config.jwt_secret.clone());
+    let joins = Router::new()
+        .route("/api/v1/hosts/join", post(hosts::join_host))
+        .route_layer(middleware::from_fn_with_state(
+            rate_limiter,
+            rate_limit_middleware,
+        ));
+    Router::new()
+        .route("/api/v1/health", get(health::health))
+        .route("/api/v1/pki/ca", get(fleet_pki::ca))
+        .route("/install.sh", get(enrollment::install_script))
+        .merge(joins)
         .with_state(state)
 }
 

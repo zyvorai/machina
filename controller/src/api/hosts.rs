@@ -338,6 +338,10 @@ pub struct JoinHostRequest {
     pub agent_console_addr: Option<String>,
     #[serde(default)]
     pub libvirt_uri: Option<String>,
+    /// A certificate signing request from the node (its key never leaves it): when present the
+    /// controller returns a certificate and the host's agent is reached over mutual TLS.
+    #[serde(default)]
+    pub csr_pem: Option<String>,
 }
 
 /// The host row, plus the new agent token that belongs to this host alone.
@@ -346,6 +350,11 @@ pub struct JoinHostResponse {
     #[serde(flatten)]
     pub host: HostRow,
     pub agent_token: String,
+    /// Certificate for the CSR, and the fleet CA that signed it (only when a CSR was sent).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent_cert_pem: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ca_pem: Option<String>,
 }
 
 /// 256 random bits from the OS (two v4 UUIDs), prefixed so a leaked value is recognisable.
@@ -462,10 +471,28 @@ pub async fn join_host(
     .bind(host_id)
     .fetch_one(&mut *tx)
     .await?;
+    // Sign before committing: a bad CSR rolls the whole join back and the token stays usable.
+    let (agent_cert_pem, ca_pem) = match req.csr_pem.as_deref().filter(|c| !c.trim().is_empty()) {
+        Some(csr) => {
+            let (cert, _not_after) = crate::pki::sign_agent(csr, &host_id.to_string())
+                .map_err(|e| ApiError::bad_request(format!("certificate request rejected: {e}")))?;
+            let (ca, _) = crate::pki::ca_info().map_err(|e| ApiError::internal(e.to_string()))?;
+            crate::db::query("UPDATE hosts SET agent_tls = 1 WHERE id = ?")
+                .bind(host_id)
+                .execute(&mut *tx)
+                .await?;
+            (Some(cert), Some(ca))
+        }
+        None => (None, None),
+    };
+    let tls = agent_cert_pem.is_some();
     tx.commit().await?;
     crate::agent_client::set_host_token(&used_addr, &agent_token);
     if let Some(c) = used_console.as_deref().filter(|c| !c.is_empty()) {
         crate::agent_client::set_host_token(c, &agent_token);
+    }
+    if tls {
+        crate::agent_client::set_host_tls(&used_addr);
     }
 
     let ev = |level: &'static str, step: &'static str, msg: String| {
@@ -482,18 +509,50 @@ pub async fn join_host(
     )
     .await;
 
+    if tls {
+        ev(
+            "ok",
+            "tls",
+            format!(
+                "signed a certificate for this host (valid {} days, names {} and its own); its agent is now reached over mutual TLS",
+                crate::pki::NODE_CERT_SECS / 86400,
+                crate::pki::AGENT_DOMAIN
+            ),
+        )
+        .await;
+    }
+
     link_baremetal_firewall_on_join(&state.pool, host_id, &req.hostname).await;
 
-    if let Err(e) = enqueue_task(
-        &state,
-        "host.validate",
-        serde_json::json!({ "host_id": host_id.to_string() }),
-        Some("host"),
-        Some(host_id),
-        Some(host_id),
-    )
-    .await
-    {
+    // With TLS the agent first has to restart with its certificate: give it a moment.
+    let delay = if tls { std::time::Duration::from_secs(12) } else { std::time::Duration::ZERO };
+    let queue = {
+        let state = state.clone();
+        move || async move {
+            tokio::time::sleep(delay).await;
+            enqueue_task(
+                &state,
+                "host.validate",
+                serde_json::json!({ "host_id": host_id.to_string() }),
+                Some("host"),
+                Some(host_id),
+                Some(host_id),
+            )
+            .await
+        }
+    };
+    if tls {
+        let (pool, token) = (state.pool.clone(), req.token.clone());
+        tokio::spawn(async move {
+            if let Err(e) = queue().await {
+                tracing::warn!(host_id = %host_id, "host.validate enqueue failed after join: {}", e.message);
+                super::join_events::record(&pool, &token, Some(host_id), "error", "validate", &format!("could not queue validation: {}", e.message)).await;
+            } else {
+                super::join_events::record(&pool, &token, Some(host_id), "info", "validate", "validation queued: the controller now contacts the agent over TLS").await;
+            }
+        });
+        ev("info", "validate", "validation will start in a few seconds, once the agent has restarted with its certificate".into()).await;
+    } else if let Err(e) = queue().await {
         tracing::warn!(host_id = %host_id, "host.validate enqueue failed after join: {}", e.message);
         ev("error", "validate", format!("could not queue validation: {}", e.message)).await;
     } else {
@@ -501,7 +560,12 @@ pub async fn join_host(
     }
 
     let host = fetch_host_row(&state, host_id).await?;
-    Ok(Json(JoinHostResponse { host, agent_token }))
+    Ok(Json(JoinHostResponse {
+        host,
+        agent_token,
+        agent_cert_pem,
+        ca_pem,
+    }))
 }
 
 async fn link_baremetal_firewall_on_join(pool: &crate::db::DbPool, host_id: Uuid, hostname: &str) {

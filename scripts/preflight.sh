@@ -51,7 +51,7 @@ ARCH="$(uname -m)"
 pkg_hint() {
     case "$PM" in
         apt-get) case "$ARCH" in aarch64) q=qemu-system-arm ;; *) q=qemu-system-x86 ;; esac
-                 echo "sudo apt-get install -y libvirt-daemon-system libvirt-clients $q qemu-utils" ;;
+                 echo "sudo apt-get update && sudo apt-get install -y libvirt-daemon-system libvirt-clients $q qemu-utils" ;;
         dnf)     echo "sudo dnf install -y libvirt libvirt-client qemu-kvm" ;;
         zypper)  echo "sudo zypper install -y libvirt qemu-kvm" ;;
         pacman)  echo "sudo pacman -S --needed libvirt qemu-base" ;;
@@ -59,6 +59,7 @@ pkg_hint() {
     esac
 }
 
+run_checks() {
 # ── platform ────────────────────────────────────────────────────────────
 if [ "$(uname -s)" != Linux ]; then
     fail "operating system" "$(uname -s) is not supported" "Machina's hypervisor side runs on Linux (build and run it on a Linux host)."
@@ -201,20 +202,24 @@ if [ -n "$CONTROLLER" ]; then
     fi
 fi
 
+}
+run_checks
+
 # ── --fix: install libvirt + QEMU, start libvirt ────────────────────────
 if [ "$FIX" = 1 ]; then
     missing=0
     for r in "${RESULTS[@]}"; do case "$r" in FAIL\|libvirt*|FAIL\|QEMU*) missing=1 ;; esac; done
     if [ "$missing" = 1 ] && [ "$PM" != "" ]; then
-        cmd="$(pkg_hint)"; cmd="${cmd#sudo }"
+        cmd="$(pkg_hint)"; cmd="${cmd//sudo /}"
         if [ "$(id -u)" != 0 ]; then echo "--fix needs root" >&2; exit 2; fi
         go=0
         if [ "$YES" = 1 ]; then go=1; else
             printf 'Install libvirt and QEMU now?\n  %s\nProceed? [y/N] ' "$cmd" >&2; read -r a; case "$a" in y|Y|yes) go=1 ;; esac
         fi
         if [ "$go" = 1 ]; then
-            $cmd >&2 && { systemctl enable --now libvirtd >&2 2>/dev/null || systemctl enable --now virtqemud.socket >&2 2>/dev/null || true; }
-            exec "$0" --role "$ROLE" ${CONTROLLER:+--controller "$CONTROLLER"} $([ "$JSON" = 1 ] && echo --json)
+            sh -c "$cmd" >&2 && { systemctl enable --now libvirtd >&2 2>/dev/null || systemctl enable --now virtqemud.socket >&2 2>/dev/null || true; }
+            RESULTS=()
+            run_checks
         fi
     fi
 fi

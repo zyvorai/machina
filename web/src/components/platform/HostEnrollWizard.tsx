@@ -28,7 +28,7 @@ export default function HostEnrollWizard({ open, onClose }: Props) {
     try {
       const t = await createEnrollmentToken(24)
       setToken(t.token)
-      setCommand(t.install_command ?? `curl -fsSL … | sudo machina-agent enroll ${t.token}`)
+      setCommand(t.join_command ?? t.install_command ?? `curl -fsSL … | sudo machina-agent enroll ${t.token}`)
       setStep(1)
     } catch (e: unknown) {
       toast.error(formatUserError(e))

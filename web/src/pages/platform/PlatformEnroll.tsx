@@ -72,8 +72,8 @@ export default function PlatformEnroll() {
               <div>
                 <div className="text-sm text-[var(--text-muted)] mb-1 flex items-center gap-2">Install command <Copy className="w-3 h-3" /></div>
                 <div className="flex gap-2 items-start">
-                  <code className="flex-1 p-2 bg-[var(--apple-surface)] rounded text-xs break-all">{token.install_command}</code>
-                  <CopyButton text={token.install_command} />
+                  <code className="flex-1 p-2 bg-[var(--apple-surface)] rounded text-xs break-all">{token.join_command ?? token.install_command}</code>
+                  <CopyButton text={token.join_command ?? token.install_command} />
                 </div>
               </div>
               <p className="text-sm text-[var(--text-muted)]">
@@ -85,7 +85,7 @@ export default function PlatformEnroll() {
 
         {token && (
           <MacGlassPanel title="Live join" subtitle="Run the command on the host and watch it join the fleet.">
-            <JoinLivePanel token={token.token} command={token.install_command} />
+            <JoinLivePanel token={token.token} command={token.join_command ?? token.install_command} />
           </MacGlassPanel>
         )}
 

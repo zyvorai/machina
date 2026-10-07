@@ -151,6 +151,61 @@ pub fn advertised(listen: &str, address: &str) -> String {
     }
 }
 
+/// Fetches the controller's CA over TLS that is NOT verified (the CA is what we do not have yet)
+/// and accepts it only if its SHA-256 fingerprint is the one the operator pinned.
+pub async fn fetch_pinned_ca(controller: &str, pinned: &str) -> anyhow::Result<String> {
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?;
+    let v: serde_json::Value = client
+        .get(format!(
+            "{}/api/v1/pki/ca",
+            controller.trim_end_matches('/')
+        ))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+    let pem = v["ca_pem"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("the controller sent no CA certificate"))?
+        .to_string();
+    if !machina_bpf::authca::fingerprint_matches(&pem, pinned) {
+        anyhow::bail!(
+            "the CA offered by {controller} does not match the pinned fingerprint (--ca-sha256): \
+             this is not the controller you meant, or the command is stale"
+        );
+    }
+    Ok(pem)
+}
+
+/// Writes the node's key (0600), certificate and the fleet CA into `dir` (0700); returns their paths.
+pub fn write_pki(
+    dir: &Path,
+    key_pem: &str,
+    cert_pem: &str,
+    ca_pem: &str,
+) -> std::io::Result<(std::path::PathBuf, std::path::PathBuf, std::path::PathBuf)> {
+    std::fs::create_dir_all(dir)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    }
+    let (k, c, a) = (
+        dir.join("agent.key"),
+        dir.join("agent.pem"),
+        dir.join("ca.pem"),
+    );
+    std::fs::write(&k, key_pem)?;
+    set_private(&k)?;
+    std::fs::write(&c, cert_pem)?;
+    std::fs::write(&a, ca_pem)?;
+    Ok((k, c, a))
+}
+
 #[cfg(unix)]
 fn set_private(p: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -216,6 +271,29 @@ mod tests {
     fn loopback_controllers_have_no_routable_address() {
         assert_eq!(address_towards("http://127.0.0.1:5093"), None);
         assert_eq!(address_towards("not a url"), None);
+    }
+
+    #[test]
+    fn the_pki_files_are_written_with_a_private_key() {
+        let d = std::env::temp_dir().join(format!("machina-pki-write-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let (k, c, a) = write_pki(&d, "KEY", "CERT", "CA").unwrap();
+        assert_eq!(std::fs::read_to_string(&k).unwrap(), "KEY");
+        assert_eq!(std::fs::read_to_string(&c).unwrap(), "CERT");
+        assert_eq!(std::fs::read_to_string(&a).unwrap(), "CA");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                std::fs::metadata(&k).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            assert_eq!(
+                std::fs::metadata(&d).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+        }
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

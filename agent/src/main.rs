@@ -13,7 +13,7 @@ use machina_agent::grpc::AgentService;
 use machina_agent::libvirt_ops::LibvirtCtx;
 use machina_agent::pb::host_agent_server::HostAgentServer;
 use machina_agent::state::shared_state;
-use tonic::transport::{Identity, Server, ServerTlsConfig};
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tracing::info;
 
 #[derive(Parser)]
@@ -55,6 +55,18 @@ enum Command {
         /// together with an agent token received from the controller.
         #[arg(long)]
         expose: bool,
+        /// Also expose the console port (VNC/serial) on this host's address. It is plaintext and a
+        /// serial console is a root shell: leave it off unless the network between the machines is trusted.
+        #[arg(long)]
+        expose_console: bool,
+        /// SHA-256 fingerprint of the controller's CA (from the Add Host command). With an https://
+        /// controller URL the node verifies the controller by it, sends a certificate request and
+        /// serves gRPC over mutual TLS with the certificate it gets back.
+        #[arg(long)]
+        ca_sha256: Option<String>,
+        /// Where the node's key, certificate and the CA are written.
+        #[arg(long, default_value = "/etc/machina/pki")]
+        pki_dir: String,
         /// File the services read MACHINA_AGENT_TOKEN from.
         #[arg(long, default_value = machina_agent::enrol::DEFAULT_ENV_FILE)]
         env_file: String,
@@ -71,6 +83,9 @@ async fn main() -> anyhow::Result<()> {
         token,
         address,
         expose,
+        expose_console,
+        ca_sha256,
+        pki_dir,
         env_file,
     }) = &cli.command
     {
@@ -79,7 +94,12 @@ async fn main() -> anyhow::Result<()> {
             controller,
             token,
             address.as_deref(),
-            *expose,
+            JoinOpts {
+                expose: *expose,
+                expose_console: *expose_console,
+                ca_sha256: ca_sha256.as_deref(),
+                pki_dir,
+            },
             env_file,
         )
         .await;
@@ -88,12 +108,19 @@ async fn main() -> anyhow::Result<()> {
     run_serve(&cli).await
 }
 
+struct JoinOpts<'a> {
+    expose: bool,
+    expose_console: bool,
+    ca_sha256: Option<&'a str>,
+    pki_dir: &'a str,
+}
+
 async fn run_join(
     cli: &Cli,
     controller: &str,
     token: &str,
     address: Option<&str>,
-    expose_flag: bool,
+    opts: JoinOpts<'_>,
     env_file: &str,
 ) -> anyhow::Result<()> {
     let hostname = machina_agent::enrol::local_hostname(cli.hostname.as_deref());
@@ -110,27 +137,48 @@ async fn run_join(
             .map(|(_, p)| p.to_string())
             .unwrap_or_default()
     };
-    // Only with --expose, and only on this host's own address.
-    let expose = expose_flag
-        && addr != "127.0.0.1"
-        && is_loopback(&cli.listen)
-        && is_loopback(&cli.console_listen);
-    let (listen, console_listen) = if expose {
-        (
-            format!("{addr}:{}", port_of(&cli.listen)),
-            format!("{addr}:{}", port_of(&cli.console_listen)),
-        )
+    // Only on request, and only on this host's own address (never 0.0.0.0).
+    let expose = opts.expose && addr != "127.0.0.1" && is_loopback(&cli.listen);
+    let expose_console =
+        opts.expose_console && addr != "127.0.0.1" && is_loopback(&cli.console_listen);
+    let listen = if expose {
+        format!("{addr}:{}", port_of(&cli.listen))
     } else {
-        (cli.listen.clone(), cli.console_listen.clone())
+        cli.listen.clone()
+    };
+    let console_listen = if expose_console {
+        format!("{addr}:{}", port_of(&cli.console_listen))
+    } else {
+        cli.console_listen.clone()
     };
     let grpc_addr = machina_agent::enrol::advertised(&listen, addr);
     let console_addr = machina_agent::enrol::advertised(&console_listen, addr);
     if !expose && addr != "127.0.0.1" {
         tracing::warn!(
             "this agent listens on loopback ({grpc_addr}), so a controller on another machine cannot reach it; \
-             re-run join with --expose to listen on {addr} (token-protected, not encrypted)"
+             re-run join with --expose to listen on {addr}"
         );
     }
+
+    // Pinned controller: learn its CA by fingerprint, then talk to it with that CA only.
+    let mut client = reqwest::Client::new();
+    let mut csr = None;
+    let mut node_key = None;
+    if let Some(fp) = opts.ca_sha256 {
+        if !controller.starts_with("https://") {
+            anyhow::bail!("--ca-sha256 needs an https:// controller URL");
+        }
+        let ca = machina_agent::enrol::fetch_pinned_ca(controller, fp).await?;
+        client = reqwest::Client::builder()
+            .tls_built_in_root_certs(false)
+            .add_root_certificate(reqwest::Certificate::from_pem(ca.as_bytes())?)
+            .build()?;
+        let key = machina_bpf::authca::new_host_key()?;
+        csr = Some(machina_bpf::authca::host_csr(&key)?);
+        node_key = Some(key);
+        info!("controller CA verified against the pinned fingerprint");
+    }
+
     let body = serde_json::json!({
         "token": token,
         "hostname": hostname,
@@ -138,6 +186,7 @@ async fn run_join(
         "agent_grpc_addr": grpc_addr,
         "agent_console_addr": console_addr,
         "libvirt_uri": cli.libvirt_uri,
+        "csr_pem": csr,
     });
     let url = format!("{}/api/v1/hosts/join", controller.trim_end_matches('/'));
     if controller.starts_with("http://") {
@@ -146,7 +195,6 @@ async fn run_join(
              unencrypted. Use HTTPS in production."
         );
     }
-    let client = reqwest::Client::new();
     let resp = client.post(&url).json(&body).send().await?;
     if !resp.status().is_success() {
         let text = resp.text().await.unwrap_or_default();
@@ -161,17 +209,53 @@ async fn run_join(
                  loopback; not storing it. Set MACHINA_AGENT_TOKEN in {env_file} by hand, or join over https."
             );
         } else {
-            let mut vars: Vec<(&str, &str)> = vec![("MACHINA_AGENT_TOKEN", shared)];
+            let mut vars: Vec<(String, String)> =
+                vec![("MACHINA_AGENT_TOKEN".into(), shared.to_string())];
             if expose {
-                vars.push(("MACHINA_AGENT_LISTEN", listen.as_str()));
-                vars.push(("MACHINA_AGENT_CONSOLE_LISTEN", console_listen.as_str()));
+                vars.push(("MACHINA_AGENT_LISTEN".into(), listen.clone()));
             }
-            match machina_agent::enrol::set_env_vars(Path::new(env_file), &vars) {
+            if expose_console {
+                vars.push((
+                    "MACHINA_AGENT_CONSOLE_LISTEN".into(),
+                    console_listen.clone(),
+                ));
+            }
+            // Mutual TLS: the certificate the controller signed for our key.
+            let mut tls = false;
+            if let (Some(cert), Some(ca_back), Some(key), Some(fp)) = (
+                reply.get("agent_cert_pem").and_then(|v| v.as_str()),
+                reply.get("ca_pem").and_then(|v| v.as_str()),
+                node_key.as_deref(),
+                opts.ca_sha256,
+            ) {
+                if !machina_bpf::authca::fingerprint_matches(ca_back, fp) {
+                    anyhow::bail!("the CA in the join reply is not the pinned one; refusing");
+                }
+                let (k, c, a) =
+                    machina_agent::enrol::write_pki(Path::new(opts.pki_dir), key, cert, ca_back)?;
+                vars.push(("MACHINA_AGENT_TLS_CERT".into(), c.display().to_string()));
+                vars.push(("MACHINA_AGENT_TLS_KEY".into(), k.display().to_string()));
+                vars.push((
+                    "MACHINA_AGENT_TLS_CLIENT_CA".into(),
+                    a.display().to_string(),
+                ));
+                tls = true;
+                info!("node certificate stored in {}", opts.pki_dir);
+            }
+            let refs: Vec<(&str, &str)> =
+                vars.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+            match machina_agent::enrol::set_env_vars(Path::new(env_file), &refs) {
                 Ok(changed) => {
-                    if expose {
+                    if expose && !tls {
                         tracing::warn!(
-                            "agent will listen on {listen} (console {console_listen}), protected by its own token but NOT encrypted \
-                             unless MACHINA_AGENT_TLS_CERT/KEY are set. Allow only the controller to reach ports 50051-50052."
+                            "agent will listen on {listen}, protected by its own token but NOT encrypted: \
+                             join with --ca-sha256 to get a certificate, and allow only the controller to reach port 50051."
+                        );
+                    }
+                    if expose_console {
+                        tracing::warn!(
+                            "the console port {console_listen} is exposed in PLAINTEXT (a serial console is a root shell); \
+                             allow only the controller to reach port 50052."
                         );
                     }
                     // The serving process below must use it too.
@@ -184,11 +268,11 @@ async fn run_join(
                         && env_file == machina_agent::enrol::DEFAULT_ENV_FILE
                         && restart_service("machina-agent")
                     {
-                        info!("restarted machina-agent with the new token; join is complete");
+                        info!("restarted machina-agent with the new settings; join is complete");
                         return Ok(());
                     }
                 }
-                Err(e) => tracing::warn!("could not store the agent token in {env_file}: {e}"),
+                Err(e) => tracing::warn!("could not store the agent settings in {env_file}: {e}"),
             }
         }
     }
@@ -332,7 +416,22 @@ async fn run_serve(cli: &Cli) -> anyhow::Result<()> {
                     }
                     let cert = tokio::fs::read_to_string(&cert_path).await?;
                     let key = tokio::fs::read_to_string(&key_path).await?;
-                    let tls = ServerTlsConfig::new().identity(Identity::from_pem(cert, key));
+                    let mut tls = ServerTlsConfig::new().identity(Identity::from_pem(cert, key));
+                    // With a client CA the controller must present a certificate from it
+                    // (mutual TLS); set by `join --ca-sha256`.
+                    if let Some(ca_path) = std::env::var("MACHINA_AGENT_TLS_CLIENT_CA")
+                        .ok()
+                        .filter(|p| !p.is_empty())
+                    {
+                        if !Path::new(&ca_path).exists() {
+                            anyhow::bail!(
+                                "MACHINA_AGENT_TLS_CLIENT_CA={ca_path} does not exist — refusing to start without client authentication"
+                            );
+                        }
+                        let ca = tokio::fs::read_to_string(&ca_path).await?;
+                        tls = tls.client_ca_root(Certificate::from_pem(ca));
+                        info!("agent gRPC requires client certificates (mutual TLS)");
+                    }
                     builder = builder.tls_config(tls)?;
                     info!("agent gRPC TLS enabled");
                 }

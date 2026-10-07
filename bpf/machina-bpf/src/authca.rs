@@ -52,10 +52,15 @@ pub struct Ca {
 
 impl Ca {
     pub fn generate() -> Result<Self> {
+        Self::generate_named("machina VM network policy CA")
+    }
+
+    /// A new CA with the given common name (the fleet transport CA is a separate trust domain).
+    pub fn generate_named(common_name: &str) -> Result<Self> {
         let key = KeyPair::generate()?;
         let mut p = CertificateParams::default();
         let mut dn = DistinguishedName::new();
-        dn.push(DnType::CommonName, "machina VM network policy CA");
+        dn.push(DnType::CommonName, common_name);
         p.distinguished_name = dn;
         p.is_ca = IsCa::Ca(BasicConstraints::Constrained(0));
         p.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
@@ -71,13 +76,17 @@ impl Ca {
 
     /// `ca.pem` / `ca.key` in `dir`, created (0600 key) on first use.
     pub fn load_or_create(dir: &Path) -> Result<Self> {
+        Self::load_or_create_named(dir, "machina VM network policy CA")
+    }
+
+    pub fn load_or_create_named(dir: &Path, common_name: &str) -> Result<Self> {
         let (cp, kp) = (dir.join("ca.pem"), dir.join("ca.key"));
         if let (Ok(cert_pem), Ok(key_pem)) =
             (std::fs::read_to_string(&cp), std::fs::read_to_string(&kp))
         {
             return Ok(Self { cert_pem, key_pem });
         }
-        let ca = Self::generate()?;
+        let ca = Self::generate_named(common_name)?;
         std::fs::create_dir_all(dir).with_context(|| format!("create {}", dir.display()))?;
         write_private(&kp, &ca.key_pem)?;
         std::fs::write(&cp, &ca.cert_pem).with_context(|| format!("write {}", cp.display()))?;
@@ -87,12 +96,32 @@ impl Ca {
     /// Sign a host CSR. Only the key comes from the CSR: the name, usages
     /// and lifetime are the controller's. Returns (cert PEM, not_after).
     pub fn sign_host(&self, csr_pem: &str, host_id: &str) -> Result<(String, i64)> {
+        let name = host_dns(host_id);
+        self.sign_csr(csr_pem, &name, std::slice::from_ref(&name), HOST_CERT_SECS)
+    }
+
+    /// Sign a CSR for a node or the controller: only the key comes from the CSR; `common_name`,
+    /// the SANs (an IP address becomes an IP SAN, anything else a DNS name) and the lifetime
+    /// `secs` are the issuer's. Both server and client authentication are allowed.
+    pub fn sign_csr(
+        &self,
+        csr_pem: &str,
+        common_name: &str,
+        sans: &[String],
+        secs: i64,
+    ) -> Result<(String, i64)> {
         let mut csr = CertificateSigningRequestParams::from_pem(csr_pem)
             .map_err(|e| anyhow!("invalid CSR: {e}"))?;
         let mut dn = DistinguishedName::new();
-        dn.push(DnType::CommonName, host_dns(host_id));
+        dn.push(DnType::CommonName, common_name);
         csr.params.distinguished_name = dn;
-        csr.params.subject_alt_names = vec![SanType::DnsName(host_dns(host_id).try_into()?)];
+        csr.params.subject_alt_names = sans
+            .iter()
+            .map(|n| match n.parse::<std::net::IpAddr>() {
+                Ok(ip) => Ok(SanType::IpAddress(ip)),
+                Err(_) => Ok(SanType::DnsName(n.clone().try_into()?)),
+            })
+            .collect::<Result<Vec<_>>>()?;
         csr.params.is_ca = IsCa::ExplicitNoCa;
         csr.params.key_usages = vec![KeyUsagePurpose::DigitalSignature];
         csr.params.extended_key_usages = vec![
@@ -101,7 +130,7 @@ impl Ca {
         ];
         csr.params.custom_extensions.clear();
         let now = time::OffsetDateTime::now_utc();
-        let not_after = now + time::Duration::seconds(HOST_CERT_SECS);
+        let not_after = now + time::Duration::seconds(secs);
         csr.params.not_before = now - time::Duration::minutes(5);
         csr.params.not_after = not_after;
         let key = KeyPair::from_pem(&self.key_pem)?;
@@ -279,9 +308,67 @@ pub fn unix_now() -> i64 {
     UnixTime::now().as_secs() as i64
 }
 
+/// SHA-256 of the first certificate in `pem`, as lower-case hex (what an operator pins).
+pub fn cert_sha256(pem: &str) -> Result<String> {
+    use sha2::{Digest, Sha256};
+    let der = certs(pem)?
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow!("no certificate"))?;
+    Ok(Sha256::digest(der.as_ref())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
+}
+
+/// Whether `pinned` (hex, `:` separators and case ignored) is the fingerprint of `pem`.
+pub fn fingerprint_matches(pem: &str, pinned: &str) -> bool {
+    let want: String = pinned
+        .chars()
+        .filter(|c| *c != ':' && !c.is_whitespace())
+        .map(|c| c.to_ascii_lowercase())
+        .collect();
+    cert_sha256(pem).map(|have| have == want).unwrap_or(false)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sign_csr_sets_names_lifetime_and_pins_by_fingerprint() {
+        let ca = Ca::generate_named("machina fleet CA").unwrap();
+        let key = new_host_key().unwrap();
+        let sans = vec!["agent.machina".to_string(), "10.1.2.3".to_string()];
+        let (pem, not_after) = ca
+            .sign_csr(&host_csr(&key).unwrap(), "node-1", &sans, 90 * 86400)
+            .unwrap();
+        assert!(not_after > unix_now() + 89 * 86400);
+        let der = certs(&pem).unwrap().remove(0);
+        let ee = webpki::EndEntityCert::try_from(&der).unwrap();
+        assert!(ee
+            .verify_is_valid_for_subject_name(&ServerName::try_from("agent.machina").unwrap())
+            .is_ok());
+        assert!(ee
+            .verify_is_valid_for_subject_name(&ServerName::try_from("10.1.2.3").unwrap())
+            .is_ok());
+        assert!(ee
+            .verify_is_valid_for_subject_name(&ServerName::try_from("other.machina").unwrap())
+            .is_err());
+        let fp = cert_sha256(&ca.cert_pem).unwrap();
+        assert_eq!(fp.len(), 64);
+        assert!(fingerprint_matches(&ca.cert_pem, &fp.to_uppercase()));
+        let colon: String = fp
+            .as_bytes()
+            .chunks(2)
+            .map(|c| std::str::from_utf8(c).unwrap())
+            .collect::<Vec<_>>()
+            .join(":");
+        assert!(fingerprint_matches(&ca.cert_pem, &colon));
+        assert!(!fingerprint_matches(&ca.cert_pem, "00"));
+        assert!(!fingerprint_matches(&pem, &fp), "a leaf is not the CA");
+    }
+
     use std::io::{BufRead, BufReader, Write};
     use std::net::{TcpListener, TcpStream};
 

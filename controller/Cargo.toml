@@ -50,6 +50,8 @@ hmac = "0.13"
 jsonwebtoken = { version = "11", features = ["rust_crypto"] }
 urlencoding = "2"
 url = { workspace = true }
+axum-server = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "tls12"] }
 hex = "0.4"
 rand = { workspace = true }
 aes-gcm = { workspace = true }

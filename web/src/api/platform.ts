@@ -574,6 +574,8 @@ export interface EnrollmentToken {
   token: string
   expires_at: string
   install_command: string
+  /** Set when the controller's TLS join listener is on: pins the controller and sets up mutual TLS. */
+  join_command?: string
 }
 
 export const getJoinProgress = (token: string) =>

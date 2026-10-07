@@ -66,6 +66,26 @@ fn host_tokens() -> &'static std::sync::RwLock<HashMap<String, String>> {
     TOKENS.get_or_init(Default::default)
 }
 
+/// Agents (normalized addresses) that serve gRPC over the fleet's mutual TLS.
+fn tls_hosts() -> &'static std::sync::RwLock<std::collections::HashSet<String>> {
+    static TLS: OnceLock<std::sync::RwLock<std::collections::HashSet<String>>> = OnceLock::new();
+    TLS.get_or_init(Default::default)
+}
+
+pub fn set_host_tls(addr: &str) {
+    tls_hosts()
+        .write()
+        .unwrap()
+        .insert(normalize_agent_addr(addr));
+}
+
+fn is_tls_host(addr: &str) -> bool {
+    tls_hosts()
+        .read()
+        .unwrap()
+        .contains(&normalize_agent_addr(addr))
+}
+
 pub fn set_host_token(addr: &str, token: &str) {
     host_tokens()
         .write()
@@ -81,6 +101,10 @@ pub fn forget_host_addrs(addrs: &[&str]) {
 }
 
 pub fn forget_host_token(addr: &str) {
+    tls_hosts()
+        .write()
+        .unwrap()
+        .remove(&normalize_agent_addr(addr));
     host_tokens()
         .write()
         .unwrap()
@@ -104,10 +128,17 @@ pub fn token_for(addr: &str) -> Option<String> {
 /// Loads every host's own token from the database (call once at startup).
 pub async fn load_host_tokens(pool: &crate::db::DbPool) -> Result<usize, sqlx::Error> {
     let rows: Vec<(String, Option<String>, String)> = crate::db::query_as(
-        "SELECT agent_grpc_addr, agent_console_addr, agent_token FROM hosts WHERE agent_token IS NOT NULL AND agent_token <> ''",
+        "SELECT agent_grpc_addr, agent_console_addr, COALESCE(agent_token, '') FROM hosts WHERE agent_token IS NOT NULL AND agent_token <> ''",
     )
     .fetch_all(pool)
     .await?;
+    let tls: Vec<(String,)> =
+        crate::db::query_as("SELECT agent_grpc_addr FROM hosts WHERE agent_tls = 1")
+            .fetch_all(pool)
+            .await?;
+    for (addr,) in &tls {
+        set_host_tls(addr);
+    }
     for (addr, console, token) in &rows {
         set_host_token(addr, token);
         if let Some(c) = console.as_deref().filter(|c| !c.is_empty()) {
@@ -122,7 +153,8 @@ pub async fn connect(addr: &str) -> anyhow::Result<AgentClient> {
     let use_tls = std::env::var("MACHINA_AGENT_CA")
         .ok()
         .filter(|p| Path::new(p).exists());
-    let endpoint_url = if use_tls.is_some() {
+    let fleet_tls = is_tls_host(&normalized);
+    let endpoint_url = if use_tls.is_some() || fleet_tls {
         format!("https://{normalized}")
     } else {
         format!("http://{normalized}")
@@ -139,7 +171,16 @@ pub async fn connect(addr: &str) -> anyhow::Result<AgentClient> {
             // needed (e.g. host.inventory in worker.rs).
             let mut endpoint = Endpoint::from_shared(endpoint_url.clone())?
                 .connect_timeout(std::time::Duration::from_secs(10));
-            if let Some(ca_path) = use_tls {
+            if fleet_tls {
+                // Mutual TLS: trust the fleet CA only, present the controller's certificate,
+                // and expect the agent to be named agent.machina (agents are dialled by address).
+                let id = crate::pki::controller_identity()?;
+                let tls = ClientTlsConfig::new()
+                    .ca_certificate(Certificate::from_pem(id.ca_pem))
+                    .identity(Identity::from_pem(id.cert_pem, id.key_pem))
+                    .domain_name(crate::pki::AGENT_DOMAIN);
+                endpoint = endpoint.tls_config(tls)?;
+            } else if let Some(ca_path) = use_tls {
                 let ca = tokio::fs::read_to_string(&ca_path).await?;
                 let mut tls = ClientTlsConfig::new().ca_certificate(Certificate::from_pem(ca));
                 if let (Ok(cert_path), Ok(key_path)) = (

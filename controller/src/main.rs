@@ -36,6 +36,8 @@ struct Cli {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // One process-wide TLS provider (tonic, the join listener and the HTTP clients all use rustls).
+    let _ = rustls::crypto::ring::default_provider().install_default();
     tracing_subscriber::fmt::init();
     machina_controller::engine::ai::crypto::init();
     let cli = Cli::parse();
@@ -212,6 +214,16 @@ async fn main() -> anyhow::Result<()> {
             header::X_CONTENT_TYPE_OPTIONS,
             HeaderValue::from_static("nosniff"),
         ));
+
+    if let Some(tls_addr) = machina_controller::enrollment_tls::configured_addr() {
+        let tls_addr: SocketAddr = tls_addr.parse()?;
+        let (st, public_url) = (state.clone(), config.public_base_url.clone());
+        tokio::spawn(async move {
+            if let Err(e) = machina_controller::enrollment_tls::serve(st, tls_addr, public_url).await {
+                tracing::error!("join listener stopped: {e:#}");
+            }
+        });
+    }
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
     info!(

@@ -17,6 +17,10 @@ pub struct EnrollmentTokenResponse {
     pub token: String,
     pub expires_at: String,
     pub install_command: String,
+    /// Present when the controller's TLS join listener is on: the command that pins the
+    /// controller by its CA fingerprint and sets the node up for mutual TLS.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub join_command: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -87,10 +91,19 @@ pub async fn create_enrollment_token(
         &format!("enrollment token issued by {}, valid {ttl} h", actor.username),
     )
     .await;
+    // With the network (TLS) listener on, the node pins the controller by its CA fingerprint.
+    let join_command = crate::enrollment_tls::configured_addr().and_then(|tls_addr| {
+        let url = crate::enrollment_tls::public_https_url(&controller_base, &tls_addr)?;
+        let (_, fp) = crate::pki::ca_info().ok()?;
+        Some(format!(
+            "sudo machina-agent join --controller {url} --ca-sha256 {fp} --token {token} --expose"
+        ))
+    });
     Ok(Json(EnrollmentTokenResponse {
         token,
         expires_at: expires.to_rfc3339(),
         install_command,
+        join_command,
     }))
 }
 
