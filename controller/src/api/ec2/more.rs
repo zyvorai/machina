@@ -71,14 +71,11 @@ async fn tags_of(state: &AppState) -> Result<BTreeMap<(String, String), Vec<(Str
 
 fn matches(filters: &[(String, Vec<String>)], tags: &[(String, String)], mut field: impl FnMut(&str) -> Option<Vec<String>>) -> bool {
     filters.iter().all(|(name, values)| {
-        if let Some(key) = name.strip_prefix("tag:") {
-            return tags.iter().any(|(k, v)| k == key && values.contains(v));
+        if let Some(r) = super::foundation::tag_filter_matches(tags, name, values) {
+            return r;
         }
-        if name == "tag-key" {
-            return tags.iter().any(|(k, _)| values.contains(k));
-        }
-        // unknown filters match nothing
-        field(name).is_some_and(|have| have.iter().any(|h| values.contains(h)))
+        // unknown names are refused before the action runs (`foundation::validate_filters`); one that gets here matches nothing
+        field(name).is_some_and(|have| have.iter().any(|h| super::foundation::any_match(values, h)))
     })
 }
 

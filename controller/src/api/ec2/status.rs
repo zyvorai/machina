@@ -117,8 +117,26 @@ pub async fn instance_extra(state: &AppState, id: Uuid) -> Result<String, Ec2Err
         .iter()
         .map(|(gid, name)| format!("<item><groupId>{}</groupId><groupName>{}</groupName></item>", ec2_id(Kind::SecurityGroup, *gid), xml_escape(name)))
         .collect();
+    let ports: Vec<(Uuid, Option<String>, Option<String>, Option<String>)> =
+        crate::db::query_as("SELECT id, subnet_id, mac_address, private_ip FROM ports WHERE vm_id = ? ORDER BY created_at")
+            .bind(id)
+            .fetch_all(&state.pool)
+            .await?;
+    let nics: String = ports
+        .iter()
+        .enumerate()
+        .map(|(n, (pid, subnet, mac, ip))| {
+            let subnet = subnet.as_deref().and_then(|s| Uuid::parse_str(s).ok()).map(|u| ec2_id(Kind::Subnet, u)).unwrap_or_default();
+            format!(
+                "<item><networkInterfaceId>{}</networkInterfaceId><subnetId>{subnet}</subnetId><status>in-use</status><macAddress>{}</macAddress><privateIpAddress>{}</privateIpAddress><attachment><deviceIndex>{n}</deviceIndex><status>attached</status><deleteOnTermination>false</deleteOnTermination></attachment><groupSet>{group_xml}</groupSet></item>",
+                ec2_id(Kind::Port, *pid),
+                xml_escape(mac.as_deref().unwrap_or("")),
+                xml_escape(ip.as_deref().unwrap_or(""))
+            )
+        })
+        .collect();
     Ok(format!(
-        "<imageId>{}</imageId><placement><availabilityZone>{}</availabilityZone><tenancy>default</tenancy></placement><blockDeviceMapping>{block}</blockDeviceMapping><groupSet>{group_xml}</groupSet>",
+        "<imageId>{}</imageId><placement><availabilityZone>{}</availabilityZone><tenancy>default</tenancy></placement><rootDeviceName>/dev/vda</rootDeviceName><rootDeviceType>ebs</rootDeviceType><blockDeviceMapping>{block}</blockDeviceMapping><monitoring><state>disabled</state></monitoring><metadataOptions><state>applied</state><httpTokens>optional</httpTokens><httpPutResponseHopLimit>1</httpPutResponseHopLimit><httpEndpoint>enabled</httpEndpoint></metadataOptions><networkInterfaceSet>{nics}</networkInterfaceSet><groupSet>{group_xml}</groupSet>",
         xml_escape(&image),
         xml_escape(&zone)
     ))

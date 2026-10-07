@@ -15,9 +15,38 @@ aws ec2 describe-instances --endpoint-url https://HOST:5092/ec2   # --no-verify-
 The service name in the credential scope must be `ec2`; the region is not checked.
 
 ## What works
-`DescribeInstances` (filters: `instance-id`, `instance-state-name`, `instance-type`, `private-ip-address`, `tag-key`,
-`tag:Key`), `DescribeInstanceTypes`, `DescribeTags`, `DescribeKeyPairs`, `StartInstances`, `StopInstances`, and the
-actions under *More actions* and *Run, terminate and tags* below. Any other action returns `UnsupportedOperation`. Unknown filter names match nothing.
+`DescribeInstances`, `DescribeInstanceTypes`, `DescribeTags`, `DescribeKeyPairs`, `StartInstances`, `StopInstances`, and the
+actions under *More actions* and *Run, terminate and tags* below. Any other action returns `UnsupportedOperation`.
+
+## For every client: DryRun, ClientToken, filters, pages
+- **`DryRun=true`** on any action answers what the real call would, without doing it: `UnauthorizedOperation` when the key's role may not
+  do it, otherwise `DryRunOperation` (HTTP 412, as AWS). Only the role is checked; parameters are validated by the real call.
+- **`ClientToken`** on `RunInstances` and `CreateLaunchTemplate`: a retry with the same token and the same parameters returns the first
+  answer (no second instance); the same token with different parameters is `IdempotentParameterMismatch`; a retry while the first call
+  is still running is `ConcurrentIdempotentRequest`. A failed call frees its token. Tokens are per access-key user and kept for a day
+  (table `ec2_client_tokens`).
+- **Filters** (`Filter.N.Name` / `Value.M`): wildcards `*` and `?` in values, `tag:KEY`, `tag-key` and `tag-value` on every describe that
+  lists tags, and the names in the table below. A name the action does not know is `InvalidParameterValue` (it used to match
+  nothing, which made a typo look like an empty fleet); a filter without a value is an error too.
+- **`MaxResults` (1-1000) and `NextToken`** on every `Describe*` that returns a list. Without `MaxResults` the whole list comes back,
+  as before. Tokens are opaque and name the last item returned.
+
+| Describe | Filter names |
+|---|---|
+| `DescribeInstances` | `instance-id`, `instance-state-name`, `instance-type`, `private-ip-address`, tags |
+| `DescribeVolumes` | `volume-id`, `status`, `size`, `attachment.instance-id`, tags |
+| `DescribeSecurityGroups` | `group-id`, `group-name`, tags |
+| `DescribeImages` | `image-id`, `name`, `is-public`, tags |
+| `DescribeVpcs` | `vpc-id`, `cidr`, `cidr-block`, `state`, tags |
+| `DescribeSubnets` | `subnet-id`, `vpc-id`, `cidr-block`, `cidr`, `state`, tags |
+| `DescribeNetworkInterfaces` | `network-interface-id`, `subnet-id`, `status`, `mac-address`, `private-ip-address`, tags |
+| `DescribeKeyPairs` | `key-name`, `key-pair-id`, `fingerprint`, tags |
+| `DescribeLaunchTemplates` | `launch-template-id`, `launch-template-name`, tags |
+| `DescribeSnapshots` | `snapshot-id`, `volume-id`, `status`, tags |
+| `DescribeInstanceTypes` | `instance-type` |
+| `DescribeTags` | `key`, `value`, `resource-type`, `resource-id`, tags |
+
+Other describes keep the filters they implement and are not validated.
 
 ## Security
 - Requests older or newer than 15 minutes (`X-Amz-Date`) are refused, and the signature is compared in constant time.
@@ -34,14 +63,27 @@ security groups (`DescribeSecurityGroups`, `CreateSecurityGroup`, `DeleteSecurit
 and egress, with CIDR or group peers), images (`DescribeImages`), networking (`DescribeVpcs`, `DescribeSubnets`,
 `DescribeNetworkInterfaces`), key pairs (`ImportKeyPair` with base64 public key material, `DeleteKeyPair`), and instances
 (`RebootInstances`, `ModifyInstanceAttribute` for `InstanceType`). Each maps onto the REST handler, so permissions,
-validation and audit are the same. Filters work as for instances (`tag:Key`, `tag-key`, ids, `status`, `group-name`, `name`,
-`is-public`); unknown filter names match nothing.
+validation and audit are the same. Filters: see the table above.
 
 ## Run, terminate and tags
 - `RunInstances`: `ImageId` (an `ami-` id or an image name), `MaxCount`/`MinCount` (1–20, see run-instances in
-  `cloud-ec2-semantics.md`), optional `InstanceType` (a flavor name), `KeyName`, `UserData` (base64) and tags from `Tag.N` /
-  `TagSpecification` (an instance `Name` tag becomes the machine name; several machines get `-1…-N`). Subnet, security group
-  and block-device parameters are ignored. The call waits up to 20 s per machine for its record before answering.
+  `cloud-ec2-semantics.md`), optional `InstanceType` (a flavor name), `KeyName`, `UserData` (base64), `SubnetId`, `SecurityGroupId.N`
+  and tags from `Tag.N` / `TagSpecification` (an instance `Name` tag becomes the machine name; several machines get `-1…-N`). The
+  call waits up to 20 s per machine for its record before answering. Every other parameter is **applied or refused, never dropped**:
+  - applied: `LaunchTemplate.LaunchTemplateId` or `LaunchTemplateName` with `Version` `1`, `$Latest` or `$Default` (a template has one
+    version; it supplies the image, and parameters you send win); `Placement.AvailabilityZone` (a zone is a host); `InstanceMarketOptions`
+    with `MarketType=spot` (the instance is preemptible; `MaxPrice` is accepted and ignored, there is no price market; only one-time
+    requests that terminate on interruption); `BlockDeviceMapping` for extra devices (`/dev/sdb`, `/dev/xvdc`, `/dev/vdd`; needs
+    `Ebs.VolumeSize` and honours `Ebs.DeleteOnTermination`: each is created, tagged from the `TagSpecification` for `volume`, and attached
+    once the instance exists); `Monitoring.Enabled=false`, `MetadataOptions` with the values the platform already has
+    (`HttpTokens=optional`, `HttpEndpoint=enabled`), `DisableApiTermination=false`, `Placement.Tenancy=default`.
+  - refused with `UnsupportedOperation`: `IamInstanceProfile`, `PrivateIpAddress`, `Ipv6*`, `NetworkInterface.N`, `Monitoring.Enabled=true`
+    (metrics are always collected; there is no separate detailed mode), `MetadataOptions.HttpTokens=required` or `HttpEndpoint=disabled`,
+    `DisableApiTermination=true`, `Placement.GroupName`/`HostId`/`PartitionNumber`/`Affinity`, a non-default tenancy, a root-disk size
+    or a root disk that survives termination, `Ebs.SnapshotId`/`Iops`/`Throughput`/`Encrypted`/`KmsKeyId`, `NoDevice`/`VirtualName`,
+    persistent or block-duration spot requests, `TagSpecification` for resources other than instance and volume, and the CPU,
+    hibernation, enclave, license, capacity-reservation and GPU options.
+  - The root disk has no volume of its own, so `volume` tags apply to the extra volumes only.
 - `TerminateInstances`: deletes through the normal delete path. If the cluster requires approval for deletions it is refused,
   exactly as in the UI.
 - `CreateTags` / `DeleteTags` on any resource that has an EC2 id (`i-`, `vol-`, `sg-`, `key-`, `ami-`, `eni-`, …).
@@ -59,13 +101,13 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
   needs `ProjectId`), and `SubnetId` on `RunInstances`.
 - Machina actions: `SleepInstances`, `WakeInstances`, `DescribeSleepPolicies`, `ModifySleepPolicy`, `CreateRestorePoint`,
   `DescribeRestorePoints`, `RewindInstance`, `ForkInstance`, and `ModifyInstanceAttribute` with `Attribute=preemptible`.
-- Pagination: `MaxResults` (1-1000, default 100) and `NextToken` on `DescribeAddresses` and `DescribeSnapshots`; other lists still
-  come back whole.
+- Pagination on `DescribeAddresses` and `DescribeSnapshots` returns a page of up to 100 even without `MaxResults`; every other
+  describe pages only when `MaxResults` is given (see above).
 
 - Status, monitoring and groups: `DescribeInstanceStatus` (host-observed state, no second probe), `DescribeAlarms`, `PutMetricAlarm`,
   `DeleteAlarms`, `EnableAlarmActions`, `DisableAlarmActions`, `GetMetricStatistics` (these answer on `POST /ec2` for now),
   `DescribeInstanceGroups`, `UpdateInstanceGroup`, `ModifySubnetAttribute` (`Attribute=nat`), `ModifyInstanceAttribute` with
-  `Attribute=groupSet`. `DescribeInstances` now fills image id, placement, block-device mappings and security groups.
+  `Attribute=groupSet`. `DescribeInstances` fills image id, placement (the host), root device, block-device mappings, security groups, network interfaces, `monitoring` (always `disabled`: see `RunInstances`) and `metadataOptions`.
 - VPC: `CreateVpc` (needs `ProjectId`, `CidrBlock`, and `AvailabilityZone` or `HostId`), `DeleteVpc`, `CreateSubnet`, `DeleteSubnet`,
   `DescribeRouteTables`, `CreateRoute`, `DeleteRoute`, `DescribeRegions`. Routes are stored plans: the answer says
   `forwardingActive=false`.
@@ -97,5 +139,8 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
 
 ## Not yet
 - IMDSv2, VPC peering that forwards packets, and multi-host Elastic IP failover.
-- `DescribeInstances` fields that have no Machina equivalent (image id, placement, block-device mappings) are empty.
+- Internet and NAT gateways, route-table create/associate, network ACLs, security-group-rule describe/modify, console output, key
+  generation, placement groups, spot requests and fleets, and the `autoscaling` / `elasticloadbalancing` services: planned (see
+  `docs/claims.md`), every one answers `UnsupportedOperation` today.
+- `DescribeInstances` has no `iamInstanceProfile`, `cpuOptions` or `creditSpecification`.
 - CloudWatch-style calls: metrics and alarms are in the REST API (`/api/v1/metrics/statistics`, `/api/v1/alarms`).

@@ -11,6 +11,7 @@ pub mod addresses;
 pub mod capacity;
 pub mod eni;
 pub mod fleet;
+pub mod foundation;
 pub mod gameday;
 pub mod groups;
 pub mod images;
@@ -22,6 +23,7 @@ pub mod ops;
 pub mod page;
 pub mod peering;
 pub mod platform;
+pub mod run_options;
 pub mod schedules;
 pub mod sigv4;
 pub mod status;
@@ -150,18 +152,16 @@ impl Inst {
 }
 
 fn matches_filter(i: &Inst, name: &str, values: &[String]) -> bool {
-    let any = |v: &str| values.iter().any(|x| x == v);
+    let any = |v: &str| foundation::any_match(values, v);
+    if let Some(r) = foundation::tag_filter_matches(&i.tags, name, values) {
+        return r;
+    }
     match name {
         "instance-id" => any(&i.eid()),
         "instance-state-name" => any(instance_state(&i.state).1),
         "instance-type" => any(&i.itype()),
         "private-ip-address" => i.ip.as_deref().is_some_and(any),
-        "tag-key" => i.tags.iter().any(|(k, _)| any(k)),
-        n if n.starts_with("tag:") => {
-            let key = &n[4..];
-            i.tags.iter().any(|(k, v)| k == key && any(v))
-        }
-        // Unknown filters match nothing rather than everything: a typo must not widen a destructive call.
+        // Unknown filters are refused before the action runs (`foundation::validate_filters`); one that gets here matches nothing.
         _ => false,
     }
 }
@@ -298,19 +298,22 @@ async fn describe_tags(state: &AppState, p: &BTreeMap<String, String>) -> Result
             .await?;
     let mut items = String::new();
     for (rt, rid, k, v) in rows {
+        let kind = Kind::from_type(&rt);
+        let id = Uuid::parse_str(&rid).map(|u| u.simple().to_string()).unwrap_or(rid.clone());
+        let ec2 = kind.map(|k| format!("{}-{}", k.prefix(), &id[..17.min(id.len())])).unwrap_or(id);
+        let rtype = foundation::ec2_resource_type(&rt);
+        // the tag filters look at this one tag; `tag:K` / `tag-key` / `tag-value` select by its own key and value
+        let this = [(k.clone(), v.clone())];
         let ok = filters.iter().all(|(n, vals)| match n.as_str() {
-            "key" => vals.contains(&k),
-            "value" => vals.contains(&v),
-            "resource-type" => vals.iter().any(|x| x == "instance") && rt == "vm",
-            _ => false,
+            "key" => foundation::any_match(vals, &k),
+            "value" => foundation::any_match(vals, &v),
+            "resource-type" => foundation::any_match(vals, &rtype),
+            "resource-id" => foundation::any_match(vals, &ec2),
+            _ => foundation::tag_filter_matches(&this, n, vals).unwrap_or(false),
         });
         if !ok {
             continue;
         }
-        let kind = Kind::from_type(&rt);
-        let id = Uuid::parse_str(&rid).map(|u| u.simple().to_string()).unwrap_or(rid.clone());
-        let ec2 = kind.map(|k| format!("{}-{}", k.prefix(), &id[..17.min(id.len())])).unwrap_or(id);
-        let rtype = if rt == "vm" { "instance".to_string() } else { rt.replace('_', "-") };
         items.push_str(&format!(
             "<item><resourceId>{ec2}</resourceId><resourceType>{rtype}</resourceType><key>{}</key><value>{}</value></item>",
             xml_escape(&k),
@@ -417,8 +420,58 @@ async fn wait_for_vm(state: &AppState, name: &str) -> Option<Uuid> {
     None
 }
 
-async fn run_instances(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, String>) -> Result<String, Ec2Error> {
+/// Wait until the instance's domain exists, so disks can be attached to it.
+async fn wait_until_defined(state: &AppState, id: Uuid) -> bool {
+    for _ in 0..60 {
+        let st: Option<String> = crate::db::query_scalar("SELECT observed_state FROM vms WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
+        if st.as_deref().is_some_and(|s| matches!(s, "running" | "shutoff" | "stopped" | "paused")) {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+    false
+}
+
+/// `BlockDeviceMapping` extra volumes: create, tag and attach each to a new instance.
+async fn attach_extra_volumes(state: &AppState, actor: &AuthUser, vm: Uuid, vm_name: &str, opts: &run_options::RunOptions) -> Result<(), Ec2Error> {
+    if opts.volumes.is_empty() {
+        return Ok(());
+    }
+    if !wait_until_defined(state, vm).await {
+        return Err(Ec2Error::new(StatusCode::INTERNAL_SERVER_ERROR, "InternalError", format!("instance {vm_name} did not become ready to attach its volumes")));
+    }
+    for v in &opts.volumes {
+        let body: crate::api::volumes::CreateVolumeBody = serde_json::from_value(serde_json::json!({
+            "name": format!("{vm_name}-{}", v.device), "size_gib": v.size_gib, "delete_on_termination": v.delete_on_termination
+        }))
+        .map_err(|e| Ec2Error::bad("InvalidParameterValue", e.to_string()))?;
+        let Json(row) = crate::api::volumes::create_volume(State(state.clone()), Extension(actor.clone()), Json(body)).await.map_err(more::api_err)?;
+        if !opts.volume_tags.is_empty() {
+            let mut tx = state.pool.begin().await?;
+            let _ = crate::api::tags::put_tag_map(&mut tx, Kind::Volume, row.id, &opts.volume_tags).await?;
+            tx.commit().await?;
+        }
+        let attach: crate::api::volumes::AttachVolumeBody = serde_json::from_value(
+            serde_json::json!({ "vm_id": vm, "target_dev": v.device, "delete_on_termination": v.delete_on_termination }),
+        )
+        .map_err(|e| Ec2Error::bad("InvalidParameterValue", e.to_string()))?;
+        let _ = crate::api::volumes::attach_volume(State(state.clone()), Extension(actor.clone()), Path(row.id), Json(attach)).await.map_err(more::api_err)?;
+    }
+    Ok(())
+}
+
+async fn run_instances(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, String>) -> Result<String, Ec2Error> {
     require_operator(actor)?;
+    // a launch template supplies defaults; every option is then applied or refused (see `run_options`)
+    let merged = run_options::with_launch_template(state, params).await?;
+    let p = &merged;
+    let opts = run_options::parse(p)?;
+    let host_id = run_options::host_for_zone(state, p).await?;
     let need = |k: &str| p.get(k).cloned().ok_or_else(|| Ec2Error::bad("MissingParameter", format!("The request must contain the parameter {k}")));
     let image = need("ImageId")?;
     let max: u32 = need("MaxCount")?.parse().map_err(|_| Ec2Error::bad("InvalidParameterValue", "MaxCount must be a number"))?;
@@ -450,6 +503,12 @@ async fn run_instances(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, 
     if let Some(f) = flavor {
         spec["flavor_id"] = serde_json::json!(f);
     }
+    if let Some(h) = host_id {
+        spec["host_id"] = serde_json::json!(h);
+    }
+    if opts.preemptible {
+        spec["preemptible"] = serde_json::json!(true);
+    }
     if let Some(network) = fleet::network_for_run(state, p).await? {
         spec["network"] = serde_json::json!(network);
     }
@@ -466,7 +525,7 @@ async fn run_instances(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, 
         .map_err(|e| Ec2Error::bad("InsufficientInstanceCapacity", e.message))?;
     let names: Vec<String> = done["instances"].as_array().into_iter().flatten().filter_map(|i| i["name"].as_str().map(String::from)).collect();
 
-    let mut ids = Vec::new();
+    let mut launched: Vec<(Uuid, String)> = Vec::new();
     for n in &names {
         if let Some(id) = wait_for_vm(state, n).await {
             if !tags.is_empty() {
@@ -474,10 +533,14 @@ async fn run_instances(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, 
                 let _ = crate::api::tags::put_tag_map(&mut tx, Kind::Vm, id, &tags).await?;
                 tx.commit().await?;
             }
-            ids.push(id);
+            launched.push((id, n.clone()));
         }
     }
+    let ids: Vec<Uuid> = launched.iter().map(|(id, _)| *id).collect();
     volume_attrs::attach_run_groups(state, actor, p, &ids).await?;
+    for (id, n) in &launched {
+        attach_extra_volumes(state, actor, *id, n, &opts).await?;
+    }
     let all = load_instances(state).await?;
     let items: String = all.iter().filter(|i| ids.contains(&i.id)).map(instance_core).collect();
     Ok(format!(
@@ -602,6 +665,41 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
     let actor = AuthUser { username, role, auth_source: Some("ec2-access-key".into()) };
     let params = parse_form(std::str::from_utf8(body).map_err(|_| Ec2Error::bad("MalformedQueryString", "body is not UTF-8"))?);
     let action = params.get("Action").map(String::as_str).unwrap_or_default();
+    foundation::dry_run_gate(action, &params, &actor)?;
+    foundation::validate_filters(action, &params)?;
+    let token = match params.get("ClientToken").filter(|_| foundation::IDEMPOTENT_ACTIONS.contains(&action)) {
+        Some(t) => {
+            foundation::validate_token(t)?;
+            let hash = foundation::request_hash(action, &params);
+            match foundation::claim_token(state, &actor.username, action, t, &hash).await? {
+                foundation::TokenClaim::Fresh => Some(t.clone()),
+                foundation::TokenClaim::Replay(inner) => return Ok(xml_response(action, request_id, &inner)),
+                foundation::TokenClaim::Mismatch => return Err(foundation::mismatch_error()),
+                foundation::TokenClaim::InFlight => return Err(foundation::in_flight_error()),
+            }
+        }
+        None => None,
+    };
+    let result = dispatch(state, &actor, &params, action).await;
+    let inner = match (result, &token) {
+        (Ok(inner), Some(t)) => {
+            foundation::finish_token(state, &actor.username, action, t, &inner).await?;
+            inner
+        }
+        (Ok(inner), None) => inner,
+        (Err(e), Some(t)) => {
+            foundation::release_token(state, &actor.username, action, t).await;
+            return Err(e);
+        }
+        (Err(e), None) => return Err(e),
+    };
+    let inner = foundation::post_process(action, &params, inner)?;
+    Ok(xml_response(action, request_id, &inner))
+}
+
+async fn dispatch(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, String>, action: &str) -> Result<String, Ec2Error> {
+    let actor = actor.clone();
+    let params = params.clone();
     let inner = match action {
         "DescribeInstances" => describe_instances(state, &params).await?,
         "DescribeInstanceTypes" => describe_instance_types(state, &params).await?,
@@ -748,7 +846,7 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
             return Err(Ec2Error::bad("UnsupportedOperation", format!("The action {other} is not supported by this endpoint")))
         }
     };
-    Ok(xml_response(action, request_id, &inner))
+    Ok(inner)
 }
 
 // ---- access key management (admin) -----------------------------------------
@@ -856,6 +954,7 @@ mod tests {
             include_str!("capacity.rs"),
             include_str!("eni.rs"),
             include_str!("fleet.rs"),
+            include_str!("foundation.rs"),
             include_str!("gameday.rs"),
             include_str!("groups.rs"),
             include_str!("images.rs"),
@@ -865,6 +964,7 @@ mod tests {
             include_str!("ops.rs"),
             include_str!("peering.rs"),
             include_str!("platform.rs"),
+            include_str!("run_options.rs"),
             include_str!("schedules.rs"),
             include_str!("status.rs"),
             include_str!("volume_attrs.rs"),
