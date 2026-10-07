@@ -433,6 +433,7 @@ pub async fn explain_screen(
 pub mod autopilot;
 pub mod performance_autopilot;
 pub mod blueprint;
+pub mod blackbox_rca;
 pub mod capacity;
 pub mod compliance;
 pub mod compliance_frameworks;

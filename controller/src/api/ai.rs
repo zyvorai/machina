@@ -718,6 +718,18 @@ pub async fn noisy_neighbors(
         .map(Json)
 }
 
+pub async fn analyze_blackbox_incident(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Query(q): Query<ai::blackbox_rca::BlackBoxRcaQuery>,
+) -> Result<Json<ai::blackbox_rca::BlackBoxRcaReport>, ApiError> {
+    require_operator(&actor)?;
+    ai::blackbox_rca::analyze(&state.pool, &q)
+        .await
+        .map_err(|e| ApiError::internal(e.to_string()))
+        .map(Json)
+}
+
 pub async fn analyze_incident(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,
