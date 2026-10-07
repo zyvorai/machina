@@ -122,7 +122,7 @@ pub fn controller_identity() -> Result<Identity> {
     }
     let i = load_or_issue_in(
         &dir(),
-        &ca()?,
+        &*ca()?,
         "controller",
         CONTROLLER_NAME,
         &[CONTROLLER_NAME.to_string()],
@@ -133,7 +133,7 @@ pub fn controller_identity() -> Result<Identity> {
 
 /// The server certificate for the controller's network (join) listener.
 pub fn server_identity(sans: &[String]) -> Result<Identity> {
-    load_or_issue_in(&dir(), &ca()?, "server", "machina controller", sans)
+    load_or_issue_in(&dir(), &*ca()?, "server", "machina controller", sans)
 }
 
 #[cfg(test)]
