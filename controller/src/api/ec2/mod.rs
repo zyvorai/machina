@@ -7,7 +7,12 @@
 //! StopInstances, RunInstances, TerminateInstances, CreateTags, DeleteTags. Everything else answers `UnsupportedOperation`. Access keys are managed under
 //! `/api/v1/ec2/access-keys` (admin).
 
+pub mod addresses;
+pub mod fleet;
+pub mod images;
+pub mod machina;
 pub mod more;
+pub mod page;
 pub mod sigv4;
 
 use std::collections::BTreeMap;
@@ -429,6 +434,9 @@ async fn run_instances(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, 
     if let Some(f) = flavor {
         spec["flavor_id"] = serde_json::json!(f);
     }
+    if let Some(network) = fleet::network_for_run(state, p).await? {
+        spec["network"] = serde_json::json!(network);
+    }
     if let Some(k) = p.get("KeyName") {
         spec["key_name"] = serde_json::json!(k);
     }
@@ -587,6 +595,7 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
         "RunInstances" => run_instances(state, &actor, &params).await?,
         "TerminateInstances" => terminate(state, &actor, &params).await?,
         "DescribeVolumes" => more::describe_volumes(state, &params).await?,
+        "CreateVolume" if params.contains_key("SnapshotId") => images::create_volume_from_snapshot(state, &actor, &params).await?,
         "CreateVolume" => more::create_volume(state, &actor, &params).await?,
         "DeleteVolume" => more::delete_volume(state, &actor, &params).await?,
         "AttachVolume" => more::attach_volume(state, &actor, &params).await?,
@@ -605,7 +614,35 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
         "DescribeSubnets" => more::describe_subnets(state, &params).await?,
         "DescribeNetworkInterfaces" => more::describe_network_interfaces(state, &params).await?,
         "RebootInstances" => more::reboot_instances(state, &actor, &params).await?,
+        "ModifyInstanceAttribute" if params.get("Attribute").is_some_and(|a| a == "preemptible") => {
+            machina::modify_preemptible(state, &actor, &params).await?
+        }
         "ModifyInstanceAttribute" => more::modify_instance_attribute(state, &actor, &params).await?,
+        "DescribeAddresses" => addresses::describe_addresses(state, &actor, &params).await?,
+        "AllocateAddress" => addresses::allocate_address(state, &actor, &params).await?,
+        "AssociateAddress" => addresses::associate_address(state, &actor, &params).await?,
+        "DisassociateAddress" => addresses::disassociate_address(state, &actor, &params).await?,
+        "ReleaseAddress" => addresses::release_address(state, &actor, &params).await?,
+        "DescribeSnapshots" => images::describe_snapshots(state, &actor, &params).await?,
+        "CreateSnapshot" => images::create_snapshot(state, &actor, &params).await?,
+        "DeleteSnapshot" => images::delete_snapshot(state, &actor, &params).await?,
+        "CreateImage" => images::create_image(state, &actor, &params).await?,
+        "DeregisterImage" => images::deregister_image(state, &actor, &params).await?,
+        "ModifyImageAttribute" => images::modify_image_attribute(state, &actor, &params).await?,
+        "DescribeAvailabilityZones" => fleet::describe_availability_zones(state, &actor, &params).await?,
+        "DescribeAccountAttributes" => fleet::describe_account_attributes(state, &actor, &params).await?,
+        "DescribeLaunchTemplates" => fleet::describe_launch_templates(state, &actor, &params).await?,
+        "DescribeLaunchTemplateVersions" => fleet::describe_launch_template_versions(state, &actor, &params).await?,
+        "CreateLaunchTemplate" => fleet::create_launch_template(state, &actor, &params).await?,
+        "DeleteLaunchTemplate" => fleet::delete_launch_template(state, &actor, &params).await?,
+        "SleepInstances" => machina::sleep_instances(state, &actor, &params).await?,
+        "WakeInstances" => machina::wake_instances(state, &actor, &params).await?,
+        "DescribeSleepPolicies" => machina::describe_sleep_policies(state, &actor, &params).await?,
+        "ModifySleepPolicy" => machina::modify_sleep_policy(state, &actor, &params).await?,
+        "CreateRestorePoint" => machina::create_restore_point(state, &actor, &params).await?,
+        "DescribeRestorePoints" => machina::describe_restore_points(state, &actor, &params).await?,
+        "RewindInstance" => machina::rewind_instance(state, &actor, &params).await?,
+        "ForkInstance" => machina::fork_instance(state, &actor, &params).await?,
         "CreateTags" => tag_resources(state, &actor, &params, false).await?,
         "DeleteTags" => tag_resources(state, &actor, &params, true).await?,
         "" => return Err(Ec2Error::bad("MissingAction", "No action was specified")),

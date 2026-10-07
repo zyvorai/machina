@@ -51,9 +51,18 @@ Deleting an instance leaves a tombstone: `DescribeInstances` keeps listing it as
 with its tags, then drops it. `StartInstances`/`StopInstances` on a terminated instance fail with `IncorrectInstanceState`;
 terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list tombstones.
 
+## Also supported (unit-tested, not yet exercised live)
+- Elastic IPs: `DescribeAddresses`, `AllocateAddress` (Domain=vpc), `AssociateAddress`, `DisassociateAddress`, `ReleaseAddress`.
+- Snapshots and images: `DescribeSnapshots`, `CreateSnapshot` (Atlas-backed volumes only), `DeleteSnapshot`, `CreateVolume` with
+  `SnapshotId`, `CreateImage`, `DeregisterImage`, `ModifyImageAttribute` (public/private, share with a project).
+- Fleet: `DescribeAvailabilityZones` (a zone is a host), `DescribeAccountAttributes`, launch templates (`CreateLaunchTemplate`
+  needs `ProjectId`), and `SubnetId` on `RunInstances`.
+- Machina actions: `SleepInstances`, `WakeInstances`, `DescribeSleepPolicies`, `ModifySleepPolicy`, `CreateRestorePoint`,
+  `DescribeRestorePoints`, `RewindInstance`, `ForkInstance`, and `ModifyInstanceAttribute` with `Attribute=preemptible`.
+- Pagination: `MaxResults` (1-1000, default 100) and `NextToken` on `DescribeAddresses` and `DescribeSnapshots`; other lists still
+  come back whole. Security-group ids on `RunInstances` are still ignored.
+
 ## Not yet
-- Creating VPCs and subnets, snapshots and AMI creation, and the Elastic IP calls (`AllocateAddress`, `AssociateAddress`,
-  `DisassociateAddress`, `ReleaseAddress`, `DescribeAddresses`); use the REST API (`/api/v1/elastic-ips`) for those.
-- Pagination (`NextToken`): lists come back whole.
+- Creating VPCs and subnets (use the REST API), IMDSv2, VPC peering, and multi-host Elastic IP failover.
 - `DescribeInstances` fields that have no Machina equivalent (image id, placement, block-device mappings) are empty.
 - CloudWatch-style calls: metrics and alarms are in the REST API (`/api/v1/metrics/statistics`, `/api/v1/alarms`).
