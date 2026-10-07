@@ -10,6 +10,8 @@
 pub mod addresses;
 pub mod capacity;
 pub mod eni;
+pub mod elbv2;
+pub mod elbv2_model;
 pub mod fleet;
 pub mod foundation;
 pub mod gameday;
@@ -970,6 +972,7 @@ mod tests {
             include_str!("addresses.rs"),
             include_str!("capacity.rs"),
             include_str!("eni.rs"),
+            include_str!("elbv2.rs"),
             include_str!("fleet.rs"),
             include_str!("foundation.rs"),
             include_str!("gameday.rs"),

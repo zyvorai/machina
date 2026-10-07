@@ -141,9 +141,12 @@ async fn autoscaling_dispatch(_state: &AppState, _actor: &AuthUser, _p: &Params,
     Err(invalid_action(action))
 }
 
-/// ELBv2 actions. Empty until the ELBv2 package adds its arms here.
-async fn elb_dispatch(_state: &AppState, _actor: &AuthUser, _p: &Params, action: &str) -> Result<String, Ec2Error> {
-    Err(invalid_action(action))
+/// ELBv2 actions (`elbv2.rs`).
+async fn elb_dispatch(state: &AppState, actor: &AuthUser, p: &Params, action: &str) -> Result<String, Ec2Error> {
+    match super::elbv2::dispatch(state, actor, p, action).await {
+        Some(r) => r,
+        None => Err(invalid_action(action)),
+    }
 }
 
 // ---- CloudWatch shape ------------------------------------------------------
@@ -294,7 +297,7 @@ mod tests {
         let actor = AuthUser { username: "u".into(), role: "admin".into(), auth_source: None };
         for (svc, action) in [
             (Service::AutoScaling, "CreateAutoScalingGroup"),
-            (Service::ElasticLoadBalancing, "CreateLoadBalancer"),
+            (Service::ElasticLoadBalancing, "ConfigureHealthCheck"),
             (Service::Monitoring, "RunInstances"),
             (Service::Ec2, "DescribeInstances"),
         ] {
@@ -373,12 +376,38 @@ mod tests {
         let (st, body) = call(&state, "/autoscaling", "autoscaling", "Action=DescribeAutoScalingGroups&Version=2011-01-01").await;
         assert_eq!(st, StatusCode::BAD_REQUEST, "{body}");
         assert!(body.contains("<ErrorResponse xmlns=\"http://autoscaling.amazonaws.com/doc/2011-01-01/\"><Error><Type>Sender</Type><Code>InvalidAction</Code>"), "{body}");
-        let (st, body) = call(&state, "/elbv2", "elasticloadbalancing", "Action=DescribeLoadBalancers&Version=2015-12-01").await;
+        // a classic-ELB action is not ELBv2
+        let (st, body) = call(&state, "/elbv2", "elasticloadbalancing", "Action=ConfigureHealthCheck&Version=2015-12-01").await;
         assert_eq!(st, StatusCode::BAD_REQUEST, "{body}");
-        assert!(body.contains("<ErrorResponse xmlns=\"http://elasticloadbalancing.amazonaws.com/doc/2015-12-01/\">"), "{body}");
+        assert!(body.contains("<ErrorResponse xmlns=\"http://elasticloadbalancing.amazonaws.com/doc/2015-12-01/\"><Error><Type>Sender</Type><Code>InvalidAction</Code>"), "{body}");
         let (st, body) = call(&state, "/elbv2", "elasticloadbalancing", "Action=DescribeLoadBalancers&Version=2012-06-01").await;
         assert_eq!(st, StatusCode::BAD_REQUEST, "{body}");
         assert!(body.contains("<Code>InvalidParameterValue</Code>"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn a_signed_elbv2_flow_answers_in_elbv2_shape() {
+        let state = seeded().await;
+        crate::engine::test_support::seed_host(&state.pool, uuid::Uuid::new_v4()).await;
+        let v = "Version=2015-12-01";
+        let (st, body) = call(&state, "/elbv2", "elasticloadbalancing", &format!("Action=CreateLoadBalancer&{v}&Name=sig-lb&Type=network")).await;
+        assert_eq!(st, StatusCode::OK, "{body}");
+        assert!(body.contains("<CreateLoadBalancerResponse xmlns=\"http://elasticloadbalancing.amazonaws.com/doc/2015-12-01/\"><CreateLoadBalancerResult><LoadBalancers><member>"), "{body}");
+        assert!(body.contains("<LoadBalancerName>sig-lb</LoadBalancerName>") && body.contains("<State><Code>active</Code></State>"), "{body}");
+        // the same name again, and a name nobody has, are errors in ELBv2's envelope
+        let (st, body) = call(&state, "/elbv2", "elasticloadbalancing", &format!("Action=CreateLoadBalancer&{v}&Name=sig-lb&Type=network")).await;
+        assert_eq!(st, StatusCode::BAD_REQUEST);
+        assert!(body.contains("<ErrorResponse xmlns=\"http://elasticloadbalancing.amazonaws.com/doc/2015-12-01/\"><Error><Type>Sender</Type><Code>DuplicateLoadBalancerName</Code>"), "{body}");
+        let (st, body) = call(&state, "/elbv2", "elasticloadbalancing", &format!("Action=DescribeLoadBalancers&{v}&Names.member.1=nope")).await;
+        assert_eq!(st, StatusCode::BAD_REQUEST);
+        assert!(body.contains("<Code>LoadBalancerNotFound</Code>"), "{body}");
+        let (st, body) = call(&state, "/elbv2", "elasticloadbalancing", &format!("Action=DescribeLoadBalancers&{v}")).await;
+        assert_eq!(st, StatusCode::OK, "{body}");
+        assert!(body.contains("<DescribeLoadBalancersResult><LoadBalancers><member>") && body.contains("<ResponseMetadata><RequestId>"), "{body}");
+        // an action with no output members answers without a Result element
+        let (st, body) = call(&state, "/elbv2", "elasticloadbalancing", &format!("Action=DeleteLoadBalancer&{v}&LoadBalancerArn=arn:aws:elasticloadbalancing:machina:000000000000:loadbalancer/net/gone/0123456789abcdef")).await;
+        assert_eq!(st, StatusCode::OK, "{body}");
+        assert!(body.contains("<DeleteLoadBalancerResponse xmlns=") && !body.contains("<DeleteLoadBalancerResult>"), "{body}");
     }
 
     #[tokio::test]

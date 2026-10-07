@@ -58,11 +58,56 @@ API version and the error shape, so a client may also send every service to one 
 | `ec2` | everything on this page (the CloudWatch-style actions answer here too, for older clients) | `…/ec2…/2016-11-15/` (any `Version` accepted) | `<Response><Errors>` |
 | `monitoring` | `DescribeAlarms`, `PutMetricAlarm`, `DeleteAlarms`, `EnableAlarmActions`, `DisableAlarmActions`, `GetMetricStatistics` | `…/monitoring…/2010-08-01/` | `<ErrorResponse><Error><Type>Sender|Receiver…` |
 | `autoscaling` | none yet: every action is `InvalidAction` | `…/autoscaling…/2011-01-01/` | as `monitoring` |
-| `elasticloadbalancing` | none yet: every action is `InvalidAction` (classic ELB `2012-06-01` is refused with `InvalidParameterValue`) | `…/elasticloadbalancing…/2015-12-01/` | as `monitoring` |
+| `elasticloadbalancing` | ELBv2, see *ELBv2* below (classic ELB `2012-06-01` is refused with `InvalidParameterValue`; other actions are `InvalidAction`) | `…/elasticloadbalancing…/2015-12-01/` | as `monitoring` |
 
 The `monitoring` answers are the `ec2`-shaped bodies converted to CloudWatch's shape (PascalCase tags, `<member>` lists, ISO 8601
 timestamps, no result element for the write actions); only the unit tests have compared that shape with CloudWatch's, no boto3
 cloudwatch client has parsed it yet. Signature, clock-skew, key and revocation checks are the same single path for every service.
+
+## ELBv2
+`elasticloadbalancing` answers the ELBv2 query API (`Version` `2015-12-01`; point `boto3.client("elbv2", endpoint_url=".../elbv2")` or Terraform's
+`endpoints { elbv2 = ... }` at it). It is built on Machina's native **layer-4** balancer, and says so wherever that matters.
+
+How the objects map: a **listener** with a forward action is one native balancer (`load_balancers`, an iptables rule set on the ELBv2 balancer's
+host, `engine/load_balancer.rs`); the **target group's targets** are its members, and the **target group's health check** is its health check
+(`lb_health`, probed from the host's agent). `DescribeTargetHealth` reports the native member's health: `initial` until the first probe,
+then `healthy` or `unhealthy` (`Target.FailedHealthChecks`); `unused` for a group no listener forwards to. A balancer whose rules the host
+rejected shows `State.Code` `failed` with the host's error as `Reason`; the database still holds what was asked for.
+
+| Area | Actions |
+|---|---|
+| Load balancers | `CreateLoadBalancer`, `DescribeLoadBalancers`, `DeleteLoadBalancer`, `DescribeLoadBalancerAttributes`, `ModifyLoadBalancerAttributes` |
+| Target groups | `CreateTargetGroup`, `DescribeTargetGroups`, `ModifyTargetGroup`, `DeleteTargetGroup`, `DescribeTargetGroupAttributes`, `ModifyTargetGroupAttributes` |
+| Targets | `RegisterTargets`, `DeregisterTargets`, `DescribeTargetHealth` (targets are instances: `i-…`) |
+| Listeners | `CreateListener`, `DescribeListeners`, `ModifyListener`, `DeleteListener`, `DescribeListenerAttributes`, `ModifyListenerAttributes` |
+| Rules | `DescribeRules`, `ModifyRule` (the default rule's target group); `CreateRule`, `DeleteRule`, `SetRulePriorities` are refused (see below) |
+| Tags | `AddTags`, `RemoveTags`, `DescribeTags` (balancers, target groups, listeners) |
+| Static | `DescribeSSLPolicies` (two policies, listed only), `DescribeAccountLimits` (fixed numbers) |
+
+Lists take `Marker` / `PageSize` (1-400) and answer `NextMarker`. ARNs are `arn:aws:elasticloadbalancing:machina:000000000000:loadbalancer/net|app/<name>/<16 hex>`
+(likewise `targetgroup/…`, `listener/…`); `DeleteLoadBalancer`, `DeleteListener` and `DeleteTargetGroup` succeed for something already gone.
+
+**Refused, not ignored** (each is `UnsupportedOperation` unless noted):
+- Listener protocols other than `TCP`/`UDP` (network) and `HTTP` (application): no `HTTPS`, `TLS`, `TCP_UDP`, `QUIC`; `Certificates`, `SslPolicy`, `AlpnPolicy`.
+  `HTTP` is forwarded as TCP: nothing reads the request. A listener whose protocol differs from its target group's is `IncompatibleProtocols`.
+- Actions other than a single `forward` to one target group: `redirect`, `fixed-response`, `authenticate-*`, several target groups with weights, stickiness.
+- **Listener rules.** There is only each listener's default rule (`Priority` `default`, no conditions). Path, host, header, query-string, method and
+  source-IP conditions need a layer-7 router the balancer does not have, so `CreateRule` is refused, `DeleteRule` of the default rule is
+  `OperationNotPermitted`, and `SetRulePriorities` is a `ValidationError`.
+- `Type` other than `application` / `network`; `IpAddressType` other than `ipv4`; **`SecurityGroups`** on a balancer (not enforced);
+  `SubnetMappings.AllocationId`. `Scheme` and `Subnets` are recorded and shown (`internal` / `internet-facing`, `AvailabilityZones`) but do not
+  place or isolate anything: the balancer lives on one online host (the oldest not in maintenance or fenced) and listens on that host's address.
+- Target groups: protocols other than `TCP`/`UDP`/`HTTP`; `TargetType` other than `instance`; `ProtocolVersion` other than `HTTP1`; health-check protocol
+  `HTTPS`, gRPC matchers, and `Matcher.HttpCode` other than `200`, `200-299`, `200-399`. **The probe counts any 2xx or 3xx as healthy**, so a
+  matcher of `200` (the SDK default) is accepted but is looser than it says.
+- Attributes: unknown keys are `ValidationError`; the ones that promise behaviour Machina lacks are refused when switched on (`access_logs.s3.enabled`,
+  `stickiness.enabled`, `proxy_protocol_v2.enabled`, a non-zero `slow_start`, an algorithm other than `round_robin`, HTTP desync/invalid-header handling).
+  `deletion_protection.enabled` is enforced. The others (`idle_timeout`, `deregistration_delay`, cross-zone, HTTP/2 …) are stored and reported back
+  and change nothing: there is no connection draining.
+- **Listener ports are per host**: two balancers cannot both listen on 80/tcp, because they share the host's address (`ValidationError`, nothing is left
+  behind). A balancer has one listener per port, so `TCP` and `UDP` on the same port need two balancers.
+
+Run `scripts/ec2/boto3_elbv2.py` against a controller to exercise it with the real SDK.
 
 ## Security
 - Requests older or newer than 15 minutes (`X-Amz-Date`) are refused, and the signature is compared in constant time.
@@ -157,6 +202,6 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
 - IMDSv2, VPC peering that forwards packets, and multi-host Elastic IP failover.
 - Internet and NAT gateways, route-table create/associate, network ACLs, security-group-rule describe/modify, console output, key
   generation, placement groups, spot requests and fleets: planned (see `docs/claims.md`), every one answers `UnsupportedOperation`
-  today. The `autoscaling` and `elasticloadbalancing` services accept signed requests but have no actions yet (`InvalidAction`).
+  today. The `autoscaling` service accepts signed requests but has no actions yet (`InvalidAction`).
 - `DescribeInstances` has no `iamInstanceProfile`, `cpuOptions` or `creditSpecification`.
 - CloudWatch: only the six alarm and statistics actions above; no `PutMetricData`, `ListMetrics`, dashboards or log groups.
