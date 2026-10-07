@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! VM runtime intelligence (opt-in, observe only). Userspace fills the
 //! tracking maps with QEMU processes, threads and cgroups; every hook returns
 //! early for anything untracked, and per-feature bits gate each group.

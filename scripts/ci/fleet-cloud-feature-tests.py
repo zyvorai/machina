@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Run the unit tests of every Fleet Cloud feature in docs/guides/features.json, one feature at a time.
 
 A feature fails when any of its tests fails OR when fewer than `min` tests ran, so a renamed, moved or deleted test cannot

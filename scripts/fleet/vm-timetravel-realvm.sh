@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 #
 # Time travel against a real libvirt VM, driven through the controller:
 # a restore point, a live disk fork (own MAC, address, hostname and

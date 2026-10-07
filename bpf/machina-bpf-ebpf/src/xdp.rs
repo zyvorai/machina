@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! Uplink XDP: one dispatcher (`mn_xdp_uplink`) that runs the DDoS shield
 //! and then tail-calls the NodePort fast path. XDP allows one program per
 //! interface, so every uplink feature hangs off this entry point.

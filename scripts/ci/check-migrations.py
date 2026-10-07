@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Guard the controller's SQL migrations.
 
 sqlx applies migrations by their numeric prefix, so two files with one number (it has happened: two branches each took the

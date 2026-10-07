@@ -1,3 +1,6 @@
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Shared helpers for package maintainer scripts (POSIX sh).
 have_systemd() { [ -d /run/systemd/system ] && command -v systemctl >/dev/null 2>&1; }
 

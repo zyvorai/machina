@@ -1,6 +1,7 @@
 #!/bin/sh
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 #
 # Idempotent first-install secrets for Machina. Sourced by the package scripts (and the offline bundle installer).
 # Creates /etc/default/machina-platform (0600) with the controller's JWT secret, the controller↔agent token and a

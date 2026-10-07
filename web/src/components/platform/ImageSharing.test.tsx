@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import ImageSharing from './ImageSharing'

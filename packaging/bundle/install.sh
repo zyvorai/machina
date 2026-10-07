@@ -1,6 +1,7 @@
 #!/bin/sh
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 #
 # Offline installer for the Machina release bundle. No network, no compiler: it verifies the bundle, copies binaries
 # to /usr/local, installs the systemd units, creates first-run secrets and starts the services. It never installs OS

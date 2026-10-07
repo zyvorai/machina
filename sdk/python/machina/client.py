@@ -1,5 +1,6 @@
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """A small typed client for the Machina controller API.
 
     from machina import Client

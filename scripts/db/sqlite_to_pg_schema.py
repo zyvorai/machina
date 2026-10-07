@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Draft the PostgreSQL baseline from the controller's SQLite migrations.
 
 Applies controller/migrations/*.sql to an in-memory SQLite database, reads back every table and index, and rewrites them in

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! VMM guard: BPF-LSM hooks scoped to QEMU cgroups (GUARD_POLICIES). Exec
 //! outside the binary allowlist, writable+executable mappings and opens of
 //! char devices outside the device allowlist are audited; they are denied

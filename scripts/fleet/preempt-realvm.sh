@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 #
 # Preemptible instances against real libvirt VMs, driven through the
 # controller: a reserve just above the host's free memory preempts only the

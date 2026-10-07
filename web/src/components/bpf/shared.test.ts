@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import { describe, expect, it } from 'vitest'
 import { workloadLabel } from '../../api/bpf'
 import { fmtUs, splitList, splitPorts } from './shared'

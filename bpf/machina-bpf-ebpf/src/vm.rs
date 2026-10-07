@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! VM edge and QEMU sandbox.
 //!
 //! `mn_vm_edge_in/out` run on VM taps after the host datapath (`mn_tc_*`

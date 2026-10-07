@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! AF_XDP fast path for a dedicated interface: frames on a queue whose gate
 //! is open go to the AF_XDP socket registered for that queue; everything
 //! else (gate closed, no socket bound) passes to the kernel stack.

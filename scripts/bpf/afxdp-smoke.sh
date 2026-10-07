@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # AF_XDP fast-path smoke test on a dedicated veth (mnx-in); a Python AF_XDP
 # consumer registers its socket with bpfd over SCM_RIGHTS. XDP runs in generic
 # mode (MACHINA_BPF_XDP_SKB). No real interface is touched.

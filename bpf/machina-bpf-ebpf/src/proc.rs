@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! Process / exec / file / connect telemetry from stable tracepoints.
 //!
 //! Field offsets come from TP_OFF (filled by the loader from tracefs

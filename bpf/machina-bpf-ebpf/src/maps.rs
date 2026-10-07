@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 use aya_ebpf::{
     macros::map,
     maps::{Array, HashMap, LpmTrie, LruHashMap, PerCpuHashMap, RingBuf},

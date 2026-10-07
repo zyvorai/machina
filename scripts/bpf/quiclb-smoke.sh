@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # QUIC CID load balancer smoke test. A client and two backends sit on a
 # bridge inside a netns; the host end of one veth (mnq-lb) carries the uplink
 # XDP dispatcher and stands in for the uplink. No real interface is touched.

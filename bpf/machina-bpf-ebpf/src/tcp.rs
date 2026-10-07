@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! TCP connect latency and per-peer pressure (`mn_sockops` on the root
 //! cgroup, observe only), plus the ICMP error histogram fed from tc.
 

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # VM edge + QEMU sandbox smoke test for machina-bpfd.
 #
 # A veth pair stands in for a VM tap (named explicitly in the edge state, so

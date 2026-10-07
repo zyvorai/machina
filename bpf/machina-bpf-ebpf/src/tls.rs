@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! Opt-in TLS visibility, both rate limited and off unless configured:
 //!
 //! * `mn_tlsfp` (cgroup_skb egress) samples TLS ClientHellos for JA3/JA4

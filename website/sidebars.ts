@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 
 // Auto-generated from the docs/ folder structure: category order and labels

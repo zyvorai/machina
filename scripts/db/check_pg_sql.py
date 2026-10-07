@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Parse-check every literal SQL statement the controller sends, against the PostgreSQL schema.
 
 Finds each string literal passed straight to crate::db::query / query_as / query_scalar, rewrites it the way the PostgreSQL build does

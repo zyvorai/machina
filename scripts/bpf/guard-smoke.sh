@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # VMM guard (BPF-LSM) smoke test on a throwaway cgroup standing in for a QEMU
 # scope; real VMs are never guarded (no machine-qemu scope is listed in `vms`).
 #

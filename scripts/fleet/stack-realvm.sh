@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 #
 # Stacks you describe, against real libvirt VMs, driven through the
 # controller: draft from a sentence, plan (quota, placement, cost), propose

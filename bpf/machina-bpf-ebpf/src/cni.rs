@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! machina-cni datapath (dual-stack): pod-to-pod redirect, stateful
 //! NetworkPolicy, NodePort (local DNAT, SNAT or IPIP DSR to remote
 //! backends) and socket-level service load balancing with Maglev backend

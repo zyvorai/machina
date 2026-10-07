@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 #
 # Autopilot capacity against real libvirt VMs, driven through the controller:
 # a cloud VPC + subnet, a Debian launch template, and an instance group behind

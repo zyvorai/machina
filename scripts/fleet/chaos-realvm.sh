@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 # SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 #
 # Chaos game days against real libvirt VMs, driven through the controller:
 # latency, loss and a partition from a peer VM on the target's tap (checked

@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Netns smoke test for machina-bpfd: a veth pair stands in for a VM tap.
 # Runs bpfd on a private socket/state dir with auto-attach limited to the test
 # veth, so real VM taps on the host are never touched.

@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! Verb-only decoding of sampled plaintext L7 payloads. Only the operation
 //! (command, statement keyword, API name, gRPC method path) is extracted —
 //! never keys, values, bind parameters or literals.

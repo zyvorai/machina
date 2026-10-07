@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Controller database durability and failover with Litestream in a Podman pod.
 #
 #   machina-ha.sh start  <replica-url>   install the config and start the replication pod

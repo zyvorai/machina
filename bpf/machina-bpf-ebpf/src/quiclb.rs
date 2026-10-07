@@ -1,3 +1,6 @@
+// Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+// SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 //! QUIC connection-ID load balancer, tail-called from `mn_xdp_uplink` under
 //! `XDP_F_QUICLB`. UDP to a configured VIP:port goes to the backend whose
 //! server id is encoded in the destination CID (QUIC-LB plaintext layout);

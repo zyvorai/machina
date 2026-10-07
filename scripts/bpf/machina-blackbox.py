@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """Machina VM Black Box: correlate existing eBPF telemetry into one VM timeline.
 
 Observe-only. It never changes bpfd mode, policy, leases or VM state.
