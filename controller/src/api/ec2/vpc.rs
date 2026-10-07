@@ -98,31 +98,6 @@ pub async fn delete_subnet(state: &AppState, actor: &AuthUser, p: &Params) -> Re
     Ok("<return>true</return>".into())
 }
 
-pub async fn describe_route_tables(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
-    require_operator(actor)?;
-    let vpc = resolve(state, Kind::Vpc, &need(p, "VpcId")?, "InvalidVpcID.NotFound").await?;
-    let rows: Vec<(Uuid, String, String)> = crate::db::query_as(
-        "SELECT id, destination, target FROM cloud_routes WHERE vpc_id = ? ORDER BY destination",
-    )
-    .bind(vpc)
-    .fetch_all(&state.pool)
-    .await?;
-    let items: String = rows
-        .iter()
-        .map(|(route, destination, target)| {
-            format!(
-                "<item><routeId>{route}</routeId><destinationCidrBlock>{}</destinationCidrBlock><gatewayId>{}</gatewayId><state>blackhole</state><forwardingActive>false</forwardingActive></item>",
-                xml_escape(destination),
-                xml_escape(target)
-            )
-        })
-        .collect();
-    Ok(format!(
-        "<routeTableSet><item><vpcId>{}</vpcId><routeSet>{items}</routeSet></item></routeTableSet>",
-        need(p, "VpcId")?
-    ))
-}
-
 pub async fn create_route(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
     require_operator(actor)?;
     let vpc = resolve(state, Kind::Vpc, &need(p, "VpcId")?, "InvalidVpcID.NotFound").await?;

@@ -15,19 +15,24 @@ pub mod elbv2_model;
 pub mod fleet;
 pub mod foundation;
 pub mod gameday;
+pub mod gateways;
 pub mod groups;
 pub mod images;
 pub mod lb_members;
 pub mod machina;
 pub mod monitoring;
 pub mod more;
+pub mod nacls;
+pub mod netcommon;
 pub mod ops;
 pub mod page;
 pub mod peering;
 pub mod platform;
+pub mod route_tables;
 pub mod run_options;
 pub mod schedules;
 pub mod services;
+pub mod sg_rules;
 pub mod sigv4;
 pub mod status;
 pub mod volume_attrs;
@@ -768,9 +773,49 @@ async fn dispatch(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, 
         "DeleteVpc" => vpc::delete_vpc(state, &actor, &params).await?,
         "CreateSubnet" => vpc::create_subnet(state, &actor, &params).await?,
         "DeleteSubnet" => vpc::delete_subnet(state, &actor, &params).await?,
-        "DescribeRouteTables" => vpc::describe_route_tables(state, &actor, &params).await?,
-        "CreateRoute" => vpc::create_route(state, &actor, &params).await?,
-        "DeleteRoute" => vpc::delete_route(state, &actor, &params).await?,
+        "DescribeRouteTables" => route_tables::describe_route_tables(state, &params).await?,
+        "CreateRoute" => route_tables::create_route(state, &actor, &params).await?,
+        "DeleteRoute" => route_tables::delete_route(state, &actor, &params).await?,
+        "ReplaceRoute" => route_tables::replace_route(state, &actor, &params).await?,
+        "CreateRouteTable" => route_tables::create_route_table(state, &actor, &params).await?,
+        "DeleteRouteTable" => route_tables::delete_route_table(state, &actor, &params).await?,
+        "AssociateRouteTable" => route_tables::associate_route_table(state, &actor, &params).await?,
+        "DisassociateRouteTable" => route_tables::disassociate_route_table(state, &actor, &params).await?,
+        "ReplaceRouteTableAssociation" => route_tables::replace_route_table_association(state, &actor, &params).await?,
+        "CreateInternetGateway" => gateways::create_internet_gateway(state, &actor, &params).await?,
+        "DescribeInternetGateways" => gateways::describe_internet_gateways(state, &params).await?,
+        "AttachInternetGateway" => gateways::attach_internet_gateway(state, &actor, &params).await?,
+        "DetachInternetGateway" => gateways::detach_internet_gateway(state, &actor, &params).await?,
+        "DeleteInternetGateway" => gateways::delete_internet_gateway(state, &actor, &params).await?,
+        "CreateNatGateway" => gateways::create_nat_gateway(state, &actor, &params).await?,
+        "DescribeNatGateways" => gateways::describe_nat_gateways(state, &params).await?,
+        "DeleteNatGateway" => gateways::delete_nat_gateway(state, &actor, &params).await?,
+        "CreateDhcpOptions" => gateways::create_dhcp_options(state, &actor, &params).await?,
+        "DescribeDhcpOptions" => gateways::describe_dhcp_options(state, &params).await?,
+        "AssociateDhcpOptions" => gateways::associate_dhcp_options(state, &actor, &params).await?,
+        "DeleteDhcpOptions" => gateways::delete_dhcp_options(state, &actor, &params).await?,
+        "DescribeVpcAttribute" => gateways::describe_vpc_attribute(state, &params).await?,
+        "ModifyVpcAttribute" => gateways::modify_vpc_attribute(state, &actor, &params).await?,
+        "DescribeEgressOnlyInternetGateways" => gateways::describe_egress_only_internet_gateways(state, &params).await?,
+        "DescribePrefixLists" | "DescribeManagedPrefixLists" => gateways::describe_prefix_lists(state, &params).await?,
+        "DescribeVpcEndpoints" => gateways::describe_vpc_endpoints(state, &params).await?,
+        "CreateVpcEndpoint" => gateways::create_vpc_endpoint(state, &actor, &params).await?,
+        "CreateNetworkAcl" => nacls::create_network_acl(state, &actor, &params).await?,
+        "DescribeNetworkAcls" => nacls::describe_network_acls(state, &params).await?,
+        "DeleteNetworkAcl" => nacls::delete_network_acl(state, &actor, &params).await?,
+        "CreateNetworkAclEntry" => nacls::create_network_acl_entry(state, &actor, &params).await?,
+        "ReplaceNetworkAclEntry" => nacls::replace_network_acl_entry(state, &actor, &params).await?,
+        "DeleteNetworkAclEntry" => nacls::delete_network_acl_entry(state, &actor, &params).await?,
+        "ReplaceNetworkAclAssociation" => nacls::replace_network_acl_association(state, &actor, &params).await?,
+        "DescribeSecurityGroupRules" => sg_rules::describe_security_group_rules(state, &params).await?,
+        "ModifySecurityGroupRules" => sg_rules::modify_security_group_rules(state, &actor, &params).await?,
+        "UpdateSecurityGroupRuleDescriptionsIngress" => sg_rules::update_rule_descriptions(state, &actor, &params, false).await?,
+        "UpdateSecurityGroupRuleDescriptionsEgress" => sg_rules::update_rule_descriptions(state, &actor, &params, true).await?,
+        "DetachNetworkInterface" => eni::detach_network_interface(state, &actor, &params).await?,
+        "ModifyNetworkInterfaceAttribute" => eni::modify_network_interface_attribute(state, &actor, &params).await?,
+        "DescribeNetworkInterfaceAttribute" => eni::describe_network_interface_attribute(state, &params).await?,
+        "AssignPrivateIpAddresses" => eni::assign_private_ip_addresses(state, &actor, &params).await?,
+        "UnassignPrivateIpAddresses" => eni::unassign_private_ip_addresses(state, &actor, &params).await?,
         "DescribeRegions" => vpc::describe_regions(state, &actor, &params).await?,
         "DescribeVolumeAttribute" => volume_attrs::describe_volume_attribute(state, &params).await?,
         "ModifyVolumeAttribute" => volume_attrs::modify_volume_attribute(state, &actor, &params).await?,
@@ -976,16 +1021,21 @@ mod tests {
             include_str!("fleet.rs"),
             include_str!("foundation.rs"),
             include_str!("gameday.rs"),
+            include_str!("gateways.rs"),
             include_str!("groups.rs"),
             include_str!("images.rs"),
             include_str!("lb_members.rs"),
             include_str!("machina.rs"),
             include_str!("monitoring.rs"),
+            include_str!("nacls.rs"),
+            include_str!("netcommon.rs"),
             include_str!("ops.rs"),
             include_str!("peering.rs"),
             include_str!("platform.rs"),
+            include_str!("route_tables.rs"),
             include_str!("run_options.rs"),
             include_str!("schedules.rs"),
+            include_str!("sg_rules.rs"),
             include_str!("status.rs"),
             include_str!("volume_attrs.rs"),
             include_str!("vpc.rs"),

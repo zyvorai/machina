@@ -24,6 +24,14 @@ pub enum Kind {
     Subnet,
     InstanceGroup,
     LaunchTemplate,
+    InternetGateway,
+    NatGateway,
+    RouteTable,
+    RouteTableAssociation,
+    NetworkAcl,
+    NetworkAclAssociation,
+    DhcpOptions,
+    SecurityGroupRule,
 }
 
 pub const ALL: &[Kind] = &[
@@ -38,6 +46,14 @@ pub const ALL: &[Kind] = &[
     Kind::Subnet,
     Kind::InstanceGroup,
     Kind::LaunchTemplate,
+    Kind::InternetGateway,
+    Kind::NatGateway,
+    Kind::RouteTable,
+    Kind::RouteTableAssociation,
+    Kind::NetworkAcl,
+    Kind::NetworkAclAssociation,
+    Kind::DhcpOptions,
+    Kind::SecurityGroupRule,
 ];
 
 impl Kind {
@@ -54,6 +70,14 @@ impl Kind {
             Kind::Subnet => "subnet",
             Kind::InstanceGroup => "asg",
             Kind::LaunchTemplate => "lt",
+            Kind::InternetGateway => "igw",
+            Kind::NatGateway => "nat",
+            Kind::RouteTable => "rtb",
+            Kind::RouteTableAssociation => "rtbassoc",
+            Kind::NetworkAcl => "acl",
+            Kind::NetworkAclAssociation => "aclassoc",
+            Kind::DhcpOptions => "dopt",
+            Kind::SecurityGroupRule => "sgr",
         }
     }
 
@@ -71,6 +95,14 @@ impl Kind {
             Kind::Subnet => "subnet",
             Kind::InstanceGroup => "instance_group",
             Kind::LaunchTemplate => "launch_template",
+            Kind::InternetGateway => "internet_gateway",
+            Kind::NatGateway => "nat_gateway",
+            Kind::RouteTable => "route_table",
+            Kind::RouteTableAssociation => "route_table_association",
+            Kind::NetworkAcl => "network_acl",
+            Kind::NetworkAclAssociation => "network_acl_association",
+            Kind::DhcpOptions => "dhcp_options",
+            Kind::SecurityGroupRule => "security_group_rule",
         }
     }
 
@@ -88,6 +120,14 @@ impl Kind {
             Kind::Subnet => "cloud_subnets",
             Kind::InstanceGroup => "cloud_instance_groups",
             Kind::LaunchTemplate => "cloud_launch_templates",
+            Kind::InternetGateway => "ec2_internet_gateways",
+            Kind::NatGateway => "ec2_nat_gateways",
+            Kind::RouteTable => "ec2_route_tables",
+            Kind::RouteTableAssociation => "ec2_route_table_assocs",
+            Kind::NetworkAcl => "ec2_network_acls",
+            Kind::NetworkAclAssociation => "ec2_acl_assocs",
+            Kind::DhcpOptions => "ec2_dhcp_options",
+            Kind::SecurityGroupRule => "security_group_rules",
         }
     }
 
@@ -99,7 +139,17 @@ impl Kind {
     pub fn is_cloud(self) -> bool {
         matches!(
             self,
-            Kind::Vpc | Kind::Subnet | Kind::InstanceGroup | Kind::LaunchTemplate
+            Kind::Vpc
+                | Kind::Subnet
+                | Kind::InstanceGroup
+                | Kind::LaunchTemplate
+                | Kind::InternetGateway
+                | Kind::NatGateway
+                | Kind::RouteTable
+                | Kind::RouteTableAssociation
+                | Kind::NetworkAcl
+                | Kind::NetworkAclAssociation
+                | Kind::DhcpOptions
         )
     }
 }

@@ -28,11 +28,11 @@ fn need(p: &Params, k: &str) -> Result<String, Ec2Error> {
     p.get(k).cloned().ok_or_else(|| bad("MissingParameter", format!("The request must contain the parameter {k}")))
 }
 
-fn pcx(id: Uuid) -> String {
+pub(super) fn pcx(id: Uuid) -> String {
     format!("pcx-{}", &id.simple().to_string()[..17])
 }
 
-async fn peering_uuid(state: &AppState, raw: &str) -> Result<Uuid, Ec2Error> {
+pub(super) async fn peering_uuid(state: &AppState, raw: &str) -> Result<Uuid, Ec2Error> {
     let hex = raw.strip_prefix("pcx-").unwrap_or(raw);
     if hex.len() != 17 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(bad("InvalidVpcPeeringConnectionId.NotFound", format!("The peering '{raw}' is not a valid id")));

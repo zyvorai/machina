@@ -692,7 +692,7 @@ pub async fn preview_security_group_enforcement(
 }
 
 /// Pin (or unpin) `ip` for `mac` on the libvirt network behind a cloud subnet, on the host that owns it.
-async fn pin_dhcp(state: &AppState, network_id: Uuid, mac: &str, ip: &str, enabled: bool) -> Result<(), String> {
+pub(crate) async fn pin_dhcp(state: &AppState, network_id: Uuid, mac: &str, ip: &str, enabled: bool) -> Result<(), String> {
     let row: Option<(String, String)> = crate::db::query_as(
         "SELECT h.agent_grpc_addr, n.name FROM cloud_subnets s JOIN cloud_vpcs v ON v.id = s.vpc_id \
          JOIN hosts h ON h.id = v.host_id JOIN networks n ON n.id = s.network_id WHERE s.network_id = ?",

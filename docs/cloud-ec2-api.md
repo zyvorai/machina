@@ -170,8 +170,7 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
   `DescribeInstanceGroups`, `UpdateInstanceGroup`, `ModifySubnetAttribute` (`Attribute=nat`), `ModifyInstanceAttribute` with
   `Attribute=groupSet`. `DescribeInstances` fills image id, placement (the host), root device, block-device mappings, security groups, network interfaces, `monitoring` (always `disabled`: see `RunInstances`) and `metadataOptions`.
 - VPC: `CreateVpc` (needs `ProjectId`, `CidrBlock`, and `AvailabilityZone` or `HostId`), `DeleteVpc`, `CreateSubnet`, `DeleteSubnet`,
-  `DescribeRouteTables`, `CreateRoute`, `DeleteRoute`, `DescribeRegions`. Routes are stored plans: the answer says
-  `forwardingActive=false`.
+  `DescribeRegions`; the rest of the VPC objects are in [VPC networking](#vpc-networking) below.
 - Volumes and balancers: `DescribeVolumeAttribute`, `ModifyVolumeAttribute` (delete-on-termination, IO limits),
   `DescribeLoadBalancers`, `CreateLoadBalancer`, `DeleteLoadBalancer` (the native L4 balancer, not ELBv2), and `SecurityGroupId.N` on
   `RunInstances`.
@@ -180,9 +179,9 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
   pool, `RequestKey` is idempotent), `DescribeLoadBalancerMembers`, `RegisterInstancesWithLoadBalancer`,
   `DeregisterInstancesFromLoadBalancer`, `ConfigureHealthCheck`.
 - Interfaces, grow, backups: `CreateNetworkInterface` (`SubnetId` or `NetworkId`; attaches when `InstanceId` is set),
-  `DeleteNetworkInterface`, `AttachNetworkInterface` (create-with-instance only; an existing interface cannot be moved),
-  `ModifyVolume` (grow only), `CreateBackup` / `DescribeBackups` / `RestoreBackup` (Machina backup records, not EBS snapshots),
-  `DescribeInstanceAttribute` (`instanceType`, `groupSet`, `disableApiTermination`). No secondary private IPs.
+  `DeleteNetworkInterface`, `AttachNetworkInterface`, `DetachNetworkInterface` and the address and attribute calls (see
+  [VPC networking](#vpc-networking)), `ModifyVolume` (grow only), `CreateBackup` / `DescribeBackups` / `RestoreBackup` (Machina backup records, not EBS snapshots),
+  `DescribeInstanceAttribute` (`instanceType`, `groupSet`, `disableApiTermination`).
 - Schedules and game days: `CreateBackupSchedule` / `DescribeBackupSchedules` / `DeleteBackupSchedule` / `VerifyBackup`,
   `CreateVmSchedule` / `DescribeVmSchedules` / `DeleteVmSchedule` (`ActionName` is `start`, `shutdown`, `stop` or `snapshot`),
   `CreateMaintenanceSchedule` / `DescribeMaintenanceSchedules` / `DeleteMaintenanceSchedule` (host maintenance, admin),
@@ -198,10 +197,30 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
 - Access control: an EC2 access key carries a role, not a project scope. The project-scoped API keys of `docs/claims.md` C16 apply to the
   REST API; they do not narrow what these actions return. Use a role no higher than the caller needs.
 
+## VPC networking
+What each object does here, so a Terraform plan means what it says. Everything below is unit-tested; `scripts/ec2/boto3_vpc.py`
+and `scripts/ec2/terraform/vpc/` are the client checks (see `docs/claims.md` C40 for what was actually run).
+
+| Object | Actions | What is real |
+|---|---|---|
+| Internet gateway (`igw-`) | `Create`/`Delete`/`DescribeInternetGateways`, `Attach`/`DetachInternetGateway` | A stored plan: one per VPC. Nothing forwards because of it; a route to a detached gateway shows `blackhole`. |
+| NAT gateway (`nat-`) | `CreateNatGateway` (needs an `AllocationId` of a real Elastic IP), `DescribeNatGateways`, `DeleteNatGateway` | **Real through the route:** a route `0.0.0.0/0` → `nat-…` turns on the host masquerade of every subnet that uses that route table (`PUT /api/v1/cloud/subnets/{id}/nat`); replacing or deleting the route, or deleting the gateway, turns it off again. Only that default route is acted on, so a masquerade you switched on by hand survives other edits. Public NAT only. |
+| Route table (`rtb-`) | `CreateRouteTable`, `DeleteRouteTable`, `DescribeRouteTables`, `AssociateRouteTable`, `DisassociateRouteTable`, `ReplaceRouteTableAssociation`, `CreateRoute`, `ReplaceRoute`, `DeleteRoute` | Stored plans (`forwardingActive=false`). Every VPC has a main route table with the VPC's `local` route; subnets without an association use it. Targets: internet gateway, NAT gateway, accepted peering connection, instance, network interface. Transit gateway, endpoint, egress-only, carrier/local gateway, IPv6 and prefix-list routes answer `UnsupportedOperation`. Changing the main table (`ReplaceRouteTableAssociation` on the main association) is not supported. The legacy `VpcId` + `Target` form of `CreateRoute`/`DeleteRoute` still works and its routes show on the main table. |
+| Network ACL (`acl-`) | `CreateNetworkAcl`, `DeleteNetworkAcl`, `DescribeNetworkAcls`, `CreateNetworkAclEntry`, `ReplaceNetworkAclEntry`, `DeleteNetworkAclEntry`, `ReplaceNetworkAclAssociation` | Stored plans: entries are validated and listed as AWS does (rule 1-32766, final rule 32767 deny, IPv4 CIDR, TCP/UDP port range) but no host filters traffic by them (`forwardingActive=false`). ICMP type/code and IPv6 entries answer `UnsupportedOperation`. Every VPC has a default ACL and every subnet starts associated with it. |
+| DHCP options (`dopt-`) | `CreateDhcpOptions`, `DescribeDhcpOptions`, `AssociateDhcpOptions` (`default` removes it), `DeleteDhcpOptions` | Stored: `DescribeVpcs` reports the association; no guest receives these options. |
+| VPC attributes | `DescribeVpcAttribute`, `ModifyVpcAttribute` | `enableDnsHostnames` is recorded only. `enableDnsSupport=false` and network address usage metrics answer `UnsupportedOperation` (the subnets' networks always run DNS). |
+| Security group rules (`sgr-`) | `DescribeSecurityGroupRules`, `ModifySecurityGroupRules` (in place, the id stays), `UpdateSecurityGroupRuleDescriptionsIngress`/`Egress`; `Authorize…` now keeps `Description` | The same rows the REST API and the web UI show. IPv6 and prefix-list peers answer `UnsupportedOperation`. |
+| Network interfaces | `AttachNetworkInterface` (existing interface, `InstanceId` + `DeviceIndex`), `DetachNetworkInterface`, `ModifyNetworkInterfaceAttribute` (`Description`, one `SecurityGroupId`), `DescribeNetworkInterfaceAttribute`, `AssignPrivateIpAddresses`, `UnassignPrivateIpAddresses` | Attach and detach run the real NIC tasks. Secondary addresses are reserved in the subnet's address pool and listed on the interface, **not configured in the guest** (like every IPAM reservation). Source/destination check cannot be turned off; `Attachment.*` attributes answer `UnsupportedOperation`. |
+| Read-only | `DescribeEgressOnlyInternetGateways`, `DescribePrefixLists`, `DescribeManagedPrefixLists`, `DescribeVpcEndpoints` | Always empty (what Terraform reads while refreshing a VPC); `CreateVpcEndpoint` answers `UnsupportedOperation`. |
+
+All of these take `DryRun`, filters (names are listed per describe; unknown ones are `InvalidParameterValue`), `MaxResults`/`NextToken`,
+and tags through `TagSpecification` and `CreateTags`. The `aws` Terraform provider cannot pass Machina's `ProjectId` to `CreateVpc`: create
+the VPC and its subnets through the REST API or `boto3`-free tooling and look them up as data in the module.
+
 ## Not yet
 - IMDSv2, VPC peering that forwards packets, and multi-host Elastic IP failover.
-- Internet and NAT gateways, route-table create/associate, network ACLs, security-group-rule describe/modify, console output, key
-  generation, placement groups, spot requests and fleets: planned (see `docs/claims.md`), every one answers `UnsupportedOperation`
-  today. The `autoscaling` service accepts signed requests but has no actions yet (`InvalidAction`).
+- Console output, key generation, placement groups, spot requests and fleets: planned (see `docs/claims.md`), every one answers
+  `UnsupportedOperation` today. The `autoscaling` service accepts signed requests but has no actions yet (`InvalidAction`).
+- Egress-only gateways, VPC endpoints, transit gateways, IPv6 and the default security group of a VPC.
 - `DescribeInstances` has no `iamInstanceProfile`, `cpuOptions` or `creditSpecification`.
 - CloudWatch: only the six alarm and statistics actions above; no `PutMetricData`, `ListMetrics`, dashboards or log groups.

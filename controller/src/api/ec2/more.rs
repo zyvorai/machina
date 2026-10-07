@@ -50,7 +50,7 @@ pub(super) async fn resolve(state: &AppState, kind: Kind, id: &str, code: &'stat
     }
 }
 
-fn tag_set(tags: &[(String, String)]) -> String {
+pub(super) fn tag_set(tags: &[(String, String)]) -> String {
     let items: String = tags
         .iter()
         .map(|(k, v)| format!("<item><key>{}</key><value>{}</value></item>", xml_escape(k), xml_escape(v)))
@@ -58,7 +58,7 @@ fn tag_set(tags: &[(String, String)]) -> String {
     format!("<tagSet>{items}</tagSet>")
 }
 
-async fn tags_of(state: &AppState) -> Result<BTreeMap<(String, String), Vec<(String, String)>>, Ec2Error> {
+pub(super) async fn tags_of(state: &AppState) -> Result<BTreeMap<(String, String), Vec<(String, String)>>, Ec2Error> {
     let rows: Vec<(String, String, String, String)> = crate::db::query_as("SELECT resource_type, resource_id, key, value FROM resource_tags")
         .fetch_all(&state.pool)
         .await?;
@@ -69,7 +69,7 @@ async fn tags_of(state: &AppState) -> Result<BTreeMap<(String, String), Vec<(Str
     Ok(out)
 }
 
-fn matches(filters: &[(String, Vec<String>)], tags: &[(String, String)], mut field: impl FnMut(&str) -> Option<Vec<String>>) -> bool {
+pub(super) fn matches(filters: &[(String, Vec<String>)], tags: &[(String, String)], mut field: impl FnMut(&str) -> Option<Vec<String>>) -> bool {
     filters.iter().all(|(name, values)| {
         if let Some(r) = super::foundation::tag_filter_matches(tags, name, values) {
             return r;
@@ -223,7 +223,7 @@ pub async fn delete_key_pair(state: &AppState, actor: &AuthUser, p: &Params) -> 
 
 // ---- security groups ---------------------------------------------------------------------------------------------
 
-fn protocol_out(p: Option<&str>) -> &str {
+pub(super) fn protocol_out(p: Option<&str>) -> &str {
     match p {
         Some(x) if x.eq_ignore_ascii_case("tcp") => "tcp",
         Some(x) if x.eq_ignore_ascii_case("udp") => "udp",
@@ -233,16 +233,17 @@ fn protocol_out(p: Option<&str>) -> &str {
     }
 }
 
-pub(crate) fn permission_item(protocol: Option<&str>, lo: Option<i64>, hi: Option<i64>, cidr: Option<&str>, group: Option<&str>) -> String {
+pub(crate) fn permission_item(protocol: Option<&str>, lo: Option<i64>, hi: Option<i64>, cidr: Option<&str>, group: Option<&str>, description: &str) -> String {
     let proto = protocol_out(protocol);
     let ports = match (proto, lo) {
         ("-1", _) => String::new(),
         (_, Some(l)) => format!("<fromPort>{l}</fromPort><toPort>{}</toPort>", hi.unwrap_or(l)),
         _ => String::new(),
     };
+    let desc = if description.is_empty() { String::new() } else { format!("<description>{}</description>", xml_escape(description)) };
     let peer = match group {
-        Some(g) => format!("<groups><item><groupId>{}</groupId></item></groups><ipRanges/>", xml_escape(g)),
-        None => format!("<groups/><ipRanges><item><cidrIp>{}</cidrIp></item></ipRanges>", xml_escape(cidr.unwrap_or("0.0.0.0/0"))),
+        Some(g) => format!("<groups><item><groupId>{}</groupId>{desc}</item></groups><ipRanges/>", xml_escape(g)),
+        None => format!("<groups/><ipRanges><item><cidrIp>{}</cidrIp>{desc}</item></ipRanges>", xml_escape(cidr.unwrap_or("0.0.0.0/0"))),
     };
     format!("<item><ipProtocol>{proto}</ipProtocol>{ports}{peer}<ipv6Ranges/><prefixListIds/></item>")
 }
@@ -253,8 +254,8 @@ pub async fn describe_security_groups(state: &AppState, p: &Params) -> Result<St
     let filters = parse_filters(p);
     let tags = tags_of(state).await?;
     let groups: Vec<(Uuid, String, String)> = crate::db::query_as("SELECT id, name, description FROM security_groups ORDER BY name").fetch_all(&state.pool).await?;
-    type Rule = (Uuid, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>);
-    let rules: Vec<Rule> = crate::db::query_as("SELECT security_group_id, direction, protocol, port_min, port_max, remote_cidr, remote_sg_id FROM security_group_rules ORDER BY created_at, id")
+    type Rule = (Uuid, String, Option<String>, Option<i64>, Option<i64>, Option<String>, Option<String>, String);
+    let rules: Vec<Rule> = crate::db::query_as("SELECT security_group_id, direction, protocol, port_min, port_max, remote_cidr, remote_sg_id, description FROM security_group_rules ORDER BY created_at, id")
         .fetch_all(&state.pool)
         .await?;
     for w in &wanted {
@@ -282,7 +283,7 @@ pub async fn describe_security_groups(state: &AppState, p: &Params) -> Result<St
                 .filter(|r| r.0 == id && r.1 == dir)
                 .map(|r| {
                     let g = r.6.as_deref().filter(|s| s.len() >= 17).map(|s| format!("sg-{}", &s[..17]));
-                    permission_item(r.2.as_deref(), r.3, r.4, r.5.as_deref(), g.as_deref())
+                    permission_item(r.2.as_deref(), r.3, r.4, r.5.as_deref(), g.as_deref(), &r.7)
                 })
                 .collect()
         };
@@ -323,6 +324,9 @@ pub(crate) struct Permission {
     pub to: Option<i64>,
     pub cidrs: Vec<String>,
     pub groups: Vec<String>,
+    /// `IpRanges.M.Description` / `Groups.M.Description`, aligned with `cidrs` / `groups` ("" when none was given).
+    pub cidr_descriptions: Vec<String>,
+    pub group_descriptions: Vec<String>,
 }
 
 pub(crate) fn parse_permissions(p: &Params) -> Result<Vec<Permission>, String> {
@@ -343,7 +347,12 @@ pub(crate) fn parse_permissions(p: &Params) -> Result<Vec<Permission>, String> {
         if cidrs.is_empty() && groups.is_empty() {
             return Err("each permission needs an IpRanges or Groups entry".into());
         }
-        out.push(Permission { protocol, from: num("FromPort")?, to: num("ToPort")?, cidrs, groups });
+        let desc = |kind: &str, count: usize| -> Vec<String> {
+            (1..=count).map(|m| p.get(&format!("IpPermissions.{n}.{kind}.{m}.Description")).cloned().unwrap_or_default()).collect()
+        };
+        let cidr_descriptions = desc("IpRanges", cidrs.len());
+        let group_descriptions = desc("Groups", groups.len());
+        out.push(Permission { protocol, from: num("FromPort")?, to: num("ToPort")?, cidrs, groups, cidr_descriptions, group_descriptions });
     }
     if out.is_empty() {
         return Err("The request must contain the parameter IpPermissions".into());
@@ -357,12 +366,13 @@ pub async fn security_group_rules(state: &AppState, actor: &AuthUser, p: &Params
     let perms = parse_permissions(p).map_err(|m| bad("InvalidParameterValue", m))?;
     let direction = if egress { "egress" } else { "ingress" };
     for perm in perms {
-        let mut peers: Vec<(Option<String>, Option<String>)> = perm.cidrs.iter().map(|c| (Some(c.clone()), None)).collect();
-        for g in &perm.groups {
+        let mut peers: Vec<(Option<String>, Option<String>, String)> =
+            perm.cidrs.iter().zip(&perm.cidr_descriptions).map(|(c, d)| (Some(c.clone()), None, d.clone())).collect();
+        for (g, d) in perm.groups.iter().zip(&perm.group_descriptions) {
             let sg = resolve(state, Kind::SecurityGroup, g, "InvalidGroup.NotFound").await?;
-            peers.push((None, Some(sg.simple().to_string())));
+            peers.push((None, Some(sg.simple().to_string()), d.clone()));
         }
-        for (cidr, remote_sg) in peers {
+        for (cidr, remote_sg, description) in peers {
             if revoke {
                 let id: Option<Uuid> = crate::db::query_scalar(
                     "SELECT id FROM security_group_rules WHERE security_group_id = ? AND direction = ? AND COALESCE(protocol,'') = ? \
@@ -382,7 +392,7 @@ pub async fn security_group_rules(state: &AppState, actor: &AuthUser, p: &Params
             } else {
                 let body: crate::api::networking::CreateSecurityGroupRuleBody = serde_json::from_value(json!({
                     "direction": direction, "protocol": perm.protocol, "port_min": perm.from, "port_max": perm.to.or(perm.from),
-                    "remote_cidr": cidr, "remote_sg_id": remote_sg,
+                    "remote_cidr": cidr, "remote_sg_id": remote_sg, "description": description,
                 }))
                 .map_err(|e| bad("InvalidParameterValue", e.to_string()))?;
                 let _ = crate::api::networking::create_security_group_rule(State(state.clone()), Extension(actor.clone()), Path(gid), Json(body))
@@ -439,15 +449,17 @@ pub async fn describe_vpcs(state: &AppState, p: &Params) -> Result<String, Ec2Er
     let wanted = indexed(p, "VpcId");
     let tags = tags_of(state).await?;
     let rows: Vec<(Uuid, String, String)> = crate::db::query_as("SELECT id, name, cidr FROM cloud_vpcs ORDER BY name").fetch_all(&state.pool).await?;
+    let dhcp = super::gateways::dhcp_id_of_vpc(state).await?;
     let mut items = String::new();
     for (id, _name, cidr) in rows {
         let eid = ec2_id(Kind::Vpc, id);
+        let dhcp_id = dhcp.get(&id).cloned().unwrap_or_else(|| "default".to_string());
         if !wanted.is_empty() && !wanted.contains(&eid) {
             continue;
         }
         let t = tags.get(&("vpc".to_string(), id.simple().to_string())).cloned().unwrap_or_default();
         items.push_str(&format!(
-            "<item><vpcId>{eid}</vpcId><state>available</state><cidrBlock>{}</cidrBlock><dhcpOptionsId>default</dhcpOptionsId><instanceTenancy>default</instanceTenancy><isDefault>false</isDefault><ownerId>{OWNER}</ownerId>{}</item>",
+            "<item><vpcId>{eid}</vpcId><state>available</state><cidrBlock>{}</cidrBlock><dhcpOptionsId>{dhcp_id}</dhcpOptionsId><instanceTenancy>default</instanceTenancy><isDefault>false</isDefault><ownerId>{OWNER}</ownerId>{}</item>",
             xml_escape(&cidr),
             tag_set(&t)
         ));
@@ -484,6 +496,7 @@ pub async fn describe_network_interfaces(state: &AppState, p: &Params) -> Result
     let rows: Vec<Row> = crate::db::query_as("SELECT id, subnet_id, mac_address, private_ip, vm_id, status, description FROM ports ORDER BY created_at")
         .fetch_all(&state.pool)
         .await?;
+    let secondary: Vec<(Uuid, String)> = crate::db::query_as("SELECT port_id, address FROM ec2_eni_ips ORDER BY address").fetch_all(&state.pool).await?;
     let mut items = String::new();
     for (id, subnet, mac, ip, vm, status, desc) in rows {
         let eid = ec2_id(Kind::Port, id);
@@ -492,9 +505,18 @@ pub async fn describe_network_interfaces(state: &AppState, p: &Params) -> Result
         }
         let t = tags.get(&("port".to_string(), id.simple().to_string())).cloned().unwrap_or_default();
         let subnet_id = subnet.and_then(|s| Uuid::parse_str(&s).ok()).map(|u| ec2_id(Kind::Subnet, u)).unwrap_or_default();
-        let attach = vm.map(|v| format!("<attachment><instanceId>{}</instanceId><status>attached</status><deviceIndex>1</deviceIndex></attachment>", ec2_id(Kind::Vm, v))).unwrap_or_default();
+        let attach = vm
+            .map(|v| format!("<attachment><attachmentId>eni-attach-{}</attachmentId><instanceId>{}</instanceId><status>attached</status><deviceIndex>1</deviceIndex></attachment>", &id.simple().to_string()[..17], ec2_id(Kind::Vm, v)))
+            .unwrap_or_default();
+        let mut addresses = String::new();
+        if let Some(primary) = ip.as_deref().filter(|a| !a.is_empty()) {
+            addresses.push_str(&format!("<item><privateIpAddress>{}</privateIpAddress><primary>true</primary></item>", xml_escape(primary)));
+        }
+        for (_, address) in secondary.iter().filter(|(port, _)| *port == id) {
+            addresses.push_str(&format!("<item><privateIpAddress>{}</privateIpAddress><primary>false</primary></item>", xml_escape(address)));
+        }
         items.push_str(&format!(
-            "<item><networkInterfaceId>{eid}</networkInterfaceId><subnetId>{subnet_id}</subnetId><description>{}</description><ownerId>{OWNER}</ownerId><status>{}</status><macAddress>{}</macAddress><privateIpAddress>{}</privateIpAddress>{attach}{}</item>",
+            "<item><networkInterfaceId>{eid}</networkInterfaceId><subnetId>{subnet_id}</subnetId><description>{}</description><ownerId>{OWNER}</ownerId><status>{}</status><macAddress>{}</macAddress><privateIpAddress>{}</privateIpAddress><privateIpAddressesSet>{addresses}</privateIpAddressesSet>{attach}{}</item>",
             xml_escape(desc.as_deref().unwrap_or("")),
             if vm.is_some() || status == "ACTIVE" { "in-use" } else { "available" },
             xml_escape(mac.as_deref().unwrap_or("")),
@@ -561,7 +583,7 @@ mod tests {
         let p = form("IpPermissions.1.IpProtocol=tcp&IpPermissions.1.FromPort=22&IpPermissions.1.ToPort=22&IpPermissions.1.IpRanges.1.CidrIp=10.0.0.0/8&IpPermissions.1.IpRanges.2.CidrIp=192.168.0.0/16&IpPermissions.2.IpProtocol=-1&IpPermissions.2.Groups.1.GroupId=sg-0123456789abcdef0");
         let perms = parse_permissions(&p).unwrap();
         assert_eq!(perms.len(), 2);
-        assert_eq!(perms[0], Permission { protocol: Some("tcp".into()), from: Some(22), to: Some(22), cidrs: vec!["10.0.0.0/8".into(), "192.168.0.0/16".into()], groups: vec![] });
+        assert_eq!(perms[0], Permission { protocol: Some("tcp".into()), from: Some(22), to: Some(22), cidrs: vec!["10.0.0.0/8".into(), "192.168.0.0/16".into()], groups: vec![], cidr_descriptions: vec![String::new(), String::new()], group_descriptions: vec![] });
         assert_eq!(perms[1].protocol, None);
         assert_eq!(perms[1].groups, ["sg-0123456789abcdef0"]);
     }
@@ -576,10 +598,10 @@ mod tests {
 
     #[test]
     fn permission_xml() {
-        let x = permission_item(Some("tcp"), Some(80), Some(90), Some("10.0.0.0/8"), None);
+        let x = permission_item(Some("tcp"), Some(80), Some(90), Some("10.0.0.0/8"), None, "");
         assert!(x.contains("<ipProtocol>tcp</ipProtocol><fromPort>80</fromPort><toPort>90</toPort>"));
         assert!(x.contains("<cidrIp>10.0.0.0/8</cidrIp>"));
-        let all = permission_item(None, None, None, None, Some("sg-abc"));
+        let all = permission_item(None, None, None, None, Some("sg-abc"), "");
         assert!(all.contains("<ipProtocol>-1</ipProtocol>") && !all.contains("fromPort") && all.contains("<groupId>sg-abc</groupId>"));
     }
 

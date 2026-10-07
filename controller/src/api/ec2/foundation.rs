@@ -281,6 +281,62 @@ pub const FILTER_SPECS: &[FilterSpec] = &[
         native_tags: false,
         filters: &[field("snapshot-id", "snapshotId"), field("volume-id", "volumeId"), field("status", "status")],
     },
+    FilterSpec {
+        action: "DescribeInternetGateways",
+        native_tags: true,
+        filters: &[native("internet-gateway-id"), native("attachment.vpc-id"), native("attachment.state"), native("owner-id")],
+    },
+    FilterSpec {
+        action: "DescribeNatGateways",
+        native_tags: true,
+        filters: &[native("nat-gateway-id"), native("vpc-id"), native("subnet-id"), native("state")],
+    },
+    FilterSpec {
+        action: "DescribeDhcpOptions",
+        native_tags: true,
+        filters: &[native("dhcp-options-id"), native("key"), native("value"), native("owner-id")],
+    },
+    FilterSpec {
+        action: "DescribeRouteTables",
+        native_tags: true,
+        filters: &[
+            native("route-table-id"),
+            native("vpc-id"),
+            native("owner-id"),
+            native("association.main"),
+            native("association.route-table-id"),
+            native("association.route-table-association-id"),
+            native("association.subnet-id"),
+            native("route.destination-cidr-block"),
+            native("route.gateway-id"),
+            native("route.nat-gateway-id"),
+            native("route.vpc-peering-connection-id"),
+            native("route.state"),
+        ],
+    },
+    FilterSpec {
+        action: "DescribeNetworkAcls",
+        native_tags: true,
+        filters: &[
+            native("network-acl-id"),
+            native("vpc-id"),
+            native("default"),
+            native("owner-id"),
+            native("association.network-acl-id"),
+            native("association.network-acl-association-id"),
+            native("association.subnet-id"),
+            native("entry.cidr"),
+            native("entry.rule-action"),
+            native("entry.egress"),
+            native("entry.protocol"),
+            native("entry.rule-number"),
+        ],
+    },
+    FilterSpec {
+        action: "DescribeSecurityGroupRules",
+        native_tags: true,
+        filters: &[native("security-group-rule-id"), native("group-id")],
+    },
     FilterSpec { action: "DescribeInstanceTypes", native_tags: false, filters: &[field("instance-type", "instanceType")] },
     FilterSpec {
         action: "DescribeTags",
@@ -508,6 +564,7 @@ pub fn ec2_resource_type(internal: &str) -> String {
     match internal {
         "vm" => "instance".into(),
         "port" => "network-interface".into(),
+        "nat_gateway" => "natgateway".into(),
         other => other.replace('_', "-"),
     }
 }
@@ -685,5 +742,7 @@ mod tests {
         assert_eq!(ec2_resource_type("security_group"), "security-group");
         assert_eq!(ec2_resource_type("port"), "network-interface");
         assert_eq!(ec2_resource_type("volume"), "volume");
+        assert_eq!(ec2_resource_type("nat_gateway"), "natgateway");
+        assert_eq!(ec2_resource_type("route_table"), "route-table");
     }
 }

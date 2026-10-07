@@ -159,6 +159,14 @@ async fn project_of(
         Kind::Vpc => "SELECT project_id FROM cloud_vpcs WHERE id = ?",
         Kind::InstanceGroup => "SELECT project_id FROM cloud_instance_groups WHERE id = ?",
         Kind::LaunchTemplate => "SELECT project_id FROM cloud_launch_templates WHERE id = ?",
+        Kind::InternetGateway => "SELECT COALESCE(g.project_id, v.project_id) FROM ec2_internet_gateways g LEFT JOIN cloud_vpcs v ON v.id = g.vpc_id WHERE g.id = ?",
+        Kind::NatGateway => "SELECT v.project_id FROM ec2_nat_gateways n JOIN cloud_vpcs v ON v.id = n.vpc_id WHERE n.id = ?",
+        Kind::RouteTable => "SELECT v.project_id FROM ec2_route_tables r JOIN cloud_vpcs v ON v.id = r.vpc_id WHERE r.id = ?",
+        Kind::RouteTableAssociation => "SELECT v.project_id FROM ec2_route_table_assocs a JOIN ec2_route_tables r ON r.id = a.route_table_id JOIN cloud_vpcs v ON v.id = r.vpc_id WHERE a.id = ?",
+        Kind::NetworkAcl => "SELECT v.project_id FROM ec2_network_acls n JOIN cloud_vpcs v ON v.id = n.vpc_id WHERE n.id = ?",
+        Kind::NetworkAclAssociation => "SELECT v.project_id FROM ec2_acl_assocs a JOIN ec2_network_acls n ON n.id = a.acl_id JOIN cloud_vpcs v ON v.id = n.vpc_id WHERE a.id = ?",
+        Kind::DhcpOptions => "SELECT project_id FROM ec2_dhcp_options WHERE id = ?",
+        Kind::SecurityGroupRule => "SELECT g.project_id FROM security_group_rules r JOIN security_groups g ON g.id = r.security_group_id WHERE r.id = ?",
         Kind::Image => return Ok(None),
     };
     Ok(crate::db::query_scalar::<_, Option<Uuid>>(sql)
