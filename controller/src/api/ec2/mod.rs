@@ -8,6 +8,7 @@
 //! `/api/v1/ec2/access-keys` (admin).
 
 pub mod addresses;
+pub mod capacity;
 pub mod eni;
 pub mod fleet;
 pub mod gameday;
@@ -20,6 +21,7 @@ pub mod more;
 pub mod ops;
 pub mod page;
 pub mod peering;
+pub mod platform;
 pub mod schedules;
 pub mod sigv4;
 pub mod status;
@@ -687,6 +689,31 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
         "DescribeExperiments" => gameday::describe_experiments(state, &actor, &params).await?,
         "RunExperiment" => gameday::run_experiment(state, &actor, &params).await?,
         "AbortExperiment" => gameday::abort_experiment(state, &actor, &params).await?,
+        "DescribeStacks" => platform::describe_stacks(state, &actor, &params).await?,
+        "DescribeStackDrift" => platform::describe_stack_drift(state, &actor, &params).await?,
+        "ConvergeStack" => platform::converge_stack(state, &actor, &params).await?,
+        "SetStackAutoHeal" => platform::set_stack_auto_heal(state, &actor, &params).await?,
+        "DeleteStack" => platform::delete_stack(state, &actor, &params).await?,
+        "DescribeMigrationJobs" => platform::describe_migration_jobs(state, &actor, &params).await?,
+        "DescribeHaStatus" => platform::describe_ha_status(state, &actor, &params).await?,
+        "DescribeAudit" => platform::describe_audit(state, &actor, &params).await?,
+        "DescribeNotifications" => platform::describe_notifications(state, &actor, &params).await?,
+        "DescribeProjects" => platform::describe_projects(state, &actor, &params).await?,
+        "CreateProject" => platform::create_project(state, &actor, &params).await?,
+        "DescribeScheduledJobs" => platform::describe_scheduled_jobs(state, &actor, &params).await?,
+        "CreateScheduledJob" => platform::create_scheduled_job(state, &actor, &params).await?,
+        "DeleteScheduledJob" => platform::delete_scheduled_job(state, &actor, &params).await?,
+        "DescribeCapacity" => capacity::describe_capacity(state, &actor, &params).await?,
+        "DescribeCostEstimate" => capacity::describe_cost_estimate(state, &actor, &params).await?,
+        "DescribeRightsizing" => capacity::describe_rightsizing(state, &actor, &params).await?,
+        "ProposeResize" => capacity::propose_resize(state, &actor, &params).await?,
+        "DescribeConsolidation" => capacity::describe_consolidation(state, &actor, &params).await?,
+        "ProposeConsolidation" => capacity::propose_consolidation(state, &actor, &params).await?,
+        "DescribePlacement" => capacity::describe_placement(state, &actor, &params).await?,
+        "CreateWebhook" => capacity::create_webhook(state, &actor, &params).await?,
+        "DescribeWebhooks" => capacity::describe_webhooks(state, &actor, &params).await?,
+        "DeleteWebhook" => capacity::delete_webhook(state, &actor, &params).await?,
+        "FenceHost" => capacity::fence_host(state, &actor, &params).await?,
         "DeleteLoadBalancer" => volume_attrs::delete_load_balancer(state, &actor, &params).await?,
         "ModifyInstanceAttribute" => more::modify_instance_attribute(state, &actor, &params).await?,
         "DescribeAddresses" => addresses::describe_addresses(state, &actor, &params).await?,
@@ -826,6 +853,7 @@ mod tests {
             include_str!("mod.rs"),
             include_str!("more.rs"),
             include_str!("addresses.rs"),
+            include_str!("capacity.rs"),
             include_str!("eni.rs"),
             include_str!("fleet.rs"),
             include_str!("gameday.rs"),
@@ -836,6 +864,7 @@ mod tests {
             include_str!("monitoring.rs"),
             include_str!("ops.rs"),
             include_str!("peering.rs"),
+            include_str!("platform.rs"),
             include_str!("schedules.rs"),
             include_str!("status.rs"),
             include_str!("volume_attrs.rs"),

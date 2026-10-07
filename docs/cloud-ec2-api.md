@@ -86,6 +86,15 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
   `DescribeExperiments`, `RunExperiment` (`Confirm` must equal the experiment name) and `AbortExperiment`. Creating an experiment
   stays on REST.
 
+- Platform and capacity: `DescribeStacks`, `DescribeStackDrift`, `ConvergeStack`, `SetStackAutoHeal`, `DeleteStack` (creating a stack stays on
+  REST: the template is a document), `DescribeMigrationJobs`, `DescribeHaStatus`, `DescribeAudit` (admin), `DescribeNotifications`,
+  `DescribeProjects`, `CreateProject` (admin), `DescribeScheduledJobs`, `CreateScheduledJob`, `DeleteScheduledJob`, `DescribeCapacity`,
+  `DescribeCostEstimate`, `DescribeRightsizing`, `ProposeResize`, `DescribeConsolidation`, `ProposeConsolidation` (the two proposals file an
+  approval action; nothing is resized or moved by the call), `DescribePlacement` (operator: it stores what it computes),
+  `CreateWebhook` / `DescribeWebhooks` / `DeleteWebhook` and `FenceHost` (admin).
+- Access control: an EC2 access key carries a role, not a project scope. The project-scoped API keys of `docs/claims.md` C16 apply to the
+  REST API; they do not narrow what these actions return. Use a role no higher than the caller needs.
+
 ## Not yet
 - IMDSv2, VPC peering that forwards packets, and multi-host Elastic IP failover.
 - `DescribeInstances` fields that have no Machina equivalent (image id, placement, block-device mappings) are empty.
