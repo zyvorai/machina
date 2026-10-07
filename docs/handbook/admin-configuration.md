@@ -94,7 +94,7 @@ daemon + TUI + `web/dist` into `./dist/` for client handoff.
 |------|-----------|-------|
 | `machina-daemon.service` | `/usr/local/bin/machina-daemon --config /etc/machina/config.toml` | `User=root`, `Restart=always`, `Requires=libvirtd`, `MemoryMax=2G`, `RUST_LOG=info`, reads `-/etc/default/machina-daemon` |
 | `machina-controller.service` | `/usr/local/bin/machina-controller --host 0.0.0.0 --port 5093` | reads `-/etc/default/machina-platform` |
-| `machina-agent.service` | `/usr/local/bin/machina-agent --listen 127.0.0.1:50051 --console-listen 127.0.0.1:50052` | `Environment=MACHINA_LIBVIRT_URI=qemu:///system`, starts libvirtd first |
+| `machina-agent.service` | `/usr/local/bin/machina-agent` (listens on `MACHINA_AGENT_LISTEN` / `MACHINA_AGENT_CONSOLE_LISTEN`, default `127.0.0.1:50051` / `127.0.0.1:50052`) | `Environment=MACHINA_LIBVIRT_URI=qemu:///system`, starts libvirtd first |
 | `machina-backup.service` / `.timer` | `backup.sh --config /etc/machina/backup.conf` | oneshot, daily 2 AM |
 | `machina-bpfd.service` | `/usr/local/bin/machina-bpfd` | `User=root`, ordered before agent and daemon, reads `-/etc/default/machina-bpfd`; stopping detaches every program (fails open) |
 | `machina-cni.service` | `/usr/local/bin/machina-cni agent` | Kubernetes nodes only |

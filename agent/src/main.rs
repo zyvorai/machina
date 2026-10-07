@@ -24,9 +24,13 @@ use tracing::info;
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
-    #[arg(long, default_value = "127.0.0.1:50051")]
+    #[arg(long, env = "MACHINA_AGENT_LISTEN", default_value = "127.0.0.1:50051")]
     listen: String,
-    #[arg(long, default_value = "127.0.0.1:50052")]
+    #[arg(
+        long,
+        env = "MACHINA_AGENT_CONSOLE_LISTEN",
+        default_value = "127.0.0.1:50052"
+    )]
     console_listen: String,
     #[arg(long, env = "MACHINA_LIBVIRT_URI", default_value = "qemu:///system")]
     libvirt_uri: String,
@@ -46,6 +50,11 @@ enum Command {
         token: String,
         #[arg(long)]
         address: Option<String>,
+        /// Make this agent reachable by a controller on another machine: listen on this host's
+        /// own address (never 0.0.0.0) instead of loopback. Off unless given; takes effect only
+        /// together with an agent token received from the controller.
+        #[arg(long)]
+        expose: bool,
         /// File the services read MACHINA_AGENT_TOKEN from.
         #[arg(long, default_value = machina_agent::enrol::DEFAULT_ENV_FILE)]
         env_file: String,
@@ -61,10 +70,19 @@ async fn main() -> anyhow::Result<()> {
         controller,
         token,
         address,
+        expose,
         env_file,
     }) = &cli.command
     {
-        return run_join(&cli, controller, token, address.as_deref(), env_file).await;
+        return run_join(
+            &cli,
+            controller,
+            token,
+            address.as_deref(),
+            *expose,
+            env_file,
+        )
+        .await;
     }
 
     run_serve(&cli).await
@@ -75,6 +93,7 @@ async fn run_join(
     controller: &str,
     token: &str,
     address: Option<&str>,
+    expose_flag: bool,
     env_file: &str,
 ) -> anyhow::Result<()> {
     let hostname = machina_agent::enrol::local_hostname(cli.hostname.as_deref());
@@ -84,12 +103,32 @@ async fn run_join(
         .or(detected)
         .unwrap_or_else(|| "127.0.0.1".into());
     let addr = addr.as_str();
-    let grpc_addr = machina_agent::enrol::advertised(&cli.listen, addr);
-    let console_addr = machina_agent::enrol::advertised(&cli.console_listen, addr);
-    if grpc_addr.starts_with("127.") && addr != "127.0.0.1" {
+    let is_loopback =
+        |l: &str| l.starts_with("127.") || l.starts_with("localhost") || l.starts_with("[::1]");
+    let port_of = |l: &str| {
+        l.rsplit_once(':')
+            .map(|(_, p)| p.to_string())
+            .unwrap_or_default()
+    };
+    // Only with --expose, and only on this host's own address.
+    let expose = expose_flag
+        && addr != "127.0.0.1"
+        && is_loopback(&cli.listen)
+        && is_loopback(&cli.console_listen);
+    let (listen, console_listen) = if expose {
+        (
+            format!("{addr}:{}", port_of(&cli.listen)),
+            format!("{addr}:{}", port_of(&cli.console_listen)),
+        )
+    } else {
+        (cli.listen.clone(), cli.console_listen.clone())
+    };
+    let grpc_addr = machina_agent::enrol::advertised(&listen, addr);
+    let console_addr = machina_agent::enrol::advertised(&console_listen, addr);
+    if !expose && addr != "127.0.0.1" {
         tracing::warn!(
             "this agent listens on loopback ({grpc_addr}), so a controller on another machine cannot reach it; \
-             start it with --listen 0.0.0.0:50051 (it is token-protected) or put a TLS terminator in front"
+             re-run join with --expose to listen on {addr} (token-protected, not encrypted)"
         );
     }
     let body = serde_json::json!({
@@ -122,8 +161,19 @@ async fn run_join(
                  loopback; not storing it. Set MACHINA_AGENT_TOKEN in {env_file} by hand, or join over https."
             );
         } else {
-            match machina_agent::enrol::store_agent_token(Path::new(env_file), shared) {
+            let mut vars: Vec<(&str, &str)> = vec![("MACHINA_AGENT_TOKEN", shared)];
+            if expose {
+                vars.push(("MACHINA_AGENT_LISTEN", listen.as_str()));
+                vars.push(("MACHINA_AGENT_CONSOLE_LISTEN", console_listen.as_str()));
+            }
+            match machina_agent::enrol::set_env_vars(Path::new(env_file), &vars) {
                 Ok(changed) => {
+                    if expose {
+                        tracing::warn!(
+                            "agent will listen on {listen} (console {console_listen}), protected by its own token but NOT encrypted \
+                             unless MACHINA_AGENT_TLS_CERT/KEY are set. Allow only the controller to reach ports 50051-50052."
+                        );
+                    }
                     // The serving process below must use it too.
                     std::env::set_var("MACHINA_AGENT_TOKEN", shared);
                     info!(

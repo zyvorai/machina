@@ -37,28 +37,43 @@ pub fn token_is_valid(token: &str) -> bool {
 /// Replaces (or appends) `MACHINA_AGENT_TOKEN=` in `path` and leaves the file mode 0600.
 /// Returns true when the file changed. The old file is kept next to it as `<name>.bak-pre-join`.
 pub fn store_agent_token(path: &Path, token: &str) -> std::io::Result<bool> {
-    if !token_is_valid(token) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            "agent token is empty or has characters not allowed in an environment file",
-        ));
+    set_env_vars(path, &[("MACHINA_AGENT_TOKEN", token)])
+}
+
+/// Sets `KEY=value` lines in an environment file (replacing existing ones, appending new ones),
+/// mode 0600, previous file kept as `<name>.bak-pre-join`. Values must be one printable word.
+/// Returns true when the file changed.
+pub fn set_env_vars(path: &Path, vars: &[(&str, &str)]) -> std::io::Result<bool> {
+    for (k, v) in vars {
+        let key_ok = !k.is_empty()
+            && k.bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_');
+        if !key_ok || !token_is_valid(v) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "environment entry is empty or has characters not allowed in an environment file",
+            ));
+        }
     }
     let old = match std::fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
         Err(e) => return Err(e),
     };
-    let wanted = format!("MACHINA_AGENT_TOKEN={token}");
-    if old.lines().any(|l| l == wanted) {
+    if vars
+        .iter()
+        .all(|(k, v)| old.lines().any(|l| l == format!("{k}={v}")))
+    {
         return Ok(false);
     }
     let mut out: String = old
         .lines()
-        .filter(|l| !l.starts_with("MACHINA_AGENT_TOKEN="))
+        .filter(|l| !vars.iter().any(|(k, _)| l.starts_with(&format!("{k}="))))
         .map(|l| format!("{l}\n"))
         .collect();
-    out.push_str(&wanted);
-    out.push('\n');
+    for (k, v) in vars {
+        out.push_str(&format!("{k}={v}\n"));
+    }
     if !old.is_empty() {
         let mut bak = path.as_os_str().to_owned();
         bak.push(".bak-pre-join");
@@ -159,6 +174,27 @@ mod tests {
         assert!(!channel_is_safe("http://10.0.0.5:5093"));
         assert!(!channel_is_safe("http://127.0.0.1.evil.example"));
         assert!(!channel_is_safe("ctl:5093"));
+    }
+
+    #[test]
+    fn sets_several_variables_at_once_and_is_idempotent() {
+        let d = std::env::temp_dir().join(format!("machina-enrol-multi-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        let f = d.join("platform");
+        std::fs::write(&f, "A=1\nMACHINA_AGENT_LISTEN=127.0.0.1:50051\n").unwrap();
+        let vars = [
+            ("MACHINA_AGENT_LISTEN", "10.1.2.3:50051"),
+            ("MACHINA_AGENT_CONSOLE_LISTEN", "10.1.2.3:50052"),
+        ];
+        assert!(set_env_vars(&f, &vars).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(&f).unwrap(),
+            "A=1\nMACHINA_AGENT_LISTEN=10.1.2.3:50051\nMACHINA_AGENT_CONSOLE_LISTEN=10.1.2.3:50052\n"
+        );
+        assert!(!set_env_vars(&f, &vars).unwrap());
+        assert!(set_env_vars(&f, &[("bad key", "x")]).is_err());
+        assert!(set_env_vars(&f, &[("OK", "two words")]).is_err());
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]

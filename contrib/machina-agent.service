@@ -24,7 +24,9 @@ ExecStartPre=-/usr/bin/systemctl start libvirtd.service
 # source port and hold it in a keep-alive pool, and the bind fails with EADDRINUSE
 # until that connection closes. Reserve them (appended, other reservations kept).
 ExecStartPre=-/bin/sh -c 'f=/proc/sys/net/ipv4/ip_local_reserved_ports; r=$$(cat $$f); case ",$$r," in *,50051-50052,*) ;; *) echo "$${r:+$$r,}50051-50052" > $$f ;; esac'
-ExecStart=/usr/local/bin/machina-agent --listen 127.0.0.1:50051 --console-listen 127.0.0.1:50052
+# Listen addresses come from MACHINA_AGENT_LISTEN / MACHINA_AGENT_CONSOLE_LISTEN in /etc/default/machina-platform
+# (default 127.0.0.1:50051 / 127.0.0.1:50052); `machina-agent join --expose` sets them for a remote controller.
+ExecStart=/usr/local/bin/machina-agent
 Restart=always
 RestartSec=5
 TimeoutStopSec=30
