@@ -8,6 +8,7 @@ import OperatingSurfaceLayout from '../../components/platform/OperatingSurfaceLa
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformPageChrome, { PlatformBackLink } from '../../components/platform/PlatformPageChrome'
 import CopyButton from '../../components/CopyButton'
+import JoinLivePanel from '../../components/platform/JoinLivePanel'
 import { createEnrollmentToken, listEnrollmentTokens, revokeEnrollmentToken, type EnrollmentToken, type EnrollmentTokenRow } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
@@ -79,6 +80,12 @@ export default function PlatformEnroll() {
                 On the KVM host: <code className="text-[var(--text-primary)]">machina-agent join --controller URL --token TOKEN</code>
               </p>
             </div>
+          </MacGlassPanel>
+        )}
+
+        {token && (
+          <MacGlassPanel title="Live join" subtitle="Run the command on the host and watch it join the fleet.">
+            <JoinLivePanel token={token.token} command={token.install_command} />
           </MacGlassPanel>
         )}
 

@@ -77,6 +77,16 @@ pub async fn create_enrollment_token(
     .execute(&state.pool)
     .await?;
 
+    super::join_events::prune(&state.pool).await;
+    super::join_events::record(
+        &state.pool,
+        &token,
+        None,
+        "info",
+        "token",
+        &format!("enrollment token issued by {}, valid {ttl} h", actor.username),
+    )
+    .await;
     Ok(Json(EnrollmentTokenResponse {
         token,
         expires_at: expires.to_rfc3339(),

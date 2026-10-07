@@ -576,6 +576,9 @@ export interface EnrollmentToken {
   install_command: string
 }
 
+export const getJoinProgress = (token: string) =>
+  platformFetch<import('../utils/joinProgress').JoinProgress>(`/api/v1/enrollment/tokens/${encodeURIComponent(token)}/events`)
+
 export const listPlatformHosts = () => platformFetch<PlatformHost[]>('/api/v1/hosts')
 export const getPlatformHostDetail = (id: string) => platformFetch<PlatformHostDetail>(`/api/v1/hosts/${id}/detail`)
 export const syncAllHosts = () => platformFetch<{ task_id: string }[]>('/api/v1/hosts/sync-all', { method: 'POST' })

@@ -7,6 +7,7 @@ import { Plus, RefreshCw, Server, Wrench } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import HostEnrollWizard from '../../components/platform/HostEnrollWizard'
+import FleetCloudMap from '../../components/platform/FleetCloudMap'
 import FinderView, { type FinderViewMode } from '../../components/platform/mac/FinderView'
 import {
   enqueueValidateHost,
@@ -258,6 +259,11 @@ export default function PlatformHosts() {
       }
       contentClassName="space-y-4"
     >
+      {!filterOffline && hosts.length > 0 && (
+        <section aria-label="Machines in this cloud" data-testid="hosts-cloud-map" className="w-full">
+          <FleetCloudMap hosts={hosts} />
+        </section>
+      )}
       {viewMode === 'icons' && visibleHosts.length > 0 && (
         <div className="flex flex-col gap-4 w-full" data-testid="host-fleet-panels">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 w-full nl-stagger">

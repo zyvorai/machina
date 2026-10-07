@@ -22,6 +22,7 @@ mod content;
 pub mod cpu_compat;
 mod developer;
 mod enrollment;
+pub(crate) mod join_events;
 mod enterprise_security;
 mod error;
 mod events;
@@ -179,6 +180,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v1/vms/{id}/prune-inventory",
             post(vms::prune_vm_inventory_record),
+        )
+        .route(
+            "/api/v1/enrollment/tokens/{token}/events",
+            get(join_events::join_progress),
         )
         .route(
             "/api/v1/enrollment/tokens/{token}",

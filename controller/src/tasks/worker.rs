@@ -2426,8 +2426,38 @@ async fn host_validate_task(state: &AppState, msg: &TaskMessage) -> anyhow::Resu
         .and_then(|s| Uuid::parse_str(s).ok())
         .ok_or_else(|| anyhow::anyhow!("host_id missing"))?;
     update_task_progress(&state.pool, msg.task_id, 10, "running validation checklist").await?;
+    crate::api::join_events::record_for_host(
+        &state.pool,
+        host_id,
+        "info",
+        "validate",
+        "running the validation checklist against the agent",
+    )
+    .await;
     let report = crate::engine::host_validate::validate_host(&state.pool, host_id).await?;
     crate::engine::host_validate::persist_validation(&state.pool, host_id, &report).await?;
+    for c in &report.checks {
+        crate::api::join_events::record_for_host(
+            &state.pool,
+            host_id,
+            if c.passed { "ok" } else { "error" },
+            "check",
+            &format!("{}: {}", c.name, c.message),
+        )
+        .await;
+    }
+    crate::api::join_events::record_for_host(
+        &state.pool,
+        host_id,
+        if report.ok { "ok" } else { "error" },
+        "validate",
+        if report.ok {
+            "validation passed: the host is part of the fleet; collecting inventory"
+        } else {
+            "validation failed: see the failed checks above and the host page"
+        },
+    )
+    .await;
     if report.ok {
         if let Err(e) = enqueue_task(
             state,

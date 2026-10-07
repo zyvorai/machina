@@ -4,11 +4,12 @@
 import { useState } from 'react'
 import { Copy } from 'lucide-react'
 import PlatformStepWizard from './PlatformStepWizard'
+import JoinLivePanel from './JoinLivePanel'
 import { createEnrollmentToken } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
 
-const STEPS = ['Token', 'Install', 'Verify']
+const STEPS = ['Token', 'Install', 'Watch it join']
 
 type Props = {
   open: boolean
@@ -43,6 +44,7 @@ export default function HostEnrollWizard({ open, onClose }: Props) {
       title="Enroll hypervisor host"
       subtitle="Generate a one-time token and run the agent installer on the host."
       steps={STEPS}
+      maxWidthClass="max-w-5xl"
       step={step}
       onStepChange={setStep}
       canNext={step === 0 ? true : step === 1 ? Boolean(command) : true}
@@ -74,10 +76,12 @@ export default function HostEnrollWizard({ open, onClose }: Props) {
         </div>
       )}
       {step === 2 && (
-        <p className="text-sm text-[var(--text-muted)]">
-          After the agent connects, open <strong className="text-[var(--text-primary)]">Hosts</strong> and confirm the host shows{' '}
-          <strong className="text-[var(--text-primary)]">online</strong>. Sync hosts from the dashboard if needed.
-        </p>
+        <div className="space-y-3">
+          <p className="text-sm text-[var(--text-muted)]">
+            Run the command on the host. Each step appears below as it happens, and the host joins the map when it is registered.
+          </p>
+          <JoinLivePanel token={token} command={command} />
+        </div>
       )}
     </PlatformStepWizard>
   )

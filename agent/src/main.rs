@@ -77,14 +77,21 @@ async fn run_join(
     address: Option<&str>,
     env_file: &str,
 ) -> anyhow::Result<()> {
-    let hostname = cli.hostname.clone().unwrap_or_else(|| {
-        std::env::var("HOSTNAME")
-            .or_else(|_| std::env::var("HOST"))
-            .unwrap_or_else(|_| "localhost".into())
-    });
-    let addr = address.unwrap_or("127.0.0.1");
-    let grpc_addr = cli.listen.clone();
-    let console_addr = cli.console_listen.clone();
+    let hostname = machina_agent::enrol::local_hostname(cli.hostname.as_deref());
+    let detected = machina_agent::enrol::address_towards(controller);
+    let addr = address
+        .map(str::to_string)
+        .or(detected)
+        .unwrap_or_else(|| "127.0.0.1".into());
+    let addr = addr.as_str();
+    let grpc_addr = machina_agent::enrol::advertised(&cli.listen, addr);
+    let console_addr = machina_agent::enrol::advertised(&cli.console_listen, addr);
+    if grpc_addr.starts_with("127.") && addr != "127.0.0.1" {
+        tracing::warn!(
+            "this agent listens on loopback ({grpc_addr}), so a controller on another machine cannot reach it; \
+             start it with --listen 0.0.0.0:50051 (it is token-protected) or put a TLS terminator in front"
+        );
+    }
     let body = serde_json::json!({
         "token": token,
         "hostname": hostname,

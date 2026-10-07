@@ -129,7 +129,7 @@ fn apply_stale_host_state(mut row: HostRow) -> HostRow {
     row
 }
 
-async fn fetch_host_row(state: &AppState, id: Uuid) -> Result<HostRow, ApiError> {
+pub(super) async fn fetch_host_row(state: &AppState, id: Uuid) -> Result<HostRow, ApiError> {
     let row = crate::db::query_as::<_, HostRow>(&format!("{HOST_LIST_SQL} WHERE id = ?"))
         .bind(id)
         .fetch_one(&state.pool)
@@ -377,6 +377,18 @@ pub async fn join_host(
     }
 
     let agent_token = new_agent_token();
+    super::join_events::record(
+        &state.pool,
+        &req.token,
+        None,
+        "info",
+        "contact",
+        &format!(
+            "{} ({}) contacted the controller, agent at {}",
+            req.hostname, req.address, req.agent_grpc_addr
+        ),
+    )
+    .await;
     let mut tx = state.pool.begin().await?;
     // Atomically consume the single-use token inside the transaction so two
     // concurrent joins can't both observe it unused and each enroll a host
@@ -391,8 +403,18 @@ pub async fn join_host(
     .bind(&req.token)
     .fetch_optional(&mut *tx)
     .await?;
-    let (cluster_id,) =
-        consumed.ok_or_else(|| ApiError::bad_request("invalid or expired join token"))?;
+    let Some((cluster_id,)) = consumed else {
+        super::join_events::record(
+            &state.pool,
+            &req.token,
+            None,
+            "error",
+            "token",
+            "join refused: the enrollment token is invalid, expired or already used",
+        )
+        .await;
+        return Err(ApiError::bad_request("invalid or expired join token"));
+    };
 
     crate::db::query(
         "INSERT INTO hosts (id, cluster_id, hostname, address, agent_grpc_addr, agent_console_addr, libvirt_uri, agent_token, state, validation_status)
@@ -446,6 +468,20 @@ pub async fn join_host(
         crate::agent_client::set_host_token(c, &agent_token);
     }
 
+    let ev = |level: &'static str, step: &'static str, msg: String| {
+        let pool = state.pool.clone();
+        let token = req.token.clone();
+        async move { super::join_events::record(&pool, &token, Some(host_id), level, step, &msg).await }
+    };
+    ev("ok", "token", "enrollment token accepted (single use, now spent)".into()).await;
+    ev("ok", "register", format!("host record created: {} ({})", req.hostname, host_id)).await;
+    ev(
+        "ok",
+        "credentials",
+        "issued this host its own agent token (value not logged); the fleet-wide secret was not sent".into(),
+    )
+    .await;
+
     link_baremetal_firewall_on_join(&state.pool, host_id, &req.hostname).await;
 
     if let Err(e) = enqueue_task(
@@ -459,6 +495,9 @@ pub async fn join_host(
     .await
     {
         tracing::warn!(host_id = %host_id, "host.validate enqueue failed after join: {}", e.message);
+        ev("error", "validate", format!("could not queue validation: {}", e.message)).await;
+    } else {
+        ev("info", "validate", "validation queued: the controller will now contact the agent".into()).await;
     }
 
     let host = fetch_host_row(&state, host_id).await?;
