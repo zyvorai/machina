@@ -666,6 +666,7 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/v1/ai/security", get(ai::security_sentinel))
         .route("/api/v1/ai/policy/export", get(ai::policy_export))
+        .route("/api/v1/ai/performance-autopilot", get(ai::performance_autopilot))
         .route("/api/v1/ai/autopilot/propose", get(ai::autopilot_propose))
         .route("/api/v1/ai/autopilot/execute", post(ai::autopilot_execute))
         .route("/api/v1/ai/autopilot/run", post(ai::autopilot_run))

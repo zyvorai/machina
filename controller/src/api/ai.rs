@@ -475,6 +475,18 @@ pub struct AutopilotProposeQuery {
     pub vm_id: Option<Uuid>,
 }
 
+pub async fn performance_autopilot(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Query(q): Query<ai::performance_autopilot::PerformanceAutopilotQuery>,
+) -> Result<Json<ai::performance_autopilot::PerformanceAutopilotReport>, ApiError> {
+    require_operator(&actor)?;
+    ai::performance_autopilot::analyze(&state.pool, &q)
+        .await
+        .map(Json)
+        .map_err(|e| ApiError::internal(e.to_string()))
+}
+
 pub async fn autopilot_propose(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,
