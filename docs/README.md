@@ -38,6 +38,7 @@ eBPF datapath (`machina-bpfd`) and a React web UI. The public site with the same
 | Migration planning: predictive oracle, adaptive engine | [migration/predictive-oracle.md](migration/predictive-oracle.md), [adaptive-engine](migration/adaptive-engine.md) |
 | VM performance autopilot | [ai/performance-autopilot.md](ai/performance-autopilot.md) |
 | Black Box recorder, root cause, noisy neighbours | [ebpf/README.md](ebpf/README.md) |
+| Live migration actuator | [migration/live-actuator.md](migration/live-actuator.md) |
 | Certification matrix | [platform-cert-matrix.md](platform-cert-matrix.md) |
 | Compliance hardening | [compliance-hardening.md](compliance-hardening.md) |
 | Packaging and remote builds | [PACKAGE_BINARY_REMOTE.md](PACKAGE_BINARY_REMOTE.md), [CLIENT_BUNDLE_POLICY.md](CLIENT_BUNDLE_POLICY.md), [macos-build.md](macos-build.md) |
