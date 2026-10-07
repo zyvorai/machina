@@ -35,7 +35,7 @@ eBPF datapath (`machina-bpfd`) and a React web UI. The public site with the same
 | Controller platform: setup, enrollment, API, E2E | [platform.md](platform.md) |
 | Controller HA, fencing, DRS, multiple controllers | [controller-ha.md](controller-ha.md) |
 | Daemon peer fleet (no controller) | [daemon-peer-fleet.md](daemon-peer-fleet.md) |
-| Migration planning: predictive oracle, adaptive engine, live actuator | [migration/](migration/predictive-oracle.md), [adaptive-engine](migration/adaptive-engine.md), [live-actuator](migration/live-actuator.md) |
+| Migration planning: predictive oracle, adaptive engine | [migration/predictive-oracle.md](migration/predictive-oracle.md), [adaptive-engine](migration/adaptive-engine.md) |
 | VM performance autopilot | [ai/performance-autopilot.md](ai/performance-autopilot.md) |
 | Black Box recorder, root cause, noisy neighbours | [ebpf/README.md](ebpf/README.md) |
 | Certification matrix | [platform-cert-matrix.md](platform-cert-matrix.md) |
