@@ -21,6 +21,7 @@ mod cluster;
 mod content;
 pub mod cpu_compat;
 mod developer;
+mod dist;
 mod enrollment;
 mod fleet_pki;
 pub(crate) mod join_events;
@@ -2069,6 +2070,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/openapi.json", get(health::openapi))
         .route("/install.sh", get(enrollment::install_script))
         .route("/api/v1/pki/ca", get(fleet_pki::ca))
+        .route("/api/v1/pki/ca.pem", get(fleet_pki::ca_pem))
+        .route("/dist/{name}", get(dist::serve))
         .merge(rate_limited_public)
         .merge(console::ws_routes())
         .merge(protected)
@@ -2087,6 +2090,8 @@ pub fn enrollment_router(state: AppState) -> Router {
     Router::new()
         .route("/api/v1/health", get(health::health))
         .route("/api/v1/pki/ca", get(fleet_pki::ca))
+        .route("/api/v1/pki/ca.pem", get(fleet_pki::ca_pem))
+        .route("/dist/{name}", get(dist::serve))
         .route("/install.sh", get(enrollment::install_script))
         .merge(joins)
         .with_state(state)

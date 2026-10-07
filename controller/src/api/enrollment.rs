@@ -95,8 +95,11 @@ pub async fn create_enrollment_token(
     let join_command = crate::enrollment_tls::configured_addr().and_then(|tls_addr| {
         let url = crate::enrollment_tls::public_https_url(&controller_base, &tls_addr)?;
         let (_, fp) = crate::pki::ca_info().ok()?;
+        let sum = install_script_sha256();
+        // The script is fetched without trusting the certificate, so its checksum is in the
+        // command; the script then verifies the controller by the pinned CA fingerprint.
         Some(format!(
-            "sudo machina-agent join --controller {url} --ca-sha256 {fp} --token {token} --expose"
+            "curl -fsSk {url}/install.sh -o /tmp/machina-install.sh && echo \"{sum}  /tmp/machina-install.sh\" | sha256sum -c - && sudo bash /tmp/machina-install.sh --controller {url} --ca-sha256 {fp} --token {token}"
         ))
     });
     Ok(Json(EnrollmentTokenResponse {
@@ -107,32 +110,25 @@ pub async fn create_enrollment_token(
     }))
 }
 
+/// The bootstrap a bare machine runs (see `install.sh`); served as text, unauthenticated, and
+/// carries no secrets: the token and CA fingerprint come from the command line.
+pub const INSTALL_SH: &str = include_str!("install.sh");
+
 pub async fn install_script(
 ) -> Result<([(axum::http::header::HeaderName, &'static str); 1], String), ApiError> {
     Ok((
         [(axum::http::header::CONTENT_TYPE, "text/x-shellscript")],
-        r#"#!/usr/bin/env bash
-set -euo pipefail
-CONTROLLER=""
-TOKEN=""
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --controller) CONTROLLER="$2"; shift 2 ;;
-    --token) TOKEN="$2"; shift 2 ;;
-    *) shift ;;
-  esac
-done
-: "${CONTROLLER:?set --controller URL}"
-: "${TOKEN:?set --token TOKEN}"
-echo "Joining Machina controller at $CONTROLLER"
-if command -v machina-agent >/dev/null 2>&1; then
-  exec machina-agent join --controller "$CONTROLLER" --token "$TOKEN"
-fi
-echo "machina-agent not found — install the agent package, then run:"
-echo "  machina-agent join --controller \"$CONTROLLER\" --token \"$TOKEN\""
-"#
-        .into(),
+        INSTALL_SH.to_string(),
     ))
+}
+
+/// SHA-256 of the served script: the Add Host command checks it before running anything.
+pub fn install_script_sha256() -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(INSTALL_SH.as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -174,4 +170,19 @@ pub async fn revoke_enrollment_token(
         ));
     }
     Ok(Json(serde_json::json!({ "revoked": true })))
+}
+
+#[cfg(test)]
+mod install_script_tests {
+    use super::*;
+
+    #[test]
+    fn the_script_verifies_before_it_installs_and_hides_the_token() {
+        assert!(INSTALL_SH.starts_with("#!/usr/bin/env bash\n"));
+        for must in ["set -euo pipefail", "SHA256SUMS", "--ca-sha256", "sha256sum", "<hidden>", "[ \"$have\" = \"$want\" ]"] {
+            assert!(INSTALL_SH.contains(must), "install.sh must contain {must}");
+        }
+        assert_eq!(install_script_sha256().len(), 64);
+        assert_eq!(install_script_sha256(), install_script_sha256());
+    }
 }
