@@ -24,6 +24,7 @@ import {
   getCapacityReport,
   getClusterSummary,
   getFleetUpdates,
+  getTaskFailures,
   listNotifications,
   listPlatformHosts,
   listPlatformTasks,
@@ -62,6 +63,8 @@ export default function PlatformControlCenter() {
   const [hosts, setHosts] = useState<PlatformHost[]>([])
   const [vms, setVms] = useState<{ observed_state: string }[]>([])
   const [tasks, setTasks] = useState<PlatformTask[]>([])
+  // Failures of the last 24 h that nobody acknowledged (a raw count of every failed task ever never goes down).
+  const [openFailures, setOpenFailures] = useState<number | null>(null)
   const [cluster, setCluster] = useState<ClusterSummary | null>(null)
   const [capacity, setCapacity] = useState<CapacityReport | null>(null)
   const [unreadAlerts, setUnreadAlerts] = useState(0)
@@ -75,7 +78,7 @@ export default function PlatformControlCenter() {
 
   const load = useCallback(async () => {
     try {
-      const [h, v, t, c, cap, alerts, zs, op, segs, storageTiers, updates] = await Promise.all([
+      const [h, v, t, c, cap, alerts, zs, op, segs, storageTiers, updates, failures] = await Promise.all([
         listPlatformHosts(),
         listPlatformVms(),
         listPlatformTasks(),
@@ -87,10 +90,12 @@ export default function PlatformControlCenter() {
         getNetworkSegmentsOverview().catch(() => ({ segments: [] })),
         getStorageTiersOverview().catch(() => ({ tiers: [], summary: '' })),
         getFleetUpdates().catch(() => null),
+        getTaskFailures(24).catch(() => null),
       ])
       setHosts(h)
       setVms(v)
       setTasks(t)
+      setOpenFailures(failures ? failures.unacknowledged : null)
       setCluster(c)
       setCapacity(cap)
       setUnreadAlerts(alerts.length)
@@ -120,7 +125,7 @@ export default function PlatformControlCenter() {
 
   const running = vms.filter((v) => v.observed_state === 'running').length
   const activeTasks = tasks.filter((t) => t.status === 'running' || t.status === 'pending').length
-  const failedTasks = tasks.filter((t) => t.status === 'failed').length
+  const failedTasks = openFailures ?? tasks.filter((t) => t.status === 'failed').length
   const offlineHosts = hosts.filter((h) => h.state === 'offline')
   const offlineCount = offlineHosts.length
   const warnings = offlineCount + failedTasks

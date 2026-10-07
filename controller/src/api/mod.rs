@@ -78,6 +78,7 @@ pub mod stacks;
 mod storage;
 mod storage_tiers;
 mod support;
+mod task_failures;
 mod tasks;
 mod templates;
 mod topology;
@@ -1621,6 +1622,11 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/v1/fence/events", get(fence::list_fence_events))
         .route("/api/v1/audit", get(audit::list_audit_logs))
+        .route("/api/v1/tasks/failures", get(task_failures::summary))
+        .route(
+            "/api/v1/tasks/failures/acknowledge",
+            post(task_failures::acknowledge),
+        )
         .route("/api/v1/tasks", get(tasks::list_tasks))
         .route("/api/v1/tasks/{id}", get(tasks::get_task))
         .route("/api/v1/tasks/{id}/cancel", post(tasks::cancel_task))

@@ -609,6 +609,27 @@ export const listPlatformVms = (params?: {
 }
 export const getPlatformVmSpec = (id: string) => platformFetch<unknown>(`/api/v1/vms/${id}/spec`)
 export const getVmHaPolicy = (id: string) => platformFetch<HaPolicy>('/api/v1/vms/' + id + '/ha')
+export interface TaskFailureGroup {
+  operation: string
+  cause: string
+  count: number
+  last_at: string
+  sample_task_id: string
+  hint?: string | null
+}
+export interface TaskFailureSummary {
+  window_hours: number
+  unacknowledged: number
+  groups: TaskFailureGroup[]
+}
+export const getTaskFailures = (hours = 24) =>
+  platformFetch<TaskFailureSummary>(`/api/v1/tasks/failures?hours=${hours}`)
+export const acknowledgeTaskFailures = (operation?: string) =>
+  platformFetch<{ acknowledged: number }>('/api/v1/tasks/failures/acknowledge', {
+    method: 'POST',
+    body: JSON.stringify(operation ? { operation } : {}),
+  })
+
 export const listPlatformTasks = (params?: { status?: string; operation?: string }) => {
   const q = new URLSearchParams()
   if (params?.status) q.set('status', params.status)

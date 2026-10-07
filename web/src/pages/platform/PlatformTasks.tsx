@@ -7,6 +7,7 @@ import { ClipboardList, X } from 'lucide-react'
 import ExplainButton from '../../components/ai/ExplainButton'
 import { MacGlassPanel } from '../../components/platform/mac/PlatformMacUi'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
+import TaskFailuresPanel from '../../components/platform/TaskFailuresPanel'
 import PlatformFilterPills from '../../components/platform/PlatformFilterPills'
 import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import { statusBgClass, taskStatusTone } from '../../utils/semanticColors'
@@ -112,6 +113,7 @@ export default function PlatformTasks() {
       actions={<PlatformRefreshButton onClick={() => void load()} />}
       contentClassName="space-y-4"
     >
+      <TaskFailuresPanel onShowOperation={(op) => { setOpFilter(op); setFilter('failed') }} onChanged={() => void load()} />
       {controllerHealth && (
         <MacGlassPanel title="Controller health" subtitle="GET /api/v1/health">
           <dl className="grid gap-2 text-sm sm:grid-cols-3">
