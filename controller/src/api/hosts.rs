@@ -34,6 +34,11 @@ pub struct HostRow {
     pub site: String,
     pub rack: String,
     pub rack_u: Option<i32>,
+    /// Version the agent reported at its last inventory ("" until the first one).
+    pub agent_version: String,
+    /// How the controller reaches this host's agent: `mtls` (fleet-CA certificate, set at join),
+    /// `token` (its own per-host bearer token over plain gRPC) or `plaintext` (shared/no token).
+    pub transport: String,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -75,7 +80,11 @@ const HOST_LIST_SQL: &str = "SELECT id, hostname, address, state, maintenance_mo
          cpu_percent, memory_used_mib, memory_total_mib, fenced,
          COALESCE(validation_status, 'pending') AS validation_status,
          last_heartbeat_at,
-         COALESCE(site, '') AS site, COALESCE(rack, '') AS rack, rack_u FROM hosts";
+         COALESCE(site, '') AS site, COALESCE(rack, '') AS rack, rack_u,
+         COALESCE(agent_version, '') AS agent_version,
+         CASE WHEN agent_tls = 1 THEN 'mtls'
+              WHEN agent_token IS NOT NULL AND agent_token <> '' THEN 'token'
+              ELSE 'plaintext' END AS transport FROM hosts";
 
 const HOST_DETAIL_SQL: &str = "SELECT id, hostname, address, state, maintenance_mode,
          COALESCE(schedulable, TRUE) AS schedulable, agent_grpc_addr,
@@ -1053,4 +1062,35 @@ pub async fn host_lldp(
         .await;
     }
     Ok(Json(lldp))
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    use crate::engine::test_support::{seed_host, test_state};
+
+    #[tokio::test]
+    async fn host_list_reports_how_the_agent_is_reached() {
+        let (state, _rx) = test_state().await;
+        let plain = seed_host(&state.pool, Uuid::new_v4()).await;
+        let token = Uuid::new_v4();
+        let mtls = Uuid::new_v4();
+        crate::db::query("INSERT INTO hosts (id, hostname, state, agent_token) VALUES (?, 'h2', 'online', 'mat-x')")
+            .bind(token)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        crate::db::query("INSERT INTO hosts (id, hostname, state, agent_token, agent_tls, agent_version) VALUES (?, 'h3', 'online', 'mat-y', 1, '0.1.0')")
+            .bind(mtls)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        assert_eq!(fetch_host_row(&state, plain).await.unwrap().transport, "plaintext");
+        assert_eq!(fetch_host_row(&state, token).await.unwrap().transport, "token");
+        let m = fetch_host_row(&state, mtls).await.unwrap();
+        assert_eq!(m.transport, "mtls");
+        assert_eq!(m.agent_version, "0.1.0");
+        let json = serde_json::to_string(&m).unwrap();
+        assert!(!json.contains("mat-y"), "the token never appears in the list");
+    }
 }

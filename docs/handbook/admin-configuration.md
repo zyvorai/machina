@@ -307,6 +307,7 @@ TLS is active only when `enabled=true` **and** both paths are non-empty.
 | `MACHINA_CERT_WARN_DAYS` | Warn when certificates expire within N days | `30` |
 | `MACHINA_TLS_CERT_PATH` | Certificate checked for expiry | `/etc/machina/ssl/cert.pem` |
 | `MACHINA_WATCHDOG_DISABLED` | `=1` disables the health watchdog | unset |
+| `MACHINA_HOST_REVALIDATE_SECS` | seconds between automatic re-checks of hosts whose last validation failed (a quiet `host.validate`, nothing is written to the join log); `0` turns it off | `600` |
 | `MACHINA_TEMPLATES_GIT_DIR` / `MACHINA_TEMPLATES_SYNC_TOKEN` | Git-backed template sync | unset |
 | `MACHINA_FIREWALL_ZONES` | Firewall zone definitions | unset |
 | `GUESTKIT_ENABLED` | GuestKit features | `true` |

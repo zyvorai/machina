@@ -41,6 +41,7 @@ pub mod guest_context;
 pub mod guestkit_bridge;
 pub mod ha;
 pub mod health_watchdog;
+pub mod host_revalidate;
 pub mod host_os;
 pub mod host_shell;
 pub mod host_validate;
