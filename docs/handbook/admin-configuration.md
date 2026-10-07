@@ -289,7 +289,7 @@ TLS is active only when `enabled=true` **and** both paths are non-empty.
 | `MACHINA_ALLOW_DEV_SECRETS` | `=1` allows the well-known dev JWT secret | unset |
 | `MACHINA_ADMIN_USER` / `MACHINA_ADMIN_PASSWORD` | Bootstrap controller admin | `admin` / `admin` — **change in production** |
 | `MACHINA_AGENT_CA`, `MACHINA_AGENT_CLIENT_CERT`, `MACHINA_AGENT_CLIENT_KEY` | mTLS to agents | unset |
-| `MACHINA_AGENT_TOKEN` | Shared controller ↔ agent token | unset |
+| `MACHINA_AGENT_TOKEN` | Shared controller ↔ agent token, used for hosts that have no token of their own (a host added with `machina-agent join` gets its own, kept in the database) | unset |
 | `MACHINA_FENCE_COMMAND` | Fallback fence command (`{hostname}` substituted), run by a reachable agent | unset |
 | `MACHINA_MAINTENANCE_DRAIN_TIMEOUT_SECS` | Max time to drain a host entering maintenance | `900` |
 | `MACHINA_BPF_ENFORCE_LEASE_SECS` | Default eBPF enforcement lease | `900` |
@@ -312,7 +312,7 @@ TLS is active only when `enabled=true` **and** both paths are non-empty.
 |----------|--------|---------|
 | `MACHINA_LIBVIRT_URI` | libvirt connection | `qemu:///system` |
 | `MACHINA_AGENT_TLS_CERT` / `MACHINA_AGENT_TLS_KEY` | gRPC TLS certificate | unset |
-| `MACHINA_AGENT_TOKEN` | Token the controller must present | unset |
+| `MACHINA_AGENT_TOKEN` | Token the controller must present; `machina-agent join` writes the host's own token here (`--env-file`, default `/etc/default/machina-platform`) | unset |
 | `MACHINA_AGENT_HOSTNAME` | Name reported to the controller | system hostname |
 | `MACHINA_FENCE_COMMAND` | Fence command run on `FenceHost` | unset |
 | `MACHINA_BPFD_SOCK` | `machina-bpfd` socket | `/run/machina-bpf/bpfd.sock` |

@@ -24,7 +24,7 @@ default `admin` password. As of the deploy-hardening change, `install-platform.s
 **auto-generates** strong values on first install and **preserves them on re-deploy**:
 
 - `MACHINA_JWT_SECRET` — signs platform JWTs (bridges controller ↔ daemon).
-- `MACHINA_AGENT_TOKEN` — authenticates controller ↔ agent gRPC and the console port.
+- `MACHINA_AGENT_TOKEN` — authenticates controller ↔ agent gRPC and the console port. A host added with `machina-agent join` gets its own token instead (kept in `hosts.agent_token`, stored on the host by `join`, dropped when the host is removed); hosts without one use the shared value.
 - `MACHINA_ADMIN_PASSWORD` — seeds the bootstrap `admin` user (printed once at install — **save it**).
 
 They live in `/etc/default/machina-platform` (mode 0600). To rotate an **API key**, use

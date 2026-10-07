@@ -18,11 +18,12 @@ use crate::auth::{require_operator, AuthUser};
 use crate::state::AppState;
 
 /// `?token=…` query string authenticating this controller to the agent's console port,
-/// or empty when no shared token is configured. Reuses the shared `MACHINA_AGENT_TOKEN`.
-fn agent_console_token_qs() -> String {
-    match std::env::var("MACHINA_AGENT_TOKEN") {
-        Ok(t) if !t.is_empty() => format!("?token={}", urlencoding::encode(&t)),
-        _ => String::new(),
+/// or empty when no token is configured: the host's own token if it joined with one, else the
+/// shared `MACHINA_AGENT_TOKEN`.
+fn agent_console_token_qs(console_addr: &str) -> String {
+    match agent_client::token_for(console_addr) {
+        Some(t) => format!("?token={}", urlencoding::encode(&t)),
+        None => String::new(),
     }
 }
 
@@ -45,10 +46,11 @@ pub async fn vm_console(
     Path(id): Path<Uuid>,
 ) -> Result<Json<ConsoleInfo>, ApiError> {
     require_operator(&actor)?;
-    let row: (String, Option<Uuid>) = crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
-        .bind(id)
-        .fetch_one(&state.pool)
-        .await?;
+    let row: (String, Option<Uuid>) =
+        crate::db::query_as("SELECT name, host_id FROM vms WHERE id = ?")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
     let host_id = row
         .1
         .ok_or_else(|| ApiError::bad_request("vm has no host"))?;
@@ -170,13 +172,14 @@ pub async fn serial_ws_proxy(
 }
 
 async fn vm_agent_target(state: &AppState, vm_id: Uuid) -> Option<(String, String)> {
-    let row =
-        crate::db::query_as::<_, (String, Option<Uuid>)>("SELECT name, host_id FROM vms WHERE id = ?")
-            .bind(vm_id)
-            .fetch_optional(&state.pool)
-            .await
-            .ok()
-            .flatten()?;
+    let row = crate::db::query_as::<_, (String, Option<Uuid>)>(
+        "SELECT name, host_id FROM vms WHERE id = ?",
+    )
+    .bind(vm_id)
+    .fetch_optional(&state.pool)
+    .await
+    .ok()
+    .flatten()?;
 
     let (name, Some(host_id)) = row else {
         return None;
@@ -197,7 +200,7 @@ async fn proxy_to_agent_vnc(socket: WebSocket, state: AppState, vm_id: Uuid, rea
         "ws://{}/ws/vnc/{}{}",
         agent_client::normalize_agent_addr(&agent_console),
         name,
-        agent_console_token_qs()
+        agent_console_token_qs(&agent_console)
     );
 
     let agent_ws = match connect_async(&ws_url).await {
@@ -421,7 +424,7 @@ async fn proxy_to_agent_serial(socket: WebSocket, state: AppState, vm_id: Uuid, 
         "ws://{}/ws/serial/{}{}",
         agent_client::normalize_agent_addr(&agent_console),
         name,
-        agent_console_token_qs()
+        agent_console_token_qs(&agent_console)
     );
 
     let agent_ws = match connect_async(&ws_url).await {
@@ -532,7 +535,7 @@ async fn proxy_to_agent_spice(socket: WebSocket, state: AppState, vm_id: Uuid, r
         "ws://{}/ws/spice/{}{}",
         agent_client::normalize_agent_addr(&agent_console),
         name,
-        agent_console_token_qs()
+        agent_console_token_qs(&agent_console)
     );
 
     let agent_ws = match connect_async(&ws_url).await {

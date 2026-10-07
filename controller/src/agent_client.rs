@@ -58,6 +58,65 @@ fn channel_cache() -> &'static Mutex<HashMap<String, Channel>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Per-host agent tokens (normalized agent address -> token), loaded from `hosts.agent_token` at
+/// startup and updated when a host joins. A host without an entry uses the shared
+/// `MACHINA_AGENT_TOKEN`.
+fn host_tokens() -> &'static std::sync::RwLock<HashMap<String, String>> {
+    static TOKENS: OnceLock<std::sync::RwLock<HashMap<String, String>>> = OnceLock::new();
+    TOKENS.get_or_init(Default::default)
+}
+
+pub fn set_host_token(addr: &str, token: &str) {
+    host_tokens()
+        .write()
+        .unwrap()
+        .insert(normalize_agent_addr(addr), token.to_string());
+}
+
+/// A host's agent and console addresses both authenticate with its own token.
+pub fn forget_host_addrs(addrs: &[&str]) {
+    for a in addrs {
+        forget_host_token(a);
+    }
+}
+
+pub fn forget_host_token(addr: &str) {
+    host_tokens()
+        .write()
+        .unwrap()
+        .remove(&normalize_agent_addr(addr));
+}
+
+/// The token to present to the agent at `addr`: its own if it joined with one, else the shared one.
+pub fn token_for(addr: &str) -> Option<String> {
+    host_tokens()
+        .read()
+        .unwrap()
+        .get(&normalize_agent_addr(addr))
+        .cloned()
+        .or_else(|| {
+            std::env::var("MACHINA_AGENT_TOKEN")
+                .ok()
+                .filter(|s| !s.is_empty())
+        })
+}
+
+/// Loads every host's own token from the database (call once at startup).
+pub async fn load_host_tokens(pool: &crate::db::DbPool) -> Result<usize, sqlx::Error> {
+    let rows: Vec<(String, Option<String>, String)> = crate::db::query_as(
+        "SELECT agent_grpc_addr, agent_console_addr, agent_token FROM hosts WHERE agent_token IS NOT NULL AND agent_token <> ''",
+    )
+    .fetch_all(pool)
+    .await?;
+    for (addr, console, token) in &rows {
+        set_host_token(addr, token);
+        if let Some(c) = console.as_deref().filter(|c| !c.is_empty()) {
+            set_host_token(c, token);
+        }
+    }
+    Ok(rows.len())
+}
+
 pub async fn connect(addr: &str) -> anyhow::Result<AgentClient> {
     let normalized = normalize_agent_addr(addr);
     let use_tls = std::env::var("MACHINA_AGENT_CA")
@@ -104,9 +163,7 @@ pub async fn connect(addr: &str) -> anyhow::Result<AgentClient> {
         }
     };
 
-    let token = std::env::var("MACHINA_AGENT_TOKEN")
-        .ok()
-        .filter(|s| !s.is_empty());
+    let token = token_for(addr);
     Ok(HostAgentClient::with_interceptor(
         channel,
         AgentAuth { token },
@@ -337,8 +394,15 @@ pub async fn migrate_vm(
     Ok(resp)
 }
 
-pub async fn get_migration_status(client: &mut AgentClient, vm: &str) -> anyhow::Result<GetMigrationStatusResponse> {
-    read_rpc("get_migration_status", client.get_migration_status(GetMigrationStatusRequest { vm_name: vm.into() })).await
+pub async fn get_migration_status(
+    client: &mut AgentClient,
+    vm: &str,
+) -> anyhow::Result<GetMigrationStatusResponse> {
+    read_rpc(
+        "get_migration_status",
+        client.get_migration_status(GetMigrationStatusRequest { vm_name: vm.into() }),
+    )
+    .await
 }
 
 pub async fn control_migration(
@@ -349,7 +413,12 @@ pub async fn control_migration(
     postcopy: bool,
 ) -> anyhow::Result<ControlMigrationResponse> {
     let r = client
-        .control_migration(ControlMigrationRequest { vm_name: vm.into(), action: action.into(), value, postcopy })
+        .control_migration(ControlMigrationRequest {
+            vm_name: vm.into(),
+            action: action.into(),
+            value,
+            postcopy,
+        })
         .await?
         .into_inner();
     if !r.ok {
@@ -1409,4 +1478,30 @@ pub async fn provision_cloud_subnet(
         .into_inner();
     anyhow::ensure!(response.ok, "{}", response.message);
     Ok(())
+}
+
+#[cfg(test)]
+mod host_token_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn a_joined_host_uses_its_own_token_and_others_do_not() {
+        let pool = crate::engine::test_support::test_pool().await;
+        crate::db::query(
+            "INSERT INTO hosts (id, hostname, state, agent_grpc_addr, agent_token)
+             VALUES (?, 'h-own', 'online', '10.9.9.9:50051', 'mat-own')",
+        )
+        .bind(uuid::Uuid::new_v4())
+        .execute(&pool)
+        .await
+        .unwrap();
+        assert!(load_host_tokens(&pool).await.unwrap() >= 1);
+        assert_eq!(
+            token_for("http://10.9.9.9:50051").as_deref(),
+            Some("mat-own")
+        );
+        assert_ne!(token_for("10.8.8.8:50051").as_deref(), Some("mat-own"));
+        forget_host_token("10.9.9.9:50051");
+        assert_ne!(token_for("10.9.9.9:50051").as_deref(), Some("mat-own"));
+    }
 }

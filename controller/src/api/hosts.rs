@@ -340,10 +340,23 @@ pub struct JoinHostRequest {
     pub libvirt_uri: Option<String>,
 }
 
+/// The host row, plus the new agent token that belongs to this host alone.
+#[derive(Debug, Serialize)]
+pub struct JoinHostResponse {
+    #[serde(flatten)]
+    pub host: HostRow,
+    pub agent_token: String,
+}
+
+/// 256 random bits from the OS (two v4 UUIDs), prefixed so a leaked value is recognisable.
+fn new_agent_token() -> String {
+    format!("mat-{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
+}
+
 pub async fn join_host(
     State(state): State<AppState>,
     Json(req): Json<JoinHostRequest>,
-) -> Result<Json<HostRow>, ApiError> {
+) -> Result<Json<JoinHostResponse>, ApiError> {
     let id = Uuid::new_v4();
     let console_addr = req
         .agent_console_addr
@@ -363,6 +376,7 @@ pub async fn join_host(
         );
     }
 
+    let agent_token = new_agent_token();
     let mut tx = state.pool.begin().await?;
     // Atomically consume the single-use token inside the transaction so two
     // concurrent joins can't both observe it unused and each enroll a host
@@ -381,8 +395,8 @@ pub async fn join_host(
         consumed.ok_or_else(|| ApiError::bad_request("invalid or expired join token"))?;
 
     crate::db::query(
-        "INSERT INTO hosts (id, cluster_id, hostname, address, agent_grpc_addr, agent_console_addr, libvirt_uri, state, validation_status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_validation', 'pending')
+        "INSERT INTO hosts (id, cluster_id, hostname, address, agent_grpc_addr, agent_console_addr, libvirt_uri, agent_token, state, validation_status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_validation', 'pending')
          ON CONFLICT (cluster_id, hostname) DO UPDATE SET
            address = EXCLUDED.address,
            -- Never downgrade an already-routable agent address to a loopback/empty
@@ -398,6 +412,7 @@ pub async fn join_host(
            END,
            agent_console_addr = EXCLUDED.agent_console_addr,
            libvirt_uri = EXCLUDED.libvirt_uri,
+           agent_token = EXCLUDED.agent_token,
            state = 'pending_validation',
            validation_status = 'pending'",
     )
@@ -408,6 +423,7 @@ pub async fn join_host(
     .bind(&req.agent_grpc_addr)
     .bind(&console_addr)
     .bind(&libvirt_uri)
+    .bind(&agent_token)
     .execute(&mut *tx)
     .await?;
 
@@ -417,7 +433,18 @@ pub async fn join_host(
             .bind(&req.hostname)
             .fetch_one(&mut *tx)
             .await?;
+    // The address the fleet really uses for this host (an existing routable one is preserved).
+    let (used_addr, used_console): (String, Option<String>) = crate::db::query_as(
+        "SELECT agent_grpc_addr, agent_console_addr FROM hosts WHERE id = ?",
+    )
+    .bind(host_id)
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
+    crate::agent_client::set_host_token(&used_addr, &agent_token);
+    if let Some(c) = used_console.as_deref().filter(|c| !c.is_empty()) {
+        crate::agent_client::set_host_token(c, &agent_token);
+    }
 
     link_baremetal_firewall_on_join(&state.pool, host_id, &req.hostname).await;
 
@@ -434,7 +461,8 @@ pub async fn join_host(
         tracing::warn!(host_id = %host_id, "host.validate enqueue failed after join: {}", e.message);
     }
 
-    fetch_host_row(&state, host_id).await.map(Json)
+    let host = fetch_host_row(&state, host_id).await?;
+    Ok(Json(JoinHostResponse { host, agent_token }))
 }
 
 async fn link_baremetal_firewall_on_join(pool: &crate::db::DbPool, host_id: Uuid, hostname: &str) {
@@ -781,6 +809,11 @@ pub async fn delete_host(
             .with_code("host_is_live"));
         }
     }
+    let agent_addrs: Option<(String, Option<String>)> =
+        crate::db::query_as("SELECT agent_grpc_addr, agent_console_addr FROM hosts WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.pool)
+            .await?;
     let mut tx = state.pool.begin().await?;
     // Clear child rows whose FKs to hosts/vms are NOT ON DELETE CASCADE, in dependency
     // order, so the host (and any assigned VM records) can be removed without tripping
@@ -824,6 +857,10 @@ pub async fn delete_host(
         return Err(ApiError::not_found("host not found"));
     }
     tx.commit().await?;
+    // The removed host's own token stops being presented (and the row that held it is gone).
+    if let Some((addr, console)) = agent_addrs {
+        crate::agent_client::forget_host_addrs(&[&addr, console.as_deref().unwrap_or("")]);
+    }
     write_audit(
         &state,
         &actor.username,

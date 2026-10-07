@@ -62,10 +62,10 @@ On the controller create a one-time enrollment token (`POST /api/v1/enrollment/t
 
 ```bash
 sudo apt install ./machina-agent_*_amd64.deb         # or: sudo ./install.sh --agent
-# use the same controller↔agent token as the controller (/etc/default/machina-platform → MACHINA_AGENT_TOKEN):
-echo 'MACHINA_AGENT_TOKEN=<value from the controller>' | sudo tee -a /etc/default/machina-platform >/dev/null && sudo chmod 600 /etc/default/machina-platform
 sudo machina-agent join --controller https://<controller-host>:5093 --token <enrollment-token>
 ```
+
+`join` also receives an agent token that belongs to this host alone (the controller generates it, keeps it with the host record and presents it only to this host's agent). The agent stores it in `/etc/default/machina-platform` (mode 0600, the old file kept as `.bak-pre-join`) and restarts `machina-agent`, so no secret is copied by hand and no fleet-wide secret is ever sent. It only stores the token when the controller URL is `https://` or loopback (an SSH tunnel); otherwise it says so and leaves the file alone. Hosts that did not join this way keep using the shared `MACHINA_AGENT_TOKEN`. Re-joining a host issues it a new token.
 
 Tokens are single-use and can expire; the host appears as *pending validation* until the controller has reached its agent.
 

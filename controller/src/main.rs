@@ -95,6 +95,11 @@ async fn main() -> anyhow::Result<()> {
     let pool = db::connect(&config.database_url).await?;
     db::migrate(&pool).await?;
     db::ensure_bootstrap(&pool, &config.admin_user, &config.admin_password).await?;
+    match machina_controller::agent_client::load_host_tokens(&pool).await {
+        Ok(n) if n > 0 => tracing::info!("{n} host(s) use their own agent token"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("could not load per-host agent tokens: {e}"),
+    }
 
     // Reap orphaned in-flight tasks left by a previous run — ONLY for the in-memory
     // task bus (no NATS). There, a restart drops the in-memory queue, so any task still

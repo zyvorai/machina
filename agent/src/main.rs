@@ -46,6 +46,9 @@ enum Command {
         token: String,
         #[arg(long)]
         address: Option<String>,
+        /// File the services read MACHINA_AGENT_TOKEN from.
+        #[arg(long, default_value = machina_agent::enrol::DEFAULT_ENV_FILE)]
+        env_file: String,
     },
 }
 
@@ -58,9 +61,10 @@ async fn main() -> anyhow::Result<()> {
         controller,
         token,
         address,
+        env_file,
     }) = &cli.command
     {
-        return run_join(&cli, controller, token, address.as_deref()).await;
+        return run_join(&cli, controller, token, address.as_deref(), env_file).await;
     }
 
     run_serve(&cli).await
@@ -71,6 +75,7 @@ async fn run_join(
     controller: &str,
     token: &str,
     address: Option<&str>,
+    env_file: &str,
 ) -> anyhow::Result<()> {
     let hostname = cli.hostname.clone().unwrap_or_else(|| {
         std::env::var("HOSTNAME")
@@ -102,7 +107,50 @@ async fn run_join(
         anyhow::bail!("join failed: {text}");
     }
     info!("joined controller at {controller}");
+    let reply: serde_json::Value = resp.json().await.unwrap_or_default();
+    if let Some(shared) = reply.get("agent_token").and_then(|v| v.as_str()) {
+        if !machina_agent::enrol::channel_is_safe(controller) {
+            tracing::warn!(
+                "the controller offered the shared agent token but {controller} is not https or \
+                 loopback; not storing it. Set MACHINA_AGENT_TOKEN in {env_file} by hand, or join over https."
+            );
+        } else {
+            match machina_agent::enrol::store_agent_token(Path::new(env_file), shared) {
+                Ok(changed) => {
+                    // The serving process below must use it too.
+                    std::env::set_var("MACHINA_AGENT_TOKEN", shared);
+                    info!(
+                        "agent token {} in {env_file}",
+                        if changed { "stored" } else { "already set" }
+                    );
+                    if changed
+                        && env_file == machina_agent::enrol::DEFAULT_ENV_FILE
+                        && restart_service("machina-agent")
+                    {
+                        info!("restarted machina-agent with the new token; join is complete");
+                        return Ok(());
+                    }
+                }
+                Err(e) => tracing::warn!("could not store the agent token in {env_file}: {e}"),
+            }
+        }
+    }
     run_serve(cli).await
+}
+
+/// Restarts a systemd unit if one with this name is active; false when there is none.
+fn restart_service(unit: &str) -> bool {
+    let active = std::process::Command::new("systemctl")
+        .args(["is-active", "--quiet", unit])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+    active
+        && std::process::Command::new("systemctl")
+            .args(["restart", unit])
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
 }
 
 /// Constant-time byte comparison for the shared agent token (avoids leaking
