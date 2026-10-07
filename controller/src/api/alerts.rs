@@ -91,9 +91,11 @@ pub async fn create_alert_rule(
     if body.name.trim().is_empty() || body.name.len() > 128 {
         return Err(ApiError::bad_request("rule name must be 1–128 characters"));
     }
-    if !matches!(body.metric.as_str(), "cpu_percent" | "mem_percent") {
+    if !matches!(body.metric.as_str(), "cpu_percent" | "mem_percent")
+        && !crate::engine::alert_evaluator::is_fleet_metric(&body.metric)
+    {
         return Err(ApiError::bad_request(
-            "metric must be cpu_percent or mem_percent",
+            "metric must be cpu_percent, mem_percent, host_offline, storage_pool_percent, backup_failed_24h or failed_task_burst",
         ));
     }
     if !matches!(body.comparator.as_str(), "gt" | "lt") {

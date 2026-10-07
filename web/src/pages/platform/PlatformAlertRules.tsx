@@ -9,14 +9,19 @@ import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import PlatformPageChrome, { PlatformBackLink, PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import { MacGlassPanel, MacListRow } from '../../components/platform/mac/PlatformMacUi'
 import {
+  channelTargetLabel,
   createAlertRule,
+  createNotificationChannel,
   deleteAlertRule,
   listAlertRules,
+  listNotificationChannelRows,
+  testNotificationChannel,
   setAlertRuleEnabled,
   type AlertComparator,
   type AlertMetric,
   type AlertRule,
   type AlertSeverity,
+  type NotificationChannelRow,
 } from '../../api/day2'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
@@ -36,6 +41,10 @@ export default function PlatformAlertRules() {
   const [scopeTag, setScopeTag] = useState('')
   const [saving, setSaving] = useState(false)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
+  const [channels, setChannels] = useState<NotificationChannelRow[]>([])
+  const [chName, setChName] = useState('')
+  const [chKind, setChKind] = useState('slack')
+  const [chTarget, setChTarget] = useState('')
   const loadSeq = useRef(0)
 
   const load = useCallback(async () => {
@@ -45,6 +54,8 @@ export default function PlatformAlertRules() {
     try {
       const r = await listAlertRules()
       if (alive()) setRows(r)
+      const c = await listNotificationChannelRows().catch(() => [] as NotificationChannelRow[])
+      if (alive()) setChannels(Array.isArray(c) ? c : [])
     } catch (e: unknown) {
       if (alive()) setError(formatUserError(e))
     } finally {
@@ -77,6 +88,31 @@ export default function PlatformAlertRules() {
     }
   }
 
+  const addChannel = async () => {
+    if (!chName.trim() || !chTarget.trim() || saving) return
+    setSaving(true)
+    try {
+      const ch = await createNotificationChannel({ name: chName.trim(), kind: chKind, target: chTarget.trim() })
+      toast.success(`Channel '${ch.name}' added`)
+      setChName('')
+      setChTarget('')
+      await load()
+    } catch (e: unknown) {
+      toast.error(formatUserError(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const testChannel = async (id: string) => {
+    try {
+      await testNotificationChannel(id)
+      toast.success('Test message sent')
+    } catch (e: unknown) {
+      toast.error(formatUserError(e))
+    }
+  }
+
   const remove = async (id: string) => {
     try {
       await deleteAlertRule(id)
@@ -104,25 +140,61 @@ export default function PlatformAlertRules() {
       onErrorRetry={() => void load()}
       prepend={<PlatformBackLink to="/platform/operations" label="Operations" />}
       title="Alert rules"
-      subtitle="Threshold alerts on VM CPU / memory — fire notifications when a metric crosses a bound."
+      subtitle="Alerts on hosts, storage, backups, failed tasks and VM CPU / memory — and where they are sent."
       icon={<Gauge className="w-6 h-6 text-[var(--text-muted)]" />}
       actions={<PlatformRefreshButton onClick={() => void load()} />}
       loading={loading && rows.length === 0}
       contentClassName="space-y-4 xl:space-y-0 xl:columns-2 xl:gap-4 [&>*]:break-inside-avoid xl:[&>*]:mb-4"
     >
       <OperatingSurfaceLayout testId="platform-alert-rules-page">
+        <MacGlassPanel
+          title="Where alerts go"
+          subtitle={channels.length === 0 ? 'No channel yet: alerts only show in the app.' : `${channels.length} channel(s)`}
+        >
+          <div data-testid="alert-channels">
+            {channels.length > 0 && (
+              <ul className="divide-y divide-white/[0.04] -mx-1 mb-3">
+                {channels.map((c) => (
+                  <MacListRow
+                    key={c.id}
+                    title={c.name}
+                    subtitle={`${c.kind} · ${channelTargetLabel(c.kind, c.target)}${c.enabled ? '' : ' · disabled'}`}
+                    badge={<button type="button" className="btn-secondary text-xs px-2 py-1" onClick={() => void testChannel(c.id)}>Send test</button>}
+                  />
+                ))}
+              </ul>
+            )}
+            <div className="grid gap-3 md:grid-cols-3 max-w-2xl">
+              <input className="input text-sm" aria-label="Channel name" placeholder="Name (e.g. ops-slack)" value={chName} onChange={(e) => setChName(e.target.value)} />
+              <select className="input text-sm" aria-label="Channel type" value={chKind} onChange={(e) => setChKind(e.target.value)}>
+                <option value="slack">Slack</option>
+                <option value="email">Email</option>
+                <option value="webhook">Webhook</option>
+              </select>
+              <input className="input text-sm" aria-label="Channel target" placeholder={chKind === 'email' ? 'you@example.com' : 'https://hooks.example.com/…'} value={chTarget} onChange={(e) => setChTarget(e.target.value)} />
+            </div>
+            <button type="button" className="btn-primary text-sm mt-3 flex items-center gap-1.5" disabled={saving || !chName.trim() || !chTarget.trim()} onClick={() => void addChannel()}>
+              <Plus className="w-4 h-4" /> Add channel
+            </button>
+          </div>
+        </MacGlassPanel>
+
         <MacGlassPanel title="New alert rule">
           <div className="grid gap-3 md:grid-cols-2 max-w-2xl">
             <input className="input text-sm" aria-label="Rule name" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
             <select className="input text-sm" aria-label="Metric" value={metric} onChange={(e) => setMetric(e.target.value as AlertMetric)}>
               <option value="cpu_percent">cpu_percent</option>
               <option value="mem_percent">mem_percent</option>
+              <option value="host_offline">host_offline (fleet)</option>
+              <option value="storage_pool_percent">storage_pool_percent (fleet)</option>
+              <option value="backup_failed_24h">backup_failed_24h (fleet)</option>
+              <option value="failed_task_burst">failed_task_burst (fleet)</option>
             </select>
             <select className="input text-sm" aria-label="Comparator" value={comparator} onChange={(e) => setComparator(e.target.value as AlertComparator)}>
               <option value="gt">greater than (gt)</option>
               <option value="lt">less than (lt)</option>
             </select>
-            <input className="input text-sm" aria-label="Threshold" type="number" min={0} max={100} placeholder="Threshold %" value={threshold} onChange={(e) => setThreshold(e.target.value)} />
+            <input className="input text-sm" aria-label="Threshold" type="number" min={0} placeholder="Threshold (% or count)" value={threshold} onChange={(e) => setThreshold(e.target.value)} />
             <select className="input text-sm" aria-label="Severity" value={severity} onChange={(e) => setSeverity(e.target.value as AlertSeverity)}>
               <option value="info">info</option>
               <option value="warning">warning</option>

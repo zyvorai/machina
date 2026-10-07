@@ -280,6 +280,7 @@ TLS is active only when `enabled=true` **and** both paths are non-empty.
 | Variable | Effect | Default |
 |----------|--------|---------|
 | `DATABASE_URL` | State store | `sqlite:///var/lib/machina/controller.db` (embedded SQLite; no external database). The PostgreSQL build of the controller takes `postgres://user:password@host:5432/db` ([guide](../guides/database.md)) |
+| `MACHINA_UPDATE_CHECK_URL` | Turns on the "new version available" banner: a URL returning `{"version": "x.y.z", "url": "release notes"}` (your own mirror or a public feed). Unset means the controller never contacts anything and no banner shows (air-gapped sites) | unset |
 | `MACHINA_DB_MAX_CONNECTIONS` | PostgreSQL pool size | `20` (PostgreSQL build only) |
 | `NATS_URL` | Enables NATS task fan-out | `nats://127.0.0.1:4222` (optional) |
 | `MACHINA_AGENT_ADDR` | gRPC agent address | `http://127.0.0.1:50051` |
@@ -383,6 +384,12 @@ See also [../guides/ad-integration-zyvorai.md](../guides/ad-integration-zyvorai.
 for Active Directory / LDAP.
 
 ---
+
+### Alerts, notification channels and the support bundle
+
+A new install has four alert rules (migration 066, **Platform → Alert rules**): host offline, storage pool above 90 % full, backup failed in the last 24 hours, and more than five unacknowledged failed tasks in 15 minutes. Certificate expiry is watched separately (`MACHINA_CERT_WARN_DAYS`, default 30). Alerts appear in the app; add a Slack, email or webhook channel under **Where alerts go** on the same page (the first-run checklist asks for one) and use **Send test**. Delete or disable a default rule and it stays that way.
+
+**Platform → Support → Download archive (.zip)** (`GET /api/v1/support/bundle.zip`, admin) gives one file for a support request: the JSON summary, the `MACHINA_*` settings and the recent journal of the Machina services. Passwords, tokens, keys, JWTs and `user:password@` in URLs are replaced by `<redacted>`; read it before sending, because redaction is pattern-based.
 
 ## 6. TLS / certificates
 

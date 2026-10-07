@@ -5,7 +5,7 @@ import { useState } from 'react'
 import { LifeBuoy, Download, RefreshCw } from 'lucide-react'
 import PlatformPageChrome, { PlatformRefreshButton } from '../../components/platform/PlatformPageChrome'
 import PlatformAboutHelp from '../../components/platform/PlatformAboutHelp'
-import { getSupportBundle } from '../../api/platform'
+import { downloadSupportBundleZip, getSupportBundle } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
 import JsonInspector from '../../components/platform/JsonInspector'
@@ -42,6 +42,24 @@ export default function PlatformSupport({ embedded }: { embedded?: boolean } = {
     }
   }
 
+  const downloadArchive = async () => {
+    setLoading(true)
+    try {
+      const blob = await downloadSupportBundleZip()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `machina-support-${Date.now()}.zip`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success('Support archive downloaded (secrets are redacted; review before sending)')
+    } catch (e: unknown) {
+      toast.error(formatUserError(e))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <PlatformPageChrome
       eyebrow="Platform"
@@ -58,12 +76,17 @@ export default function PlatformSupport({ embedded }: { embedded?: boolean } = {
       <div className="card p-5 flex flex-wrap gap-3 items-center justify-between">
         <div>
           <p className="font-medium">Export support bundle</p>
-          <p className="text-xs text-[var(--text-muted)] mt-1">Cluster summary, versions, and recent events for Zyvor support.</p>
+          <p className="text-xs text-[var(--text-muted)] mt-1">Cluster summary, versions, and recent events for Zyvor support. The archive adds the configuration and service logs with secrets redacted.</p>
         </div>
-        <button type="button" className="btn-primary text-sm flex items-center gap-2" disabled={loading} onClick={() => void downloadBundle()}>
-          {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          Download bundle
-        </button>
+        <div className="flex gap-2">
+          <button type="button" className="btn-primary text-sm flex items-center gap-2" disabled={loading} onClick={() => void downloadArchive()}>
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            Download archive (.zip)
+          </button>
+          <button type="button" className="btn-secondary text-sm" disabled={loading} onClick={() => void downloadBundle()}>
+            Summary (JSON)
+          </button>
+        </div>
       </div>
       {bundle && (
         <div className="card p-4 space-y-3">

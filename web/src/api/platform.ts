@@ -2159,6 +2159,26 @@ export const enqueueValidateHost = (id: string) =>
 
 export const getSupportBundle = () => platformFetch<Record<string, unknown>>('/api/v1/support/bundle')
 
+/** The support bundle as one archive: summary, redacted configuration and recent logs. */
+export const downloadSupportBundleZip = async (): Promise<Blob> => {
+  const res = await fetch(resolvePlatformApiUrl('/api/v1/support/bundle.zip'), { credentials: 'same-origin', headers: platformHeaders() })
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(body || `Support bundle unavailable (${res.status})`)
+  }
+  return res.blob()
+}
+
+export type UpdateCheck = {
+  /** false = no check URL configured on the controller; show nothing. */
+  enabled: boolean
+  current: string
+  latest?: string | null
+  available: boolean
+  notes_url?: string | null
+}
+export const getUpdateCheck = () => platformFetch<UpdateCheck>('/api/v1/system/update-check')
+
 export type AgentSkewStatus = 'current' | 'supported' | 'unsupported' | 'controller_behind' | 'unknown'
 
 export interface UpgradeHostSkew {

@@ -1,10 +1,11 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { Check, X } from 'lucide-react'
 import Reveal from '../../../components/Reveal'
+import { listNotificationChannelRows } from '../../../api/day2'
 import type { MissionControlFleetState } from './useMissionControlFleet'
 
 const DISMISS_KEY = 'machina-get-started-dismissed'
@@ -21,6 +22,15 @@ export default function MissionControlGetStarted({ state, onCreateVm }: { state:
     try { return localStorage.getItem(DISMISS_KEY) === '1' } catch { return false }
   })
   const { hosts, vms, unprotected, loading, error } = state
+  // null = not known yet (do not nag before the answer arrives, and not when it cannot be read)
+  const [hasChannel, setHasChannel] = useState<boolean | null>(null)
+  useEffect(() => {
+    let alive = true
+    listNotificationChannelRows()
+      .then((c) => { if (alive) setHasChannel(Array.isArray(c) && c.some((x) => x.enabled)) })
+      .catch(() => { if (alive) setHasChannel(null) })
+    return () => { alive = false }
+  }, [])
 
   const steps = useMemo<Step[]>(() => {
     const running = vms.filter((v) => v.observed_state === 'running')
@@ -38,9 +48,17 @@ export default function MissionControlGetStarted({ state, onCreateVm }: { state:
         cta: 'Show machines',
       },
       { id: 'backup', title: 'Protect with backups', hint: unprotected > 0 ? `${unprotected} machine${unprotected === 1 ? ' has' : 's have'} no backup.` : 'Schedule backups so nothing is lost.', done: vms.length > 0 && unprotected === 0, to: '/platform/backups', cta: 'Set up backups' },
+      ...(hasChannel === null ? [] : [{
+        id: 'alerts',
+        title: 'Get told when something breaks',
+        hint: 'Alerts for offline hosts, full storage, failed backups and failed tasks are on by default. Add a Slack, email or webhook channel to receive them.',
+        done: hasChannel,
+        to: '/platform/alert-rules',
+        cta: 'Add channel',
+      }]),
       { id: 'ha', title: 'Keep machines running', hint: hosts.length < 2 ? 'Needs a second host — add one to enable failover.' : 'Restart VMs on another host if one fails.', done: haOn || hosts.length < 2, to: '/platform/ha', cta: 'High availability' },
     ]
-  }, [hosts.length, vms, unprotected, onCreateVm])
+  }, [hosts.length, vms, unprotected, onCreateVm, hasChannel])
 
   if (dismissed || loading || error) return null
   const doneCount = steps.filter((s) => s.done).length

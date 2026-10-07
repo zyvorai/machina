@@ -78,6 +78,7 @@ pub mod stacks;
 mod storage;
 mod storage_tiers;
 mod support;
+mod update_check;
 mod task_failures;
 mod tasks;
 mod templates;
@@ -1898,6 +1899,8 @@ pub fn router(state: AppState) -> Router {
             get(policy::list_project_quotas).post(policy::upsert_project_quota),
         )
         .route("/api/v1/support/bundle", get(support::support_bundle))
+        .route("/api/v1/support/bundle.zip", get(support::support_bundle_zip))
+        .route("/api/v1/system/update-check", get(update_check::update_check))
         .route("/api/v1/upgrade/matrix", get(upgrade::upgrade_matrix))
         .route(
             "/api/v1/hosts/{id}/upgrade",

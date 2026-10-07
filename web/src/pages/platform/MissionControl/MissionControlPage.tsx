@@ -13,6 +13,7 @@ import MissionControlGeography from './MissionControlGeography'
 import MissionControlHero from './MissionControlHero'
 import MissionControlCapacity from './MissionControlCapacity'
 import MissionControlGetStarted from './MissionControlGetStarted'
+import UpdateBanner from '../../../components/platform/UpdateBanner'
 import { openQuickCreateVm } from '../../../hooks/usePlatformVmCreate'
 import MissionControlLaunchpad from './MissionControlLaunchpad'
 import MissionControlPulse from './MissionControlPulse'
@@ -73,6 +74,8 @@ export default function MissionControlPage() {
         )}
 
         <MissionControlHero state={state} warnings={warnings} onCreateVm={openQuickCreateVm} />
+
+        <UpdateBanner />
 
         <MissionControlGetStarted state={state} onCreateVm={openQuickCreateVm} />
 

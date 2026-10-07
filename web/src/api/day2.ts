@@ -49,7 +49,14 @@ export const deleteBackupSchedule = (id: string) =>
 // Alert rules
 // ---------------------------------------------------------------------------
 
-export type AlertMetric = 'cpu_percent' | 'mem_percent'
+export type AlertMetric =
+  | 'cpu_percent'
+  | 'mem_percent'
+  // fleet-wide metrics (the default rules use these; scope is ignored)
+  | 'host_offline'
+  | 'storage_pool_percent'
+  | 'backup_failed_24h'
+  | 'failed_task_burst'
 export type AlertComparator = 'gt' | 'lt'
 export type AlertSeverity = 'info' | 'warning' | 'critical'
 
@@ -86,6 +93,39 @@ export const createAlertRule = (body: {
     method: 'POST',
     body: JSON.stringify(body),
   })
+
+export type NotificationChannelRow = {
+  id: string
+  name: string
+  kind: 'slack' | 'email' | 'webhook' | string
+  target: string
+  events: string
+  enabled: boolean
+}
+
+export const listNotificationChannelRows = () =>
+  platformFetch<NotificationChannelRow[]>('/api/v1/notification-channels')
+
+export const createNotificationChannel = (body: { name: string; kind: string; target: string }) =>
+  platformFetch<NotificationChannelRow>('/api/v1/notification-channels', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+
+export const testNotificationChannel = (id: string) =>
+  platformFetch<{ ok?: boolean; message?: string }>(`/api/v1/notification-channels/${encodeURIComponent(id)}/test`, {
+    method: 'POST',
+  })
+
+/** A channel's target can embed a secret (a Slack webhook URL): show where it goes, never the whole address. */
+export function channelTargetLabel(kind: string, target: string): string {
+  if (kind === 'email') return target
+  try {
+    return new URL(target).host
+  } catch {
+    return '(set)'
+  }
+}
 
 export const setAlertRuleEnabled = (id: string, enabled: boolean) =>
   platformFetch<AlertRule>(`/api/v1/alert-rules/${encodeURIComponent(id)}`, {
