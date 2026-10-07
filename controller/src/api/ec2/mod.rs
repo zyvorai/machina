@@ -19,6 +19,9 @@ pub mod gameday;
 pub mod gateways;
 pub mod groups;
 pub mod images;
+pub mod images_ext;
+pub mod instance_attrs;
+pub mod launch_templates;
 pub mod lb_members;
 pub mod machina;
 pub mod monitoring;
@@ -28,6 +31,7 @@ pub mod netcommon;
 pub mod ops;
 pub mod page;
 pub mod peering;
+pub mod placement_groups;
 pub mod platform;
 pub mod route_tables;
 pub mod run_options;
@@ -35,8 +39,11 @@ pub mod schedules;
 pub mod services;
 pub mod sg_rules;
 pub mod sigv4;
+pub mod spot;
 pub mod status;
+pub mod tagspec;
 pub mod volume_attrs;
+pub mod volumes_ext;
 pub mod vpc;
 
 use std::collections::BTreeMap;
@@ -291,7 +298,12 @@ async fn describe_instance_types(state: &AppState, p: &BTreeMap<String, String>)
         .filter(|(n, _, _)| wanted.is_empty() || wanted.contains(n))
         .map(|(n, v, m)| {
             format!(
-                "<item><instanceType>{}</instanceType><vCpuInfo><defaultVCpus>{v}</defaultVCpus></vCpuInfo><memoryInfo><sizeInMiB>{m}</sizeInMiB></memoryInfo></item>",
+                "<item><instanceType>{}</instanceType><currentGeneration>true</currentGeneration><freeTierEligible>false</freeTierEligible>\
+<supportedUsageClasses><item>on-demand</item><item>spot</item></supportedUsageClasses><supportedRootDeviceTypes><item>ebs</item></supportedRootDeviceTypes>\
+<supportedVirtualizationTypes><item>hvm</item></supportedVirtualizationTypes><bareMetal>false</bareMetal><hypervisor>kvm</hypervisor>\
+<instanceStorageSupported>false</instanceStorageSupported><burstablePerformanceSupported>false</burstablePerformanceSupported>\
+<vCpuInfo><defaultVCpus>{v}</defaultVCpus><defaultCores>{v}</defaultCores><defaultThreadsPerCore>1</defaultThreadsPerCore></vCpuInfo>\
+<memoryInfo><sizeInMiB>{m}</sizeInMiB></memoryInfo><ebsInfo><ebsOptimizedSupport>unsupported</ebsOptimizedSupport></ebsInfo></item>",
                 xml_escape(n)
             )
         })
@@ -359,6 +371,12 @@ async fn power(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, String>,
         return Err(Ec2Error::bad("MissingParameter", "The request must contain the parameter InstanceId"));
     }
     let all = load_instances(state).await?;
+    // termination protection is checked for every instance before any is deleted
+    for want in &ids {
+        if let Some(i) = all.iter().find(|i| &i.eid() == want && i.state != "terminated") {
+            instance_attrs::terminate_guard(state, i.id, want).await?;
+        }
+    }
     let mut items = String::new();
     for want in &ids {
         let i = all
@@ -474,13 +492,19 @@ async fn attach_extra_volumes(state: &AppState, actor: &AuthUser, vm: Uuid, vm_n
     Ok(())
 }
 
-async fn run_instances(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, String>) -> Result<String, Ec2Error> {
+/// Launches the instances of a `RunInstances` call (a launch template merged in, every option applied or refused) and
+/// returns their ids. Also used by spot requests and fleets.
+pub(crate) async fn launch(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, String>) -> Result<Vec<Uuid>, Ec2Error> {
     require_operator(actor)?;
     // a launch template supplies defaults; every option is then applied or refused (see `run_options`)
     let merged = run_options::with_launch_template(state, params).await?;
     let p = &merged;
     let opts = run_options::parse(p)?;
+    let group = placement_groups::group_for_run(state, p).await?;
     let host_id = run_options::host_for_zone(state, p).await?;
+    if group.is_some() && host_id.is_some() {
+        return Err(Ec2Error::bad("InvalidParameterCombination", "give Placement.AvailabilityZone or Placement.GroupName, not both"));
+    }
     let need = |k: &str| p.get(k).cloned().ok_or_else(|| Ec2Error::bad("MissingParameter", format!("The request must contain the parameter {k}")));
     let image = need("ImageId")?;
     let max: u32 = need("MaxCount")?.parse().map_err(|_| Ec2Error::bad("InvalidParameterValue", "MaxCount must be a number"))?;
@@ -508,31 +532,50 @@ async fn run_instances(state: &AppState, actor: &AuthUser, params: &BTreeMap<Str
     };
     let tags = parse_tags(p);
     let name = tags.get("Name").cloned().unwrap_or_else(|| format!("ec2-{}", &Uuid::new_v4().simple().to_string()[..8]));
-    let mut spec = serde_json::json!({ "template_ref": template_ref, "name": name, "count": max, "min_count": min });
+    let mut base = serde_json::json!({ "template_ref": template_ref });
     if let Some(f) = flavor {
-        spec["flavor_id"] = serde_json::json!(f);
-    }
-    if let Some(h) = host_id {
-        spec["host_id"] = serde_json::json!(h);
+        base["flavor_id"] = serde_json::json!(f);
     }
     if opts.preemptible {
-        spec["preemptible"] = serde_json::json!(true);
+        base["preemptible"] = serde_json::json!(true);
     }
     if let Some(network) = fleet::network_for_run(state, p).await? {
-        spec["network"] = serde_json::json!(network);
+        base["network"] = serde_json::json!(network);
     }
     if let Some(k) = p.get("KeyName") {
-        spec["key_name"] = serde_json::json!(k);
+        base["key_name"] = serde_json::json!(k);
     }
     if let Some(u) = p.get("UserData") {
-        spec["cloud_init_user_data"] = serde_json::json!(decode_user_data(u).map_err(|m| Ec2Error::bad("InvalidParameterValue", m))?);
+        base["cloud_init_user_data"] = serde_json::json!(decode_user_data(u).map_err(|m| Ec2Error::bad("InvalidParameterValue", m))?);
     }
-    let body: crate::api::vms::RunInstancesBody =
-        serde_json::from_value(spec).map_err(|e| Ec2Error::bad("InvalidParameterValue", e.to_string()))?;
-    let Json(done) = crate::api::vms::run_instances(State(state.clone()), Extension(actor.clone()), Json(body))
-        .await
-        .map_err(|e| Ec2Error::bad("InsufficientInstanceCapacity", e.message))?;
-    let names: Vec<String> = done["instances"].as_array().into_iter().flatten().filter_map(|i| i["name"].as_str().map(String::from)).collect();
+    // one call for the whole count, or (placement group) one call per instance with the host the group's strategy chose
+    let calls: Vec<(String, u32, u32, Option<Uuid>)> = match &group {
+        Some(g) => {
+            let memory_mib: i64 = match flavor {
+                Some(f) => crate::db::query_scalar("SELECT memory_mib FROM flavors WHERE id = ?").bind(f).fetch_one(&state.pool).await?,
+                None => 4096,
+            };
+            let hosts = placement_groups::plan_hosts(state, g, max as usize, memory_mib).await?;
+            crate::api::vms::run_names(&name, max).into_iter().zip(hosts).map(|(n, h)| (n, 1, 1, Some(h))).collect()
+        }
+        None => vec![(name.clone(), max, min, host_id)],
+    };
+    let mut names: Vec<String> = Vec::new();
+    for (call_name, count, min_count, host) in calls {
+        let mut spec = base.clone();
+        spec["name"] = serde_json::json!(call_name);
+        spec["count"] = serde_json::json!(count);
+        spec["min_count"] = serde_json::json!(min_count);
+        if let Some(h) = host {
+            spec["host_id"] = serde_json::json!(h);
+        }
+        let body: crate::api::vms::RunInstancesBody =
+            serde_json::from_value(spec).map_err(|e| Ec2Error::bad("InvalidParameterValue", e.to_string()))?;
+        let Json(done) = crate::api::vms::run_instances(State(state.clone()), Extension(actor.clone()), Json(body))
+            .await
+            .map_err(|e| Ec2Error::bad("InsufficientInstanceCapacity", e.message))?;
+        names.extend(done["instances"].as_array().into_iter().flatten().filter_map(|i| i["name"].as_str().map(String::from)));
+    }
 
     let mut launched: Vec<(Uuid, String)> = Vec::new();
     for n in &names {
@@ -542,6 +585,11 @@ async fn run_instances(state: &AppState, actor: &AuthUser, params: &BTreeMap<Str
                 let _ = crate::api::tags::put_tag_map(&mut tx, Kind::Vm, id, &tags).await?;
                 tx.commit().await?;
             }
+            // attributes the call set (termination protection, monitoring, metadata endpoint, placement group…)
+            let attrs = instance_attrs::Attrs { placement_group: group.as_ref().map(|g| g.name.clone()), ..opts.attrs.clone() };
+            if attrs != instance_attrs::Attrs::default() {
+                instance_attrs::save(state, id, &attrs).await?;
+            }
             launched.push((id, n.clone()));
         }
     }
@@ -550,6 +598,11 @@ async fn run_instances(state: &AppState, actor: &AuthUser, params: &BTreeMap<Str
     for (id, n) in &launched {
         attach_extra_volumes(state, actor, *id, n, &opts).await?;
     }
+    Ok(ids)
+}
+
+async fn run_instances(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, String>) -> Result<String, Ec2Error> {
+    let ids = launch(state, actor, params).await?;
     let all = load_instances(state).await?;
     let items: String = all.iter().filter(|i| ids.contains(&i.id)).map(instance_core).collect();
     Ok(format!(
@@ -729,6 +782,37 @@ async fn dispatch(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, 
         "DescribeInstances" => describe_instances(state, &params).await?,
         "DescribeInstanceTypes" => describe_instance_types(state, &params).await?,
         "DescribeTags" => describe_tags(state, &params).await?,
+        // instances, volumes, images, launch templates, placement groups, spot and fleets (see the modules)
+        "CreateLaunchTemplateVersion" => launch_templates::create_launch_template_version(state, &actor, &params).await?,
+        "ModifyLaunchTemplate" => launch_templates::modify_launch_template(state, &actor, &params).await?,
+        "GetLaunchTemplateData" => launch_templates::get_launch_template_data(state, &params).await?,
+        "MonitorInstances" => instance_attrs::set_monitoring(state, &actor, &params, true).await?,
+        "UnmonitorInstances" => instance_attrs::set_monitoring(state, &actor, &params, false).await?,
+        "ModifyInstanceMetadataOptions" => instance_attrs::modify_instance_metadata_options(state, &actor, &params).await?,
+        "GetConsoleOutput" => instance_attrs::get_console_output(state, &actor, &params).await?,
+        "GetConsoleScreenshot" => instance_attrs::get_console_screenshot()?,
+        "GetPasswordData" => instance_attrs::get_password_data(state, &params).await?,
+        "DescribeInstanceCreditSpecifications" => instance_attrs::describe_instance_credit_specifications(state, &params).await?,
+        "DescribeVolumesModifications" => volumes_ext::describe_volumes_modifications(state, &params).await?,
+        "DescribeVolumeStatus" => volumes_ext::describe_volume_status(state, &params).await?,
+        "CreateSnapshots" => volumes_ext::create_snapshots(state, &actor, &params).await?,
+        "CopySnapshot" => volumes_ext::copy_snapshot()?,
+        "CreateKeyPair" => images_ext::create_key_pair(state, &actor, &params).await?,
+        "RegisterImage" => images_ext::register_image(state, &actor, &params).await?,
+        "CopyImage" => images_ext::copy_image(state, &actor, &params).await?,
+        "DescribeImageAttribute" => images_ext::describe_image_attribute(state, &params).await?,
+        "DescribeInstanceTypeOfferings" => images_ext::describe_instance_type_offerings(state, &params).await?,
+        "CreatePlacementGroup" => placement_groups::create_placement_group(state, &actor, &params).await?,
+        "DescribePlacementGroups" => placement_groups::describe_placement_groups(state, &params).await?,
+        "DeletePlacementGroup" => placement_groups::delete_placement_group(state, &actor, &params).await?,
+        "RequestSpotInstances" => spot::request_spot_instances(state, &actor, &params).await?,
+        "DescribeSpotInstanceRequests" => spot::describe_spot_instance_requests(state, &params).await?,
+        "CancelSpotInstanceRequests" => spot::cancel_spot_instance_requests(state, &actor, &params).await?,
+        "DescribeSpotPriceHistory" => spot::describe_spot_price_history(state, &params).await?,
+        "CreateFleet" => spot::create_fleet(state, &actor, &params).await?,
+        "DescribeFleets" => spot::describe_fleets(state, &params).await?,
+        "DescribeFleetInstances" => spot::describe_fleet_instances(state, &params).await?,
+        "DeleteFleets" => spot::delete_fleets(state, &actor, &params).await?,
         "DescribeKeyPairs" => describe_key_pairs(state, &params).await?,
         "StartInstances" => power(state, &actor, &params, true).await?,
         "StopInstances" => power(state, &actor, &params, false).await?,
@@ -834,11 +918,11 @@ async fn dispatch(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, 
         "CreateNetworkInterface" => eni::create_network_interface(state, &actor, &params).await?,
         "DeleteNetworkInterface" => eni::delete_network_interface(state, &actor, &params).await?,
         "AttachNetworkInterface" => eni::attach_network_interface(state, &actor, &params).await?,
-        "ModifyVolume" => ops::modify_volume(state, &actor, &params).await?,
+        "ModifyVolume" => volumes_ext::modify_volume(state, &actor, &params).await?,
         "CreateBackup" => ops::create_backup(state, &actor, &params).await?,
         "DescribeBackups" => ops::describe_backups(state, &actor, &params).await?,
         "RestoreBackup" => ops::restore_backup(state, &actor, &params).await?,
-        "DescribeInstanceAttribute" => ops::describe_instance_attribute(state, &params).await?,
+        "DescribeInstanceAttribute" => instance_attrs::describe_instance_attribute(state, &params).await?,
         "CreateBackupSchedule" => schedules::create_backup_schedule(state, &actor, &params).await?,
         "DescribeBackupSchedules" => schedules::describe_backup_schedules(state, &actor, &params).await?,
         "DeleteBackupSchedule" => schedules::delete_backup_schedule(state, &actor, &params).await?,
@@ -878,7 +962,7 @@ async fn dispatch(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, 
         "DeleteWebhook" => capacity::delete_webhook(state, &actor, &params).await?,
         "FenceHost" => capacity::fence_host(state, &actor, &params).await?,
         "DeleteLoadBalancer" => volume_attrs::delete_load_balancer(state, &actor, &params).await?,
-        "ModifyInstanceAttribute" => more::modify_instance_attribute(state, &actor, &params).await?,
+        "ModifyInstanceAttribute" => instance_attrs::modify_instance_attribute(state, &actor, &params).await?,
         "DescribeAddresses" => addresses::describe_addresses(state, &actor, &params).await?,
         "AllocateAddress" => addresses::allocate_address(state, &actor, &params).await?,
         "AssociateAddress" => addresses::associate_address(state, &actor, &params).await?,
@@ -892,9 +976,9 @@ async fn dispatch(state: &AppState, actor: &AuthUser, params: &BTreeMap<String, 
         "ModifyImageAttribute" => images::modify_image_attribute(state, &actor, &params).await?,
         "DescribeAvailabilityZones" => fleet::describe_availability_zones(state, &actor, &params).await?,
         "DescribeAccountAttributes" => fleet::describe_account_attributes(state, &actor, &params).await?,
-        "DescribeLaunchTemplates" => fleet::describe_launch_templates(state, &actor, &params).await?,
-        "DescribeLaunchTemplateVersions" => fleet::describe_launch_template_versions(state, &actor, &params).await?,
-        "CreateLaunchTemplate" => fleet::create_launch_template(state, &actor, &params).await?,
+        "DescribeLaunchTemplates" => launch_templates::describe_launch_templates(state, &actor, &params).await?,
+        "DescribeLaunchTemplateVersions" => launch_templates::describe_launch_template_versions(state, &actor, &params).await?,
+        "CreateLaunchTemplate" => launch_templates::create_launch_template(state, &actor, &params).await?,
         "DeleteLaunchTemplate" => fleet::delete_launch_template(state, &actor, &params).await?,
         "SleepInstances" => machina::sleep_instances(state, &actor, &params).await?,
         "WakeInstances" => machina::wake_instances(state, &actor, &params).await?,
@@ -1026,6 +1110,9 @@ mod tests {
             include_str!("gateways.rs"),
             include_str!("groups.rs"),
             include_str!("images.rs"),
+            include_str!("images_ext.rs"),
+            include_str!("instance_attrs.rs"),
+            include_str!("launch_templates.rs"),
             include_str!("lb_members.rs"),
             include_str!("machina.rs"),
             include_str!("monitoring.rs"),
@@ -1033,13 +1120,16 @@ mod tests {
             include_str!("netcommon.rs"),
             include_str!("ops.rs"),
             include_str!("peering.rs"),
+            include_str!("placement_groups.rs"),
             include_str!("platform.rs"),
             include_str!("route_tables.rs"),
             include_str!("run_options.rs"),
             include_str!("schedules.rs"),
             include_str!("sg_rules.rs"),
+            include_str!("spot.rs"),
             include_str!("status.rs"),
             include_str!("volume_attrs.rs"),
+            include_str!("volumes_ext.rs"),
             include_str!("vpc.rs"),
         ];
         let mut checked = 0;

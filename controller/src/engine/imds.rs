@@ -16,11 +16,12 @@ use crate::state::AppState;
 
 const TICK_SECS: u64 = 30;
 
-type Row = (Uuid, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Uuid);
+/// The last field is the instance's metadata endpoint switch (`ModifyInstanceMetadataOptions`).
+type Row = (Uuid, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Uuid, bool);
 
 /// One agent entry from an instance row; None when the instance has no known address yet.
 pub fn entry(row: &Row) -> Option<Value> {
-    let (id, name, spec_json, guest_ip, guest_ips, flavor, project, _host) = row;
+    let (id, name, spec_json, guest_ip, guest_ips, flavor, project, _host, enabled) = row;
     let mut ips: Vec<String> = guest_ip.iter().filter(|a| !a.is_empty()).cloned().collect();
     for a in guest_ips.as_deref().and_then(|s| serde_json::from_str::<Vec<String>>(s).ok()).unwrap_or_default() {
         let a = a.split('/').next().unwrap_or(&a).to_string();
@@ -42,6 +43,7 @@ pub fn entry(row: &Row) -> Option<Value> {
         "public_keys": key,
         "user_data": ci["user_data"].as_str(),
         "project": project.clone().unwrap_or_default(),
+        "enabled": enabled,
     }))
 }
 
@@ -58,8 +60,8 @@ pub fn group_by_host(rows: &[Row]) -> BTreeMap<Uuid, Vec<Value>> {
 
 async fn push_all(pool: &DbPool) -> anyhow::Result<()> {
     let rows: Vec<Row> = crate::db::query_as(
-        "SELECT v.id, v.name, v.spec_json, v.guest_ip, v.guest_ips, f.name, v.project, v.host_id \
-         FROM vms v LEFT JOIN flavors f ON f.id = v.flavor_id \
+        "SELECT v.id, v.name, v.spec_json, v.guest_ip, v.guest_ips, f.name, v.project, v.host_id, COALESCE(a.metadata_endpoint, TRUE) \
+         FROM vms v LEFT JOIN flavors f ON f.id = v.flavor_id LEFT JOIN ec2_instance_attrs a ON a.vm_id = v.id \
          WHERE v.host_id IS NOT NULL AND COALESCE(v.inventory_source, 'libvirt') != 'kubevirt'",
     )
     .fetch_all(pool)
@@ -115,6 +117,7 @@ mod tests {
             Some("small".into()),
             Some("default".into()),
             Uuid::nil(),
+            true,
         )
     }
 
@@ -133,6 +136,14 @@ mod tests {
         assert_eq!(e["public_keys"], json!(["ssh-ed25519 AAAA k"]));
         assert_eq!(e["user_data"], "#!/bin/sh\necho hi");
         assert_eq!(e["instance_type"], "small");
+        assert_eq!(e["enabled"], true);
+    }
+
+    #[test]
+    fn a_disabled_metadata_endpoint_is_sent_to_the_agent() {
+        let mut r = row(Some("10.0.0.1"), None, None);
+        r.8 = false;
+        assert_eq!(entry(&r).unwrap()["enabled"], false);
     }
 
     #[test]

@@ -38,6 +38,13 @@ pub struct Instance {
     pub user_data: Option<String>,
     #[serde(default)]
     pub project: String,
+    /// `false` when the instance's metadata endpoint was switched off (`ModifyInstanceMetadataOptions`): every request gets 404.
+    #[serde(default = "enabled")]
+    pub enabled: bool,
+}
+
+fn enabled() -> bool {
+    true
 }
 
 static STORE: RwLock<Option<HashMap<IpAddr, Instance>>> = RwLock::new(None);
@@ -115,6 +122,9 @@ async fn handle(ConnectInfo(peer): ConnectInfo<SocketAddr>, uri: Uri) -> Respons
     let Some(inst) = lookup(peer.ip()) else {
         return (StatusCode::NOT_FOUND, "no instance at your address").into_response();
     };
+    if !inst.enabled {
+        return (StatusCode::NOT_FOUND, "the metadata endpoint is disabled for this instance").into_response();
+    }
     match strip_version(uri.path()).and_then(|rest| answer(&inst, rest)) {
         Some((body, ctype)) => ([(header::CONTENT_TYPE, ctype)], body).into_response(),
         None => (StatusCode::NOT_FOUND, "not found").into_response(),
@@ -188,7 +198,20 @@ mod tests {
             public_keys: vec!["ssh-ed25519 AAAA test".into()],
             user_data: Some("#!/bin/sh\necho hi\n".into()),
             project: "default".into(),
+            enabled: true,
         }
+    }
+
+    #[test]
+    fn the_endpoint_switch_defaults_on_and_follows_the_sync() {
+        let on: Instance = serde_json::from_value(json!({ "instance_id": "i-1", "hostname": "h" })).unwrap();
+        assert!(on.enabled, "an entry without the field (an older controller) stays enabled");
+        let off: Instance = serde_json::from_value(json!({ "instance_id": "i-1", "hostname": "h", "enabled": false })).unwrap();
+        assert!(!off.enabled);
+        // `sync` keeps the field (checked on the entries it would store, not through the shared table other tests replace)
+        let list: Vec<Instance> =
+            serde_json::from_value(json!([{ "instance_id": "i-9", "hostname": "h", "ips": ["10.9.9.9"], "enabled": false }])).unwrap();
+        assert!(!list[0].enabled);
     }
 
     #[test]

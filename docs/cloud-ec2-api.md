@@ -21,7 +21,7 @@ actions under *More actions* and *Run, terminate and tags* below. Any other acti
 ## For every client: DryRun, ClientToken, filters, pages
 - **`DryRun=true`** on any action answers what the real call would, without doing it: `UnauthorizedOperation` when the key's role may not
   do it, otherwise `DryRunOperation` (HTTP 412, as AWS). Only the role is checked; parameters are validated by the real call.
-- **`ClientToken`** on `RunInstances` and `CreateLaunchTemplate`: a retry with the same token and the same parameters returns the first
+- **`ClientToken`** on `RunInstances`, `CreateLaunchTemplate`, `CreateFleet` and `RequestSpotInstances`: a retry with the same token and the same parameters returns the first
   answer (no second instance); the same token with different parameters is `IdempotentParameterMismatch`; a retry while the first call
   is still running is `ConcurrentIdempotentRequest`. A failed call frees its token. Tokens are per access-key user and kept for a day
   (table `ec2_client_tokens`).
@@ -149,7 +149,7 @@ Volumes (`DescribeVolumes`, `CreateVolume`, `DeleteVolume`, `AttachVolume`, `Det
 security groups (`DescribeSecurityGroups`, `CreateSecurityGroup`, `DeleteSecurityGroup`, `Authorize` and `Revoke` for ingress
 and egress, with CIDR or group peers), images (`DescribeImages`), networking (`DescribeVpcs`, `DescribeSubnets`,
 `DescribeNetworkInterfaces`), key pairs (`ImportKeyPair` with base64 public key material, `DeleteKeyPair`), and instances
-(`RebootInstances`, `ModifyInstanceAttribute` for `InstanceType`). Each maps onto the REST handler, so permissions,
+(`RebootInstances`, `ModifyInstanceAttribute`, see below). Each maps onto the REST handler, so permissions,
 validation and audit are the same. Filters: see the table above.
 
 ## Run, terminate and tags
@@ -206,8 +206,8 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
   `DeregisterInstancesFromLoadBalancer`, `ConfigureHealthCheck`.
 - Interfaces, grow, backups: `CreateNetworkInterface` (`SubnetId` or `NetworkId`; attaches when `InstanceId` is set),
   `DeleteNetworkInterface`, `AttachNetworkInterface`, `DetachNetworkInterface` and the address and attribute calls (see
-  [VPC networking](#vpc-networking)), `ModifyVolume` (grow only), `CreateBackup` / `DescribeBackups` / `RestoreBackup` (Machina backup records, not EBS snapshots),
-  `DescribeInstanceAttribute` (`instanceType`, `groupSet`, `disableApiTermination`).
+  [VPC networking](#vpc-networking)), `ModifyVolume` (grow, plus type/IOPS/throughput recorded, see below), `CreateBackup` / `DescribeBackups` / `RestoreBackup` (Machina backup records, not EBS snapshots),
+  `DescribeInstanceAttribute` (every attribute, see below).
 - Schedules and game days: `CreateBackupSchedule` / `DescribeBackupSchedules` / `DeleteBackupSchedule` / `VerifyBackup`,
   `CreateVmSchedule` / `DescribeVmSchedules` / `DeleteVmSchedule` (`ActionName` is `start`, `shutdown`, `stop` or `snapshot`),
   `CreateMaintenanceSchedule` / `DescribeMaintenanceSchedules` / `DeleteMaintenanceSchedule` (host maintenance, admin),
@@ -243,10 +243,70 @@ All of these take `DryRun`, filters (names are listed per describe; unknown ones
 and tags through `TagSpecification` and `CreateTags`. The `aws` Terraform provider cannot pass Machina's `ProjectId` to `CreateVpc`: create
 the VPC and its subnets through the REST API or `boto3`-free tooling and look them up as data in the module.
 
+## Instances, volumes, images, launch templates, placement groups, spot and fleets
+Each parameter below is **enforced**, **recorded** (kept and read back, so Terraform shows no difference, but with no effect on the
+guest) or **refused** (`UnsupportedOperation`). Nothing is accepted and then ignored.
+
+**Instance attributes** (`ModifyInstanceAttribute`, `DescribeInstanceAttribute`; both wire forms, `X.Value=` and `Attribute=`/`Value=`):
+
+| Attribute | Behaviour |
+|---|---|
+| `InstanceType` | enforced (change type, the instance must be stopped as in the REST call) |
+| `DisableApiTermination` | enforced: `TerminateInstances` answers `OperationNotPermitted` (also for a fleet's `DeleteFleets`); also on `RunInstances` |
+| `GroupId.N` | enforced (replaces the security groups) |
+| `VCpus`, `MemoryMiB` (Machina extension) | enforced through the REST resize tasks |
+| `EbsOptimized` | recorded |
+| `SourceDestCheck` | `true` accepted; `false` refused |
+| `InstanceInitiatedShutdownBehavior` | `stop` accepted; `terminate` refused |
+| `UserData` | refused: the cloud-init seed is built when the instance is created |
+
+`MonitorInstances` / `UnmonitorInstances` record the flag (metrics are always collected at one granularity). `ModifyInstanceMetadataOptions`:
+`HttpEndpoint=disabled` is **enforced** (the agent answers 404 to that instance within 30 s); `HttpPutResponseHopLimit` is recorded;
+`HttpTokens=required`, IPv6 and instance-metadata tags are refused (the metadata service has no session tokens). `GetConsoleOutput`
+returns the instance's **QEMU log** (the guest's serial output is not captured); `GetConsoleScreenshot` is refused; `GetPasswordData`
+answers empty; `DescribeInstanceCreditSpecifications` answers `standard`.
+
+**Volumes and snapshots.** `ModifyVolume` grows a volume for real and records `VolumeType`, `Iops` and `Throughput` (validated with the
+EBS rules) in `ec2_volume_attrs`; `DescribeVolumes` reads them back; `DescribeVolumesModifications` lists the history. `CreateVolume`
+also records them and refuses `Encrypted`, `KmsKeyId` and `MultiAttachEnabled`, and honours `TagSpecification` of type volume.
+`DescribeVolumeStatus` reports ok / impaired from the volume state. `CreateSnapshots` snapshots every Atlas-backed volume of an
+instance (a local-pool volume refuses the whole call before anything is created). `CopySnapshot` is refused: a copy would share the
+original's backing snapshot.
+
+**Key pairs and images.** `CreateKeyPair` generates an ed25519 key, stores the public half and returns the private key once (OpenSSH
+format, `KeyMaterial`); `KeyType=rsa` and `KeyFormat=ppk` are refused. `RegisterImage` from a snapshot (`BlockDeviceMapping.1.Ebs.SnapshotId`
+on the root device) clones the snapshot into a volume the image owns and registers a template over it; `ImageLocation` is refused.
+`CopyImage` registers another private template over the same source disk (`SourceRegion` must be `machina`). `DescribeImageAttribute`
+answers `description`, `launchPermission` and `blockDeviceMapping`. `DescribeInstanceTypeOfferings` offers every type in the region and on
+every host; `DescribeInstanceTypes` adds the usual capability fields.
+
+**Launch templates with versions.** `CreateLaunchTemplate` takes `LaunchTemplateData.*` (and the older top-level `ImageId`) as version 1;
+`ProjectId` is optional (the `default` project). `CreateLaunchTemplateVersion` (with `SourceVersion`), `ModifyLaunchTemplate`
+(`DefaultVersion`), `DescribeLaunchTemplates` (by id/name) and `DescribeLaunchTemplateVersions` answer in the AWS shapes; `RunInstances`
+and `CreateFleet` resolve `$Latest`, `$Default` or a number. Template data holds the `RunInstances` parameters Machina applies (image,
+type, key, user data, security groups, block devices, placement, monitoring, metadata options, tag specifications, spot market options);
+any other member (IAM profile, network interfaces, CPU options…) is refused when the template is written. A parameter the request sets
+replaces the template's whole family. `GetLaunchTemplateData` describes a running instance.
+
+**Placement groups.** `CreatePlacementGroup` (`cluster` or `spread`; `partition` is refused), `DescribePlacementGroups`,
+`DeletePlacementGroup` (refused while instances are in it), and `Placement.GroupName` on `RunInstances`. `cluster` puts every member on
+one host (the existing members' host, else the roomiest); `spread` puts each on a different host and fails with
+`InsufficientInstanceCapacity` when there are not enough. Hosts are chosen at launch; a later migration is not re-checked.
+
+**Spot and fleets.** A spot instance is the cluster's preemptible instance. `RequestSpotInstances` (one-time only) launches at once and
+records a request per instance; `DescribeSpotInstanceRequests` derives the state from the instance (`active`, `closed` when it was
+preempted or terminated), `CancelSpotInstanceRequests` marks it cancelled (the instance keeps running, as in EC2). There is no market:
+a request never waits, `SpotPrice` is validated and never loses, and `DescribeSpotPriceHistory` is a flat synthetic price (0.005 per
+vCPU-hour, labelled in the reply). `CreateFleet` supports `Type=instant` with one launch-template config and its overrides (instance type,
+subnet, zone); `maintain` and `request` fleets are refused (they need a loop that keeps capacity: use an instance group).
+`DescribeFleets`, `DescribeFleetInstances`, `DeleteFleets` (`TerminateInstances` is required).
+
+Run `scripts/ec2/boto3_instances.py` (boto3) against a controller to exercise all of this; see `docs/claims.md` C41 for what has actually
+been run.
+
 ## Not yet
 - IMDSv2, VPC peering that forwards packets, and multi-host Elastic IP failover.
-- Console output, key generation, placement groups, spot requests and fleets: planned (see `docs/claims.md`), every one answers
-  `UnsupportedOperation` today. The `autoscaling` service accepts signed requests but has no actions yet (`InvalidAction`).
+- The `autoscaling` service accepts signed requests but has no actions yet (`InvalidAction`).
 - Egress-only gateways, VPC endpoints, transit gateways, IPv6 and the default security group of a VPC.
 - `DescribeInstances` has no `iamInstanceProfile`, `cpuOptions` or `creditSpecification`.
 - CloudWatch: only the six alarm and statistics actions above; no `PutMetricData`, `ListMetrics`, dashboards or log groups.

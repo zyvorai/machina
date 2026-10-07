@@ -107,7 +107,7 @@ pub fn dry_run_gate(action: &str, p: &Params, actor: &AuthUser) -> Result<(), Ec
 // ---- ClientToken idempotency -----------------------------------------------------------------------------------
 
 /// Actions that honour `ClientToken`.
-pub const IDEMPOTENT_ACTIONS: &[&str] = &["RunInstances", "CreateLaunchTemplate"];
+pub const IDEMPOTENT_ACTIONS: &[&str] = &["RunInstances", "CreateLaunchTemplate", "CreateFleet", "RequestSpotInstances"];
 
 pub fn validate_token(token: &str) -> Result<(), Ec2Error> {
     if token.is_empty() || token.len() > 64 || !token.bytes().all(|b| b.is_ascii_graphic()) {
@@ -337,7 +337,18 @@ pub const FILTER_SPECS: &[FilterSpec] = &[
         native_tags: true,
         filters: &[native("security-group-rule-id"), native("group-id")],
     },
-    FilterSpec { action: "DescribeInstanceTypes", native_tags: false, filters: &[field("instance-type", "instanceType")] },
+    FilterSpec {
+        action: "DescribeInstanceTypes",
+        native_tags: false,
+        filters: &[field("instance-type", "instanceType"), field("current-generation", "currentGeneration"), field("bare-metal", "bareMetal"), field("hypervisor", "hypervisor")],
+    },
+    FilterSpec {
+        action: "DescribePlacementGroups",
+        native_tags: false,
+        filters: &[field("group-name", "groupName"), field("strategy", "strategy"), field("state", "state"), field("group-id", "groupId")],
+    },
+    FilterSpec { action: "DescribeVolumeStatus", native_tags: false, filters: &[] },
+    FilterSpec { action: "DescribeLaunchTemplateVersions", native_tags: false, filters: &[] },
     FilterSpec {
         action: "DescribeTags",
         native_tags: true,

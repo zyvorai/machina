@@ -1,8 +1,7 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-//! Volume grow, instance backups, and DescribeInstanceAttribute. A backup is a Machina backup
-//! record, not an EBS snapshot. ModifyVolume only grows.
+//! Instance backups. A backup is a Machina backup record, not an EBS snapshot.
 
 use std::collections::BTreeMap;
 
@@ -26,22 +25,6 @@ fn bad(code: &'static str, msg: impl Into<String>) -> Ec2Error {
 
 fn need(p: &Params, k: &str) -> Result<String, Ec2Error> {
     p.get(k).cloned().ok_or_else(|| bad("MissingParameter", format!("The request must contain the parameter {k}")))
-}
-
-pub async fn modify_volume(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
-    require_operator(actor)?;
-    let volume = need(p, "VolumeId")?;
-    let id = resolve(state, Kind::Volume, &volume, "InvalidVolume.NotFound").await?;
-    let size: i64 = need(p, "Size")?.parse().map_err(|_| bad("InvalidParameterValue", "Size must be a number of GiB"))?;
-    let Json(row) = crate::api::volumes::extend_volume(
-        State(state.clone()),
-        Extension(actor.clone()),
-        Path(id),
-        Json(crate::api::volumes::ExtendVolumeBody { new_size_gib: size }),
-    )
-    .await
-    .map_err(api_err)?;
-    Ok(format!("<volumeModification><volumeId>{volume}</volumeId><targetSize>{}</targetSize><status>{}</status></volumeModification>", row.size_gib, xml_escape(&row.status)))
 }
 
 fn backup_id(id: Uuid) -> String {
@@ -102,37 +85,4 @@ pub async fn restore_backup(state: &AppState, actor: &AuthUser, p: &Params) -> R
         .await
         .map_err(api_err)?;
     Ok(format!("<instanceId>{}</instanceId><taskId>{}</taskId>", need(p, "InstanceId")?, xml_escape(&task.task_id)))
-}
-
-pub async fn describe_instance_attribute(state: &AppState, p: &Params) -> Result<String, Ec2Error> {
-    let want = need(p, "InstanceId")?;
-    let id = resolve(state, Kind::Vm, &want, "InvalidInstanceID.NotFound").await?;
-    let attribute = need(p, "Attribute")?;
-    match attribute.as_str() {
-        "instanceType" => {
-            let flavor: Option<String> = crate::db::query_scalar(
-                "SELECT f.name FROM vms v LEFT JOIN flavors f ON f.id = v.flavor_id WHERE v.id = ?",
-            )
-            .bind(id)
-            .fetch_optional(&state.pool)
-            .await?
-            .flatten();
-            Ok(format!("<instanceId>{want}</instanceId><instanceType><value>{}</value></instanceType>", xml_escape(flavor.as_deref().unwrap_or(""))))
-        }
-        "groupSet" => {
-            let groups: Vec<(Uuid, String)> = crate::db::query_as(
-                "SELECT g.id, g.name FROM security_groups g JOIN instance_security_groups i ON i.sg_id = g.id WHERE i.vm_id = ? ORDER BY g.name",
-            )
-            .bind(id)
-            .fetch_all(&state.pool)
-            .await?;
-            let items: String = groups
-                .iter()
-                .map(|(gid, name)| format!("<item><groupId>{}</groupId><groupName>{}</groupName></item>", ec2_id(Kind::SecurityGroup, *gid), xml_escape(name)))
-                .collect();
-            Ok(format!("<instanceId>{want}</instanceId><groupSet>{items}</groupSet>"))
-        }
-        "disableApiTermination" => Ok(format!("<instanceId>{want}</instanceId><disableApiTermination><value>false</value></disableApiTermination>")),
-        other => Err(bad("InvalidParameterValue", format!("Attribute '{other}' is not supported; use instanceType or groupSet"))),
-    }
 }

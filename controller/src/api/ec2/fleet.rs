@@ -72,57 +72,6 @@ pub async fn describe_account_attributes(state: &AppState, _actor: &AuthUser, _p
     ))
 }
 
-fn template_item(id: Uuid, project: Uuid, name: &str) -> String {
-    format!(
-        "<item><launchTemplateId>{}</launchTemplateId><launchTemplateName>{}</launchTemplateName><defaultVersionNumber>1</defaultVersionNumber><latestVersionNumber>1</latestVersionNumber><projectId>{}</projectId></item>",
-        ec2_id(Kind::LaunchTemplate, id),
-        xml_escape(name),
-        project
-    )
-}
-
-pub async fn describe_launch_templates(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
-    require_operator(actor)?;
-    let project = p.get("ProjectId").and_then(|s| Uuid::parse_str(s).ok());
-    let rows: Vec<(Uuid, Uuid, String)> = match project {
-        Some(project) => {
-            crate::db::query_as("SELECT id, project_id, name FROM cloud_launch_templates WHERE project_id = ? ORDER BY name")
-                .bind(project)
-                .fetch_all(&state.pool)
-                .await?
-        }
-        None => crate::db::query_as("SELECT id, project_id, name FROM cloud_launch_templates ORDER BY name").fetch_all(&state.pool).await?,
-    };
-    let items: String = rows.into_iter().map(|(id, project, name)| template_item(id, project, &name)).collect();
-    Ok(format!("<launchTemplates>{items}</launchTemplates>"))
-}
-
-pub async fn describe_launch_template_versions(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
-    require_operator(actor)?;
-    let id = super::more::resolve(state, Kind::LaunchTemplate, &need(p, "LaunchTemplateId")?, "InvalidLaunchTemplateId.NotFound").await?;
-    let row: Option<(Uuid, String)> = crate::db::query_as("SELECT project_id, name FROM cloud_launch_templates WHERE id = ?")
-        .bind(id)
-        .fetch_optional(&state.pool)
-        .await?;
-    let Some((project, name)) = row else {
-        return Err(bad("InvalidLaunchTemplateId.NotFound", "the launch template does not exist"));
-    };
-    Ok(format!(
-        "<launchTemplateVersionSet><item><launchTemplateId>{}</launchTemplateId><launchTemplateName>{}</launchTemplateName><versionNumber>1</versionNumber><defaultVersion>true</defaultVersion><projectId>{project}</projectId></item></launchTemplateVersionSet>",
-        ec2_id(Kind::LaunchTemplate, id),
-        xml_escape(&name)
-    ))
-}
-
-pub async fn create_launch_template(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
-    require_operator(actor)?;
-    let name = need(p, "LaunchTemplateName")?;
-    let project: Uuid = need(p, "ProjectId")?.parse().map_err(|_| bad("InvalidParameterValue", "ProjectId must be a project UUID"))?;
-    let image = p.get("ImageId").cloned().unwrap_or_default();
-    let row = create_template_row(state, actor, project, &name, template_vm(&name, &image)).await?;
-    Ok(template_item(row.0, row.1, &row.2))
-}
-
 /// The VM a launch template stores: one core, 1 GiB, the default 10 GiB root volume, the image, UEFI, no HA. Built from
 /// `VirtualMachine::new` so it carries what the validator requires (a storage volume, the current API version).
 pub(super) fn template_vm(name: &str, image: &str) -> serde_json::Value {

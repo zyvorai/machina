@@ -167,7 +167,7 @@ async fn project_of(
         Kind::NetworkAclAssociation => "SELECT v.project_id FROM ec2_acl_assocs a JOIN ec2_network_acls n ON n.id = a.acl_id JOIN cloud_vpcs v ON v.id = n.vpc_id WHERE a.id = ?",
         Kind::DhcpOptions => "SELECT project_id FROM ec2_dhcp_options WHERE id = ?",
         Kind::SecurityGroupRule => "SELECT g.project_id FROM security_group_rules r JOIN security_groups g ON g.id = r.security_group_id WHERE r.id = ?",
-        Kind::Image => return Ok(None),
+        Kind::Image | Kind::PlacementGroup | Kind::SpotRequest | Kind::Fleet => return Ok(None),
     };
     Ok(crate::db::query_scalar::<_, Option<Uuid>>(sql)
         .bind(id)

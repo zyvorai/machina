@@ -34,6 +34,8 @@ pub struct RunOptions {
     pub volumes: Vec<ExtraVolume>,
     /// Tags from `TagSpecification` of `ResourceType=volume`, for the volumes above.
     pub volume_tags: BTreeMap<String, String>,
+    /// Per-instance attributes the call sets (`ec2_instance_attrs`), written once the instance exists.
+    pub attrs: super::instance_attrs::Attrs,
 }
 
 fn truthy(v: Option<&String>) -> bool {
@@ -67,6 +69,9 @@ pub fn reject_unsupported(p: &Params) -> Result<(), Ec2Error> {
         if k == "PrivateIpAddress" || k.starts_with("Ipv6") || k.starts_with("PrivateIpAddresses") {
             return Err(unsupported(format!("{k} is not supported when launching: assign addresses through a subnet or network interface after launch")));
         }
+        if k.starts_with("SecurityGroup.") {
+            return Err(unsupported("SecurityGroup names are not supported: use SecurityGroupId.N"));
+        }
         if k.starts_with("NetworkInterface.") {
             return Err(unsupported("NetworkInterface at launch is not supported: use SubnetId and SecurityGroupId"));
         }
@@ -74,22 +79,16 @@ pub fn reject_unsupported(p: &Params) -> Result<(), Ec2Error> {
             return Err(unsupported(format!("{k} is not supported")));
         }
     }
-    if truthy(p.get("Monitoring.Enabled")) {
-        return Err(unsupported("Monitoring.Enabled=true is not supported: metrics are always collected, there is no separate detailed mode"));
-    }
-    if truthy(p.get("DisableApiTermination")) {
-        return Err(unsupported("DisableApiTermination is not supported"));
-    }
     if p.get("MetadataOptions.HttpTokens").is_some_and(|v| v == "required") {
         return Err(unsupported("MetadataOptions.HttpTokens=required is not supported: the metadata service answers without a token"));
-    }
-    if p.get("MetadataOptions.HttpEndpoint").is_some_and(|v| v == "disabled") {
-        return Err(unsupported("MetadataOptions.HttpEndpoint=disabled is not supported: the metadata service cannot be switched off per instance"));
     }
     if p.get("MetadataOptions.InstanceMetadataTags").is_some_and(|v| v == "enabled") || p.get("MetadataOptions.HttpProtocolIpv6").is_some_and(|v| v == "enabled") {
         return Err(unsupported("MetadataOptions.InstanceMetadataTags and HttpProtocolIpv6 are not supported"));
     }
-    for k in ["Placement.GroupName", "Placement.HostId", "Placement.HostResourceGroupArn", "Placement.PartitionNumber", "Placement.Affinity"] {
+    if p.get("InstanceInitiatedShutdownBehavior").is_some_and(|v| v == "terminate") {
+        return Err(unsupported("InstanceInitiatedShutdownBehavior=terminate is not supported: a guest shutdown always leaves the instance stopped"));
+    }
+    for k in ["Placement.HostId", "Placement.HostResourceGroupArn", "Placement.PartitionNumber", "Placement.Affinity"] {
         if p.get(k).is_some_and(|v| !v.is_empty()) {
             return Err(unsupported(format!("{k} is not supported")));
         }
@@ -198,7 +197,28 @@ pub fn block_devices(p: &Params) -> Result<Vec<ExtraVolume>, Ec2Error> {
 /// Everything except the placement lookup, which needs the database.
 pub fn parse(p: &Params) -> Result<RunOptions, Ec2Error> {
     reject_unsupported(p)?;
-    Ok(RunOptions { preemptible: spot(p)?, volumes: block_devices(p)?, volume_tags: check_tag_specifications(p)? })
+    Ok(RunOptions { preemptible: spot(p)?, volumes: block_devices(p)?, volume_tags: check_tag_specifications(p)?, attrs: attrs(p)? })
+}
+
+/// The attributes a launch sets: termination protection, EBS-optimized and monitoring flags (recorded), the metadata
+/// endpoint switch (enforced by the agent) and the placement group (checked against the groups that exist at launch).
+pub fn attrs(p: &Params) -> Result<super::instance_attrs::Attrs, Ec2Error> {
+    let mut a = super::instance_attrs::Attrs {
+        disable_api_termination: truthy(p.get("DisableApiTermination")),
+        ebs_optimized: truthy(p.get("EbsOptimized")),
+        monitoring: truthy(p.get("Monitoring.Enabled")),
+        metadata_endpoint: p.get("MetadataOptions.HttpEndpoint").map_or(true, |v| v != "disabled"),
+        ..Default::default()
+    };
+    if let Some(v) = p.get("MetadataOptions.HttpPutResponseHopLimit") {
+        a.metadata_hop_limit = v
+            .parse::<i64>()
+            .ok()
+            .filter(|n| (1..=64).contains(n))
+            .ok_or_else(|| Ec2Error::bad("InvalidParameterValue", "MetadataOptions.HttpPutResponseHopLimit must be between 1 and 64"))?;
+    }
+    a.placement_group = p.get("Placement.GroupName").filter(|g| !g.is_empty()).cloned();
+    Ok(a)
 }
 
 /// `Placement.AvailabilityZone` names a host (a zone is a host).
@@ -208,46 +228,13 @@ pub async fn host_for_zone(state: &AppState, p: &Params) -> Result<Option<Uuid>,
     id.map(Some).ok_or_else(|| Ec2Error::bad("InvalidParameterValue", format!("Invalid availability zone: '{zone}'")))
 }
 
-/// The launch template's defaults for a `RunInstances` call: `LaunchTemplate.LaunchTemplateId|LaunchTemplateName` plus
-/// `Version` (`1`, `$Latest` and `$Default` all name the only version a template has). Explicit parameters win.
+/// The launch template's data for a `RunInstances` call: `LaunchTemplate.LaunchTemplateId|LaunchTemplateName` plus
+/// `Version` (`$Latest`, `$Default` or a number). Parameters the request sets win, family by family.
 pub async fn with_launch_template(state: &AppState, p: &Params) -> Result<Params, Ec2Error> {
-    let by_id = p.get("LaunchTemplate.LaunchTemplateId");
-    let by_name = p.get("LaunchTemplate.LaunchTemplateName");
-    if by_id.is_none() && by_name.is_none() {
-        if p.contains_key("LaunchTemplate.Version") {
-            return Err(Ec2Error::bad("MissingParameter", "LaunchTemplate.LaunchTemplateId or LaunchTemplateName is required"));
-        }
-        return Ok(p.clone());
+    match super::launch_templates::run_params(state, p, "LaunchTemplate.").await? {
+        Some(data) => Ok(super::launch_templates::merge_under(p, &data)),
+        None => Ok(p.clone()),
     }
-    if by_id.is_some() && by_name.is_some() {
-        return Err(Ec2Error::bad("InvalidParameterCombination", "give LaunchTemplateId or LaunchTemplateName, not both"));
-    }
-    if let Some(v) = p.get("LaunchTemplate.Version") {
-        if !matches!(v.as_str(), "1" | "$Latest" | "$Default") {
-            return Err(Ec2Error::bad("InvalidLaunchTemplateId.VersionNotFound", format!("The launch template version '{v}' does not exist")));
-        }
-    }
-    let spec: String = if let Some(id) = by_id {
-        let mut conn = state.pool.acquire().await?;
-        let (kind, hex) = crate::resource_ids::parse(id).filter(|(k, _)| *k == crate::resource_ids::Kind::LaunchTemplate)
-            .ok_or_else(|| Ec2Error::bad("InvalidLaunchTemplateId.Malformed", format!("The launch template id '{id}' is not valid")))?;
-        match crate::resource_ids::resolve(&mut conn, kind, &hex).await? {
-            crate::resource_ids::Lookup::Found(uuid) => crate::db::query_scalar("SELECT spec_json FROM cloud_launch_templates WHERE id = ?")
-                .bind(uuid)
-                .fetch_one(&mut *conn)
-                .await?,
-            _ => return Err(Ec2Error::bad("InvalidLaunchTemplateId.NotFound", format!("The launch template '{id}' does not exist"))),
-        }
-    } else {
-        let name = by_name.cloned().unwrap_or_default();
-        let rows: Vec<String> = crate::db::query_scalar("SELECT spec_json FROM cloud_launch_templates WHERE name = ?").bind(&name).fetch_all(&state.pool).await?;
-        match rows.len() {
-            0 => return Err(Ec2Error::bad("InvalidLaunchTemplateName.NotFoundException", format!("The launch template '{name}' does not exist"))),
-            1 => rows.into_iter().next().unwrap_or_default(),
-            _ => return Err(Ec2Error::bad("InvalidParameterValue", format!("{name} exists in several projects: use LaunchTemplateId"))),
-        }
-    };
-    Ok(apply_template_spec(p, &spec))
 }
 
 /// Fill the parameters a template can supply (its image) without overriding what the caller sent.
@@ -286,19 +273,35 @@ mod tests {
             ("IamInstanceProfile.Name", "role"),
             ("PrivateIpAddress", "10.0.0.5"),
             ("NetworkInterface.1.DeviceIndex", "0"),
-            ("DisableApiTermination", "true"),
             ("MetadataOptions.HttpTokens", "required"),
-            ("MetadataOptions.HttpEndpoint", "disabled"),
-            ("Placement.GroupName", "pg"),
+            ("InstanceInitiatedShutdownBehavior", "terminate"),
+            ("Placement.PartitionNumber", "1"),
             ("Placement.Tenancy", "dedicated"),
             ("CpuOptions.CoreCount", "2"),
-            ("Monitoring.Enabled", "true"),
         ] {
             let e = reject_unsupported(&p(&[(k, v)])).unwrap_err();
             assert_eq!(e.code, "UnsupportedOperation", "{k}");
         }
         // values that match what the platform does anyway pass
         assert!(reject_unsupported(&p(&[("DisableApiTermination", "false"), ("MetadataOptions.HttpTokens", "optional"), ("Placement.Tenancy", "default"), ("Monitoring.Enabled", "false")])).is_ok());
+    }
+
+    #[test]
+    fn attributes_a_launch_sets_are_applied_not_refused() {
+        let a = attrs(&p(&[
+            ("DisableApiTermination", "true"),
+            ("Monitoring.Enabled", "true"),
+            ("EbsOptimized", "true"),
+            ("MetadataOptions.HttpEndpoint", "disabled"),
+            ("MetadataOptions.HttpPutResponseHopLimit", "2"),
+            ("Placement.GroupName", "pg1"),
+        ]))
+        .unwrap();
+        assert!(a.disable_api_termination && a.monitoring && a.ebs_optimized && !a.metadata_endpoint);
+        assert_eq!((a.metadata_hop_limit, a.placement_group.as_deref()), (2, Some("pg1")));
+        assert_eq!(attrs(&p(&[])).unwrap(), crate::api::ec2::instance_attrs::Attrs::default());
+        assert!(attrs(&p(&[("MetadataOptions.HttpPutResponseHopLimit", "0")])).is_err());
+        assert!(reject_unsupported(&p(&[("DisableApiTermination", "true"), ("Monitoring.Enabled", "true"), ("MetadataOptions.HttpEndpoint", "disabled"), ("Placement.GroupName", "pg")])).is_ok());
     }
 
     #[test]

@@ -135,10 +135,16 @@ pub async fn instance_extra(state: &AppState, id: Uuid) -> Result<String, Ec2Err
             )
         })
         .collect();
+    let attrs = super::instance_attrs::load(state, id).await?;
+    let group = attrs.placement_group.as_deref().map(|g| format!("<groupName>{}</groupName>", xml_escape(g))).unwrap_or_default();
     Ok(format!(
-        "<imageId>{}</imageId><placement><availabilityZone>{}</availabilityZone><tenancy>default</tenancy></placement><rootDeviceName>/dev/vda</rootDeviceName><rootDeviceType>ebs</rootDeviceType><blockDeviceMapping>{block}</blockDeviceMapping><monitoring><state>disabled</state></monitoring><metadataOptions><state>applied</state><httpTokens>optional</httpTokens><httpPutResponseHopLimit>1</httpPutResponseHopLimit><httpEndpoint>enabled</httpEndpoint></metadataOptions><networkInterfaceSet>{nics}</networkInterfaceSet><groupSet>{group_xml}</groupSet>",
+        "<imageId>{}</imageId><placement><availabilityZone>{}</availabilityZone>{group}<tenancy>default</tenancy></placement><rootDeviceName>/dev/vda</rootDeviceName><rootDeviceType>ebs</rootDeviceType><blockDeviceMapping>{block}</blockDeviceMapping><monitoring><state>{}</state></monitoring><ebsOptimized>{}</ebsOptimized><sourceDestCheck>true</sourceDestCheck><metadataOptions><state>applied</state><httpTokens>optional</httpTokens><httpPutResponseHopLimit>{}</httpPutResponseHopLimit><httpEndpoint>{}</httpEndpoint></metadataOptions><networkInterfaceSet>{nics}</networkInterfaceSet><groupSet>{group_xml}</groupSet>",
         xml_escape(&image),
-        xml_escape(&zone)
+        xml_escape(&zone),
+        if attrs.monitoring { "enabled" } else { "disabled" },
+        attrs.ebs_optimized,
+        attrs.metadata_hop_limit,
+        if attrs.metadata_endpoint { "enabled" } else { "disabled" }
     ))
 }
 

@@ -85,6 +85,7 @@ pub async fn describe_volumes(state: &AppState, p: &Params) -> Result<String, Ec
     let wanted = indexed(p, "VolumeId");
     let filters = parse_filters(p);
     let tags = tags_of(state).await?;
+    let shapes = super::volumes_ext::shapes(state).await?;
     type Row = (Uuid, String, i64, String, Option<Uuid>, Option<String>, String);
     let rows: Vec<Row> = crate::db::query_as("SELECT id, name, size_gib, status, attached_vm_id, attached_device, created_at FROM volumes ORDER BY name")
         .fetch_all(&state.pool)
@@ -125,9 +126,10 @@ pub async fn describe_volumes(state: &AppState, p: &Params) -> Result<String, Ec
             _ => String::new(),
         };
         items.push_str(&format!(
-            "<item><volumeId>{eid}</volumeId><size>{size}</size><availabilityZone>machina-a</availabilityZone><status>{state_name}</status><createTime>{}</createTime><attachmentSet>{attach}</attachmentSet>{}<volumeType>gp2</volumeType><encrypted>false</encrypted></item>",
+            "<item><volumeId>{eid}</volumeId><size>{size}</size><availabilityZone>machina-a</availabilityZone><status>{state_name}</status><createTime>{}</createTime><attachmentSet>{attach}</attachmentSet>{}{}<encrypted>false</encrypted></item>",
             xml_escape(&created),
-            tag_set(&t)
+            tag_set(&t),
+            super::volumes_ext::shape_xml(&shapes.get(&id).cloned().unwrap_or_default())
         ));
     }
     Ok(format!("<volumeSet>{items}</volumeSet>"))
@@ -136,20 +138,33 @@ pub async fn describe_volumes(state: &AppState, p: &Params) -> Result<String, Ec
 pub async fn create_volume(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
     require_operator(actor)?;
     let size: i64 = need(p, "Size")?.parse().map_err(|_| bad("InvalidParameterValue", "Size must be a number of GiB"))?;
-    let tags = parse_tags(p);
+    super::volumes_ext::reject_create_options(p)?;
+    let shape = super::volumes_ext::parse_shape(p, &super::volumes_ext::VolumeShape::default())?;
+    super::tagspec::only_types(p, &["volume"])?;
+    // the volume's own tags: `Tag.N` and the `TagSpecification` of type volume
+    let mut tags: BTreeMap<String, String> = BTreeMap::new();
+    for n in 1..=50 {
+        let Some(k) = p.get(&format!("Tag.{n}.Key")) else { break };
+        tags.insert(k.clone(), p.get(&format!("Tag.{n}.Value")).cloned().unwrap_or_default());
+    }
+    tags.extend(super::tagspec::tags_for(p, "volume"));
     let name = tags.get("Name").cloned().unwrap_or_else(|| format!("vol-{}", &Uuid::new_v4().simple().to_string()[..8]));
     let body: crate::api::volumes::CreateVolumeBody =
         serde_json::from_value(json!({ "name": name, "size_gib": size })).map_err(|e| bad("InvalidParameterValue", e.to_string()))?;
     let Json(v) = crate::api::volumes::create_volume(State(state.clone()), Extension(actor.clone()), Json(body)).await.map_err(api_err)?;
+    if shape != super::volumes_ext::VolumeShape::default() {
+        super::volumes_ext::save_shape(state, v.id, &shape).await?;
+    }
     if !tags.is_empty() {
         let mut tx = state.pool.begin().await?;
         let _ = crate::api::tags::put_tag_map(&mut tx, Kind::Volume, v.id, &tags).await?;
         tx.commit().await?;
     }
     Ok(format!(
-        "<volumeId>{}</volumeId><size>{size}</size><availabilityZone>machina-a</availabilityZone><status>{}</status><volumeType>gp2</volumeType>",
+        "<volumeId>{}</volumeId><size>{size}</size><availabilityZone>machina-a</availabilityZone><status>{}</status>{}",
         ec2_id(Kind::Volume, v.id),
-        if v.status == "available" { "available" } else { "creating" }
+        if v.status == "available" { "available" } else { "creating" },
+        super::volumes_ext::shape_xml(&shape)
     ))
 }
 
@@ -539,25 +554,6 @@ pub async fn reboot_instances(state: &AppState, actor: &AuthUser, p: &Params) ->
         let id = resolve(state, Kind::Vm, s, "InvalidInstanceID.NotFound").await?;
         let _ = crate::api::vms::reboot_vm(State(state.clone()), Extension(actor.clone()), Path(id), None).await.map_err(api_err)?;
     }
-    Ok("<return>true</return>".into())
-}
-
-pub async fn modify_instance_attribute(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {
-    require_operator(actor)?;
-    let id = resolve(state, Kind::Vm, &need(p, "InstanceId")?, "InvalidInstanceID.NotFound").await?;
-    let Some(itype) = p.get("InstanceType.Value").or_else(|| p.get("Value")) else {
-        return Err(bad("InvalidParameterValue", "only InstanceType.Value can be modified"));
-    };
-    let flavor: Option<Uuid> = crate::db::query_scalar("SELECT id FROM flavors WHERE name = ?").bind(itype).fetch_optional(&state.pool).await?;
-    let flavor = flavor.ok_or_else(|| bad("InvalidParameterValue", format!("Unknown instance type '{itype}'")))?;
-    let _ = crate::api::vms::change_vm_type(
-        State(state.clone()),
-        Extension(actor.clone()),
-        Path(id),
-        Json(crate::api::vms::ChangeTypeBody { flavor_id: flavor }),
-    )
-    .await
-    .map_err(api_err)?;
     Ok("<return>true</return>".into())
 }
 

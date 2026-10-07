@@ -32,6 +32,9 @@ pub enum Kind {
     NetworkAclAssociation,
     DhcpOptions,
     SecurityGroupRule,
+    PlacementGroup,
+    SpotRequest,
+    Fleet,
 }
 
 pub const ALL: &[Kind] = &[
@@ -54,6 +57,9 @@ pub const ALL: &[Kind] = &[
     Kind::NetworkAclAssociation,
     Kind::DhcpOptions,
     Kind::SecurityGroupRule,
+    Kind::PlacementGroup,
+    Kind::SpotRequest,
+    Kind::Fleet,
 ];
 
 impl Kind {
@@ -78,6 +84,9 @@ impl Kind {
             Kind::NetworkAclAssociation => "aclassoc",
             Kind::DhcpOptions => "dopt",
             Kind::SecurityGroupRule => "sgr",
+            Kind::PlacementGroup => "pg",
+            Kind::SpotRequest => "sir",
+            Kind::Fleet => "fleet",
         }
     }
 
@@ -103,6 +112,9 @@ impl Kind {
             Kind::NetworkAclAssociation => "network_acl_association",
             Kind::DhcpOptions => "dhcp_options",
             Kind::SecurityGroupRule => "security_group_rule",
+            Kind::PlacementGroup => "placement_group",
+            Kind::SpotRequest => "spot_instances_request",
+            Kind::Fleet => "fleet",
         }
     }
 
@@ -128,6 +140,9 @@ impl Kind {
             Kind::NetworkAclAssociation => "ec2_acl_assocs",
             Kind::DhcpOptions => "ec2_dhcp_options",
             Kind::SecurityGroupRule => "security_group_rules",
+            Kind::PlacementGroup => "ec2_placement_groups",
+            Kind::SpotRequest => "ec2_spot_requests",
+            Kind::Fleet => "ec2_fleets",
         }
     }
 
