@@ -2065,6 +2065,13 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/auth/login", post(crate::auth::login))
         .route("/ec2", post(ec2::query))
         .route("/ec2/", post(ec2::query))
+        // The same handler: the service in the request's SigV4 scope picks the action table.
+        .route("/monitoring", post(ec2::query))
+        .route("/monitoring/", post(ec2::query))
+        .route("/autoscaling", post(ec2::query))
+        .route("/autoscaling/", post(ec2::query))
+        .route("/elbv2", post(ec2::query))
+        .route("/elbv2/", post(ec2::query))
         .route("/api/v1/auth/oidc/login", get(oidc::oidc_login))
         .route("/api/v1/auth/oidc/redirect", get(oidc::oidc_login_redirect))
         .route("/api/v1/auth/oidc/callback", get(oidc::oidc_callback))

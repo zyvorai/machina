@@ -25,6 +25,7 @@ pub mod peering;
 pub mod platform;
 pub mod run_options;
 pub mod schedules;
+pub mod services;
 pub mod sigv4;
 pub mod status;
 pub mod volume_attrs;
@@ -616,22 +617,33 @@ fn respond(status: StatusCode, xml: String) -> Response {
 /// `POST /ec2` — form-encoded `Action=…`, SigV4-signed.
 pub async fn query(State(state): State<AppState>, headers: HeaderMap, uri: Uri, body: Bytes) -> Response {
     let request_id = Uuid::new_v4().to_string();
-    match handle(&state, &headers, &uri, &body, &request_id).await {
+    // The service the request is signed for picks the response and error shape; until the
+    // Authorization header is parsed it is ec2's.
+    let mut service = services::Service::Ec2;
+    match handle(&state, &headers, &uri, &body, &request_id, &mut service).await {
         Ok(xml) => respond(StatusCode::OK, xml),
-        Err(e) => respond(e.status, error_xml(&e, &request_id)),
+        Err(e) => respond(e.status, service.error_xml(&e, &request_id)),
     }
 }
 
-async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, request_id: &str) -> Result<String, Ec2Error> {
+async fn handle(
+    state: &AppState,
+    headers: &HeaderMap,
+    uri: &Uri,
+    body: &Bytes,
+    request_id: &str,
+    service: &mut services::Service,
+) -> Result<String, Ec2Error> {
     let denied = |m: &str| Ec2Error::new(StatusCode::FORBIDDEN, "AuthFailure", m.to_string());
     let auth_header = headers
         .get("authorization")
         .and_then(|v| v.to_str().ok())
         .ok_or_else(|| denied("missing Authorization header"))?;
     let auth = sigv4::parse_authorization(auth_header).map_err(|_| denied("malformed Authorization header"))?;
-    if auth.service != "ec2" {
-        return Err(denied("the credential scope must be for the ec2 service"));
-    }
+    let Some(scope) = services::Service::from_scope(&auth.service) else {
+        return Err(denied("the credential scope must be for the ec2, monitoring, autoscaling or elasticloadbalancing service"));
+    };
+    *service = scope;
     let key: Option<(String, String, String, bool)> = crate::db::query_as(
         "SELECT secret_enc, username, role, revoked FROM ec2_access_keys WHERE access_key_id = ?",
     )
@@ -665,6 +677,11 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
     let actor = AuthUser { username, role, auth_source: Some("ec2-access-key".into()) };
     let params = parse_form(std::str::from_utf8(body).map_err(|_| Ec2Error::bad("MalformedQueryString", "body is not UTF-8"))?);
     let action = params.get("Action").map(String::as_str).unwrap_or_default();
+    if scope != services::Service::Ec2 {
+        services::check_version(scope, &params)?;
+        let inner = services::dispatch_other(scope, state, &actor, &params, action).await?;
+        return Ok(scope.response_xml(action, request_id, &inner));
+    }
     foundation::dry_run_gate(action, &params, &actor)?;
     foundation::validate_filters(action, &params)?;
     let token = match params.get("ClientToken").filter(|_| foundation::IDEMPOTENT_ACTIONS.contains(&action)) {

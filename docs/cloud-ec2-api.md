@@ -12,7 +12,7 @@ export AWS_ACCESS_KEY_ID=MCAK… AWS_SECRET_ACCESS_KEY=… AWS_DEFAULT_REGION=ma
 aws ec2 describe-instances --endpoint-url https://HOST:5092/ec2   # --no-verify-ssl for the self-signed certificate
 ```
 
-The service name in the credential scope must be `ec2`; the region is not checked.
+The service name in the credential scope picks the service (see *Service endpoints*); the region is not checked.
 
 ## What works
 `DescribeInstances`, `DescribeInstanceTypes`, `DescribeTags`, `DescribeKeyPairs`, `StartInstances`, `StopInstances`, and the
@@ -47,6 +47,22 @@ actions under *More actions* and *Run, terminate and tags* below. Any other acti
 | `DescribeTags` | `key`, `value`, `resource-type`, `resource-id`, tags |
 
 Other describes keep the filters they implement and are not validated.
+
+## Service endpoints
+One handler answers `POST /ec2`, `/monitoring`, `/autoscaling` and `/elbv2` (each also with a trailing slash). The path is only an alias:
+the service in the signature's credential scope (`…/<region>/<service>/aws4_request`) decides the action table, the XML namespace, the
+API version and the error shape, so a client may also send every service to one `endpoint_url`. Any other scope gets `AuthFailure`.
+
+| scope | actions | namespace / `Version` | errors |
+|---|---|---|---|
+| `ec2` | everything on this page (the CloudWatch-style actions answer here too, for older clients) | `…/ec2…/2016-11-15/` (any `Version` accepted) | `<Response><Errors>` |
+| `monitoring` | `DescribeAlarms`, `PutMetricAlarm`, `DeleteAlarms`, `EnableAlarmActions`, `DisableAlarmActions`, `GetMetricStatistics` | `…/monitoring…/2010-08-01/` | `<ErrorResponse><Error><Type>Sender|Receiver…` |
+| `autoscaling` | none yet: every action is `InvalidAction` | `…/autoscaling…/2011-01-01/` | as `monitoring` |
+| `elasticloadbalancing` | none yet: every action is `InvalidAction` (classic ELB `2012-06-01` is refused with `InvalidParameterValue`) | `…/elasticloadbalancing…/2015-12-01/` | as `monitoring` |
+
+The `monitoring` answers are the `ec2`-shaped bodies converted to CloudWatch's shape (PascalCase tags, `<member>` lists, ISO 8601
+timestamps, no result element for the write actions); only the unit tests have compared that shape with CloudWatch's, no boto3
+cloudwatch client has parsed it yet. Signature, clock-skew, key and revocation checks are the same single path for every service.
 
 ## Security
 - Requests older or newer than 15 minutes (`X-Amz-Date`) are refused, and the signature is compared in constant time.
@@ -140,7 +156,7 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
 ## Not yet
 - IMDSv2, VPC peering that forwards packets, and multi-host Elastic IP failover.
 - Internet and NAT gateways, route-table create/associate, network ACLs, security-group-rule describe/modify, console output, key
-  generation, placement groups, spot requests and fleets, and the `autoscaling` / `elasticloadbalancing` services: planned (see
-  `docs/claims.md`), every one answers `UnsupportedOperation` today.
+  generation, placement groups, spot requests and fleets: planned (see `docs/claims.md`), every one answers `UnsupportedOperation`
+  today. The `autoscaling` and `elasticloadbalancing` services accept signed requests but have no actions yet (`InvalidAction`).
 - `DescribeInstances` has no `iamInstanceProfile`, `cpuOptions` or `creditSpecification`.
-- CloudWatch-style calls: metrics and alarms are in the REST API (`/api/v1/metrics/statistics`, `/api/v1/alarms`).
+- CloudWatch: only the six alarm and statistics actions above; no `PutMetricData`, `ListMetrics`, dashboards or log groups.

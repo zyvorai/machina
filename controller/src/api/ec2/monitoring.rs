@@ -1,8 +1,9 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-//! CloudWatch-shaped actions on the same query endpoint. boto3's cloudwatch client sends service
-//! `monitoring`; until `POST /monitoring` exists, these actions answer on `POST /ec2` too.
+//! CloudWatch-shaped actions. boto3's cloudwatch client signs for service `monitoring`; those requests
+//! reach `services::monitoring_dispatch` (`POST /monitoring`, or any alias) and the ec2-shaped bodies below
+//! are converted to CloudWatch's shape there. The actions also keep answering on `ec2` for older clients.
 //! No notification action. `INSUFFICIENT_DATA` does not fire.
 
 use std::collections::BTreeMap;
