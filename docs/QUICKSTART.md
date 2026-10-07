@@ -58,7 +58,7 @@ sudo machinactl host drain NODE                 # move VMs off before maintenanc
 sudo machinactl host remove NODE                # its token and certificate stop working
 ```
 
-**Upgrade:** take a backup, install the new packages on the controller, then on each node (controller first): `sudo apt install ./machina*_new.deb`. Configuration and data are kept. `machinactl upgrade` today is the source-tree path (`git pull` and reinstall); a version that backs up first, gates on health and rolls back is coming with the upgrade PR.
+**Upgrade:** take a backup, install the new packages on the controller, then on each node (controller first): `sudo apt install ./machina*_new.deb`. Configuration and data are kept. On a controller host, `sudo machinactl upgrade --from DIR` (a release directory) does the same in order: it takes `backup all` first, upgrades the controller, then the daemon, then the local agent, checks health after each step and rolls a failed step back by itself. `--dry-run` shows the plan first (see [INSTALL.md](INSTALL.md)).
 
 ## When something is wrong
 

@@ -11,7 +11,7 @@
 #   uninstall       Remove machina from the system
 #   deploy          Full deployment: deps → build → install → start → verify
 #   reinstall       Rebuild and reinstall: stop → build → install → start → verify
-#   upgrade         Git pull + reinstall
+#   upgrade         Back up, then upgrade controller, daemon, agent with health gates and rollback
 #   start           Start the machina-daemon service
 #   stop            Stop the service
 #   restart         Restart the service
@@ -394,21 +394,215 @@ cmd_reinstall() {
     fi
 }
 
-# ── upgrade ─────────────────────────────────────────────────────────────
+# ── upgrade: back up, then controller → daemon → agent, each behind a health gate, rolled back on failure ──
+# Needs the new binaries: --from DIR (a release directory: machina-controller, machina-daemon, machina-agent,
+# machina-bpfd, optionally web/ and VERSION) or --pull (git pull + cargo build --release, the old behaviour).
+# Controller first (it applies database migrations, so the backup is what a failed controller is rolled back to),
+# then daemon, then the local agent; remote agents are listed, never touched. A failing step is undone at once:
+# its previous binary comes back, and a failed controller also gets the pre-upgrade database back.
+UP_ROOT=/; UP_CTL=""; UP_WAIT=60; UP_HEALTH_CMD=""
+_sha() { sha256sum "$1" 2>/dev/null | cut -c1-12; }
+_up_restart() { if [[ $UP_ROOT == / ]]; then systemctl restart "$@"; fi; }
+_up_health() { # COMPONENT: 0 when it is healthy (--health-cmd replaces the built-in probe; sandbox roots have none)
+    local c="$1"
+    if [[ -n $UP_HEALTH_CMD ]]; then bash -c "$UP_HEALTH_CMD" _ "$c"; return; fi
+    if [[ $UP_ROOT != / ]]; then return 0; fi
+    case "$c" in
+        controller) curl -fsS -m 5 "$UP_CTL/api/v1/health" 2>/dev/null | grep -q '"database":"ok"' ;;
+        daemon) [[ "$(curl -sk -m 5 -o /dev/null -w '%{http_code}' "$API_URL/api/$API_VERSION/health" 2>/dev/null)" == 200 ]] ;;
+        agent) systemctl is-active --quiet machina-agent && sleep 6 && systemctl is-active --quiet machina-agent ;;
+    esac
+}
+_up_wait() { # COMPONENT: poll until healthy or UP_WAIT seconds pass
+    local until=$((SECONDS + UP_WAIT))
+    while (( SECONDS < until )); do
+        if _up_health "$1"; then return 0; fi
+        sleep 2
+    done
+    return 1
+}
+_up_version() { # DIR -> the version of a release directory (VERSION file, else the workspace Cargo.toml above it)
+    local d="$1" f
+    if [[ -f $d/VERSION ]]; then head -1 "$d/VERSION" | tr -d ' \r'; return; fi
+    for f in "$d/../../Cargo.toml" "$d/Cargo.toml"; do
+        if [[ -f $f ]]; then sed -n 's/^version = "\([^"]*\)".*/\1/p' "$f" | head -1; return; fi
+    done
+}
+_up_semver_cmp() { # A B -> prints -1, 0 or 1 (numeric x.y.z; anything else compares as equal)
+    python3 - "$1" "$2" <<'PY'
+import re, sys
+def v(s):
+    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", s or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+a, b = v(sys.argv[1]), v(sys.argv[2])
+print(0 if a is None or b is None else (a > b) - (a < b))
+PY
+}
+_up_swap() { # NEW DEST: keep DEST as DEST.prev, then put NEW in place atomically
+    if [[ -e $2 ]]; then cp -p "$2" "$2.prev"; fi
+    install -m 0755 "$1" "$2.new" && mv -f "$2.new" "$2"
+}
+_up_unswap() { if [[ -e $1.prev ]]; then mv -f "$1.prev" "$1"; fi; }
+_up_rollback() { # COMPONENT: undo one step; the controller also gets its database back
+    local c="$1" f
+    warn "rolling $c back to the version it was running before"
+    case "$c" in
+        controller) _up_unswap "$UP_BIN/machina-controller" ;;
+        daemon)
+            _up_unswap "$UP_BIN/machina-daemon"
+            if [[ -d $UP_WEB.prev ]]; then rm -rf "$UP_WEB"; mv "$UP_WEB.prev" "$UP_WEB"; fi ;;
+        agent) for f in machina-agent machina-bpfd; do _up_unswap "$UP_BIN/$f"; done ;;
+    esac
+    if [[ $c == controller ]]; then
+        if [[ -n $UP_ARCHIVE && -f $UP_ARCHIVE ]]; then
+            info "restoring the database from $UP_ARCHIVE (the new version may have migrated it)"
+            local ra=(--yes --root "$UP_ROOT"); [[ $UP_ROOT == / ]] || ra+=(--no-restart)
+            ( cmd_restore_all "$UP_ARCHIVE" "${ra[@]}" ) \
+                || warn "the restore failed: do it by hand:  sudo machinactl restore $UP_ARCHIVE"
+        else
+            warn "no backup was taken (--no-backup): the previous binary is back, but if the new version migrated the database it may not start"
+        fi
+    fi
+    case "$c" in
+        controller) _up_restart machina-controller ;;
+        daemon) _up_restart machina-daemon ;;
+        agent) _up_restart machina-bpfd machina-agent ;;
+    esac
+    if _up_wait "$c"; then ok "$c is healthy again on the previous version"; else err "$c is still unhealthy after the rollback: journalctl -u machina-$c -n 50"; fi
+}
+
 cmd_upgrade() {
     need_root
-    step "Upgrading machina"
-
-    if [[ -n "${SUDO_USER:-}" ]]; then
-        info "Pulling latest code as $SUDO_USER..."
-        su - "$SUDO_USER" -c "cd '$SCRIPT_DIR' && git pull --ff-only"
-    else
-        cd "$SCRIPT_DIR"
-        git pull --ff-only
+    local from="" pull=0 dry=0 backup=1 allow_down=0 want_agent=1 out="" bin_dir=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --from) from="${2:?}"; shift 2 ;;
+            --pull) pull=1; shift ;;
+            --dry-run) dry=1; shift ;;
+            --no-backup) backup=0; shift ;;
+            --allow-downgrade) allow_down=1; shift ;;
+            --no-agent) want_agent=0; shift ;;
+            --out) out="${2:?}"; shift 2 ;;
+            --root) UP_ROOT="${2:?}"; shift 2 ;;            # sandbox for tests: install under this directory, touch no service
+            --bin-dir) bin_dir="${2:?}"; shift 2 ;;
+            --health-wait) UP_WAIT="${2:?}"; shift 2 ;;
+            --health-cmd) UP_HEALTH_CMD="${2:?}"; shift 2 ;;  # run per step with the component name as $1 (tests / custom probes)
+            --controller-url) UP_CTL="${2:?}"; shift 2 ;;
+            *) err "unknown option for upgrade: $1"; exit 1 ;;
+        esac
+    done
+    UP_ROOT="${UP_ROOT%/}"; UP_ROOT="${UP_ROOT:-/}"
+    local base="${UP_ROOT%/}"
+    UP_BIN="${bin_dir:-$base/usr/local/bin}"; UP_WEB="$base/usr/local/share/machina/web"
+    UP_CTL="${UP_CTL:-$(_ctl_url)}"; UP_ARCHIVE=""
+    [[ -n $out ]] || out="$base$BACKUP_ALL_DIR_DEFAULT"
+    if [[ -z $from && $pull != 1 ]]; then
+        err "Usage: machinactl upgrade --from DIR [--dry-run] [--no-backup] [--no-agent] [--allow-downgrade]"
+        err "       machinactl upgrade --pull            (git pull + cargo build --release here, then upgrade from target/release)"
+        exit 1
     fi
-    echo ""
+    if [[ $pull == 1 ]]; then
+        step "Fetching and building the new version"
+        if [[ -n "${SUDO_USER:-}" ]]; then
+            su - "$SUDO_USER" -c "cd '$SCRIPT_DIR' && git pull --ff-only && ./machinactl build --no-web"
+        else
+            ( cd "$SCRIPT_DIR" && git pull --ff-only ) && cmd_build --no-web
+        fi
+        from="$SCRIPT_DIR/target/release"
+    fi
+    [[ -d $from ]] || { err "$from is not a directory"; exit 1; }
 
-    cmd_reinstall
+    step "Upgrade plan"
+    local comps=() c f label
+    for c in controller daemon agent; do
+        [[ $c == agent && $want_agent != 1 ]] && continue
+        f="machina-$c"
+        if [[ ! -x $from/$f ]]; then info "$c: no $f in $from, skipped"; continue; fi
+        if [[ ! -e $UP_BIN/$f ]]; then info "$c: $f is not installed in $UP_BIN, skipped (use the installer for a first install)"; continue; fi
+        label="$(_sha "$UP_BIN/$f") -> $(_sha "$from/$f")"
+        if cmp -s "$from/$f" "$UP_BIN/$f" && { [[ $c != agent || ! -x $from/machina-bpfd ]] || cmp -s "$from/machina-bpfd" "$UP_BIN/machina-bpfd"; }; then
+            info "$c: already on this build ($(_sha "$UP_BIN/$f"))"
+        else
+            echo "   $c: $label"; comps+=("$c")
+        fi
+    done
+    if [[ ${#comps[@]} -eq 0 ]]; then ok "everything is already on this build, nothing to do"; return 0; fi
+
+    # version skew: never go backwards by accident, and agents must not be newer than their controller
+    local newv curv hosts_json="" skew
+    newv="$(_up_version "$from")"; curv=""
+    if [[ $UP_ROOT == / ]]; then
+        curv="$(curl -fsS -m 5 "$UP_CTL/api/v1/health" 2>/dev/null | python3 -c 'import sys,json; print(json.load(sys.stdin).get("version",""))' 2>/dev/null || true)"
+        hosts_json="$(_ctl GET /api/v1/hosts 2>/dev/null || true)"
+    fi
+    info "running version: ${curv:-unknown}, new version: ${newv:-unknown}"
+    if [[ -n $newv && -n $curv ]]; then
+        skew="$(_up_semver_cmp "$newv" "$curv")"
+        if [[ $skew == -1 && $allow_down != 1 ]]; then
+            err "$newv is older than the running $curv: refusing to downgrade (--allow-downgrade overrides)"; exit 1
+        fi
+    fi
+    if [[ -n $newv && -n $hosts_json ]]; then
+        local ahead behind
+        ahead="$(printf %s "$hosts_json" | python3 -c '
+import sys, json, re
+def v(s):
+    m = re.match(r"^v?(\d+)\.(\d+)\.(\d+)", s or ""); return tuple(map(int, m.groups())) if m else None
+new = v(sys.argv[1])
+for h in json.load(sys.stdin):
+    a = v(h.get("agent_version"))
+    if new and a and a > new: print("%s (%s)" % (h["hostname"], h["agent_version"]))' "$newv")"
+        if [[ -n $ahead ]]; then err "these agents are newer than $newv, and an agent must never be newer than its controller: ${ahead//$'\n'/, }"; exit 1; fi
+        behind="$(printf %s "$hosts_json" | python3 -c '
+import sys, json
+new = sys.argv[1]
+print(", ".join("%s (%s)" % (h["hostname"], h.get("agent_version") or "?") for h in json.load(sys.stdin) if h.get("agent_version") and h["agent_version"] != new))' "$newv")"
+        [[ -z $behind ]] || info "remote agents not on $newv (not touched by this command): $behind"
+    fi
+    if [[ $backup == 1 ]]; then info "a full backup is taken first (machinactl backup all)"; else warn "--no-backup: a failed controller can only get its old binary back, not its old database"; fi
+    info "order: ${comps[*]}; each step restarts its service and waits up to ${UP_WAIT}s for it to be healthy, otherwise it is rolled back"
+    if [[ $dry == 1 ]]; then ok "dry run: nothing was changed"; return 0; fi
+
+    if [[ $backup == 1 ]]; then
+        local ba=(--root "$UP_ROOT" --out "$out")
+        ( cmd_backup_all "${ba[@]}" ) || { err "the backup failed: nothing was changed"; exit 1; }
+        UP_ARCHIVE="$(find "$out" -maxdepth 1 -name 'machina-full-*.tar.gz' -type f | sort | tail -1)"
+        [[ -f $UP_ARCHIVE ]] || { err "cannot find the backup that was just written"; exit 1; }
+    fi
+
+    local done_c=()
+    for c in "${comps[@]}"; do
+        step "Upgrading $c"
+        case "$c" in
+            controller) _up_swap "$from/machina-controller" "$UP_BIN/machina-controller" ;;
+            daemon)
+                _up_swap "$from/machina-daemon" "$UP_BIN/machina-daemon"
+                if [[ -f $from/web/index.html && -d $UP_WEB ]]; then
+                    rm -rf "$UP_WEB.prev"; cp -a "$UP_WEB" "$UP_WEB.prev"; rm -rf "$UP_WEB"; cp -a "$from/web" "$UP_WEB"
+                fi ;;
+            agent)
+                for f in machina-agent machina-bpfd; do if [[ -x $from/$f && -e $UP_BIN/$f ]]; then _up_swap "$from/$f" "$UP_BIN/$f"; fi; done ;;
+        esac
+        case "$c" in
+            controller) _up_restart machina-controller ;;
+            daemon) _up_restart machina-daemon ;;
+            agent) _up_restart machina-bpfd machina-agent ;;
+        esac
+        if _up_wait "$c"; then
+            ok "$c upgraded and healthy"; done_c+=("$c")
+        else
+            err "$c did not become healthy within ${UP_WAIT}s"
+            _up_rollback "$c"
+            if [[ ${#done_c[@]} -gt 0 ]]; then warn "already upgraded and left as they are: ${done_c[*]}"; fi
+            err "upgrade stopped at $c; nothing after it was touched"
+            exit 1
+        fi
+    done
+    if [[ $UP_ROOT == / && -f /var/lib/machina/dist/SHA256SUMS && " ${done_c[*]} " == *" agent "* ]]; then
+        ( cmd_dist publish >/dev/null 2>&1 ) && info "the new agent is published for joining nodes (/dist)" || true
+    fi
+    ok "upgraded: ${done_c[*]}"
+    [[ -z $UP_ARCHIVE ]] || info "the pre-upgrade backup is $UP_ARCHIVE  (undo everything with: sudo machinactl restore FILE after putting the *.prev binaries back)"
 }
 
 # ── verify: Post-install smoke test ─────────────────────────────────────
@@ -965,9 +1159,9 @@ cmd_host() {
             _ctl GET /api/v1/hosts | python3 -c '
 import sys, json
 rows = json.load(sys.stdin)
-print("%-26s %-16s %-10s %-5s %-6s %s" % ("NAME", "ADDRESS", "STATE", "VMS", "CPU%", "VALIDATION"))
+print("%-26s %-16s %-10s %-5s %-6s %-9s %s" % ("NAME", "ADDRESS", "STATE", "VMS", "CPU%", "AGENT", "VALIDATION"))
 for h in rows:
-    print("%-26s %-16s %-10s %-5s %-6s %s" % (h["hostname"][:26], h["address"][:16], h["state"], h["vm_count"], round(h["cpu_percent"] or 0), h["validation_status"]))'
+    print("%-26s %-16s %-10s %-5s %-6s %-9s %s" % (h["hostname"][:26], h["address"][:16], h["state"], h["vm_count"], round(h["cpu_percent"] or 0), (h.get("agent_version") or "?")[:9], h["validation_status"]))'
             ;;
         add)
             local target="${1:-}"
@@ -1326,7 +1520,7 @@ cmd_help() {
     echo "🔄 Lifecycle:"
     echo "  deploy            Full deployment: deps → build → install → start → verify (auto-sudo)"
     echo "  reinstall         Rebuild + reinstall + verify (auto-sudo)"
-    echo "  upgrade           Git pull + reinstall (auto-sudo)"
+    echo "  upgrade           --from DIR | --pull  [--dry-run]: backup, then controller, daemon, agent with health gates and rollback"
     echo ""
     echo "⚙️  Service:"
     echo "  start             Start the machina-daemon service"

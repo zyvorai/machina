@@ -93,8 +93,26 @@ work; only Ubuntu 22.04 and 26.04 and Fedora have been exercised so far. If a bi
 
 Packages: `apt install ./new.deb` / `dnf upgrade ./new.rpm`. Configuration (`/etc/machina/config.toml`,
 `/etc/default/machina-*`) and data (`/var/lib/machina`) are kept; services restart on upgrade. Offline bundle: run the new
-`install.sh` again. **Back up first** (`machina-ha.sh drill` shows the controller-database replica path; see
-[controller-ha.md](controller-ha.md)). Upgrade the controller before the agents.
+`install.sh` again. Upgrade the controller before the agents.
+
+Release directory or source checkout (controller, daemon and the agent on this machine) in one safe step:
+
+```bash
+sudo machinactl upgrade --from DIR --dry-run   # what would change, version-skew check, nothing touched
+sudo machinactl upgrade --from DIR             # DIR holds machina-controller, machina-daemon, machina-agent, machina-bpfd (+ web/, VERSION)
+sudo machinactl upgrade --pull                 # in a git checkout: git pull, cargo build --release, then upgrade
+```
+
+It takes `machinactl backup all` first (nothing is changed if the backup fails), then upgrades the **controller, then the
+daemon, then the agent**. Each step swaps the binary (the old one stays as `<binary>.prev`), restarts its service and waits
+(`--health-wait`, default 60 s) for it to be healthy: the controller must answer `/api/v1/health` with the database ok, the
+daemon its health endpoint, the agent must stay active. A step that is not healthy is **rolled back at once**: its previous
+binary returns, and a failed controller also gets the pre-upgrade database back from the backup (the new version may have
+migrated it), then the command exits 1 and nothing after that step is touched. It refuses to move to an older version
+(`--allow-downgrade` overrides) and refuses when a remote agent is newer than the new controller. Remote agents are listed
+(`machinactl host list` has an AGENT column) but not touched: upgrade them after the controller, with their package, or by
+re-running the install command from the controller (the new agent is published to `/dist` for joining nodes).
+`--no-backup` skips the backup (a failed controller then only gets its old binary back), `--no-agent` leaves the agent alone.
 
 ## Backup and restore the controller
 

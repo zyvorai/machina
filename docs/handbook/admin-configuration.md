@@ -24,6 +24,11 @@ git clone https://github.com/zyvorai/machina.git && cd machina
 `make install`, starts the `machina-daemon` service, and smoke-tests the API on
 `https://127.0.0.1:5092`.
 
+**Upgrading** a running install: `sudo machinactl upgrade --from DIR` (or `--pull` in a checkout) backs up, then upgrades the
+controller, the daemon and the local agent in that order, each behind a health gate with automatic rollback (a failed
+controller also gets its database back); `--dry-run` shows the plan and the version-skew check first. Details:
+[INSTALL.md](../INSTALL.md#upgrading).
+
 ### B. Remote deploy from a workstation
 
 `deploy-remote.sh` rsyncs sources to the remote host and compiles/installs there
