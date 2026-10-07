@@ -608,10 +608,160 @@ cmd_backup() {
         logs)
             journalctl -u machina-backup -f --no-hostname
             ;;
+        all)
+            shift || true
+            cmd_backup_all "$@"
+            ;;
         *)
-            echo "Usage: machinactl backup <now|enable|disable|status|logs>"
+            echo "Usage: machinactl backup <now|enable|disable|status|logs|all>"
             ;;
     esac
+}
+
+# ── backup all / restore: the controller database + config + secrets + certificates in one archive ──
+# What a lost controller needs to come back: the database (SQLite online copy or pg_dump), /etc/default/machina-*,
+# /etc/machina (config, TLS, first-run password), the fleet and VM-network-policy CAs and any node pki.
+BACKUP_ALL_DIR_DEFAULT=/var/backups/machina/full
+_state_paths() { # paths (relative to /) that make up the controller's state, those that exist under ROOT
+    local root="$1" p
+    # (if, not `[[ ]] && echo`: a missing path must not make the function fail under set -e / pipefail)
+    for p in etc/default/machina-platform etc/default/machina-daemon etc/machina var/lib/machina/fleet-ca var/lib/machina/dist; do
+        if [[ -e "$root/$p" ]]; then echo "$p"; fi
+    done
+    for p in "$root"/var/lib/machina/*-ca "$root"/var/lib/machina/*netpol*; do
+        if [[ -e $p ]]; then echo "${p#"$root"/}"; fi
+    done
+}
+
+cmd_backup_all() {
+    need_root
+    local out="$BACKUP_ALL_DIR_DEFAULT" keep=7 root=/
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --out) out="${2:?}"; shift 2 ;;
+            --keep) keep="${2:?}"; shift 2 ;;
+            --root) root="${2:?}"; shift 2 ;;   # sandbox for tests: read state from here
+            *) err "unknown option for backup all: $1"; exit 1 ;;
+        esac
+    done
+    local stamp work file dbfile="" backend=sqlite dburl dbpath=""
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+    work="$(mktemp -d)"; trap "rm -rf '$work'" RETURN
+    mkdir -p "$out"; chmod 700 "$out"
+    step "Backing up the controller (database, config, secrets, certificates)"
+    dburl="$(sed -n 's/^DATABASE_URL=//p' "$root/etc/default/machina-platform" 2>/dev/null | head -1)"
+    dburl="${dburl:-sqlite:///var/lib/machina/controller.db}"
+    case "$dburl" in
+        postgres://*|postgresql://*) backend=postgres ;;
+        *) dbpath="${dburl#sqlite://}"; dbpath="${dbpath%%\?*}" ;;
+    esac
+    mkdir -p "$work/files"
+    if [[ $backend == sqlite ]]; then
+        [[ -f "$root$dbpath" ]] || { err "no database file at $root$dbpath"; exit 1; }
+        command -v sqlite3 >/dev/null || { err "sqlite3 is required for an online copy (apt install sqlite3)"; exit 1; }
+        dbfile="database.sqlite"
+        sqlite3 "$root$dbpath" ".backup '$work/$dbfile'" || { err "database copy failed"; exit 1; }
+        ok "database copied online ($(du -h "$work/$dbfile" | cut -f1))"
+    else
+        local tool; tool="$(command -v machina-db 2>/dev/null || echo "$SCRIPT_DIR/scripts/db/machina-db.sh")"
+        "$tool" backup --out "$work/db" >/dev/null || { err "PostgreSQL backup failed"; exit 1; }
+        dbfile="$(cd "$work/db" && ls controller-*.dump | head -1)"; mv "$work/db/$dbfile" "$work/$dbfile"
+        ok "PostgreSQL dumped ($(du -h "$work/$dbfile" | cut -f1))"
+    fi
+    local list; list="$(_state_paths "$root" | sort -u)"
+    [[ -n $list ]] || { err "found no machina configuration under $root"; exit 1; }
+    ( cd "$root" && tar -cf - $list ) | ( cd "$work/files" && tar -xf - )
+    ok "config and certificates: $(echo "$list" | tr '\n' ' ')"
+    python3 - "$work" "$stamp" "$backend" "$dbfile" "$dbpath" <<'PY'
+import hashlib, json, os, socket, sys
+work, stamp, backend, dbfile, dbpath = sys.argv[1:6]
+files = {}
+for base in (work,):
+    for d, _, names in os.walk(base):
+        for n in names:
+            p = os.path.join(d, n)
+            rel = os.path.relpath(p, work)
+            if rel == "MANIFEST.json":
+                continue
+            files[rel] = hashlib.sha256(open(p, "rb").read()).hexdigest()
+json.dump({"format": 1, "created": stamp, "host": socket.gethostname(), "backend": backend,
+           "database": dbfile, "sqlite_path": dbpath, "files": files}, open(os.path.join(work, "MANIFEST.json"), "w"), indent=1)
+PY
+    file="$out/machina-full-$stamp.tar.gz"
+    ( umask 077 && tar -czf "$file" -C "$work" . )
+    chmod 600 "$file"
+    find "$out" -maxdepth 1 -name 'machina-full-*.tar.gz' -type f | sort | head -n -"$keep" | xargs -r rm -f
+    ok "backup written: $file ($(du -h "$file" | cut -f1)), keeping the newest $keep"
+    warn "this archive holds secrets (JWT/agent keys, CA private keys, admin password): store it somewhere private"
+}
+
+cmd_restore_all() {
+    need_root
+    local file="" yes=0 root=/ norestart=0
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --yes) yes=1; shift ;;
+            --root) root="${2:?}"; shift 2 ;;   # sandbox for tests: restore into this directory, touch no service
+            --no-restart) norestart=1; shift ;;
+            -*) err "unknown option for restore: $1"; exit 1 ;;
+            *) file="$1"; shift ;;
+        esac
+    done
+    [[ -n $file && -f $file ]] || { err "Usage: machinactl restore FILE [--yes] [--no-restart]   (FILE from: machinactl backup all)"; exit 1; }
+    local work; work="$(mktemp -d)"; trap "rm -rf '$work'" RETURN
+    tar -xzf "$file" -C "$work" || { err "cannot read $file"; exit 1; }
+    [[ -f $work/MANIFEST.json ]] || { err "$file is not a machina full backup (no MANIFEST.json)"; exit 1; }
+    step "Verifying $file"
+    python3 - "$work" <<'PY' || { err "the archive failed verification: it is damaged or was modified"; exit 1; }
+import hashlib, json, os, sys
+work = sys.argv[1]
+m = json.load(open(os.path.join(work, "MANIFEST.json")))
+bad = [r for r, h in m["files"].items() if not os.path.isfile(os.path.join(work, r)) or hashlib.sha256(open(os.path.join(work, r), "rb").read()).hexdigest() != h]
+print("backup of %s taken %s, database: %s, %d files" % (m["host"], m["created"], m["backend"], len(m["files"])))
+sys.exit(1 if bad else 0)
+PY
+    ok "checksums match"
+    if [[ $yes != 1 ]]; then
+        warn "this replaces the controller's database, configuration and certificates on this machine (the current ones are kept aside first)"
+        read -r -p "Continue? [y/N] " a; [[ $a == y || $a == Y || $a == yes ]] || { info "cancelled"; exit 1; }
+    fi
+    local backend dbfile dbpath aside stamp
+    backend="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["backend"])' "$work/MANIFEST.json")"
+    dbfile="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["database"])' "$work/MANIFEST.json")"
+    dbpath="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["sqlite_path"])' "$work/MANIFEST.json")"
+    stamp="$(date -u +%Y%m%dT%H%M%SZ)"; aside="$root/var/lib/machina/pre-restore-$stamp"
+    if [[ $root == / && $norestart != 1 ]]; then
+        step "Stopping services"
+        systemctl stop machina-controller machina-daemon 2>/dev/null || true
+    fi
+    mkdir -p "$aside"; chmod 700 "$aside"
+    local rel
+    ( cd "$work/files" && find . -mindepth 1 -maxdepth 4 -type f | sed 's#^\./##' ) | while read -r rel; do
+        if [[ -e "$root/$rel" ]]; then mkdir -p "$aside/$(dirname "$rel")"; cp -a "$root/$rel" "$aside/$rel"; fi
+    done
+    if [[ $backend == sqlite && -f "$root$dbpath" ]]; then mkdir -p "$aside/db"; cp -a "$root$dbpath" "$aside/db/"; fi
+    ok "current state kept in ${aside#"$root"}"
+    ( cd "$work/files" && tar -cf - . ) | ( cd "$root" && tar -xf - --no-same-owner )
+    chmod 600 "$root/etc/default/machina-platform" 2>/dev/null || true
+    if [[ $backend == sqlite ]]; then
+        mkdir -p "$(dirname "$root$dbpath")"
+        rm -f "$root$dbpath" "$root$dbpath-wal" "$root$dbpath-shm"
+        cp "$work/$dbfile" "$root$dbpath"
+        ok "database restored to $dbpath"
+    elif [[ $root == / ]]; then
+        local tool; tool="$(command -v machina-db 2>/dev/null || echo "$SCRIPT_DIR/scripts/db/machina-db.sh")"
+        MACHINA_DB_NO_CONTROLLER=1 "$tool" restore "$work/$dbfile" --yes || { err "PostgreSQL restore failed"; exit 1; }
+    else
+        warn "PostgreSQL dump left in the archive: $dbfile (not restored into a sandbox root)"
+    fi
+    if [[ $root == / && $norestart != 1 ]]; then
+        step "Starting services"
+        systemctl start machina-controller 2>/dev/null || true
+        systemctl start machina-daemon 2>/dev/null || true
+        sleep 4
+        if curl -fsS -m 10 http://127.0.0.1:5093/api/v1/health >/dev/null 2>&1; then ok "controller is healthy"; else warn "controller did not answer yet: journalctl -u machina-controller -n 50"; fi
+    fi
+    ok "restore complete"
 }
 
 # ── start/stop/restart/status/logs ──────────────────────────────────────
@@ -1096,6 +1246,8 @@ cmd_help() {
     echo "🛠️  Utilities:"
     echo "  verify            Post-install smoke test (API, VMs, libvirt, backup)"
     echo "  health            Deep health check (service, API, disk, libvirt, timers)"
+    echo "  backup all        One archive: controller database + config + secrets + certificates (--out DIR, --keep N)"
+    echo "  restore FILE      Restore such an archive (verifies checksums, keeps the current state aside; --yes)"
     echo "  doctor            Check system readiness (deps, tools, services)"
     echo "  preflight         Can this machine run Machina? KVM, libvirt, QEMU, ports, disk, clock; --role, --fix, --json"
     echo "  show-login        Where to sign in and the generated admin password (root)"
@@ -1169,6 +1321,7 @@ main() {
         reinstall)  cmd_reinstall "$@" ;;
         upgrade)    cmd_upgrade "$@" ;;
         backup)     cmd_backup "$@" ;;
+        restore)    cmd_restore_all "$@" ;;
         verify)     cmd_verify "$@" ;;
         health)     cmd_health "$@" ;;
         start)      cmd_start "$@" ;;

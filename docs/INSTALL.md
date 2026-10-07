@@ -94,6 +94,12 @@ Packages: `apt install ./new.deb` / `dnf upgrade ./new.rpm`. Configuration (`/et
 `install.sh` again. **Back up first** (`machina-ha.sh drill` shows the controller-database replica path; see
 [controller-ha.md](controller-ha.md)). Upgrade the controller before the agents.
 
+## Backup and restore the controller
+
+`sudo machinactl backup all` writes one archive (`/var/backups/machina/full/machina-full-<time>.tar.gz`, mode 0600, newest 7 kept; `--out DIR`, `--keep N`) holding everything a lost controller needs: the database (an online SQLite copy, or a PostgreSQL dump), `/etc/default/machina-*` (JWT and agent secrets), `/etc/machina` (config, TLS, the first-run password), the fleet and VM-network-policy CAs and published agent files, with a checksum manifest. The archive contains secrets: keep it private.
+
+`sudo machinactl restore FILE` verifies the checksums, refuses a damaged archive, keeps the current files under `/var/lib/machina/pre-restore-<time>/`, restores, restarts the controller and daemon and checks health (`--yes` skips the question). Take a backup before every upgrade.
+
 ## Uninstall
 
 `apt remove machina machina-controller machina-agent` (or `dnf remove …`) keeps your data; `apt purge` / deleting
