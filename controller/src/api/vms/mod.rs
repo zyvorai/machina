@@ -1066,6 +1066,19 @@ pub async fn adaptive_migration_decision(
     )))
 }
 
+/// `POST /api/v1/migrations/adaptive/step`: look at one running migration of a VM, decide the next safe tuning step and apply it.
+pub async fn adaptive_migration_step(
+    State(state): State<AppState>,
+    Extension(actor): Extension<AuthUser>,
+    Json(body): Json<crate::engine::adaptive_actuator::AdaptiveActuatorRequest>,
+) -> Result<Json<crate::engine::adaptive_actuator::AdaptiveActuatorResponse>, ApiError> {
+    require_operator(&actor)?;
+    crate::engine::adaptive_actuator::step(&state.pool, &body)
+        .await
+        .map(Json)
+        .map_err(|e| ApiError::bad_request(e.to_string()))
+}
+
 pub async fn migrate_precheck(
     State(state): State<AppState>,
     Extension(actor): Extension<AuthUser>,

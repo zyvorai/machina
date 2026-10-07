@@ -337,6 +337,27 @@ pub async fn migrate_vm(
     Ok(resp)
 }
 
+pub async fn get_migration_status(client: &mut AgentClient, vm: &str) -> anyhow::Result<GetMigrationStatusResponse> {
+    read_rpc("get_migration_status", client.get_migration_status(GetMigrationStatusRequest { vm_name: vm.into() })).await
+}
+
+pub async fn control_migration(
+    client: &mut AgentClient,
+    vm: &str,
+    action: &str,
+    value: u64,
+    postcopy: bool,
+) -> anyhow::Result<ControlMigrationResponse> {
+    let r = client
+        .control_migration(ControlMigrationRequest { vm_name: vm.into(), action: action.into(), value, postcopy })
+        .await?
+        .into_inner();
+    if !r.ok {
+        anyhow::bail!("{}", r.message);
+    }
+    Ok(r)
+}
+
 pub async fn clone_vm(
     client: &mut AgentClient,
     source: &str,

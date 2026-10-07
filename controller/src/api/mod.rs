@@ -1294,6 +1294,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/vms/{id}/guest-tools/install",
             post(vms::install_guest_tools),
         )
+        .route("/api/v1/migrations/adaptive/step", post(vms::adaptive_migration_step))
         .route(
             "/api/v1/vms/{id}/migrate/precheck",
             post(vms::migrate_precheck),
