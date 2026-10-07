@@ -27,7 +27,7 @@ fn need(p: &Params, k: &str) -> Result<String, Ec2Error> {
     p.get(k).cloned().ok_or_else(|| bad("MissingParameter", format!("The request must contain the parameter {k}")))
 }
 
-fn api_err(e: crate::api::ApiError) -> Ec2Error {
+pub(super) fn api_err(e: crate::api::ApiError) -> Ec2Error {
     let code = match e.status.as_u16() {
         404 => "InvalidParameterValue",
         409 => "IncorrectState",
@@ -38,7 +38,7 @@ fn api_err(e: crate::api::ApiError) -> Ec2Error {
     Ec2Error::new(e.status, code, e.message)
 }
 
-async fn resolve(state: &AppState, kind: Kind, id: &str, code: &'static str) -> Result<Uuid, Ec2Error> {
+pub(super) async fn resolve(state: &AppState, kind: Kind, id: &str, code: &'static str) -> Result<Uuid, Ec2Error> {
     let (k, hex) = resource_ids::parse(id).ok_or_else(|| bad("InvalidID", format!("The id '{id}' is not valid")))?;
     if k != kind {
         return Err(bad("InvalidID", format!("The id '{id}' is not a {} id", kind.type_name())));
