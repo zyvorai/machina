@@ -33,7 +33,7 @@ Allow port 5094 from your nodes only. The listener serves just join, the CA, hea
 
 ## 3. Add a node: one command or one click
 
-- **Web:** Platform → Hosts → **Add host**. It shows one command and a live terminal of the node joining.
+- **Web:** Platform → Hosts → **Add host** (or `/platform/enroll`). A token is created for you; the page shows the one command (with a countdown and a lifetime choice), the Ansible / cloud-init / Terraform equivalents on the Automation tab, and a live map and terminal of the node joining. When validation fails it names the failing check and its fix and offers **Re-check**. If the controller's HTTPS join listener is off, a banner says so and names `MACHINA_CONTROLLER_TLS_ADDR`.
 - **Command line, from the controller:** `sudo machinactl host add user@node` (needs SSH and sudo on the node).
 - **Paste:** run the command the wizard shows (it carries a single-use token that expires in 1 hour) on the node as a normal user with sudo.
 

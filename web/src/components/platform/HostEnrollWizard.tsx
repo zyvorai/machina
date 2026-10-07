@@ -1,88 +1,31 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
-import { useState } from 'react'
-import { Copy } from 'lucide-react'
 import PlatformStepWizard from './PlatformStepWizard'
-import JoinLivePanel from './JoinLivePanel'
-import { createEnrollmentToken } from '../../api/platform'
-import { useToastContext } from '../../contexts/ToastContext'
-import { formatUserError } from '../../utils/apiError'
-
-const STEPS = ['Token', 'Install', 'Watch it join']
+import AddMachinePanel from './enroll/AddMachinePanel'
 
 type Props = {
   open: boolean
   onClose: () => void
 }
 
+/** The same panel as the Enroll page, in a modal. */
 export default function HostEnrollWizard({ open, onClose }: Props) {
-  const toast = useToastContext()
-  const [step, setStep] = useState(0)
-  const [token, setToken] = useState('')
-  const [command, setCommand] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  const issueToken = async () => {
-    setBusy(true)
-    try {
-      const t = await createEnrollmentToken(24)
-      setToken(t.token)
-      setCommand(t.join_command ?? t.install_command ?? `curl -fsSL … | sudo machina-agent enroll ${t.token}`)
-      setStep(1)
-    } catch (e: unknown) {
-      toast.error(formatUserError(e))
-    } finally {
-      setBusy(false)
-    }
-  }
-
   return (
     <PlatformStepWizard
       open={open}
       onClose={onClose}
-      title="Enroll hypervisor host"
-      subtitle="Generate a one-time token and run the agent installer on the host."
-      steps={STEPS}
-      maxWidthClass="max-w-5xl"
-      step={step}
-      onStepChange={setStep}
-      canNext={step === 0 ? true : step === 1 ? Boolean(command) : true}
-      busy={busy}
+      title="Add a machine"
+      subtitle="Run one command on the new machine and watch it join."
+      steps={['Add a machine']}
+      maxWidthClass="max-w-6xl"
+      step={0}
+      onStepChange={() => {}}
+      canNext
       finishLabel="Done"
-      nextLabel={step === 0 ? 'Generate token' : 'Next'}
-      onNext={step === 0 ? issueToken : undefined}
       onFinish={onClose}
     >
-      {step === 0 && (
-        <p className="text-sm text-[var(--text-muted)]">
-          Machina will create an enrollment token. Run the install command on the hypervisor as root (or with sudo).
-        </p>
-      )}
-      {step === 1 && (
-        <div className="space-y-3">
-          <p className="text-xs text-[var(--text-muted)] font-mono break-all">{token}</p>
-          <pre className="text-xs bg-[var(--apple-surface)] p-3 rounded-lg overflow-x-auto text-[var(--text-secondary)]">{command}</pre>
-          <button
-            type="button"
-            className="btn-secondary text-xs inline-flex items-center gap-1"
-            onClick={() => {
-              void navigator.clipboard.writeText(command)
-              toast.success('Command copied')
-            }}
-          >
-            <Copy className="w-3 h-3" /> Copy install command
-          </button>
-        </div>
-      )}
-      {step === 2 && (
-        <div className="space-y-3">
-          <p className="text-sm text-[var(--text-muted)]">
-            Run the command on the host. Each step appears below as it happens, and the host joins the map when it is registered.
-          </p>
-          <JoinLivePanel token={token} command={command} />
-        </div>
-      )}
+      <AddMachinePanel terminalHeight={260} />
     </PlatformStepWizard>
   )
 }

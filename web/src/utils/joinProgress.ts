@@ -84,3 +84,20 @@ export function terminalLines(events: JoinEvent[]): TermLine[] {
 export function maskToken(command: string, token: string): string {
   return token ? command.split(token).join(`${token.slice(0, 9)}••••`) : command
 }
+
+const stampMs = (createdAt: string): number => Date.parse(`${createdAt.replace(' ', 'T')}Z`)
+
+/** Seconds after the first logged event at which each stage first appeared (stages with no event are left out). */
+export function stageElapsed(events: JoinEvent[]): Record<string, number> {
+  const times = events.map((e) => ({ step: e.step, t: stampMs(e.created_at) })).filter((e) => Number.isFinite(e.t))
+  if (times.length === 0) return {}
+  const start = Math.min(...times.map((e) => e.t))
+  const out: Record<string, number> = {}
+  for (const { step, t } of times) if (!(step in out)) out[step] = Math.max(0, Math.round((t - start) / 1000))
+  return out
+}
+
+/** The failed validation checks the controller logged, as `name: message` strings. */
+export function failedChecks(events: JoinEvent[]): string[] {
+  return events.filter((e) => e.step === 'check' && e.level === 'error').map((e) => e.message)
+}
