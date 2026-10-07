@@ -206,7 +206,7 @@ async fn main() -> anyhow::Result<()> {
     machina_controller::engine::vm_netpol::spawn(state.clone());
     machina_controller::engine::soc::worker::spawn(state.clone());
 
-    let app = api::router(state)
+    let app = api::router(state.clone())
         .layer(TraceLayer::new_for_http())
         .layer(CorsLayer::permissive())
         // Prevent MIME-sniffing on API responses.
