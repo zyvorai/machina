@@ -382,7 +382,9 @@ for Active Directory / LDAP.
 ## 6. TLS / certificates
 
 HTTPS on :5092 is enabled by default. The installer (`install.sh
-ensure_tls_for_https`, or `machinactl tls`) generates a self-signed cert:
+ensure_tls_for_https`) generates a self-signed certificate valid for 3650 days;
+`machinactl tls` generates one valid for 365 days (check yours with
+`openssl x509 -enddate -noout -in /etc/machina/ssl/cert.pem`). The command is:
 
 ```bash
 openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
@@ -394,7 +396,7 @@ openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes \
 and appends the `[tls]` block to `/etc/machina/config.toml`. To use a real cert,
 replace the two files and keep the paths (or point `[tls] cert_path/key_path`
 elsewhere). Because the default cert is self-signed, CLI tools use `curl -sk` /
-`insecure_tls`. Regenerate any time with `./machinactl tls`.
+`insecure_tls`. Regenerate any time with `./machinactl tls` (note: 365 days).
 
 ---
 

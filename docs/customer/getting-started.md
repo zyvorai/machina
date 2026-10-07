@@ -6,7 +6,7 @@
 |-------------|--------|
 | Linux host with KVM/libvirt | Machina daemon builds/runs on Linux |
 | URL | **`https://<host>:5092`** (TLS on by default) |
-| Login | PAM (host Linux account) or LDAP/OIDC when configured |
+| Login | Package installs: the generated `admin` user (`sudo machinactl show-login`). Source installs: PAM (host Linux account). LDAP/OIDC when configured |
 | Browser | Modern Chromium, Firefox, or Safari |
 
 ## 1. Open the dashboard
@@ -23,7 +23,8 @@ curl -sk https://localhost:5092/api/v1/health
 
 | Mode | What you do |
 |------|-------------|
-| PAM | Use your Linux username/password on the host |
+| Generated admin | Package installs: `sudo machinactl show-login` prints the URL, user and password; change it after first sign-in |
+| PAM | Source installs: use your Linux username/password on the host |
 | LDAP | Directory credentials when LDAP is enabled |
 | OIDC | SSO via `/auth/oidc/login` when configured |
 

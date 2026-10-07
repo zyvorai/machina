@@ -68,6 +68,8 @@ After installing, `sudo machinactl show-login` prints the URL, the user name and
 
 ## Adding a compute node to a fleet
 
+The short path is in [QUICKSTART.md](QUICKSTART.md): turn on the controller's join listener (`MACHINA_CONTROLLER_TLS_ADDR`), run `machinactl dist publish`, then add a node from the web (Platform → Hosts → Add host), with `machinactl host add user@node`, or by pasting the one command the wizard shows. The manual steps below do the same thing in pieces.
+
 On the controller create a one-time enrollment token (`POST /api/v1/enrollment/tokens`, admin only), then on the new host:
 
 ```bash

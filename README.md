@@ -210,6 +210,7 @@ From your laptop to a remote host (sources are rsync'd and built on the server; 
 
 | Next step | Where |
 |---|---|
+| One copy-paste path: controller, node, VM, backup | [Quickstart](docs/QUICKSTART.md) |
 | First login and workflows | [Getting started](docs/customer/getting-started.md) |
 | Every screen, explained | [Page-by-page guides](docs/customer/pages/README.md) |
 | Ports, auth, TLS, config | [Admin configuration](docs/handbook/admin-configuration.md) |
