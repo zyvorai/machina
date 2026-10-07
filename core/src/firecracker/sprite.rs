@@ -795,15 +795,16 @@ mod tests {
     /// locks in that `root_partition_extent`/`materialize_raw_disk`
     /// actually extract partition 1's content rather than handing
     /// Firecracker the whole partitioned disk.
+    /// These tests build real disk images, so they need `qemu-img` (and, for the GPT one, `sfdisk`); on a host without them they
+    /// skip rather than fail. (CI installs `qemu-utils`, so they run there.)
+    fn tool_available(tool: &str, arg: &str) -> bool {
+        Command::new(tool).arg(arg).output().map(|o| o.status.success()).unwrap_or(false)
+    }
+
     #[test]
     fn materialize_raw_disk_extracts_partition_one_from_a_gpt_disk() {
-        if !Command::new("sfdisk")
-            .arg("--version")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-        {
-            eprintln!("skipping: sfdisk not installed on this host");
+        if !tool_available("sfdisk", "--version") || !tool_available("qemu-img", "--version") {
+            eprintln!("skipping: sfdisk or qemu-img not installed on this host");
             return;
         }
         let tmp = std::env::temp_dir().join(format!("fc-part-extent-test-{}", std::process::id()));
@@ -873,6 +874,10 @@ mod tests {
 
     #[test]
     fn root_partition_extent_is_none_for_an_unpartitioned_disk() {
+        if !tool_available("qemu-img", "--version") {
+            eprintln!("skipping: qemu-img not installed on this host");
+            return;
+        }
         let tmp = std::env::temp_dir().join(format!("fc-part-extent-blank-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
         let disk = tmp.join("blank.raw");

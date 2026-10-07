@@ -256,6 +256,11 @@
       "category": "Platform / Security"
     },
     {
+      "label": "VM Network Policies",
+      "path": "/platform/zyra/security/network-policies",
+      "category": "Platform / Security"
+    },
+    {
       "label": "Reports",
       "path": "/platform/reports",
       "category": "Platform"
@@ -473,6 +478,21 @@
     {
       "label": "Identity",
       "path": "/fleet-cloud/identity",
+      "category": "Fleet Cloud"
+    },
+    {
+      "label": "Autopilot",
+      "path": "/fleet-cloud/autopilot",
+      "category": "Fleet Cloud"
+    },
+    {
+      "label": "Game days",
+      "path": "/fleet-cloud/chaos",
+      "category": "Fleet Cloud"
+    },
+    {
+      "label": "Preemptible",
+      "path": "/fleet-cloud/preemptible",
       "category": "Fleet Cloud"
     },
     {

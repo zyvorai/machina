@@ -43,7 +43,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libvirt-dev libpam0g-dev \
-            libclang-dev clang protobuf-compiler libssl-dev
+            libclang-dev clang protobuf-compiler libssl-dev qemu-utils
       # --- Hard gates: these fail the build ---
       - name: Build workspace
         working-directory: machina
@@ -98,7 +98,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libvirt-dev libpam0g-dev \
-            libclang-dev clang protobuf-compiler libssl-dev
+            libclang-dev clang protobuf-compiler libssl-dev qemu-utils
       - name: Test the controller on PostgreSQL
         working-directory: machina
         run: cargo test -p machina-controller --locked --no-default-features --features postgres
