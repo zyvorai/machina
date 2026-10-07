@@ -364,6 +364,10 @@ export interface PlatformHost {
   rack: string
   rack_u?: number | null
   tags?: string[]
+  /** Reported by newer controllers; the UI shows nothing for it when absent. */
+  agent_version?: string
+  /** How the controller reaches this host's agent; shown as a badge only when present. */
+  transport?: 'mtls' | 'token' | 'plaintext'
 }
 
 export interface PlatformHostDetail extends PlatformHost {

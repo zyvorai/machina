@@ -2,63 +2,59 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router'
-import { Plus, RefreshCw, Server, Wrench } from 'lucide-react'
+import { Link, useSearchParams } from 'react-router'
+import { Cloud, LayoutGrid, List, Plus, RefreshCw, Server } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import HostEnrollWizard from '../../components/platform/HostEnrollWizard'
 import FleetCloudImmersive from '../../components/platform/FleetCloudImmersive'
-import FinderView, { type FinderViewMode } from '../../components/platform/mac/FinderView'
+import FleetStrip from '../../components/platform/hosts/FleetStrip'
+import AttentionRail from '../../components/platform/hosts/AttentionRail'
+import HostDrawer from '../../components/platform/hosts/HostDrawer'
+import UnderlineTabs from '../../components/kit/UnderlineTabs'
 import {
   enqueueValidateHost,
-  hostMaintenance,
   getFleetLinuxHealth,
   listPlatformHosts,
   syncAllHosts,
-  syncHost,
   type FleetLinuxHostItem,
   type PlatformHost,
 } from '../../api/platform'
 import { useToastContext } from '../../contexts/ToastContext'
 import { formatUserError } from '../../utils/apiError'
 import { statusPillClasses, hubLinkClasses } from '../../utils/semanticColors'
-import HostFleetCard, { HostCommandCenter } from '../../components/platform/fleet/HostFleetCard'
+import { fleetAttention, fleetFacts, formatAge, heartbeatAgeSecs } from '../../utils/hostAttention'
+import HostFleetCard, { memoryPercent } from '../../components/platform/fleet/HostFleetCard'
 import { TahoeTableWrap } from '../../components/platform/tahoe/TahoeListKit'
 import { useExpandable } from '../../hooks/useExpandable'
 import { ExpandableToggle } from '../../components/ui/ExpandableToggle'
 
-const VIEW_KEY = 'platform-hosts-finder-view'
+type Display = 'cloud' | 'cards' | 'list'
+const DISPLAY_KEY = 'machina.hosts.display'
+
+function storedDisplay(): Display | null {
+  try {
+    const v = localStorage.getItem(DISPLAY_KEY)
+    return v === 'cloud' || v === 'cards' || v === 'list' ? v : null
+  } catch { return null }
+}
 
 export default function PlatformHosts() {
   const toast = useToastContext()
-  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const filterOffline = searchParams.get('filter') === 'offline'
   const [hosts, setHosts] = useState<PlatformHost[]>([])
   const [linuxByHost, setLinuxByHost] = useState<Record<string, FleetLinuxHostItem>>({})
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [enrollWizardOpen, setEnrollWizardOpen] = useState(false)
-  const [display, setDisplay] = useState<'cards' | 'cloud'>(() => {
-    try { return localStorage.getItem('machina.hosts.display') === 'cloud' ? 'cloud' : 'cards' } catch { return 'cards' }
-  })
-  useEffect(() => {
-    try { localStorage.setItem('machina.hosts.display', display) } catch { /* ignore */ }
-  }, [display])
-  const [viewMode, setViewMode] = useState<FinderViewMode>(() => {
-    try {
-      const v = localStorage.getItem(VIEW_KEY)
-      if (v === 'icons' || v === 'list' || v === 'columns') return v
-    } catch { /* ignore */ }
-    return 'icons'
-  })
+  const [pref, setPref] = useState<Display | null>(storedDisplay)
 
   const load = useCallback(async () => {
     setError(null)
-    setLoading(true)
     try {
       const [rows, linux] = await Promise.all([
         listPlatformHosts(),
@@ -76,165 +72,105 @@ export default function PlatformHosts() {
   }, [])
 
   useEffect(() => { void load() }, [load])
-  useEffect(() => {
-    try { localStorage.setItem(VIEW_KEY, viewMode) } catch { /* ignore */ }
-  }, [viewMode])
 
-  const act = async (id: string, fn: () => Promise<unknown>, label: string) => {
-    setBusy(id + label)
+  // With two or more machines the map is the point; with one, cards read better.
+  const display: Display = pref ?? (hosts.length >= 2 ? 'cloud' : 'cards')
+  const chooseDisplay = (d: Display) => {
+    setPref(d)
+    try { localStorage.setItem(DISPLAY_KEY, d) } catch { /* ignore */ }
+  }
+
+  /** Runs one action with a toast and a reload; true when it worked. */
+  const run = useCallback(async (label: string, fn: () => Promise<unknown>): Promise<boolean> => {
+    setBusy(true)
     try {
       await fn()
       toast.success(label)
       await load()
+      return true
     } catch (e: unknown) {
       toast.error(formatUserError(e))
+      return false
     } finally {
-      setBusy(null)
+      setBusy(false)
     }
-  }
+  }, [load, toast])
 
-  const online = hosts.filter((h) => h.state === 'online').length
   const visibleHosts = useMemo(() => {
     let rows = filterOffline ? hosts.filter((h) => h.state === 'offline') : hosts
     const q = search.trim().toLowerCase()
     if (q) rows = rows.filter((h) => h.hostname.toLowerCase().includes(q) || h.address?.toLowerCase().includes(q))
     return rows
   }, [hosts, filterOffline, search])
-
-  const selected = visibleHosts.find((h) => h.id === selectedId) ?? null
-  // All four Finder view modes (icons/list/columns' chip row/columns' pill row) render the same
-  // `visibleHosts`; `selected` stays looked up against the full list so an expanded-then-collapsed
-  // selection isn't lost.
   const hostList = useExpandable(visibleHosts, 30)
 
-  const toolbar = (
-    <>
-      <button type="button" className="btn-secondary text-sm" onClick={async () => {
-        try { await syncAllHosts(); toast.success('Sync all queued') } catch (e: unknown) { toast.error(formatUserError(e)) }
-      }}>Sync all</button>
-      <button type="button" aria-label="Refresh" onClick={() => void load()} className="btn-secondary text-xs"><RefreshCw className="w-4 h-4" /></button>
-    </>
+  const now = Date.now()
+  const facts = useMemo(() => fleetFacts(hosts, now), [hosts, now])
+  const attention = useMemo(() => fleetAttention(hosts, now).filter((a) => a.severity !== 'info'), [hosts, now])
+  const attentionIds = useMemo(() => new Set(attention.map((a) => a.hostId)), [attention])
+  const selected = hosts.find((h) => h.id === selectedId) ?? null
+
+  const addButton = (
+    <button type="button" className="btn-primary text-sm inline-flex items-center gap-1" onClick={() => setEnrollWizardOpen(true)} data-testid="add-machine">
+      <Plus className="w-4 h-4" /> Add machine
+    </button>
   )
 
-  const listContent = viewMode === 'list' ? (
+  const listView = (
     <TahoeTableWrap>
-      <table className="apple-table w-full text-sm" aria-label="Managed hosts">
+      <table className="apple-table w-full text-sm" aria-label="Managed hosts" data-testid="hosts-list">
         <thead>
           <tr>
             <th scope="col">Host</th>
+            <th scope="col">Address</th>
             <th scope="col" className="text-center">State</th>
             <th scope="col" className="text-center">VMs</th>
             <th scope="col" className="text-center">CPU</th>
-            <th scope="col" className="text-center">Linux</th>
+            <th scope="col" className="text-center">Memory</th>
+            <th scope="col">Heartbeat</th>
+            <th scope="col" className="text-center">Validation</th>
           </tr>
         </thead>
         <tbody>
           {hostList.shown.map((h) => (
-            <tr
-              key={h.id}
-              className={`cursor-pointer ${selectedId === h.id ? 'bg-[var(--accent)]/10' : ''}`}
-              onClick={() => setSelectedId(h.id)}
-            >
+            <tr key={h.id} className={`cursor-pointer ${selectedId === h.id ? 'bg-[var(--accent)]/10' : ''}`} onClick={() => setSelectedId(h.id)}>
               <td><Link to={`/platform/hosts/${h.id}`} className={`hover:underline ${hubLinkClasses()}`} onClick={(e) => e.stopPropagation()}>{h.hostname}</Link></td>
-              <td className="capitalize text-center">{h.state}</td>
+              <td className="font-mono text-xs">{h.address || '—'}</td>
+              <td className="capitalize text-center">{h.maintenance_mode ? 'maintenance' : h.state}</td>
               <td className="text-center">{h.vm_count}</td>
-              <td className="text-center">{h.cpu_percent != null ? `${h.cpu_percent.toFixed(0)}%` : '—'}</td>
+              <td className="text-center">{h.state === 'online' ? `${Math.round(h.cpu_percent ?? 0)}%` : '—'}</td>
+              <td className="text-center">{h.state === 'online' && memoryPercent(h) != null ? `${memoryPercent(h)}%` : '—'}</td>
+              <td className="text-xs">{formatAge(heartbeatAgeSecs(h.last_heartbeat_at, now))}</td>
               <td className="text-center">
-                {linuxByHost[h.id] ? (
-                  linuxByHost[h.id].status === 'ok' ? (
-                    <span className={`text-[10px] uppercase px-2 py-0.5 rounded border ${statusPillClasses('ok')}`}>
-                      {linuxByHost[h.id].status}
-                    </span>
-                  ) : (
-                    <Link
-                      to={`/platform/hosts/${h.id}?tab=linux`}
-                      className={`text-[10px] uppercase px-2 py-0.5 rounded border hover:underline ${statusPillClasses('warn')}`}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {linuxByHost[h.id].status}
-                    </Link>
-                  )
-                ) : '—'}
+                <span className={`text-[10px] uppercase px-2 py-0.5 rounded border ${statusPillClasses(h.validation_status === 'passed' ? 'ok' : h.validation_status === 'failed' ? 'error' : 'neutral')}`}>{h.validation_status || 'pending'}</span>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
     </TahoeTableWrap>
-  ) : (
-    <div className="flex flex-wrap gap-2">
-      {hostList.shown.map((h) => (
-        <button
-          key={h.id}
-          type="button"
-          onClick={() => setSelectedId(h.id)}
-          className={`px-3.5 py-2 rounded-full text-sm transition ${
-            selectedId === h.id
-              ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
-              : 'text-[var(--text-secondary)] bg-[var(--apple-fill-tertiary)]/50 hover:bg-[var(--apple-fill-tertiary)]'
-          }`}
-        >
-          {h.hostname}
-        </button>
-      ))}
-    </div>
   )
 
-  const inspector = selected ? (
-    <div className="platform-finder-inspector p-4 space-y-4">
-      <div>
-        <h2 className="font-semibold text-[var(--text-primary)]">{selected.hostname}</h2>
-        <p className="platform-finder-inspector-subtitle mt-1">{selected.address || '—'}</p>
-      </div>
-      <dl className="grid grid-cols-2 gap-2 text-xs">
-        <div><dt className="platform-finder-inspector-label">State</dt><dd className="text-[var(--text-primary)] capitalize">{selected.state}</dd></div>
-        <div><dt className="platform-finder-inspector-label">VMs</dt><dd className="text-[var(--text-primary)]">{selected.vm_count}</dd></div>
-        <div><dt className="platform-finder-inspector-label">Validation</dt><dd className="capitalize">{selected.validation_status || 'pending'}</dd></div>
-        <div><dt className="platform-finder-inspector-label">CPU</dt><dd>{selected.cpu_percent != null ? `${selected.cpu_percent.toFixed(0)}%` : '—'}</dd></div>
-      </dl>
-      <div className="flex flex-col gap-2">
-        <Link to={`/platform/hosts/${selected.id}`} className="platform-finder-inspector-cta btn-primary text-sm text-center">Open host</Link>
-        <Link
-          to={`/platform/vms?lens=topology&host=${encodeURIComponent(selected.id)}`}
-          className="btn-secondary text-xs text-center"
-        >
-          Open in Machine Finder
-        </Link>
-        <button type="button" className="btn-secondary text-xs" disabled={busy !== null} onClick={() => void act(selected.id, () => enqueueValidateHost(selected.id), 'Validation queued')}>Validate</button>
-        <button type="button" className="btn-secondary text-xs" disabled={busy !== null} onClick={() => void act(selected.id, () => syncHost(selected.id), 'Sync queued')}>Sync</button>
-        <button type="button" className="btn-secondary text-xs" disabled={busy !== null} onClick={() => void act(selected.id, () => hostMaintenance(selected.id, 'enter'), 'Maintenance entered')}>
-          <Wrench className="w-3 h-3 inline" /> Maintenance
-        </button>
-      </div>
-    </div>
-  ) : null
-
-  const columnsContent = (
-    <div className="flex flex-col gap-4 w-full">
-      <div className="flex flex-wrap gap-2">
-        {hostList.shown.map((h) => (
-          <button
-            key={h.id}
-            type="button"
-            onClick={() => setSelectedId(h.id)}
-            className={`px-3.5 py-2 rounded-full text-sm transition ${
-              selectedId === h.id
-                ? 'bg-[var(--accent-soft)] text-[var(--accent)]'
-                : 'text-[var(--text-secondary)] bg-[var(--apple-fill-tertiary)]/50 hover:bg-[var(--apple-fill-tertiary)]'
-            }`}
-          >
-            {h.hostname}
-          </button>
-        ))}
-      </div>
-      <div className="w-full min-w-0">
-        {selected ? inspector : <p className="platform-finder-inspector platform-finder-inspector-empty p-4 text-[var(--text-muted)]">Select a host</p>}
-      </div>
-    </div>
+  const body = (
+    <>
+      {display === 'cloud' && (
+        <section aria-label="Machines in this cloud" data-testid="hosts-cloud-map" className="w-full">
+          <FleetCloudImmersive hosts={visibleHosts} selectedId={selectedId} onSelect={setSelectedId} attentionIds={attentionIds} showDetail={false} />
+        </section>
+      )}
+      {display === 'cards' && (
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 w-full nl-stagger" data-testid="host-fleet-panels">
+          {hostList.shown.map((h) => (
+            <HostFleetCard key={h.id} host={h} linux={linuxByHost[h.id]} selected={selectedId === h.id} onSelect={() => setSelectedId(h.id)} now={now} />
+          ))}
+        </div>
+      )}
+      {display === 'list' && listView}
+      {display !== 'cloud' && hostList.showToggle && (
+        <ExpandableToggle expanded={hostList.expanded} hidden={hostList.hidden} listId={hostList.listId} onToggle={hostList.toggle} noun="hosts" />
+      )}
+    </>
   )
-
-  const totalVms = hosts.reduce((s, h) => s + h.vm_count, 0)
-  const fleetTone = online === hosts.length && hosts.length > 0 ? 'ok' : online === 0 && hosts.length > 0 ? 'error' : 'warn'
 
   return (
     <PageLayout
@@ -242,92 +178,64 @@ export default function PlatformHosts() {
       error={error}
       loading={loading && hosts.length === 0}
       title={filterOffline ? 'Offline hosts' : 'Hosts'}
-      subtitle={
-        <span aria-live="polite" className="flex flex-wrap items-center gap-2 text-sm">
-          <span className={statusPillClasses(fleetTone)}>{online} / {hosts.length} online</span>
-          <span className="text-[var(--text-muted)]">{totalVms} VM{totalVms === 1 ? '' : 's'} fleet-wide</span>
-          {filterOffline && <span className="text-[var(--text-muted)]">Showing offline only</span>}
-        </span>
-      }
+      subtitle={<span aria-live="polite" className="text-sm text-[var(--text-muted)]">{filterOffline ? 'Showing offline only' : 'Every machine in this cloud, and what needs you'}</span>}
       icon={<Server className="w-6 h-6 text-[var(--text-muted)]" />}
       actions={
         <>
-          <button type="button" className="btn-secondary text-sm" onClick={async () => {
-            try { await syncAllHosts(); toast.success('Sync all queued') } catch (e: unknown) { toast.error(formatUserError(e)) }
-          }}>Sync all</button>
+          <button type="button" className="btn-secondary text-sm" onClick={() => void run('Sync all queued', () => syncAllHosts())}>Sync all</button>
           <button type="button" aria-label="Refresh" onClick={() => void load()} className="btn-secondary text-xs"><RefreshCw className="w-4 h-4" /></button>
-          {!filterOffline && (
-            <button type="button" className="btn-primary text-sm inline-flex items-center gap-1" onClick={() => setEnrollWizardOpen(true)}>
-              <Plus className="w-4 h-4" /> Add host
-            </button>
-          )}
+          {!filterOffline && addButton}
         </>
       }
       contentClassName="space-y-4"
     >
-      {hosts.length > 0 && (
-        <div role="tablist" aria-label="Hosts display" className="inline-flex rounded-lg border border-white/10 p-0.5 text-xs">
-          {(['cards', 'cloud'] as const).map((m) => (
-            <button key={m} type="button" role="tab" aria-selected={display === m} data-testid={`hosts-display-${m}`}
-              className={`px-3 py-1 rounded-md ${display === m ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)]'}`}
-              onClick={() => setDisplay(m)}>{m === 'cards' ? 'Cards' : 'Cloud map'}</button>
-          ))}
-        </div>
-      )}
-      {display === 'cloud' && hosts.length > 0 && (
-        <section aria-label="Machines in this cloud" data-testid="hosts-cloud-map" className="w-full">
-          <FleetCloudImmersive hosts={hosts} selectedId={selectedId} onSelect={setSelectedId} />
-        </section>
-      )}
-      {display === 'cards' && viewMode === 'icons' && visibleHosts.length > 0 && (
-        <div className="flex flex-col gap-4 w-full" data-testid="host-fleet-panels">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 w-full nl-stagger">
-            {hostList.shown.map((h) => (
-              <HostFleetCard
-                key={h.id}
-                host={h}
-                linux={linuxByHost[h.id]}
-                selected={selectedId === h.id}
-                onSelect={() => setSelectedId(h.id)}
+      {hosts.length === 0 && !loading && !error ? (
+        <PlatformEmptyState icon={Server} title="No hosts enrolled" subtitle="Add a hypervisor to start managing VMs.">
+          {addButton}
+        </PlatformEmptyState>
+      ) : (
+        <>
+          <FleetStrip facts={facts} />
+          <AttentionRail items={attention} busy={busy} onSelect={setSelectedId} onRecheck={(id) => void run('Validation queued', () => enqueueValidateHost(id))} />
+
+          {hosts.length === 1 && !filterOffline && (
+            <section data-testid="first-run-card" className="rounded-2xl border border-dashed border-[var(--accent)]/50 bg-[var(--accent)]/5 p-5 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="m-0 text-base font-semibold text-[var(--text-primary)]">Add your second machine</h2>
+                <p className="m-0 mt-1 text-sm text-[var(--text-secondary)]">One command on the new machine; you watch it join, live. VMs can then move between machines.</p>
+              </div>
+              {addButton}
+            </section>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="min-w-0 flex-1">
+              <UnderlineTabs<Display>
+                label="Hosts display"
+                value={display}
+                onChange={chooseDisplay}
+                tabs={[
+                  { id: 'cloud', label: 'Cloud map', icon: <Cloud className="w-4 h-4" /> },
+                  { id: 'cards', label: 'Cards', icon: <LayoutGrid className="w-4 h-4" /> },
+                  { id: 'list', label: 'List', icon: <List className="w-4 h-4" /> },
+                ]}
               />
-            ))}
+            </div>
+            <input type="search" aria-label="Filter hosts" placeholder="Filter hosts…" value={search} onChange={(e) => setSearch(e.target.value)} className="input-field text-sm w-48" data-testid="hosts-filter" />
           </div>
-          {selected ? <HostCommandCenter host={selected} linux={linuxByHost[selected.id]} /> : null}
-        </div>
+
+          {visibleHosts.length === 0 ? (
+            <PlatformEmptyState icon={Server} title={filterOffline ? 'No offline hosts' : 'No hosts match'} subtitle={filterOffline ? 'All hypervisors are reporting heartbeats.' : 'Clear the filter to see every machine.'} />
+          ) : selected ? (
+            <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] items-start">
+              <div className="min-w-0 space-y-4">{body}</div>
+              <HostDrawer host={selected} busy={busy} run={run} onClose={() => setSelectedId(null)} now={now} />
+            </div>
+          ) : (
+            <div className="space-y-4">{body}</div>
+          )}
+        </>
       )}
-      {hostList.showToggle && (
-        <ExpandableToggle expanded={hostList.expanded} hidden={hostList.hidden} listId={hostList.listId} onToggle={hostList.toggle} noun="hosts" />
-      )}
-      <FinderView
-        title="Fleet"
-        search={search}
-        onSearchChange={setSearch}
-        searchPlaceholder="Filter hosts…"
-        viewMode={viewMode}
-        onViewModeChange={setViewMode}
-        toolbarActions={filterOffline ? toolbar : undefined}
-        pathSegments={[
-          { label: 'Platform', onClick: () => navigate('/platform') },
-          { label: filterOffline ? 'Offline hosts' : 'Hosts' },
-        ]}
-        listContent={viewMode === 'icons' ? null : listContent}
-        columnsContent={columnsContent}
-        inspector={inspector}
-        isEmpty={visibleHosts.length === 0 && !error}
-        emptyState={
-          <PlatformEmptyState
-            icon={Server}
-            title={filterOffline ? 'No offline hosts' : 'No hosts enrolled'}
-            subtitle={filterOffline ? 'All hypervisors are reporting heartbeats.' : 'Add a hypervisor to start managing VMs.'}
-          >
-            {!filterOffline ? (
-              <button type="button" className="tahoe-btn-primary text-sm" onClick={() => setEnrollWizardOpen(true)}>
-                Enroll host
-              </button>
-            ) : null}
-          </PlatformEmptyState>
-        }
-      />
       <HostEnrollWizard open={enrollWizardOpen} onClose={() => setEnrollWizardOpen(false)} />
     </PageLayout>
   )

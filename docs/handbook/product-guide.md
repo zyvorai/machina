@@ -205,6 +205,17 @@ Two shells share one daemon:
   Availability, Observability, Topology, GPU Command Center, Users & Groups,
   API Keys, Integrations, Marketplace, and more.
 
+  **Hosts** (`/platform/hosts`) is the fleet cockpit: a summary strip (machines online, VMs,
+  average CPU, memory, how many need attention), a **Needs attention** list that only names
+  machines that need a person (offline, failed validation, stale heartbeat, fenced, not
+  schedulable) with a **Re-check** button, and three views of the same machines: **Cloud map**
+  (default with two or more machines), **Cards** and **List**. Selecting a machine opens a side
+  panel with its address, agent address, versions, the validation checklist with the fix for each
+  failing check, and the actions: sync, enter or exit maintenance (with a "move VMs off" choice),
+  fence or unfence (asks first) and remove (asks you to type the host name). **Add machine**
+  opens the join wizard. The transport badge (mutual TLS / token) and agent version appear only
+  when the controller reports them.
+
 The login page uses PAM (Linux host accounts) by default; LDAP and OIDC SSO can
 be enabled. See [Admin & Configuration → Authentication](admin-configuration.md#5-authentication--rbac).
 

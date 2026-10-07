@@ -33,7 +33,7 @@ const ARC = (r: number, frac: number) => {
 
 /** The big picture: the controller in the middle, every machine around it with live CPU and memory
  *  rings, its VMs orbiting, its IP, and packets flowing along each link. Click a machine for details. */
-export default function FleetCloudImmersive({ hosts, selectedId, onSelect }: { hosts: ImmersiveHost[]; selectedId?: string | null; onSelect?: (id: string | null) => void }) {
+export default function FleetCloudImmersive({ hosts, selectedId, onSelect, attentionIds, showDetail = true }: { hosts: ImmersiveHost[]; selectedId?: string | null; onSelect?: (id: string | null) => void; /** Hosts that need a person: drawn with a pulsing red ring. */ attentionIds?: ReadonlySet<string>; /** The strip under the map; the Hosts page shows a drawer instead. */ showDetail?: boolean }) {
   const uid = useId().replace(/:/g, '')
   const [hover, setHover] = useState<string | null>(null)
   const pos = useMemo(() => layout(hosts.length), [hosts.length])
@@ -92,6 +92,7 @@ export default function FleetCloudImmersive({ hosts, selectedId, onSelect }: { h
             <g key={h.id} data-testid={`cloud-node-${h.hostname}`} style={{ cursor: 'pointer' }} tabIndex={0} role="button" aria-label={`${h.hostname} ${h.address ?? ''} ${h.state}`}
               onMouseEnter={() => setHover(h.id)} onMouseLeave={() => setHover(null)} onClick={() => onSelect?.(isSel ? null : h.id)}
               onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onSelect?.(isSel ? null : h.id) }}>
+              {attentionIds?.has(h.id) && <circle cx={p.x} cy={p.y} r={46} fill="none" stroke={COLOR.error} strokeWidth={2} className="fci-attn" data-testid={`cloud-attention-${h.hostname}`} />}
               {isSel && <circle cx={p.x} cy={p.y} r={58} fill="none" stroke="#0a84ff" strokeWidth={2} strokeDasharray="6 5" className="fci-ring" />}
               <g className="fci-orbit" style={{ transformOrigin: `${p.x}px ${p.y}px` }}>
                 {Array.from({ length: dots }, (_, k) => {
@@ -125,13 +126,15 @@ export default function FleetCloudImmersive({ hosts, selectedId, onSelect }: { h
           .fci-ring{transform-box:fill-box;transform-origin:center;animation:fci-rot 24s linear infinite}
           .fci-orbit{animation:fci-rot 22s linear infinite}
           .fci-pulse{animation:fci-pulse 1.6s ease-in-out infinite}
+          .fci-attn{transform-box:fill-box;transform-origin:center;animation:fci-attn 1.8s ease-out infinite}
+          @keyframes fci-attn{0%{opacity:.9;transform:scale(.92)}100%{opacity:0;transform:scale(1.25)}}
           @keyframes fci-rot{to{transform:rotate(360deg)}}
           @keyframes fci-pulse{50%{opacity:.35}}
-          @media (prefers-reduced-motion:reduce){.fci-ring,.fci-orbit,.fci-pulse{animation:none}}
+          @media (prefers-reduced-motion:reduce){.fci-ring,.fci-orbit,.fci-pulse,.fci-attn{animation:none}}
         `}</style>
       </svg>
 
-      {sel ? (
+      {!showDetail ? null : sel ? (
         <div data-testid="cloud-detail" className="rounded-xl border border-white/10 bg-[var(--apple-surface)] p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4 text-sm">
           <div><div className="text-xs text-[var(--text-muted)]">Machine</div><div className="font-semibold text-[var(--text-primary)]">{sel.hostname}</div></div>
           <div><div className="text-xs text-[var(--text-muted)]">IP address</div><div className="font-mono text-[var(--text-primary)]">{sel.address || '—'}</div></div>
