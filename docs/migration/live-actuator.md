@@ -5,8 +5,8 @@ The adaptive engine ([adaptive-engine.md](adaptive-engine.md)) only decides. The
 ## What it does
 
 - `GetMigrationStatus` (agent RPC): job statistics from `virsh domjobinfo --rawstats`.
-- `ControlMigration` (agent RPC): bandwidth (`migrate-setspeed`), maximum downtime (`migrate-setmaxdowntime`), switch to post-copy, abort (`domjobabort`), a bounded vCPU quota (`schedinfo`) and restore of the original quota.
-- `POST /api/v1/migrations/adaptive/step`: the controller takes a decision from the engine and sends it to the host that owns the VM.
+- `ControlMigration` (agent RPC): bandwidth (`migrate-setspeed`), maximum downtime (`migrate-setmaxdowntime`), switch to post-copy (`migrate-start-postcopy`), abort (`domjobabort`), and a vCPU quota (`schedinfo`) that is only ever lowered to 70-100% of a CPU per vCPU, with 100% restoring full speed.
+- `POST /api/v1/migrations/adaptive/step`: the controller takes a decision from the engine and sends it to the host that owns the VM. The agent address is read from that VM's own host row, never from the request.
 
 ## What it does not do
 
