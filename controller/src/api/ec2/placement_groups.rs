@@ -20,7 +20,6 @@ use crate::auth::{require_operator, AuthUser};
 use crate::resource_ids::{ec2_id, Kind};
 use crate::state::AppState;
 
-use super::more::resolve;
 use super::{indexed, tagspec, xml_escape, Ec2Error};
 
 type Params = BTreeMap<String, String>;
@@ -192,11 +191,6 @@ pub async fn plan_hosts(state: &AppState, group: &Group, count: usize, need_mib:
 pub async fn group_for_run(state: &AppState, p: &Params) -> Result<Option<Group>, Ec2Error> {
     let Some(name) = p.get("Placement.GroupName").filter(|n| !n.is_empty()) else { return Ok(None) };
     find(state, name).await?.map(Some).ok_or_else(|| bad("InvalidPlacementGroup.Unknown", format!("The placement group '{name}' does not exist")))
-}
-
-/// `PlacementGroup` ids resolve like other ids (for `CreateTags`).
-pub async fn resolve_id(state: &AppState, id: &str) -> Result<Uuid, Ec2Error> {
-    resolve(state, Kind::PlacementGroup, id, "InvalidPlacementGroup.Unknown").await
 }
 
 #[cfg(test)]

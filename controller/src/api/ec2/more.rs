@@ -12,7 +12,7 @@ use axum::{Extension, Json};
 use serde_json::json;
 use uuid::Uuid;
 
-use super::{indexed, parse_filters, parse_tags, xml_escape, Ec2Error, OWNER};
+use super::{indexed, parse_filters, xml_escape, Ec2Error, OWNER};
 use crate::auth::{require_operator, AuthUser};
 use crate::resource_ids::{self, ec2_id, Kind, Lookup};
 use crate::state::AppState;

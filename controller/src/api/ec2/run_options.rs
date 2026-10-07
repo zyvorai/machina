@@ -237,17 +237,6 @@ pub async fn with_launch_template(state: &AppState, p: &Params) -> Result<Params
     }
 }
 
-/// Fill the parameters a template can supply (its image) without overriding what the caller sent.
-pub fn apply_template_spec(p: &Params, spec_json: &str) -> Params {
-    let mut out = p.clone();
-    let v: serde_json::Value = serde_json::from_str(spec_json).unwrap_or_default();
-    let image = v.pointer("/spec/template_ref").and_then(|x| x.as_str()).unwrap_or_default();
-    if !image.is_empty() && !out.contains_key("ImageId") {
-        out.insert("ImageId".into(), image.to_string());
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -372,13 +361,5 @@ mod tests {
         assert!(!o.volume_tags.contains_key("Name"));
         let eni = p(&[("TagSpecification.1.ResourceType", "network-interface"), ("TagSpecification.1.Tag.1.Key", "A"), ("TagSpecification.1.Tag.1.Value", "b")]);
         assert_eq!(parse(&eni).unwrap_err().code, "UnsupportedOperation");
-    }
-
-    #[test]
-    fn launch_template_supplies_the_image_without_overriding() {
-        let spec = r#"{"spec":{"template_ref":"ubuntu-24.04"}}"#;
-        assert_eq!(apply_template_spec(&p(&[]), spec).get("ImageId").map(String::as_str), Some("ubuntu-24.04"));
-        assert_eq!(apply_template_spec(&p(&[("ImageId", "ami-9")]), spec).get("ImageId").map(String::as_str), Some("ami-9"));
-        assert!(apply_template_spec(&p(&[]), "not json").get("ImageId").is_none());
     }
 }

@@ -9,7 +9,6 @@ use std::collections::BTreeMap;
 
 use axum::extract::{Path, State};
 use axum::Extension;
-use axum::Json;
 use uuid::Uuid;
 
 use crate::auth::{require_operator, AuthUser};

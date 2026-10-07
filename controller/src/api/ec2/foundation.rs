@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use crate::auth::{require_admin, require_operator, AuthUser};
 use crate::state::AppState;
 
-use super::{page, parse_filters, xml_escape, Ec2Error};
+use super::{page, parse_filters, Ec2Error};
 
 type Params = BTreeMap<String, String>;
 
@@ -578,10 +578,6 @@ pub fn ec2_resource_type(internal: &str) -> String {
         "nat_gateway" => "natgateway".into(),
         other => other.replace('_', "-"),
     }
-}
-
-pub fn escape(s: &str) -> String {
-    xml_escape(s)
 }
 
 #[cfg(test)]
