@@ -56,6 +56,16 @@ The script verifies the bundle, checks that libvirt and QEMU are present (it **n
 what is missing), installs to `/usr/local`, creates first-run secrets, and starts the services. `--bind 0.0.0.0` makes the
 web UI listen on all interfaces. `--uninstall [--purge]` removes it (data is kept unless you pass `--purge`).
 
+## Before you install, and after
+
+`machina-preflight` (also `machinactl preflight`) answers "can this machine run Machina?": hardware virtualisation, `/dev/kvm`, libvirt and QEMU, kernel BTF and cgroup v2, free ports, disk, memory, clock and (with `--controller URL`) reachability of the controller. Every failed line says what to do; `--role agent|controller|daemon` checks only what that role needs, `--json` is for scripts, and `--fix` installs missing libvirt/QEMU with your package manager after asking.
+
+```bash
+sudo machina-preflight --role agent --controller https://<controller-host>:5093
+```
+
+After installing, `sudo machinactl show-login` prints the URL, the user name and the generated admin password (also kept in `/etc/machina/INITIAL_ADMIN_PASSWORD`, root only). Change the password after your first sign-in.
+
 ## Adding a compute node to a fleet
 
 On the controller create a one-time enrollment token (`POST /api/v1/enrollment/tokens`, admin only), then on the new host:

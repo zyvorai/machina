@@ -189,6 +189,7 @@ On any Linux host with KVM (Ubuntu, Debian, Fedora, RHEL/Alma/Rocky, openSUSE, A
 git clone https://github.com/zyvorai/zyvor-machina.git machina && cd machina
 ./machinactl deploy        # deps · build · install · start · verify
 # open https://<host>:5092 and sign in with a local (PAM) account
+# (package installs create an admin user instead: sudo machinactl show-login prints it)
 ```
 
 From your laptop to a remote host (sources are rsync'd and built on the server; nothing compiles locally):

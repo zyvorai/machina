@@ -20,6 +20,9 @@ contents:
   - src: ${STAGE}/bin/machinactl
     dst: /usr/bin/machinactl
     file_info: { mode: 0755 }
+  - src: ${STAGE}/bin/machina-preflight
+    dst: /usr/bin/machina-preflight
+    file_info: { mode: 0755 }
   - src: ${STAGE}/web/
     dst: /usr/share/machina/web/
     type: tree

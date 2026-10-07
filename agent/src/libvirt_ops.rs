@@ -1594,16 +1594,51 @@ fn libvirt_version_major(v: &str) -> u32 {
         .unwrap_or(0)
 }
 
+/// Where a QEMU emulator may live: the fixed locations RHEL and Debian use, then every
+/// `qemu-system-*` and `qemu-kvm` in the usual binary directories and on `PATH` (so an Ubuntu
+/// host with `qemu-system-x86`, an arm64 host or a /usr/local build is recognised too).
+fn qemu_candidates(dirs: &[std::path::PathBuf]) -> Vec<std::path::PathBuf> {
+    let mut out: Vec<std::path::PathBuf> = vec![
+        "/usr/libexec/qemu-kvm".into(),
+        "/usr/bin/qemu-system-x86_64".into(),
+        "/usr/bin/qemu-kvm".into(),
+    ];
+    for d in dirs {
+        let Ok(rd) = std::fs::read_dir(d) else {
+            continue;
+        };
+        let mut names: Vec<std::path::PathBuf> = rd
+            .flatten()
+            .filter(|e| {
+                let n = e.file_name();
+                let n = n.to_string_lossy();
+                n == "qemu-kvm" || (n.starts_with("qemu-system-") && !n.ends_with(".sh"))
+            })
+            .map(|e| e.path())
+            .collect();
+        names.sort();
+        for p in names {
+            if !out.contains(&p) {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
 fn qemu_version_from_path() -> String {
-    for bin in [
-        "/usr/libexec/qemu-kvm",
-        "/usr/bin/qemu-system-x86_64",
-        "/usr/bin/qemu-kvm",
-    ] {
-        if !std::path::Path::new(bin).is_file() {
+    let mut dirs: Vec<std::path::PathBuf> = ["/usr/bin", "/usr/libexec", "/usr/local/bin"]
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    if let Some(path) = std::env::var_os("PATH") {
+        dirs.extend(std::env::split_paths(&path));
+    }
+    for bin in qemu_candidates(&dirs) {
+        if !bin.is_file() {
             continue;
         }
-        if let Ok(o) = Command::new(bin).arg("--version").output() {
+        if let Ok(o) = Command::new(&bin).arg("--version").output() {
             let line = String::from_utf8_lossy(&o.stdout)
                 .lines()
                 .next()
@@ -2090,5 +2125,32 @@ mod cpu_percent_tests {
         );
         let pct = sample_cpu_percent(&mut samples, "vm1", 1_000_000_000, 2);
         assert_eq!(pct, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod qemu_probe_tests {
+    use super::qemu_candidates;
+
+    #[test]
+    fn finds_any_qemu_system_binary_and_ignores_other_files() {
+        let d = std::env::temp_dir().join(format!("machina-qemu-probe-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        for n in [
+            "qemu-system-aarch64",
+            "qemu-kvm",
+            "qemu-img",
+            "qemu-system-x86_64.sh",
+        ] {
+            std::fs::write(d.join(n), "").unwrap();
+        }
+        let found = qemu_candidates(std::slice::from_ref(&d));
+        assert!(found.contains(&d.join("qemu-system-aarch64")));
+        assert!(found.contains(&d.join("qemu-kvm")));
+        assert!(!found.contains(&d.join("qemu-img")));
+        assert!(!found.contains(&d.join("qemu-system-x86_64.sh")));
+        // the historical fixed locations stay first
+        assert_eq!(found[0], std::path::PathBuf::from("/usr/libexec/qemu-kvm"));
+        let _ = std::fs::remove_dir_all(&d);
     }
 }

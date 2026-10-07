@@ -36,7 +36,7 @@ machina_bootstrap_platform_env() {
         printf 'MACHINA_ADMIN_PASSWORD=%s\n' "$pw" >>"$PLATFORM_ENV"
         # Keep a root-only copy so the password is not lost if the install output scrolls away.
         (umask 077 && printf 'username: admin\npassword: %s\n' "$pw" >"$INITIAL_PW_FILE")
-        echo "machina: bootstrap admin password written to $INITIAL_PW_FILE (root only) — change it after first login" >&2
+        echo "machina: first sign-in: run 'sudo machinactl show-login' (or read $INITIAL_PW_FILE, root only) — change the password after first login" >&2
     fi
     machina_sync_daemon_env
 }

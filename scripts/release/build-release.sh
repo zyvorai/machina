@@ -46,6 +46,7 @@ rm -rf "$STAGE" && mkdir -p "$STAGE"/{bin,units,etc,doc,scripts,web,bundle}
 # ── stage ──────────────────────────────────────────────────────────────────────
 for b in machina-daemon machina-controller machina-agent machina-bpfd; do install -m 0755 "$BIN_DIR/$b" "$STAGE/bin/$b"; done
 install -m 0755 "$REPO/machinactl" "$STAGE/bin/machinactl"
+install -m 0755 "$REPO/scripts/preflight.sh" "$STAGE/bin/machina-preflight"
 install -m 0755 "$REPO/scripts/db/machina-db.sh" "$STAGE/bin/machina-db"
 if [ -x "$BIN_DIR/machina-dbtool" ]; then install -m 0755 "$BIN_DIR/machina-dbtool" "$STAGE/bin/machina-dbtool"; HAVE_DBTOOL=1; else HAVE_DBTOOL=0; fi
 # the controller's PostgreSQL build ships next to the default one when it was built (make release-pg)

@@ -25,6 +25,8 @@
 #   verify          Post-install smoke test (API, VMs, backup)
 #   health          Deep health check (service, API, disk, libvirt, timers)
 #   doctor          Check system readiness
+#   preflight       Can this machine run Machina? (--role, --fix, --json)
+#   show-login      Sign-in URL and generated admin password
 #   tls             Generate self-signed TLS certificate
 #   demo            Run interactive API demo
 #   audit verify    Verify signed audit log (API or local file)
@@ -694,11 +696,13 @@ cmd_doctor() {
         fi
     done
 
-    # Rust
+    # Rust (only needed to build from source; a package install has no use for it)
     if command -v cargo &>/dev/null; then
         ok "Rust $(rustc --version | awk '{print $2}')"
+    elif command -v machina-daemon &>/dev/null; then
+        info "Rust toolchain not installed (not needed: Machina is installed from packages)"
     else
-        err "Rust toolchain not installed"; ((issues++)) || true
+        err "Rust toolchain not installed (needed to build from source)"; ((issues++)) || true
     fi
 
     # libvirtd
@@ -727,6 +731,47 @@ cmd_doctor() {
     else
         warn "$issues issue(s) found — run ./machinactl deps to fix"
     fi
+}
+
+# ── preflight ───────────────────────────────────────────────────────────
+# Can this machine run Machina? Same script the installer uses (scripts/preflight.sh, shipped as machina-preflight).
+cmd_preflight() {
+    local script
+    if command -v machina-preflight &>/dev/null; then
+        script="$(command -v machina-preflight)"
+    elif [[ -f "$SCRIPT_DIR/scripts/preflight.sh" ]]; then
+        script="$SCRIPT_DIR/scripts/preflight.sh"
+    else
+        err "machina-preflight not found (reinstall the machina package, or run from a source checkout)"
+        exit 1
+    fi
+    exec bash "$script" "$@"
+}
+
+# ── show-login ──────────────────────────────────────────────────────────
+# Where to sign in and with what, for a first-run install (the generated admin password is root-only).
+cmd_show_login() {
+    local file=/etc/machina/INITIAL_ADMIN_PASSWORD env=/etc/default/machina-platform user=admin pw="" host
+    if [[ $EUID -ne 0 ]]; then
+        err "run as root: sudo machinactl show-login (the password file is readable by root only)"; exit 1
+    fi
+    if [[ -r $file ]]; then
+        user="$(sed -n 's/^username: *//p' "$file" | head -1)"; user="${user:-admin}"
+        pw="$(sed -n 's/^password: *//p' "$file" | head -1)"
+    fi
+    [[ -z $pw && -r $env ]] && pw="$(sed -n 's/^MACHINA_ADMIN_PASSWORD=//p' "$env" | head -1)"
+    host="$(hostname -I 2>/dev/null | awk '{print $1}')"; host="${host:-$(hostname -f 2>/dev/null || hostname)}"
+    echo ""
+    echo "  Sign in:   https://${host}:5092   (the certificate is self-signed until you install your own: machinactl tls)"
+    if [[ -n $pw ]]; then
+        echo "  Username:  $user"
+        echo "  Password:  $pw"
+        echo ""
+        warn "Change the password after your first sign-in."
+    else
+        echo "  No generated admin password found: sign in with a local (PAM) Linux account."
+    fi
+    echo ""
 }
 
 # ── tls ─────────────────────────────────────────────────────────────────
@@ -1052,6 +1097,8 @@ cmd_help() {
     echo "  verify            Post-install smoke test (API, VMs, libvirt, backup)"
     echo "  health            Deep health check (service, API, disk, libvirt, timers)"
     echo "  doctor            Check system readiness (deps, tools, services)"
+    echo "  preflight         Can this machine run Machina? KVM, libvirt, QEMU, ports, disk, clock; --role, --fix, --json"
+    echo "  show-login        Where to sign in and the generated admin password (root)"
     echo "  tls               Generate self-signed TLS certificate (auto-sudo)"
     echo "  demo              Run interactive API demo"
     echo "  audit verify      Verify audit.log sha256 signatures (API or local)"
@@ -1130,6 +1177,8 @@ main() {
         status)     cmd_status "$@" ;;
         logs)       cmd_logs "$@" ;;
         doctor)     cmd_doctor "$@" ;;
+        preflight)  cmd_preflight "$@" ;;
+        show-login|login) cmd_show_login "$@" ;;
         db)         cmd_db "$@" ;;
         tls)        cmd_tls "$@" ;;
         demo)       cmd_demo "$@" ;;
