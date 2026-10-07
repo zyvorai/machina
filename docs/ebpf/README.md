@@ -12,6 +12,8 @@ and PacketWolf agents; Machina no longer integrates with any of them.
 | [vm-network-policy.md](vm-network-policy.md) | VM-to-VM ingress/egress policy in the CiliumNetworkPolicy schema: L3/L4, toFQDNs, L7 (HTTP, gRPC, Kafka, TLS SNI, DNS), TLS interception and header rewrites, CIDR groups, authentication (mTLS between hosts). VM labels, policy trace, packet flows (`machinactl netpol` / `flow`), flow history (map, learn, replay, L7 metrics), quarantine, just-in-time access, lateral-movement alerts, DNS threat feeds, plain-English policies, project isolation, egress allowlists and egress IPs (added and announced by bpfd), WireGuard cross-host overlay, agentless VM addresses, segmentation evidence |
 | [observability.md](observability.md) | Flows, DNS, L7, accounting, captures, network-change audit, sampled L7, VM runtime intelligence |
 | [fastpath.md](fastpath.md) | QUIC-LB, AF_XDP, sched_ext VM scheduler (`machina-scx`) |
+| [blackbox.md](blackbox.md), [blackbox-native.md](blackbox-native.md), [blackbox-rca.md](blackbox-rca.md) | Black Box: a script that builds one VM's incident timeline from existing telemetry, the in-bpfd flight recorder (rolling buffer, freeze on trigger), and the controller's ranked root-cause report |
+| [noisy-neighbor.md](noisy-neighbor.md) | Directed VM-to-VM interference graph (`aggressor -> victim`); recommends only |
 | [cni.md](cni.md) | `machina-cni`: Kubernetes CNI, NetworkPolicy and Cilium policy compile, services |
 | [guest-policy.md](guest-policy.md) | Per-container eBPF policy inside guests via GuestKit |
 

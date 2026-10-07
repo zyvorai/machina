@@ -44,3 +44,7 @@ or revoked key, answer `AuthFailure`. Unit tests: `cargo test -p machina-control
 ## Limits
 No `NextToken` pagination, no Elastic IP or snapshot calls, no VPC create. `DescribeInstances` leaves fields without a machina
 equivalent empty. A key acts with the role of the admin who created it. Revoke with `DELETE /api/v1/ec2/access-keys/<id>`.
+
+## More actions
+
+The endpoint answers many more actions than the ones above (Elastic IPs, snapshots and images, launch templates, alarms and metrics, VPC and subnets, load balancers, backups, schedules and the Machina-only sleep, restore-point, fork and game-day calls). The full list, what each does and what is still missing is in [../cloud-ec2-api.md](../cloud-ec2-api.md); `docs/claims.md` (C27) says how far each has been tested.

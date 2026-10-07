@@ -1,6 +1,6 @@
 # Black Box Root Cause Engine
 
-This PR depends on the native Black Box flight-recorder PR.
+It reads the capture that the native Black Box recorder in `machina-bpfd` froze (see [blackbox-native.md](blackbox-native.md)).
 
 ## Endpoint
 

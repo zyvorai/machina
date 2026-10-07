@@ -10,7 +10,7 @@ Evidence:
 - dominant network share + victim drops
 - corroborating vCPU migrations and sched_ext latency violations
 
-Safety: observe/recommend-only. No migration, throttling, affinity or QoS is changed by this PR.
+Safety: observe/recommend-only. No migration, throttling, affinity or QoS is changed by this feature.
 
 API:
 `GET /api/v1/ai/interference/noisy-neighbors`

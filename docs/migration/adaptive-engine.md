@@ -1,6 +1,6 @@
 # Adaptive Migration Engine
 
-This PR adds the deterministic control brain for live migration.
+The adaptive engine is the deterministic control brain for live migration.
 
 Every telemetry sample is classified into one next action:
 
@@ -28,6 +28,6 @@ Every telemetry sample is classified into one next action:
 
 The body is a live `MigrationTelemetry` snapshot. The response is the exact next control target.
 
-## Why this PR stops at the decision layer
+## Why the engine stops at the decision layer
 
 The current HostAgent API exposes one long-running `MigrateVm` RPC with startup-time bandwidth and post-copy flags, but it does not expose status/control RPCs for an already-running migration. Adding real actuation safely requires a follow-up agent/libvirt RPC that can read job stats and apply bandwidth/downtime/compression/post-copy/throttle controls during the job.
