@@ -35,7 +35,7 @@ pub fn zone_id(host: Uuid) -> String {
 
 pub async fn describe_availability_zones(state: &AppState, _actor: &AuthUser, _p: &Params) -> Result<String, Ec2Error> {
     let rows: Vec<(Uuid, String, String, bool)> = crate::db::query_as(
-        "SELECT id, hostname, state, COALESCE(maintenance_mode, 0) FROM hosts ORDER BY hostname",
+        "SELECT id, hostname, state, COALESCE(maintenance_mode, FALSE) FROM hosts ORDER BY hostname",
     )
     .fetch_all(&state.pool)
     .await?;
