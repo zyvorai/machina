@@ -10,6 +10,7 @@
 pub mod addresses;
 pub mod eni;
 pub mod fleet;
+pub mod gameday;
 pub mod groups;
 pub mod images;
 pub mod lb_members;
@@ -19,6 +20,7 @@ pub mod more;
 pub mod ops;
 pub mod page;
 pub mod peering;
+pub mod schedules;
 pub mod sigv4;
 pub mod status;
 pub mod volume_attrs;
@@ -672,6 +674,19 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
         "DescribeBackups" => ops::describe_backups(state, &actor, &params).await?,
         "RestoreBackup" => ops::restore_backup(state, &actor, &params).await?,
         "DescribeInstanceAttribute" => ops::describe_instance_attribute(state, &params).await?,
+        "CreateBackupSchedule" => schedules::create_backup_schedule(state, &actor, &params).await?,
+        "DescribeBackupSchedules" => schedules::describe_backup_schedules(state, &actor, &params).await?,
+        "DeleteBackupSchedule" => schedules::delete_backup_schedule(state, &actor, &params).await?,
+        "VerifyBackup" => schedules::verify_backup(state, &actor, &params).await?,
+        "CreateVmSchedule" => schedules::create_vm_schedule(state, &actor, &params).await?,
+        "DescribeVmSchedules" => schedules::describe_vm_schedules(state, &actor, &params).await?,
+        "DeleteVmSchedule" => schedules::delete_vm_schedule(state, &actor, &params).await?,
+        "CreateMaintenanceSchedule" => schedules::create_maintenance_schedule(state, &actor, &params).await?,
+        "DescribeMaintenanceSchedules" => schedules::describe_maintenance_schedules(state, &actor, &params).await?,
+        "DeleteMaintenanceSchedule" => schedules::delete_maintenance_schedule(state, &actor, &params).await?,
+        "DescribeExperiments" => gameday::describe_experiments(state, &actor, &params).await?,
+        "RunExperiment" => gameday::run_experiment(state, &actor, &params).await?,
+        "AbortExperiment" => gameday::abort_experiment(state, &actor, &params).await?,
         "DeleteLoadBalancer" => volume_attrs::delete_load_balancer(state, &actor, &params).await?,
         "ModifyInstanceAttribute" => more::modify_instance_attribute(state, &actor, &params).await?,
         "DescribeAddresses" => addresses::describe_addresses(state, &actor, &params).await?,
@@ -813,6 +828,7 @@ mod tests {
             include_str!("addresses.rs"),
             include_str!("eni.rs"),
             include_str!("fleet.rs"),
+            include_str!("gameday.rs"),
             include_str!("groups.rs"),
             include_str!("images.rs"),
             include_str!("lb_members.rs"),
@@ -820,6 +836,7 @@ mod tests {
             include_str!("monitoring.rs"),
             include_str!("ops.rs"),
             include_str!("peering.rs"),
+            include_str!("schedules.rs"),
             include_str!("status.rs"),
             include_str!("volume_attrs.rs"),
             include_str!("vpc.rs"),

@@ -80,6 +80,11 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
   `DeleteNetworkInterface`, `AttachNetworkInterface` (create-with-instance only; an existing interface cannot be moved),
   `ModifyVolume` (grow only), `CreateBackup` / `DescribeBackups` / `RestoreBackup` (Machina backup records, not EBS snapshots),
   `DescribeInstanceAttribute` (`instanceType`, `groupSet`, `disableApiTermination`). No secondary private IPs.
+- Schedules and game days: `CreateBackupSchedule` / `DescribeBackupSchedules` / `DeleteBackupSchedule` / `VerifyBackup`,
+  `CreateVmSchedule` / `DescribeVmSchedules` / `DeleteVmSchedule` (`ActionName` is `start`, `shutdown`, `stop` or `snapshot`),
+  `CreateMaintenanceSchedule` / `DescribeMaintenanceSchedules` / `DeleteMaintenanceSchedule` (host maintenance, admin),
+  `DescribeExperiments`, `RunExperiment` (`Confirm` must equal the experiment name) and `AbortExperiment`. Creating an experiment
+  stays on REST.
 
 ## Not yet
 - IMDSv2, VPC peering that forwards packets, and multi-host Elastic IP failover.
