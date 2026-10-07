@@ -5,7 +5,7 @@ import { useId } from 'react'
 import { Link } from 'react-router'
 import type { PlatformHost } from '../../api/platform'
 
-export type MapHost = Pick<PlatformHost, 'id' | 'hostname' | 'state' | 'vm_count' | 'cpu_percent'> & { maintenance_mode?: boolean }
+export type MapHost = Pick<PlatformHost, 'id' | 'hostname' | 'state' | 'vm_count' | 'cpu_percent'> & { maintenance_mode?: boolean; address?: string }
 
 type Props = {
   hosts: MapHost[]
@@ -87,13 +87,14 @@ export default function FleetCloudMap({ hosts, joining, highlightId, height = 34
               <circle cx={p.x} cy={p.y} r={15} fill="#0d1526" stroke={COLOR[tone]} strokeWidth={hl ? 3 : 2} />
               <text x={p.x} y={p.y + 4} textAnchor="middle" fill="#fff" fontSize="11" fontFamily="-apple-system,system-ui,sans-serif">{h.vm_count}</text>
               <text x={p.x} y={p.y + 31} textAnchor="middle" fill="#d1d1d6" fontSize="10.5" fontFamily="-apple-system,system-ui,sans-serif">{h.hostname.slice(0, 16)}</text>
+              {h.address && <text x={p.x} y={p.y + 43} textAnchor="middle" fill="#8ec5ff" fontSize="9.5" fontFamily="SFMono-Regular,Menlo,Consolas,monospace">{h.address}</text>}
             </g>
           ) : (
             <g>
               <rect x={p.x - 78} y={p.y - 28} width={156} height={56} rx={12} fill="#0d1526" stroke={COLOR[tone]} strokeWidth={hl ? 3 : 1.5} />
               <circle cx={p.x - 62} cy={p.y - 11} r={4.5} fill={COLOR[tone]} className={tone === 'ok' ? 'fcm-pulse' : undefined} />
               <text x={p.x - 52} y={p.y - 7} fill="#fff" fontSize="12.5" fontWeight="600" fontFamily="-apple-system,system-ui,sans-serif">{h.hostname.slice(0, 18)}</text>
-              <text x={p.x - 66} y={p.y + 11} fill="#a1a1a6" fontSize="10.5" fontFamily="-apple-system,system-ui,sans-serif">{h.vm_count} VM{h.vm_count === 1 ? '' : 's'} · {Math.round(h.cpu_percent || 0)}% CPU · {h.maintenance_mode ? 'maintenance' : h.state}</text>
+              <text x={p.x - 66} y={p.y + 8} fill="#8ec5ff" fontSize="10.5" fontFamily="SFMono-Regular,Menlo,Consolas,monospace">{h.address || h.state} · {h.vm_count} VM{h.vm_count === 1 ? '' : 's'}</text>
               <rect x={p.x - 66} y={p.y + 17} width={132} height={3} rx={1.5} fill="#2c2c2e" />
               <rect x={p.x - 66} y={p.y + 17} width={Math.max(2, Math.min(100, h.cpu_percent || 0)) * 1.32} height={3} rx={1.5} fill={COLOR[tone]} />
             </g>

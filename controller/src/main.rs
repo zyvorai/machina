@@ -95,6 +95,9 @@ async fn main() -> anyhow::Result<()> {
     let pool = db::connect(&config.database_url).await?;
     db::migrate(&pool).await?;
     db::ensure_bootstrap(&pool, &config.admin_user, &config.admin_password).await?;
+    if let Err(e) = db::name_local_host(&pool).await {
+        tracing::warn!("could not name the local host: {e}");
+    }
     match machina_controller::agent_client::load_host_tokens(&pool).await {
         Ok(n) if n > 0 => tracing::info!("{n} host(s) use their own agent token"),
         Ok(_) => {}

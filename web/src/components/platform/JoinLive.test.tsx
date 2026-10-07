@@ -70,3 +70,24 @@ describe('JoinLivePanel', () => {
     expect(screen.queryByText('curl x | sudo bash -s -- --token join-abc')).toBeNull()
   })
 })
+
+import FleetCloudImmersive, { pct } from './FleetCloudImmersive'
+
+describe('FleetCloudImmersive', () => {
+  const hosts = [
+    { id: 'a', hostname: 'nldw4-1', address: '10.0.0.4', state: 'online', vm_count: 3, cpu_percent: 42, memory_used_mib: 4096, memory_total_mib: 8192, agent_grpc_addr: '10.0.0.4:50051' },
+    { id: 'b', hostname: 'nldw4-2', address: '10.0.0.5', state: 'offline', vm_count: 0, cpu_percent: 0, memory_used_mib: 0, memory_total_mib: 8192 },
+  ]
+  it('draws every machine with its IP and shows details on selection', () => {
+    render(<MemoryRouter><FleetCloudImmersive hosts={hosts} selectedId="a" /></MemoryRouter>)
+    expect(screen.getByTestId('cloud-node-nldw4-1').textContent).toContain('10.0.0.4')
+    expect(screen.getByTestId('cloud-node-nldw4-2').textContent).toContain('10.0.0.5')
+    expect(screen.getByTestId('cloud-detail').textContent).toContain('10.0.0.4:50051')
+    expect(screen.getByLabelText(/1 of 2 machines online, 3 VMs/)).toBeTruthy()
+  })
+  it('computes memory percentages safely', () => {
+    expect(pct(4096, 8192)).toBe(50)
+    expect(pct(1, 0)).toBe(0)
+    expect(pct(undefined, undefined)).toBe(0)
+  })
+})

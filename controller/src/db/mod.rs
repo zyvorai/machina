@@ -383,6 +383,58 @@ pub async fn ensure_bootstrap(
     Ok(())
 }
 
+/// The machine's own hostname (kernel value), if it has a usable one.
+fn machine_hostname() -> Option<String> {
+    let h = std::fs::read_to_string("/proc/sys/kernel/hostname").ok()?;
+    let h = h.trim().to_string();
+    (!h.is_empty() && h != "localhost").then_some(h)
+}
+
+/// This machine's address on its default route (asking the kernel which source it would use;
+/// nothing is sent). None when there is only loopback.
+fn primary_ip() -> Option<String> {
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.connect("192.0.2.1:9").ok()?;
+    let ip = sock.local_addr().ok()?.ip();
+    (!ip.is_loopback() && !ip.is_unspecified()).then(|| ip.to_string())
+}
+
+/// The first-boot host row is called `localhost` at `127.0.0.1`, which tells an operator nothing.
+/// Give it the machine's real hostname and address (only when its agent is local and the name is
+/// free), so the UI, host shell, VM network policy and load balancers see a real node.
+pub async fn name_local_host(pool: &DbPool) -> anyhow::Result<()> {
+    rename_local_host(pool, machine_hostname().as_deref(), primary_ip().as_deref()).await
+}
+
+pub(crate) async fn rename_local_host(
+    pool: &DbPool,
+    hostname: Option<&str>,
+    ip: Option<&str>,
+) -> anyhow::Result<()> {
+    if let Some(name) = hostname {
+        query(
+            "UPDATE hosts SET hostname = ?
+             WHERE hostname = 'localhost' AND agent_grpc_addr LIKE '127.0.0.1:%'
+               AND NOT EXISTS (SELECT 1 FROM hosts h2 WHERE h2.hostname = ?)",
+        )
+        .bind(name)
+        .bind(name)
+        .execute(pool)
+        .await?;
+    }
+    if let (Some(name), Some(ip)) = (hostname, ip) {
+        query(
+            "UPDATE hosts SET address = ?
+             WHERE hostname = ? AND agent_grpc_addr LIKE '127.0.0.1:%' AND address IN ('127.0.0.1', '', 'localhost')",
+        )
+        .bind(ip)
+        .bind(name)
+        .execute(pool)
+        .await?;
+    }
+    Ok(())
+}
+
 /// Backfills a real `projects` row for every distinct project name already in use
 /// across `vms.project` / `project_quotas.project` (see migration 020). Existing
 /// free-text project filtering elsewhere is untouched — this only gives those same
@@ -428,5 +480,33 @@ mod tests {
         assert_eq!(redact_url("postgres://machina@db.internal/machina"), "postgres://machina@db.internal/machina");
         assert_eq!(redact_url("sqlite:///var/lib/machina/controller.db"), "sqlite:///var/lib/machina/controller.db");
         assert_eq!(redact_url("postgres://u:p%40ss@h/d"), "postgres://u:<redacted>@h/d");
+    }
+}
+
+#[cfg(test)]
+mod local_host_name_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn the_seeded_local_host_gets_its_real_name_and_address_once() {
+        let pool = crate::db::testing::pool().await;
+        let n = |name: &str| format!("SELECT COUNT(*) FROM hosts WHERE hostname = '{name}'");
+        query("INSERT INTO hosts (id, hostname, address, state, agent_grpc_addr) VALUES (?, 'localhost', '127.0.0.1', 'online', '127.0.0.1:50051')")
+            .bind(Uuid::new_v4())
+            .execute(&pool)
+            .await
+            .unwrap();
+        rename_local_host(&pool, Some("node-7"), Some("10.1.2.3")).await.unwrap();
+        let (name, addr): (String, String) = query_as("SELECT hostname, address FROM hosts")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!((name.as_str(), addr.as_str()), ("node-7", "10.1.2.3"));
+        // Idempotent, and a remote host called localhost is left alone.
+        rename_local_host(&pool, Some("node-7"), Some("10.9.9.9")).await.unwrap();
+        let c: i64 = query_scalar(&n("node-7")).fetch_one(&pool).await.unwrap();
+        assert_eq!(c, 1);
+        let addr: String = query_scalar("SELECT address FROM hosts").fetch_one(&pool).await.unwrap();
+        assert_eq!(addr, "10.1.2.3");
     }
 }

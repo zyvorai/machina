@@ -35,6 +35,7 @@ export default function HostFleetCard({ host, linux, selected, onSelect }: Props
             <span className="grid place-items-center w-8 h-8 rounded-xl text-white shadow-sm" style={{ background: 'linear-gradient(145deg,#0a84ff,#5e5ce6)' }}><Server className="w-4 h-4" /></span>
             {host.hostname}
           </h2>
+          <p className="text-xs mt-0.5 font-mono text-[var(--accent)]" data-testid="host-card-ip">{host.address || '—'}</p>
           <p className="text-xs text-[var(--text-muted)] mt-0.5">Libvirt host · {linux?.status ?? 'Linux ok'}</p>
         </div>
         <span className={statusPillClasses(online && !linuxPressure ? 'ok' : 'warn')}>

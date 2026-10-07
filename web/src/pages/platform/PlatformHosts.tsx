@@ -7,7 +7,7 @@ import { Plus, RefreshCw, Server, Wrench } from 'lucide-react'
 import PageLayout from '../../components/PageLayout'
 import PlatformEmptyState from '../../components/platform/PlatformEmptyState'
 import HostEnrollWizard from '../../components/platform/HostEnrollWizard'
-import FleetCloudMap from '../../components/platform/FleetCloudMap'
+import FleetCloudImmersive from '../../components/platform/FleetCloudImmersive'
 import FinderView, { type FinderViewMode } from '../../components/platform/mac/FinderView'
 import {
   enqueueValidateHost,
@@ -42,6 +42,12 @@ export default function PlatformHosts() {
   const [search, setSearch] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [enrollWizardOpen, setEnrollWizardOpen] = useState(false)
+  const [display, setDisplay] = useState<'cards' | 'cloud'>(() => {
+    try { return localStorage.getItem('machina.hosts.display') === 'cloud' ? 'cloud' : 'cards' } catch { return 'cards' }
+  })
+  useEffect(() => {
+    try { localStorage.setItem('machina.hosts.display', display) } catch { /* ignore */ }
+  }, [display])
   const [viewMode, setViewMode] = useState<FinderViewMode>(() => {
     try {
       const v = localStorage.getItem(VIEW_KEY)
@@ -259,12 +265,21 @@ export default function PlatformHosts() {
       }
       contentClassName="space-y-4"
     >
-      {!filterOffline && hosts.length > 0 && (
+      {hosts.length > 0 && (
+        <div role="tablist" aria-label="Hosts display" className="inline-flex rounded-lg border border-white/10 p-0.5 text-xs">
+          {(['cards', 'cloud'] as const).map((m) => (
+            <button key={m} type="button" role="tab" aria-selected={display === m} data-testid={`hosts-display-${m}`}
+              className={`px-3 py-1 rounded-md ${display === m ? 'bg-[var(--accent)] text-white' : 'text-[var(--text-muted)]'}`}
+              onClick={() => setDisplay(m)}>{m === 'cards' ? 'Cards' : 'Cloud map'}</button>
+          ))}
+        </div>
+      )}
+      {display === 'cloud' && hosts.length > 0 && (
         <section aria-label="Machines in this cloud" data-testid="hosts-cloud-map" className="w-full">
-          <FleetCloudMap hosts={hosts} />
+          <FleetCloudImmersive hosts={hosts} selectedId={selectedId} onSelect={setSelectedId} />
         </section>
       )}
-      {viewMode === 'icons' && visibleHosts.length > 0 && (
+      {display === 'cards' && viewMode === 'icons' && visibleHosts.length > 0 && (
         <div className="flex flex-col gap-4 w-full" data-testid="host-fleet-panels">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 w-full nl-stagger">
             {hostList.shown.map((h) => (
