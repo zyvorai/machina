@@ -90,10 +90,15 @@ pub async fn put_metric_alarm(state: &AppState, actor: &AuthUser, p: &Params) ->
     let evaluation: i64 = p.get("EvaluationPeriods").map(|s| s.parse()).transpose().map_err(|_| bad("InvalidParameterValue", "EvaluationPeriods must be a number"))?.unwrap_or(1);
     let statistic = p.get("Statistic").cloned().unwrap_or_else(|| "Average".into());
     let comparison = comparator(p.get("ComparisonOperator").map(String::as_str).unwrap_or("GreaterThanThreshold"))?;
+    let policy_arn = super::autoscaling::members(p, "AlarmActions").into_iter().find(|a| a.starts_with("arn:aws:autoscaling:"));
     let (action, group_id, step) = if let Some(group) = p.get("InstanceGroupId") {
         let id = super::more::resolve(state, Kind::InstanceGroup, group, "InvalidParameterValue").await?;
         let step: i64 = p.get("Step").map(|s| s.parse()).transpose().map_err(|_| bad("InvalidParameterValue", "Step must be a number"))?.unwrap_or(1);
         ("scale_group".to_string(), Some(id), step)
+    } else if let Some(arn) = policy_arn {
+        // an Auto Scaling policy as the alarm action: the alarm applies the policy's step to its group
+        let (group, step) = super::autoscaling::alarm_target(state, &arn).await?;
+        ("scale_group".to_string(), Some(group), step)
     } else {
         ("none".into(), None, 0)
     };

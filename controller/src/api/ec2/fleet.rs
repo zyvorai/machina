@@ -119,24 +119,35 @@ pub async fn create_launch_template(state: &AppState, actor: &AuthUser, p: &Para
     let name = need(p, "LaunchTemplateName")?;
     let project: Uuid = need(p, "ProjectId")?.parse().map_err(|_| bad("InvalidParameterValue", "ProjectId must be a project UUID"))?;
     let image = p.get("ImageId").cloned().unwrap_or_default();
-    let vm = serde_json::json!({
-        "api_version": "machina/v1",
-        "kind": "VirtualMachine",
-        "metadata": { "name": name },
-        "spec": {
-            "cpu": { "sockets": 1, "cores": 1 },
-            "memory": "1Gi",
-            "template_ref": image,
-            "firmware": "uefi",
-            "ha": { "enabled": false }
-        }
-    });
+    let row = create_template_row(state, actor, project, &name, template_vm(&name, &image)).await?;
+    Ok(template_item(row.0, row.1, &row.2))
+}
+
+/// The VM a launch template stores: one core, 1 GiB, the default 10 GiB root volume, the image, UEFI, no HA. Built from
+/// `VirtualMachine::new` so it carries what the validator requires (a storage volume, the current API version).
+pub(super) fn template_vm(name: &str, image: &str) -> serde_json::Value {
+    let mut vm = machina_spec::VirtualMachine::new(name, "1Gi");
+    vm.spec.template_ref = Some(image.to_string());
+    vm.spec.firmware = "uefi".into();
+    vm.spec.ha.enabled = false;
+    serde_json::to_value(&vm).unwrap_or_default()
+}
+
+/// Stores a launch template through the REST handler (project access, validation and audit stay there).
+/// Returns `(id, project, name)`.
+pub(super) async fn create_template_row(
+    state: &AppState,
+    actor: &AuthUser,
+    project: Uuid,
+    name: &str,
+    vm: serde_json::Value,
+) -> Result<(Uuid, Uuid, String), Ec2Error> {
     let body: crate::api::cloud::elastic::CreateTemplate =
         serde_json::from_value(serde_json::json!({ "name": name, "vm": vm })).map_err(|e| bad("InvalidParameterValue", e.to_string()))?;
     let Json(row) = crate::api::cloud::elastic::create_template(State(state.clone()), Extension(actor.clone()), Path(project), Json(body))
         .await
         .map_err(api_err)?;
-    Ok(template_item(row.id, row.project_id, &row.name))
+    Ok((row.id, row.project_id, row.name))
 }
 
 pub async fn delete_launch_template(state: &AppState, actor: &AuthUser, p: &Params) -> Result<String, Ec2Error> {

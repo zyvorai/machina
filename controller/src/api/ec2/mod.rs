@@ -8,6 +8,7 @@
 //! `/api/v1/ec2/access-keys` (admin).
 
 pub mod addresses;
+pub mod autoscaling;
 pub mod capacity;
 pub mod eni;
 pub mod elbv2;
@@ -970,6 +971,7 @@ mod tests {
             include_str!("mod.rs"),
             include_str!("more.rs"),
             include_str!("addresses.rs"),
+            include_str!("autoscaling.rs"),
             include_str!("capacity.rs"),
             include_str!("eni.rs"),
             include_str!("elbv2.rs"),

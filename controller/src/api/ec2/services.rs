@@ -12,7 +12,7 @@
 //! |------------------------|--------------------------------------------------------------|
 //! | `ec2`                  | everything in `mod.rs::dispatch` (CloudWatch-style actions too, for older clients) |
 //! | `monitoring`           | the CloudWatch-style alarm and statistics actions (`monitoring.rs`) |
-//! | `autoscaling`          | `autoscaling_dispatch` below (empty until the Auto Scaling package lands) |
+//! | `autoscaling`          | `autoscaling_dispatch` below (`autoscaling.rs`) |
 //! | `elasticloadbalancing` | `elb_dispatch` below (empty until the ELBv2 package lands) |
 //!
 //! Adding actions to a service: add match arms to that service's `*_dispatch` function. A handler for
@@ -136,9 +136,9 @@ async fn monitoring_dispatch(state: &AppState, actor: &AuthUser, p: &Params, act
     })
 }
 
-/// Auto Scaling actions. Empty until the Auto Scaling package adds its arms here.
-async fn autoscaling_dispatch(_state: &AppState, _actor: &AuthUser, _p: &Params, action: &str) -> Result<String, Ec2Error> {
-    Err(invalid_action(action))
+/// Auto Scaling actions (`autoscaling.rs`).
+async fn autoscaling_dispatch(state: &AppState, actor: &AuthUser, p: &Params, action: &str) -> Result<String, Ec2Error> {
+    super::autoscaling::dispatch(state, actor, p, action).await
 }
 
 /// ELBv2 actions (`elbv2.rs`).
@@ -296,7 +296,7 @@ mod tests {
         let (state, _rx) = crate::engine::test_support::test_state().await;
         let actor = AuthUser { username: "u".into(), role: "admin".into(), auth_source: None };
         for (svc, action) in [
-            (Service::AutoScaling, "CreateAutoScalingGroup"),
+            (Service::AutoScaling, "NoSuchAutoScalingAction"),
             (Service::ElasticLoadBalancing, "ConfigureHealthCheck"),
             (Service::Monitoring, "RunInstances"),
             (Service::Ec2, "DescribeInstances"),
@@ -373,7 +373,7 @@ mod tests {
     #[tokio::test]
     async fn signed_autoscaling_and_elb_requests_reach_their_tables() {
         let state = seeded().await;
-        let (st, body) = call(&state, "/autoscaling", "autoscaling", "Action=DescribeAutoScalingGroups&Version=2011-01-01").await;
+        let (st, body) = call(&state, "/autoscaling", "autoscaling", "Action=NoSuchAutoScalingAction&Version=2011-01-01").await;
         assert_eq!(st, StatusCode::BAD_REQUEST, "{body}");
         assert!(body.contains("<ErrorResponse xmlns=\"http://autoscaling.amazonaws.com/doc/2011-01-01/\"><Error><Type>Sender</Type><Code>InvalidAction</Code>"), "{body}");
         // a classic-ELB action is not ELBv2
@@ -408,6 +408,27 @@ mod tests {
         let (st, body) = call(&state, "/elbv2", "elasticloadbalancing", &format!("Action=DeleteLoadBalancer&{v}&LoadBalancerArn=arn:aws:elasticloadbalancing:machina:000000000000:loadbalancer/net/gone/0123456789abcdef")).await;
         assert_eq!(st, StatusCode::OK, "{body}");
         assert!(body.contains("<DeleteLoadBalancerResponse xmlns=") && !body.contains("<DeleteLoadBalancerResult>"), "{body}");
+    }
+
+    #[tokio::test]
+    async fn signed_autoscaling_requests_create_and_describe_launch_configurations() {
+        let state = seeded().await;
+        let form = "Action=CreateLaunchConfiguration&Version=2011-01-01&LaunchConfigurationName=lc-signed&ImageId=ubuntu-24.04";
+        let (st, body) = call(&state, "/autoscaling", "autoscaling", form).await;
+        assert_eq!(st, StatusCode::OK, "{body}");
+        assert!(
+            body.contains("<CreateLaunchConfigurationResponse xmlns=\"http://autoscaling.amazonaws.com/doc/2011-01-01/\"><ResponseMetadata><RequestId>"),
+            "an action with no result has no result element: {body}"
+        );
+        let (st, body) = call(&state, "/ec2", "autoscaling", "Action=DescribeLaunchConfigurations&Version=2011-01-01").await;
+        assert_eq!(st, StatusCode::OK, "{body}");
+        assert!(body.contains("<DescribeLaunchConfigurationsResult><LaunchConfigurations><member><LaunchConfigurationName>lc-signed</LaunchConfigurationName>"), "{body}");
+        let (st, body) = call(&state, "/autoscaling", "autoscaling", "Action=CreateLaunchConfiguration&Version=2011-01-01&LaunchConfigurationName=x&ImageId=y&SpotPrice=1").await;
+        assert_eq!(st, StatusCode::BAD_REQUEST, "{body}");
+        assert!(body.contains("<Code>UnsupportedOperation</Code>") && body.contains("SpotPrice"), "{body}");
+        // the same action is not an EC2 action
+        let (st, body) = call(&state, "/ec2", "ec2", "Action=DescribeAutoScalingGroups&Version=2016-11-15").await;
+        assert_eq!(st, StatusCode::BAD_REQUEST, "{body}");
     }
 
     #[tokio::test]

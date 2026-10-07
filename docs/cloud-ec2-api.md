@@ -57,13 +57,39 @@ API version and the error shape, so a client may also send every service to one 
 |---|---|---|---|
 | `ec2` | everything on this page (the CloudWatch-style actions answer here too, for older clients) | `…/ec2…/2016-11-15/` (any `Version` accepted) | `<Response><Errors>` |
 | `monitoring` | `DescribeAlarms`, `PutMetricAlarm`, `DeleteAlarms`, `EnableAlarmActions`, `DisableAlarmActions`, `GetMetricStatistics` | `…/monitoring…/2010-08-01/` | `<ErrorResponse><Error><Type>Sender|Receiver…` |
-| `autoscaling` | none yet: every action is `InvalidAction` | `…/autoscaling…/2011-01-01/` | as `monitoring` |
+| `autoscaling` | see [Auto Scaling](#auto-scaling) | `…/autoscaling…/2011-01-01/` | as `monitoring` |
 | `elasticloadbalancing` | ELBv2, see *ELBv2* below (classic ELB `2012-06-01` is refused with `InvalidParameterValue`; other actions are `InvalidAction`) | `…/elasticloadbalancing…/2015-12-01/` | as `monitoring` |
 
 The `monitoring` answers are the `ec2`-shaped bodies converted to CloudWatch's shape (PascalCase tags, `<member>` lists, ISO 8601
 timestamps, no result element for the write actions); only the unit tests have compared that shape with CloudWatch's, no boto3
 cloudwatch client has parsed it yet. Signature, clock-skew, key and revocation checks are the same single path for every service.
 
+## Auto Scaling
+Service `autoscaling` (`POST /autoscaling`, or any alias with the `autoscaling` credential scope). An Auto Scaling group is an
+instance group (`cloud_instance_groups`) that also has an `asg_groups` row, so the existing reconciler keeps doing the work: it
+launches into empty slots below the desired capacity, starts stopped members, stops members above it and follows a CPU target.
+The Auto Scaling actions change the group's numbers and membership through the same REST handlers the instance-group API uses
+(project access and audit stay there); nothing in this service launches or stops an instance by itself.
+
+| area | actions |
+|---|---|
+| groups | `CreateAutoScalingGroup`, `UpdateAutoScalingGroup`, `DeleteAutoScalingGroup` (`ForceDelete` terminates the members), `DescribeAutoScalingGroups`, `DescribeAutoScalingInstances`, `SetDesiredCapacity`, `TerminateInstanceInAutoScalingGroup`, `AttachInstances`, `DetachInstances`, `SuspendProcesses`, `ResumeProcesses` |
+| launch configurations | `CreateLaunchConfiguration`, `DescribeLaunchConfigurations`, `DeleteLaunchConfiguration` (a group made from one gets a template `lc-<name>` in the subnet's project; image, instance type, key pair and user data are applied) |
+| policies | `PutScalingPolicy` (`SimpleScaling`, `StepScaling`, `TargetTrackingScaling`), `DescribePolicies`, `DeletePolicy`, `ExecutePolicy` |
+| activities and tags | `DescribeScalingActivities`, `CreateOrUpdateTags`, `DeleteTags`, `DescribeTags` |
+| fixed answers | `DescribeAccountLimits`, `DescribeAdjustmentTypes`, `DescribeTerminationPolicyTypes`, `DescribeAutoScalingNotificationTypes`, `DescribeScalingProcessTypes`, `DescribeMetricCollectionTypes`, and empty lists for `DescribeLifecycleHooks`, `DescribeNotificationConfigurations`, `DescribeScheduledActions`, `DescribeInstanceRefreshes`, `DescribeLoadBalancers`, `DescribeLoadBalancerTargetGroups`, `DescribeWarmPool` |
+
+How it maps:
+- A group lives in **one subnet** (`VPCZoneIdentifier`); its availability zone is the host of that subnet's VPC. The group's project is the subnet's project.
+- `LaunchTemplate` takes `LaunchTemplateId` or `LaunchTemplateName` (+ `Version` `1`, `$Latest` or `$Default`; a template has one version until the launch-template-versions package lands) or `LaunchConfigurationName`, not both.
+- Capacity is `desired` slots between `MinSize` and `MaxSize` (at most 100). `DefaultCooldown` is the reconciler's cooldown (30 to 86400 s). A listed instance is a member in a slot below the desired capacity; a stopped member above it is scaled in and no longer listed.
+- Policies: `ExecutePolicy` applies `ChangeInCapacity`, `ExactCapacity` or `PercentChangeInCapacity` (a percentage truncates toward zero, then moves by at least `MinAdjustmentMagnitude`), clamped to min and max; step scaling needs `MetricValue` and `BreachThreshold` and picks the step the difference falls into (lower bound inclusive, upper exclusive); `HonorCooldown=true` refuses with `ScalingActivityInProgress` inside the cooldown. Target tracking is the reconciler's CPU target (`ASGAverageCPUUtilization`, 10 to 90 percent, one per group). A `SimpleScaling` or one-step `StepScaling` policy with `ChangeInCapacity` can also be the `AlarmActions` entry of `PutMetricAlarm` (on `monitoring` or `ec2`); the alarm then scales its group by that step.
+- Activities are recorded for API-driven changes (create, update, set capacity, policy runs, terminate, attach, detach). Launches the reconciler does by itself are not recorded.
+- Safety: `SuspendProcesses` of `Launch` and `Terminate` together pauses the group (the reconciler skips it); either alone is refused. A group can be paused or its capacity set to 0 before a delete; a delete with running members is `ResourceInUse` unless `ForceDelete`.
+
+Refused with `UnsupportedOperation` (never silently ignored): every parameter the action does not implement (mixed instances, target group ARNs, classic load balancer names, lifecycle hooks, instance protection, warm pools, capacity rebalance, several subnets, other termination policies than `Default`, health checks other than `EC2`), `EnterStandby`/`ExitStandby`, metrics collection, lifecycle hooks, scheduled actions, instance refresh, notification configurations, load balancer attachment, and on a launch configuration `InstanceMonitoring.Enabled=true` (set it to `false`; Terraform: `enable_monitoring = false`), security groups, block device mappings, spot price and public IP association.
+
+Status: unit-tested against a migrated database and through signed requests (claim C43); no boto3 or Terraform client has run against it. `scripts/ec2/boto3_asg.py` is the live check to run.
 ## ELBv2
 `elasticloadbalancing` answers the ELBv2 query API (`Version` `2015-12-01`; point `boto3.client("elbv2", endpoint_url=".../elbv2")` or Terraform's
 `endpoints { elbv2 = ... }` at it). It is built on Machina's native **layer-4** balancer, and says so wherever that matters.
