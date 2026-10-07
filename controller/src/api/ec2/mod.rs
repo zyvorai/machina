@@ -8,13 +8,17 @@
 //! `/api/v1/ec2/access-keys` (admin).
 
 pub mod addresses;
+pub mod eni;
 pub mod fleet;
 pub mod groups;
 pub mod images;
+pub mod lb_members;
 pub mod machina;
 pub mod monitoring;
 pub mod more;
+pub mod ops;
 pub mod page;
+pub mod peering;
 pub mod sigv4;
 pub mod status;
 pub mod volume_attrs;
@@ -651,6 +655,23 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
         "ModifyVolumeAttribute" => volume_attrs::modify_volume_attribute(state, &actor, &params).await?,
         "DescribeLoadBalancers" => volume_attrs::describe_load_balancers(state, &actor, &params).await?,
         "CreateLoadBalancer" => volume_attrs::create_load_balancer(state, &actor, &params).await?,
+        "DescribeVpcPeeringConnections" => peering::describe_vpc_peering_connections(state, &actor, &params).await?,
+        "CreateVpcPeeringConnection" => peering::create_vpc_peering_connection(state, &actor, &params).await?,
+        "AcceptVpcPeeringConnection" => peering::accept_vpc_peering_connection(state, &actor, &params).await?,
+        "AllocateSubnetAddress" => peering::allocate_subnet_address(state, &actor, &params).await?,
+        "ReleaseSubnetAddress" => peering::release_subnet_address(state, &actor, &params).await?,
+        "DescribeLoadBalancerMembers" => lb_members::describe_load_balancer_members(state, &actor, &params).await?,
+        "RegisterInstancesWithLoadBalancer" => lb_members::register_instances(state, &actor, &params).await?,
+        "DeregisterInstancesFromLoadBalancer" => lb_members::deregister_instances(state, &actor, &params).await?,
+        "ConfigureHealthCheck" => lb_members::configure_health_check(state, &actor, &params).await?,
+        "CreateNetworkInterface" => eni::create_network_interface(state, &actor, &params).await?,
+        "DeleteNetworkInterface" => eni::delete_network_interface(state, &actor, &params).await?,
+        "AttachNetworkInterface" => eni::attach_network_interface(state, &actor, &params).await?,
+        "ModifyVolume" => ops::modify_volume(state, &actor, &params).await?,
+        "CreateBackup" => ops::create_backup(state, &actor, &params).await?,
+        "DescribeBackups" => ops::describe_backups(state, &actor, &params).await?,
+        "RestoreBackup" => ops::restore_backup(state, &actor, &params).await?,
+        "DescribeInstanceAttribute" => ops::describe_instance_attribute(state, &params).await?,
         "DeleteLoadBalancer" => volume_attrs::delete_load_balancer(state, &actor, &params).await?,
         "ModifyInstanceAttribute" => more::modify_instance_attribute(state, &actor, &params).await?,
         "DescribeAddresses" => addresses::describe_addresses(state, &actor, &params).await?,
@@ -790,11 +811,15 @@ mod tests {
             include_str!("mod.rs"),
             include_str!("more.rs"),
             include_str!("addresses.rs"),
+            include_str!("eni.rs"),
             include_str!("fleet.rs"),
             include_str!("groups.rs"),
             include_str!("images.rs"),
+            include_str!("lb_members.rs"),
             include_str!("machina.rs"),
             include_str!("monitoring.rs"),
+            include_str!("ops.rs"),
+            include_str!("peering.rs"),
             include_str!("status.rs"),
             include_str!("volume_attrs.rs"),
             include_str!("vpc.rs"),

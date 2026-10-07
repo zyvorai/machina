@@ -72,6 +72,14 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
 - Volumes and balancers: `DescribeVolumeAttribute`, `ModifyVolumeAttribute` (delete-on-termination, IO limits),
   `DescribeLoadBalancers`, `CreateLoadBalancer`, `DeleteLoadBalancer` (the native L4 balancer, not ELBv2), and `SecurityGroupId.N` on
   `RunInstances`.
+- Peering and balancer members: `DescribeVpcPeeringConnections`, `CreateVpcPeeringConnection`, `AcceptVpcPeeringConnection` (status
+  `planned`, `forwardingActive=false`: nothing forwards packets), `AllocateSubnetAddress` / `ReleaseSubnetAddress` (the subnet IPAM
+  pool, `RequestKey` is idempotent), `DescribeLoadBalancerMembers`, `RegisterInstancesWithLoadBalancer`,
+  `DeregisterInstancesFromLoadBalancer`, `ConfigureHealthCheck`.
+- Interfaces, grow, backups: `CreateNetworkInterface` (`SubnetId` or `NetworkId`; attaches when `InstanceId` is set),
+  `DeleteNetworkInterface`, `AttachNetworkInterface` (create-with-instance only; an existing interface cannot be moved),
+  `ModifyVolume` (grow only), `CreateBackup` / `DescribeBackups` / `RestoreBackup` (Machina backup records, not EBS snapshots),
+  `DescribeInstanceAttribute` (`instanceType`, `groupSet`, `disableApiTermination`). No secondary private IPs.
 
 ## Not yet
 - IMDSv2, VPC peering that forwards packets, and multi-host Elastic IP failover.
