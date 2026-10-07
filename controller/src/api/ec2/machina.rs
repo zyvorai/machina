@@ -162,6 +162,9 @@ pub async fn rewind_instance(state: &AppState, actor: &AuthUser, p: &Params) -> 
     let id = resolve(state, Kind::Vm, &want, "InvalidInstanceID.NotFound").await?;
     let point_s = need(p, "RestorePointId")?;
     let hex = point_s.strip_prefix("rp-").unwrap_or(&point_s);
+    if hex.len() != 17 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err(bad("InvalidParameterValue", format!("The restore point '{point_s}' is not a valid id")));
+    }
     let point: Option<Uuid> = crate::db::query_scalar("SELECT id FROM vm_restore_points WHERE vm_id = ? AND lower(hex(id)) LIKE ?")
         .bind(id)
         .bind(format!("{hex}%"))

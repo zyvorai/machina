@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 pub(crate) mod elastic;
-mod network;
+pub(crate) mod network;
 pub(crate) use network::reserve_address;
 
 use crate::{api::ApiError, auth::AuthUser, state::AppState};

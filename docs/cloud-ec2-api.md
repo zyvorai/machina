@@ -60,9 +60,20 @@ terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list to
 - Machina actions: `SleepInstances`, `WakeInstances`, `DescribeSleepPolicies`, `ModifySleepPolicy`, `CreateRestorePoint`,
   `DescribeRestorePoints`, `RewindInstance`, `ForkInstance`, and `ModifyInstanceAttribute` with `Attribute=preemptible`.
 - Pagination: `MaxResults` (1-1000, default 100) and `NextToken` on `DescribeAddresses` and `DescribeSnapshots`; other lists still
-  come back whole. Security-group ids on `RunInstances` are still ignored.
+  come back whole.
+
+- Status, monitoring and groups: `DescribeInstanceStatus` (host-observed state, no second probe), `DescribeAlarms`, `PutMetricAlarm`,
+  `DeleteAlarms`, `EnableAlarmActions`, `DisableAlarmActions`, `GetMetricStatistics` (these answer on `POST /ec2` for now),
+  `DescribeInstanceGroups`, `UpdateInstanceGroup`, `ModifySubnetAttribute` (`Attribute=nat`), `ModifyInstanceAttribute` with
+  `Attribute=groupSet`. `DescribeInstances` now fills image id, placement, block-device mappings and security groups.
+- VPC: `CreateVpc` (needs `ProjectId`, `CidrBlock`, and `AvailabilityZone` or `HostId`), `DeleteVpc`, `CreateSubnet`, `DeleteSubnet`,
+  `DescribeRouteTables`, `CreateRoute`, `DeleteRoute`, `DescribeRegions`. Routes are stored plans: the answer says
+  `forwardingActive=false`.
+- Volumes and balancers: `DescribeVolumeAttribute`, `ModifyVolumeAttribute` (delete-on-termination, IO limits),
+  `DescribeLoadBalancers`, `CreateLoadBalancer`, `DeleteLoadBalancer` (the native L4 balancer, not ELBv2), and `SecurityGroupId.N` on
+  `RunInstances`.
 
 ## Not yet
-- Creating VPCs and subnets (use the REST API), IMDSv2, VPC peering, and multi-host Elastic IP failover.
+- IMDSv2, VPC peering that forwards packets, and multi-host Elastic IP failover.
 - `DescribeInstances` fields that have no Machina equivalent (image id, placement, block-device mappings) are empty.
 - CloudWatch-style calls: metrics and alarms are in the REST API (`/api/v1/metrics/statistics`, `/api/v1/alarms`).

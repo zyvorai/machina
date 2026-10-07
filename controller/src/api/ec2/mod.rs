@@ -9,11 +9,16 @@
 
 pub mod addresses;
 pub mod fleet;
+pub mod groups;
 pub mod images;
 pub mod machina;
+pub mod monitoring;
 pub mod more;
 pub mod page;
 pub mod sigv4;
+pub mod status;
+pub mod volume_attrs;
+pub mod vpc;
 
 use std::collections::BTreeMap;
 
@@ -247,12 +252,15 @@ async fn describe_instances(state: &AppState, p: &BTreeMap<String, String>) -> R
             return Err(Ec2Error::bad("InvalidInstanceID.NotFound", format!("The instance ID '{w}' does not exist")));
         }
     }
-    let items: String = all
+    let mut items = String::new();
+    for i in all
         .iter()
         .filter(|i| wanted.is_empty() || wanted.contains(&i.eid()))
         .filter(|i| filters.iter().all(|(n, v)| matches_filter(i, n, v)))
-        .map(instance_item)
-        .collect();
+    {
+        let extra = status::instance_extra(state, i.id).await?;
+        items.push_str(&status::splice(&instance_item(i), &extra));
+    }
     Ok(format!("<reservationSet>{items}</reservationSet>"))
 }
 
@@ -461,6 +469,7 @@ async fn run_instances(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, 
             ids.push(id);
         }
     }
+    volume_attrs::attach_run_groups(state, actor, p, &ids).await?;
     let all = load_instances(state).await?;
     let items: String = all.iter().filter(|i| ids.contains(&i.id)).map(instance_core).collect();
     Ok(format!(
@@ -617,6 +626,32 @@ async fn handle(state: &AppState, headers: &HeaderMap, uri: &Uri, body: &Bytes, 
         "ModifyInstanceAttribute" if params.get("Attribute").is_some_and(|a| a == "preemptible") => {
             machina::modify_preemptible(state, &actor, &params).await?
         }
+        "ModifyInstanceAttribute" if params.get("Attribute").is_some_and(|a| a == "groupSet") => {
+            groups::modify_group_set(state, &actor, &params).await?
+        }
+        "DescribeInstanceStatus" => status::describe_instance_status(state, &params).await?,
+        "DescribeAlarms" => monitoring::describe_alarms(state, &actor, &params).await?,
+        "PutMetricAlarm" => monitoring::put_metric_alarm(state, &actor, &params).await?,
+        "DeleteAlarms" => monitoring::delete_alarms(state, &actor, &params).await?,
+        "EnableAlarmActions" => monitoring::set_alarm_actions(state, &actor, &params, true).await?,
+        "DisableAlarmActions" => monitoring::set_alarm_actions(state, &actor, &params, false).await?,
+        "GetMetricStatistics" => monitoring::get_metric_statistics(state, &actor, &params).await?,
+        "DescribeInstanceGroups" => groups::describe_instance_groups(state, &actor, &params).await?,
+        "UpdateInstanceGroup" => groups::update_instance_group(state, &actor, &params).await?,
+        "ModifySubnetAttribute" => groups::modify_subnet_attribute(state, &actor, &params).await?,
+        "CreateVpc" => vpc::create_vpc(state, &actor, &params).await?,
+        "DeleteVpc" => vpc::delete_vpc(state, &actor, &params).await?,
+        "CreateSubnet" => vpc::create_subnet(state, &actor, &params).await?,
+        "DeleteSubnet" => vpc::delete_subnet(state, &actor, &params).await?,
+        "DescribeRouteTables" => vpc::describe_route_tables(state, &actor, &params).await?,
+        "CreateRoute" => vpc::create_route(state, &actor, &params).await?,
+        "DeleteRoute" => vpc::delete_route(state, &actor, &params).await?,
+        "DescribeRegions" => vpc::describe_regions(state, &actor, &params).await?,
+        "DescribeVolumeAttribute" => volume_attrs::describe_volume_attribute(state, &params).await?,
+        "ModifyVolumeAttribute" => volume_attrs::modify_volume_attribute(state, &actor, &params).await?,
+        "DescribeLoadBalancers" => volume_attrs::describe_load_balancers(state, &actor, &params).await?,
+        "CreateLoadBalancer" => volume_attrs::create_load_balancer(state, &actor, &params).await?,
+        "DeleteLoadBalancer" => volume_attrs::delete_load_balancer(state, &actor, &params).await?,
         "ModifyInstanceAttribute" => more::modify_instance_attribute(state, &actor, &params).await?,
         "DescribeAddresses" => addresses::describe_addresses(state, &actor, &params).await?,
         "AllocateAddress" => addresses::allocate_address(state, &actor, &params).await?,
@@ -744,6 +779,44 @@ pub async fn revoke_access_key(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every SQL literal in the EC2 modules must prepare against the migrated schema. The statements are not compile-checked, and a
+    /// wrong column name otherwise only fails when that action is first called.
+    #[tokio::test]
+    async fn every_sql_literal_prepares_against_the_schema() {
+        use sqlx::Executor;
+        let pool = crate::db::testing::pool().await;
+        let sources = [
+            include_str!("mod.rs"),
+            include_str!("more.rs"),
+            include_str!("addresses.rs"),
+            include_str!("fleet.rs"),
+            include_str!("groups.rs"),
+            include_str!("images.rs"),
+            include_str!("machina.rs"),
+            include_str!("monitoring.rs"),
+            include_str!("status.rs"),
+            include_str!("volume_attrs.rs"),
+            include_str!("vpc.rs"),
+        ];
+        let mut checked = 0;
+        for src in sources {
+            for raw in src.split('"').skip(1).step_by(2) {
+                // a Rust string continuation (backslash, newline, indent) is one space
+                let flat = raw.split("\\\n").map(str::trim_start).collect::<Vec<_>>().join("");
+                let lit = flat.as_str();
+                let t = lit.trim_start();
+                if t.len() < 25 || !["SELECT ", "INSERT ", "UPDATE ", "DELETE "].iter().any(|k| t.starts_with(k)) {
+                    continue;
+                }
+                if let Err(e) = (&pool).prepare(lit).await {
+                    panic!("SQL does not prepare: {lit}\n{e}");
+                }
+                checked += 1;
+            }
+        }
+        assert!(checked > 20, "expected to check the EC2 statements, checked {checked}");
+    }
 
     fn p(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
