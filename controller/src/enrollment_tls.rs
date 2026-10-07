@@ -40,7 +40,7 @@ pub fn sans_for(public_url: &str, extra: &str) -> Vec<String> {
 pub fn public_https_url(public_url: &str, tls_addr: &str) -> Option<String> {
     let host = url::Url::parse(public_url).ok()?.host_str()?.to_string();
     let port = tls_addr.rsplit_once(':')?.1;
-    let host = if host.contains(':') { format!("[{host}]") } else { host };
+    // `host_str()` already brackets an IPv6 literal.
     Some(format!("https://{host}:{port}"))
 }
 
