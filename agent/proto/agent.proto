@@ -16,6 +16,8 @@ service HostAgent {
   rpc GetDomainXml(GetDomainXmlRequest) returns (GetDomainXmlResponse);
   rpc DeleteVm(DeleteVmRequest) returns (DeleteVmResponse);
   rpc MigrateVm(MigrateVmRequest) returns (MigrateVmResponse);
+  rpc GetMigrationStatus(GetMigrationStatusRequest) returns (GetMigrationStatusResponse);
+  rpc ControlMigration(ControlMigrationRequest) returns (ControlMigrationResponse);
   rpc Maintenance(MaintenanceRequest) returns (MaintenanceResponse);
   rpc GetConsole(GetConsoleRequest) returns (GetConsoleResponse);
   rpc GetConsoleAccessPlan(GetConsoleAccessPlanRequest) returns (GetConsoleAccessPlanResponse);
@@ -252,6 +254,40 @@ message MigrateVmRequest {
 }
 
 message MigrateVmResponse {
+  bool ok = 1;
+  string message = 2;
+}
+
+// Status and control of a migration that is already running on the source host (virsh domjobinfo / migrate-set* / domjobabort).
+message GetMigrationStatusRequest {
+  string vm_name = 1;
+}
+
+message GetMigrationStatusResponse {
+  bool active = 1;
+  string job_type = 2;
+  uint64 time_elapsed_ms = 3;
+  uint64 data_total_bytes = 4;
+  uint64 data_processed_bytes = 5;
+  uint64 data_remaining_bytes = 6;
+  uint64 memory_total_bytes = 7;
+  uint64 memory_processed_bytes = 8;
+  uint64 memory_remaining_bytes = 9;
+  uint64 memory_bps = 10;
+  uint64 memory_dirty_rate_pages_s = 11;
+  uint64 downtime_ms = 12;
+  uint64 setup_time_ms = 13;
+}
+
+// action: set_speed (MiB/s), set_downtime (ms), postcopy, abort, throttle_vcpu (percent, 70..=100), restore_vcpu.
+message ControlMigrationRequest {
+  string vm_name = 1;
+  string action = 2;
+  uint64 value = 3;
+  bool postcopy = 4;
+}
+
+message ControlMigrationResponse {
   bool ok = 1;
   string message = 2;
 }

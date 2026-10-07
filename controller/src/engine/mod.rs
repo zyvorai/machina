@@ -3,6 +3,7 @@
 
 pub mod ai;
 pub mod alert_evaluator;
+pub mod adaptive_actuator;
 pub mod atlas_bridge;
 pub mod atlas_vm;
 pub mod backup_verifier;

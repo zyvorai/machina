@@ -569,6 +569,57 @@ impl HostAgent for AgentService {
         Ok(Response::new(CloneVmResponse { vm_name, uuid }))
     }
 
+    async fn get_migration_status(
+        &self,
+        request: Request<GetMigrationStatusRequest>,
+    ) -> Result<Response<GetMigrationStatusResponse>, Status> {
+        let vm = request.into_inner().vm_name;
+        let uri = self.libvirt.lock().map_err(|e| Status::internal(e.to_string()))?.uri().to_string();
+        let st = tokio::task::spawn_blocking(move || machina_core::libvirt::migration_control::migration_status(&uri, &vm))
+            .await
+            .map_err(|e| Status::internal(e.to_string()))?
+            .map_err(|e| Status::failed_precondition(e.to_string()))?;
+        Ok(Response::new(GetMigrationStatusResponse {
+            active: st.active,
+            job_type: st.job_type,
+            time_elapsed_ms: st.time_elapsed_ms,
+            data_total_bytes: st.data_total_bytes,
+            data_processed_bytes: st.data_processed_bytes,
+            data_remaining_bytes: st.data_remaining_bytes,
+            memory_total_bytes: st.memory_total_bytes,
+            memory_processed_bytes: st.memory_processed_bytes,
+            memory_remaining_bytes: st.memory_remaining_bytes,
+            memory_bps: st.memory_bps,
+            memory_dirty_rate_pages_s: st.memory_dirty_rate_pages_s,
+            downtime_ms: st.downtime_ms,
+            setup_time_ms: st.setup_time_ms,
+        }))
+    }
+
+    async fn control_migration(
+        &self,
+        request: Request<ControlMigrationRequest>,
+    ) -> Result<Response<ControlMigrationResponse>, Status> {
+        let r = request.into_inner();
+        let uri = self.libvirt.lock().map_err(|e| Status::internal(e.to_string()))?.uri().to_string();
+        let done = tokio::task::spawn_blocking(move || {
+            use machina_core::libvirt::migration_control as m;
+            match r.action.as_str() {
+                "set_speed" => m::set_speed(&uri, &r.vm_name, r.value, r.postcopy),
+                "set_downtime" => m::set_downtime(&uri, &r.vm_name, r.value),
+                "postcopy" => m::postcopy(&uri, &r.vm_name),
+                "abort" => m::abort(&uri, &r.vm_name),
+                "throttle_vcpu" => m::set_vcpu_quota(&uri, &r.vm_name, r.value as u32),
+                "restore_vcpu" => m::set_vcpu_quota(&uri, &r.vm_name, 100),
+                other => Err(machina_core::LibvirtError::Invalid(format!("unknown migration action {other}"))),
+            }
+        })
+        .await
+        .map_err(|e| Status::internal(e.to_string()))?;
+        done.map_err(|e| Status::failed_precondition(e.to_string()))?;
+        Ok(Response::new(ControlMigrationResponse { ok: true, message: "migration control applied".into() }))
+    }
+
     async fn maintenance(
         &self,
         request: Request<MaintenanceRequest>,

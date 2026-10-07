@@ -37,6 +37,7 @@ pub mod host_sysctl;
 pub mod hostdev_pci;
 pub mod linux_guestkit;
 pub mod metrics;
+pub mod migration_control;
 pub mod migrate;
 pub mod mkosi;
 pub mod net_xml;
