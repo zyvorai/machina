@@ -14,7 +14,7 @@ use axum::Json;
 use uuid::Uuid;
 
 use crate::auth::{require_operator, AuthUser};
-use crate::resource_ids::{ec2_id, Kind};
+use crate::resource_ids::Kind;
 use crate::state::AppState;
 
 use super::more::{api_err, resolve};
