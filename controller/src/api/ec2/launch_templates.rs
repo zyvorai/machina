@@ -337,18 +337,8 @@ pub async fn create_launch_template(state: &AppState, actor: &AuthUser, p: &Para
     let project = default_project(state, p).await?;
     let data = parse_data(p)?;
     tagspec::only_types(p, &["launch-template"])?;
-    let vm = serde_json::json!({
-        "api_version": "machina/v1",
-        "kind": "VirtualMachine",
-        "metadata": { "name": name },
-        "spec": {
-            "cpu": { "sockets": 1, "cores": 1 },
-            "memory": "1Gi",
-            "template_ref": data.get("ImageId").cloned().unwrap_or_default(),
-            "firmware": "uefi",
-            "ha": { "enabled": false }
-        }
-    });
+    // built from `VirtualMachine::new` so it carries the storage volume and API version the validator requires
+    let vm = super::fleet::template_vm(&name, data.get("ImageId").map(String::as_str).unwrap_or_default());
     let body: crate::api::cloud::elastic::CreateTemplate =
         serde_json::from_value(serde_json::json!({ "name": name, "vm": vm })).map_err(|e| bad("InvalidParameterValue", e.to_string()))?;
     let Json(row) = crate::api::cloud::elastic::create_template(State(state.clone()), Extension(actor.clone()), Path(project), Json(body))

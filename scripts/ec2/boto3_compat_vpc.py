@@ -71,6 +71,9 @@ try:
     subnet = None
     if vpc:
         subnet = r.step("CreateSubnet", lambda: ec2.create_subnet(VpcId=vpc, CidrBlock=SUBNET_CIDR, AvailabilityZone=zone)["Subnet"]["SubnetId"])
+        if subnet:
+            # the subnet's network is provisioned on the host; a launch into it is refused until DescribeSubnets says available
+            r.step("subnet becomes available", lambda: ec2.get_waiter("subnet_available").wait(SubnetIds=[subnet], WaiterConfig={"Delay": 3, "MaxAttempts": 40}))
     else:
         r.skip("CreateSubnet", "no VPC")
     if subnet:
