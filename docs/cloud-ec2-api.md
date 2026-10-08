@@ -299,7 +299,7 @@ Reached with scope `ec2`, `POST /ec2`.
 | `RevokeSecurityGroupIngress` | mixed | IPv6 and prefix-list peers refused |  |
 | `RewindInstance` | real |  | M |
 | `RunExperiment` | real |  | M |
-| `RunInstances` | mixed | Run, terminate and tags: each option is applied or refused, none dropped |  |
+| `RunInstances` | mixed | Run, terminate and tags: each option is applied or refused, none dropped. `SubnetId` launches on the subnet's network (`mc-<subnet uuid>`) and its VPC's host; a subnet that is not `ready` gives `IncorrectState` |  |
 | `SetStackAutoHeal` | real |  | M |
 | `SleepInstances` | real |  | M |
 | `StartInstances` | real |  |  |

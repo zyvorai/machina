@@ -539,9 +539,18 @@ pub(crate) async fn launch(state: &AppState, actor: &AuthUser, params: &BTreeMap
     if opts.preemptible {
         base["preemptible"] = serde_json::json!(true);
     }
-    if let Some(network) = fleet::network_for_run(state, p).await? {
-        base["network"] = serde_json::json!(network);
+    // SubnetId: launch on the network the subnet's host defined (`mc-<subnet uuid>`), on that subnet's VPC host
+    let subnet = fleet::subnet_for_run(state, p).await?;
+    if let Some(t) = &subnet {
+        if group.is_some() {
+            return Err(Ec2Error::bad("InvalidParameterCombination", "a subnet's network exists on one host: give SubnetId or Placement.GroupName, not both"));
+        }
+        if host_id.is_some_and(|h| h != t.host_id) {
+            return Err(Ec2Error::bad("InvalidParameterCombination", "Placement.AvailabilityZone is not the zone of the subnet"));
+        }
+        base["network"] = serde_json::json!(t.network);
     }
+    let host_id = host_id.or(subnet.as_ref().map(|t| t.host_id));
     if let Some(k) = p.get("KeyName") {
         base["key_name"] = serde_json::json!(k);
     }
