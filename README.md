@@ -158,7 +158,7 @@ Everything that can drop traffic starts in observe mode and enforces only under 
 - **Identity and access**: PAM, OIDC, SAML and [LDAP](docs/ldap-auth.md) sign-in, role-based access, a full audit trail. [Admin guide →](docs/handbook/admin-configuration.md)
 - **Containers**: local Podman/Docker containers and Podman pods next to your VMs. [Containers →](docs/customer/pages/infrastructure/containers.md)
 - **Kubernetes**: KubeVirt inventory and a documented migration path. [KubeVirt →](docs/kubevirt-migration.md)
-- **FluxVM**: QEMU, Cloud Hypervisor, Firecracker and flux-vm VMs from FluxVM next to libvirt VMs, with snapshots, backups, hot-add, live migration and fleet HA. [FluxVM →](docs/fluxvm.md)
+- **FluxVM**: QEMU, Cloud Hypervisor, Firecracker and flux-vm VMs from FluxVM next to libvirt VMs, with snapshots, backups, hot-add, install ISOs, live migration and fleet HA. [FluxVM →](docs/fluxvm.md)
 - **Observability**: Prometheus metrics, OTLP export, PSI/cgroup pressure, alerts and webhooks. [Observability →](docs/guides/observability.md)
 - **Storage**: Atlas integration puts VM disks on Ceph RBD, NFS or ZFS volumes with snapshot, backup and restore. [Atlas →](docs/atlas-storage.md)
 - **Automation**: [Terraform provider](terraform/machina/README.md), [TypeScript SDK](sdk/typescript/README.md), OpenAPI spec, `machinactl`.

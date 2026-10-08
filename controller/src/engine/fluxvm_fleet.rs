@@ -198,8 +198,8 @@ pub async fn delete(pool: &DbPool, host_id: Uuid, name: &str) -> anyhow::Result<
     agent_client::fluxvm_delete(&mut c, name).await
 }
 
-/// Why a FluxVM record can't live-migrate or be re-created elsewhere; `None` = ok.
-pub fn mobility_blocker(record: &Value) -> Option<String> {
+/// Why a FluxVM record can't be re-created on another host; `None` = ok.
+fn placement_blocker(record: &Value) -> Option<String> {
     let engine = record["backend"].as_str().unwrap_or_default();
     if engine != "qemu" {
         return Some(format!(
@@ -212,8 +212,30 @@ pub fn mobility_blocker(record: &Value) -> Option<String> {
             "FluxVM storage '{storage}' is local to the host; create the VM with a shared disk"
         ));
     }
+    None
+}
+
+/// Why a FluxVM record can't live-migrate; `None` = ok.
+pub fn mobility_blocker(record: &Value) -> Option<String> {
+    if let Some(why) = placement_blocker(record) {
+        return Some(why);
+    }
     if record["labels"].get(HOTPLUGGED_LABEL).is_some() {
-        return Some("VM has hot-plugged CPUs, memory or NICs since it started; restart it before migrating".into());
+        return Some(
+            "VM has hot-plugged CPUs, memory or NICs since it started; restart it before migrating"
+                .into(),
+        );
+    }
+    let loaded = record["request"]["cdroms"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|c| !c["path"].as_str().unwrap_or_default().is_empty());
+    if let Some(cd) = loaded {
+        return Some(format!(
+            "CD-ROM '{}' still holds install media; eject it before migrating",
+            cd["name"].as_str().unwrap_or_default()
+        ));
     }
     None
 }
@@ -325,7 +347,7 @@ pub async fn precheck(
                     "fluxvm_mobility",
                     blocker.is_none(),
                     blocker.unwrap_or_else(|| "QEMU on shared storage".into()),
-                    "Recreate the VM with fluxvm_shared_disk on QEMU, or restart it after hotplug",
+                    "Recreate the VM with fluxvm_shared_disk on QEMU, restart it after hotplug, or eject its install media",
                 ));
             }
             Err(e) => checks.push(check(
@@ -469,10 +491,8 @@ pub async fn migrate(
 
 /// The fluxvm-api create body HA re-creates from: the VM's own request.
 pub fn recreate_body(record: &Value) -> anyhow::Result<Value> {
-    if let Some(why) = mobility_blocker(record) {
-        if !why.contains("hot-added") {
-            anyhow::bail!("not recoverable on another host: {why}");
-        }
+    if let Some(why) = placement_blocker(record) {
+        anyhow::bail!("not recoverable on another host: {why}");
     }
     let mut body = record
         .get("request")
@@ -481,6 +501,10 @@ pub fn recreate_body(record: &Value) -> anyhow::Result<Value> {
         .ok_or_else(|| anyhow::anyhow!("FluxVM record has no request"))?;
     if let Some(name) = record.get("name") {
         body["name"] = name.clone();
+    }
+    // FluxVM refuses an empty CD-ROM on create; an ejected drive only exists after eject.
+    if let Some(cds) = body.get_mut("cdroms").and_then(Value::as_array_mut) {
+        cds.retain(|c| !c["path"].as_str().unwrap_or_default().is_empty());
     }
     Ok(body)
 }
@@ -650,6 +674,12 @@ mod tests {
         let hot = json!({"backend": "qemu", "request": {"storage": "shared"},
                          "labels": {"fluxvm.dev/hotplugged": "true"}});
         assert!(mobility_blocker(&hot).unwrap().contains("restart"));
+        let iso = json!({"backend": "qemu", "labels": {},
+                         "request": {"storage": "shared", "cdroms": [{"name": "install", "path": "/iso/w.iso"}]}});
+        assert!(mobility_blocker(&iso).unwrap().contains("eject"));
+        let ejected = json!({"backend": "qemu", "labels": {},
+                             "request": {"storage": "shared", "cdroms": [{"name": "install", "path": ""}]}});
+        assert!(mobility_blocker(&ejected).is_none());
     }
 
     #[test]
@@ -663,6 +693,13 @@ mod tests {
         assert_eq!(body["storage"], "shared");
         let local = json!({"name": "x", "backend": "qemu", "request": {"storage": "default"}});
         assert!(recreate_body(&local).is_err());
+        let cds = json!({"name": "w", "backend": "qemu", "labels": {},
+                         "request": {"storage": "shared", "cdroms": [
+                             {"name": "install", "path": ""}, {"name": "cd2", "path": "/iso/d.iso"}]}});
+        assert_eq!(
+            recreate_body(&cds).unwrap()["cdroms"],
+            json!([{"name": "cd2", "path": "/iso/d.iso"}])
+        );
     }
 
     #[test]

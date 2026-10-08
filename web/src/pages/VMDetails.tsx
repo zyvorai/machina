@@ -2639,6 +2639,7 @@ export default function VMDetailsPage() {
           vcpus={vm.vcpus}
           memoryMb={vm.memory_mb}
           interfaces={vm.interfaces}
+          cdroms={vm.disks?.filter((d) => d.device === 'cdrom')}
           onChanged={load}
         />
       )}

@@ -11,8 +11,8 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 
 use super::types::{
-    FluxCreate, FluxList, FluxMetrics, FluxReceiver, FluxRecord, FluxSnapshot, FLUXVM_HYPERVISORS,
-    MIGRATING_FROM_LABEL,
+    FluxCdrom, FluxCreate, FluxList, FluxMetrics, FluxReceiver, FluxRecord, FluxSnapshot,
+    FLUXVM_HYPERVISORS, MIGRATING_FROM_LABEL,
 };
 use crate::{CreateVmRequest, FluxvmConfig, LibvirtError, VmMetrics};
 
@@ -299,6 +299,20 @@ impl FluxvmClient {
         .map(|_| ())
     }
 
+    // --- install media (QEMU) ---
+
+    /// Removes the medium from CD-ROM `cdrom` (live when running). The empty drive
+    /// stays; ejecting an empty drive is a no-op.
+    pub async fn eject_cdrom(&self, name: &str, cdrom: &str) -> Result<FluxRecord, LibvirtError> {
+        let id = self.resolve(name).await?.id;
+        self.call(
+            Method::POST,
+            &format!("/v1/vms/{id}/cdroms/{}/eject", urlencode(cdrom)),
+            None,
+        )
+        .await
+    }
+
     // --- backups (default or shared storage; a running VM needs QEMU) ---
 
     pub async fn backup(
@@ -544,12 +558,18 @@ impl FluxvmClient {
             ));
         }
         let network = build_network(req, hv)?;
-        // `auto` may resolve to flux-vm, which has no user-mode NAT: pin QEMU.
-        let hv = if hv == "auto" && network["mode"] == "user" {
+        let cdroms = build_cdroms(&req.fluxvm_isos)?;
+        // `auto` may resolve to flux-vm, which has no user-mode NAT or CD-ROMs: pin QEMU.
+        let hv = if hv == "auto" && (network["mode"] == "user" || !cdroms.is_empty()) {
             "qemu"
         } else {
             hv
         };
+        if !cdroms.is_empty() && hv != "qemu" {
+            return Err(LibvirtError::Invalid(format!(
+                "fluxvm_isos need fluxvm_backend qemu, not '{hv}'"
+            )));
+        }
         let opt = |s: &str| Some(s.trim().to_string()).filter(|s| !s.is_empty());
         let user = req.cloud_init_user.trim();
         let key = req.cloud_init_ssh_pubkey.trim();
@@ -575,8 +595,34 @@ impl FluxvmClient {
             kernel_args: opt(&req.fluxvm_kernel_args),
             agent: Some(json!({ "enabled": req.fluxvm_agent.unwrap_or(true) })),
             storage: req.fluxvm_shared_disk.then(|| "shared".to_string()),
+            cdroms,
         })
     }
+}
+
+/// FluxVM CD-ROM drive names for `fluxvm_isos`, in order.
+const CDROM_NAMES: [&str; 4] = ["install", "cd2", "cd3", "cd4"];
+
+fn build_cdroms(isos: &[String]) -> Result<Vec<FluxCdrom>, LibvirtError> {
+    let isos: Vec<&str> = isos
+        .iter()
+        .map(|p| p.trim())
+        .filter(|p| !p.is_empty())
+        .collect();
+    if isos.len() > CDROM_NAMES.len() {
+        return Err(LibvirtError::Invalid(format!(
+            "at most {} fluxvm_isos",
+            CDROM_NAMES.len()
+        )));
+    }
+    Ok(isos
+        .into_iter()
+        .zip(CDROM_NAMES)
+        .map(|(path, name)| FluxCdrom {
+            name: name.into(),
+            path: path.into(),
+        })
+        .collect())
 }
 
 /// Every mode except `user`/`none` gives the guest a host-visible tap, which is what
@@ -843,6 +889,37 @@ mod tests {
         assert_eq!(v["agent"]["enabled"], false);
         assert!(v.get("storage").is_none());
         assert!(v.get("kernel").is_none());
+    }
+
+    #[test]
+    fn isos_become_named_cdroms_on_qemu() {
+        let c = client();
+        let mut req = CreateVmRequest {
+            name: "win".into(),
+            fluxvm_image: "/images/blank.raw".into(),
+            fluxvm_isos: vec![
+                "/iso/win11.iso".into(),
+                " ".into(),
+                "/iso/virtio-win.iso".into(),
+            ],
+            ..Default::default()
+        };
+        let v = serde_json::to_value(c.build_create(&req).unwrap()).unwrap();
+        assert_eq!(v["backend"], "qemu");
+        assert_eq!(
+            v["cdroms"],
+            json!([{"name": "install", "path": "/iso/win11.iso"},
+                   {"name": "cd2", "path": "/iso/virtio-win.iso"}])
+        );
+
+        req.fluxvm_backend = "firecracker".into();
+        assert!(c.build_create(&req).is_err());
+        req.fluxvm_backend = "qemu".into();
+        req.fluxvm_isos = vec!["/a.iso".into(); 5];
+        assert!(c.build_create(&req).is_err());
+        req.fluxvm_isos.clear();
+        let v = serde_json::to_value(c.build_create(&req).unwrap()).unwrap();
+        assert!(v.get("cdroms").is_none());
     }
 
     #[test]

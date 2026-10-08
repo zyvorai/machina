@@ -306,8 +306,9 @@ engine behind Zyra AI. See [../controller-ha.md](../controller-ha.md),
   Create (image or direct kernel boot, guest agent, shared disk), power,
   serial console (read-only log on non-QEMU engines), guest-agent console,
   snapshots, backups (every engine; a running VM only on QEMU), hot-add
-  vCPU/memory (QEMU, Cloud Hypervisor), extra NICs (QEMU) and live migration (QEMU on a shared
-  disk) from VM detail → **Manage**. With `MACHINA_FLUXVM_URL` on each
+  vCPU/memory (QEMU, Cloud Hypervisor), extra NICs (QEMU), install ISOs
+  (attached at create, ejected live; QEMU) and live migration (QEMU on a shared
+  disk, ISOs ejected) from VM detail → **Manage**. With `MACHINA_FLUXVM_URL` on each
   host's `machina-agent`, the controller lists them, powers and deletes
   them, migrates them between hosts (`vm.migrate`, DRS) and re-creates them
   on another host for HA (`ha.recover`, `POST /vms/{id}/fluxvm/recover`).

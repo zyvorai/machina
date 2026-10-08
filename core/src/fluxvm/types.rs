@@ -85,6 +85,16 @@ pub struct FluxRequestView {
     pub storage: String,
     #[serde(default)]
     pub agent: Option<Value>,
+    #[serde(default)]
+    pub cdroms: Vec<FluxCdrom>,
+}
+
+/// A CD-ROM drive; an empty `path` is a drive whose medium was ejected.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct FluxCdrom {
+    pub name: String,
+    #[serde(default)]
+    pub path: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -117,6 +127,8 @@ pub struct FluxCreate {
     /// `shared` for an in-place disk; omitted = FluxVM's per-VM clone.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub storage: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub cdroms: Vec<FluxCdrom>,
 }
 
 /// One entry of `GET /v1/vms/{id}/snapshots`.
@@ -260,6 +272,21 @@ impl FluxRecord {
                 physical_bytes: None,
             });
         }
+        for cd in &self.request.cdroms {
+            disks.push(DiskInfo {
+                device: "cdrom".into(),
+                source: cd.path.clone(),
+                driver: "raw".into(),
+                target: cd.name.clone(),
+                bus: "sata".into(),
+                cache: String::new(),
+                readonly: true,
+                shareable: false,
+                capacity_bytes: None,
+                allocation_bytes: None,
+                physical_bytes: None,
+            });
+        }
         let mode = self
             .request
             .network
@@ -363,6 +390,33 @@ mod tests {
             }
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn cdroms_show_as_readonly_cdrom_disks() {
+        let mut rec = sample();
+        rec.request.cdroms = vec![
+            FluxCdrom {
+                name: "install".into(),
+                path: "/iso/win11.iso".into(),
+            },
+            FluxCdrom {
+                name: "cd2".into(),
+                path: String::new(),
+            },
+        ];
+        let d = rec.to_vm_details();
+        let cds: Vec<_> = d.disks.iter().filter(|x| x.device == "cdrom").collect();
+        assert_eq!(cds.len(), 2);
+        assert_eq!(
+            (cds[0].target.as_str(), cds[0].source.as_str()),
+            ("install", "/iso/win11.iso")
+        );
+        assert!(cds[0].readonly);
+        assert_eq!(
+            (cds[1].target.as_str(), cds[1].source.as_str()),
+            ("cd2", "")
+        );
     }
 
     #[test]

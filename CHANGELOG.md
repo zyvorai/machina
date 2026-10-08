@@ -31,9 +31,13 @@ See [docs/fluxvm.md](docs/fluxvm.md).
   `/etc/fluxvm.toml` has no `[sandbox.dataplane]` mode, creating or starting a networked FluxVM VM from Machina fails
   if the BPF objects can't attach (it used to fall back to nftables). Install the BPF objects first, or set
   `mode = "legacy"`. See [docs/fluxvm.md](docs/fluxvm.md#upgrading-fluxvm).
-- **FluxVM CD-ROM eject.** FluxVM VMs created elsewhere with install media now migrate from Machina once the ISO is
-  ejected on the host (FluxVM `POST /v1/vms/{id}/cdroms/{name}/eject`); the refusal names that route. Verified
-  live on 212.8.248.187.
+- **FluxVM install ISOs.** `fluxvm_isos` on create (UI: **Install ISOs**) attaches up to four ISOs as CD-ROMs on a
+  QEMU VM (`auto` picks QEMU). **Manage → Install media** lists them with **Eject**
+  (`POST …/cdrom/eject/{drive}?backend=fluxvm`, live; the empty drive stays). Migration, the **Migrate** button and the
+  controller pre-check refuse a VM with an ISO still in a drive; re-inserting is refused (FluxVM can't refill a drive).
+- **FluxVM HA re-create fixes.** Re-create had stopped accepting hot-plugged VMs (it matched the old wording of the
+  migration blocker); it now checks only engine and storage. Ejected drives are left out of the re-created VM, which
+  FluxVM would otherwise refuse.
 
 ## 2026-10-07 — FluxVM: full VM management and fleet HA
 

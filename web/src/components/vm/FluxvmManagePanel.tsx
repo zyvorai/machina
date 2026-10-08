@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
 import { useCallback, useEffect, useState } from 'react'
-import { Archive, ArrowRightLeft, Camera, Cpu, Network, RotateCcw, Trash2 } from 'lucide-react'
-import { FLUXVM_CONNECTION, attachInterface, detachInterface, migrateVM, setMemory, setVcpus } from '../../api/vm'
+import { Archive, ArrowRightLeft, Camera, Cpu, Disc, Network, RotateCcw, Trash2 } from 'lucide-react'
+import { FLUXVM_CONNECTION, attachInterface, detachInterface, ejectCdrom, migrateVM, setMemory, setVcpus } from '../../api/vm'
 import { createSnapshot, deleteSnapshot, listSnapshots, revertSnapshot, type SnapshotInfo } from '../../api/snapshot'
 import { deleteBackup, fetchBackups, restoreBackup, triggerBackup, type BackupInfo } from '../../api/backup'
 import { formatUserError } from '../../utils/apiError'
@@ -29,6 +29,8 @@ export function fluxvmSerialLabel(engine?: string | null): string {
 }
 
 type Iface = { mac_address: string; source: string }
+/** A FluxVM CD-ROM: `target` is the drive name, `source` the ISO (empty once ejected). */
+type Cdrom = { target: string; source: string }
 
 type Props = {
   name: string
@@ -37,6 +39,7 @@ type Props = {
   vcpus: number
   memoryMb: number
   interfaces: Iface[]
+  cdroms?: Cdrom[]
   onChanged: () => void
 }
 
@@ -44,7 +47,7 @@ const section = 'tahoe-glass-card p-5 space-y-3'
 const heading = 'text-sm font-semibold text-[var(--text-primary)] flex items-center gap-2'
 const hint = 'text-xs text-[var(--text-muted)]'
 
-export default function FluxvmManagePanel({ name, engine, state, vcpus, memoryMb, interfaces, onChanged }: Props) {
+export default function FluxvmManagePanel({ name, engine, state, vcpus, memoryMb, interfaces, cdroms = [], onChanged }: Props) {
   const toast = useToastContext()
   const caps = fluxvmCaps(engine)
   const running = state === 'running'
@@ -94,6 +97,7 @@ export default function FluxvmManagePanel({ name, engine, state, vcpus, memoryMb
 
   const primaryMac = interfaces[0]?.mac_address
   const extraNics = interfaces.filter((i, idx) => idx > 0 && i.mac_address && i.mac_address !== primaryMac)
+  const loadedMedia = cdroms.filter((c) => c.source)
 
   return (
     <div className="space-y-4" data-testid="fluxvm-manage-panel">
@@ -143,6 +147,25 @@ export default function FluxvmManagePanel({ name, engine, state, vcpus, memoryMb
           ) : (
             <p className={hint}>No extra NICs. The primary NIC cannot be hot-removed.</p>
           )}
+        </div>
+      )}
+
+      {cdroms.length > 0 && (
+        <div className={section} data-testid="fluxvm-install-media">
+          <h3 className={heading}><Disc className="w-4 h-4" /> Install media</h3>
+          <p className={hint}>Eject the ISOs once the OS is installed: a VM with media in a drive can&apos;t migrate. The empty drive stays, so the guest&apos;s devices don&apos;t change; FluxVM can&apos;t put media back in.</p>
+          <ul className="text-sm space-y-1">
+            {cdroms.map((c) => (
+              <li key={c.target} className="flex items-center gap-3">
+                <span className="font-mono text-xs">{c.target}</span>
+                <span className="text-xs text-[var(--text-muted)] font-mono truncate">{c.source || 'empty'}</span>
+                {c.source && (
+                  <button type="button" className="btn-ghost text-xs" disabled={busy !== null}
+                    onClick={() => run(`eject-${c.target}`, () => ejectCdrom(name, c.target, conn), `Ejected ${c.target}`)}>Eject</button>
+                )}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -224,7 +247,9 @@ export default function FluxvmManagePanel({ name, engine, state, vcpus, memoryMb
               </>
             )}
           </div>
-          <button type="button" className="btn-primary text-sm disabled:opacity-50" disabled={!running || busy !== null || !dest.trim()}
+          {loadedMedia.length > 0 && <p className={hint}>Eject {loadedMedia.map((c) => c.target).join(', ')} first.</p>}
+          <button type="button" className="btn-primary text-sm disabled:opacity-50" disabled={!running || busy !== null || !dest.trim() || loadedMedia.length > 0}
+            title={loadedMedia.length > 0 ? 'Eject the install media first' : undefined}
             onClick={() => run('migrate', () => migrateVM(name, dest.trim(), true, {
               dest_token: destToken || undefined,
               listen_host: listenHost.trim() || undefined,

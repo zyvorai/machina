@@ -79,6 +79,12 @@ describe('FluxVM create extras', () => {
     expect(buildFluxvmCreateRequest({ ...base, agent: false }).fluxvm_agent).toBe(false)
     expect(buildFluxvmCreateRequest({ ...base, agent: true }).fluxvm_agent).toBeUndefined()
   })
+
+  it('splits install ISOs on newlines and commas, dropping blanks', () => {
+    const r = buildFluxvmCreateRequest({ ...base, isos: ' /iso/win11.iso\n\n/iso/virtio.iso , ' })
+    expect(r.fluxvm_isos).toEqual(['/iso/win11.iso', '/iso/virtio.iso'])
+    expect(buildFluxvmCreateRequest({ ...base, isos: ' \n ' }).fluxvm_isos).toBeUndefined()
+  })
 })
 
 describe('FluxVM per-engine features', () => {

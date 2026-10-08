@@ -2,6 +2,20 @@
 
 Rolling notes from deployed-host sweeps. Update as new loops complete.
 
+## 2026-10-08 — FluxVM install ISOs from Machina (`175.110.122.71`, FluxVM `14b8d0b`)
+
+Machina built with `fluxvm_isos`, the CD-ROM eject route for FluxVM and the HA re-create fix; FluxVM upgraded to
+`14b8d0b` with rebuilt BPF objects (Kairon VMs kept running). VM B is now created with an install ISO.
+
+| Gate | Result |
+|------|--------|
+| fluxvm (`ops-fluxvm.js`) | **38/38 PASS** (new: `cdrom-migrate-refused`, `cdrom-eject`, `cdrom-insert-refused`; `controller-ha-recreate` now re-creates a VM with an ejected drive) |
+| `cargo test -p machina-core -p machina-controller fluxvm` | PASS |
+| web `npm test` | 71 files / 348 tests PASS |
+
+`212.8.248.187` couldn't run it: I/O pressure stayed at 93–95% for over an hour (other sessions' builds, k3s,
+Postgres), and every FluxVM create outran the 300 s request timeout.
+
 ## 2026-10-08 — FluxVM CD-ROM eject (`212.8.248.187`, FluxVM `14b8d0b`)
 
 QEMU VM on a shared disk with a cloud-init ISO in cdrom `install`, created through fluxvm-api (Machina has no ISO

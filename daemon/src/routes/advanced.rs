@@ -271,6 +271,12 @@ async fn insert_cdrom_handler(
     Json(req): Json<CdromRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_write(&actor, "vms:write")?;
+    if conn_q.is_fluxvm() {
+        return Err(machina_core::LibvirtError::Invalid(
+            "FluxVM attaches install ISOs only at create (fluxvm_isos); an ejected drive can't be refilled".into(),
+        )
+        .into());
+    }
     // Held across the whole read-XML → pick-target → attach/update sequence:
     // two concurrent inserts on the same VM would otherwise both read the same
     // starting XML, pick the same "free" target, and race on the attach.
@@ -328,6 +334,15 @@ async fn eject_cdrom_handler(
     Path((name, target)): Path<(String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     require_write(&actor, "vms:write")?;
+    if conn_q.is_fluxvm() {
+        super::fluxvm::client()?.eject_cdrom(&name, &target).await?;
+        return Ok(Json(serde_json::json!({
+            "status": "ejected",
+            "name": name,
+            "target": target,
+            "backend": machina_core::fluxvm::BACKEND_NAME,
+        })));
+    }
     let _vm_guard = manager.lock_vm(&name).await;
     let name2 = name.clone();
     let target2 = target.clone();

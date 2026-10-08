@@ -44,8 +44,11 @@ export function buildFluxvmCreateRequest(p: {
   kernelArgs?: string
   agent?: boolean
   sharedDisk?: boolean
+  /** Install ISO paths, one per line or comma-separated. */
+  isos?: string
 }): CreateVmRequest {
   const network = p.network ?? 'netns'
+  const isos = splitIsos(p.isos)
   const net: Partial<CreateVmRequest> =
     network === 'bridge'
       ? { fluxvm_bridge: p.bridge?.trim() || undefined }
@@ -72,7 +75,14 @@ export function buildFluxvmCreateRequest(p: {
     fluxvm_kernel_args: p.kernelArgs?.trim() || undefined,
     fluxvm_agent: p.agent === false ? false : undefined,
     fluxvm_shared_disk: p.sharedDisk || undefined,
+    fluxvm_isos: isos.length > 0 ? isos : undefined,
   }
+}
+
+export const FLUXVM_MAX_ISOS = 4
+
+function splitIsos(raw?: string): string[] {
+  return (raw ?? '').split(/[\n,]+/).map((s) => s.trim()).filter(Boolean)
 }
 
 export default function FluxvmCreatePanel({ initialName = '', defaultHypervisor, onCreated, onError }: Props) {
@@ -95,6 +105,7 @@ export default function FluxvmCreatePanel({ initialName = '', defaultHypervisor,
   const [kernelArgs, setKernelArgs] = useState('')
   const [agent, setAgent] = useState(true)
   const [sharedDisk, setSharedDisk] = useState(false)
+  const [isos, setIsos] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [log, setLog] = useState<string[]>([])
 
@@ -110,14 +121,18 @@ export default function FluxvmCreatePanel({ initialName = '', defaultHypervisor,
             ? 'User-mode NAT needs the qemu (or auto) hypervisor.'
             : sharedDisk && hypervisor === 'flux-vm'
               ? 'flux-vm needs FluxVM-managed storage; pick another hypervisor for a shared disk.'
-              : null
+              : splitIsos(isos).length > 0 && hypervisor !== 'qemu' && hypervisor !== 'auto'
+                ? 'Install ISOs need the qemu (or auto) hypervisor.'
+                : splitIsos(isos).length > FLUXVM_MAX_ISOS
+                  ? `At most ${FLUXVM_MAX_ISOS} install ISOs.`
+                  : null
 
   const submit = async () => {
     if (blocked) return
     const req = buildFluxvmCreateRequest({
       name: vmName, vcpus, memoryMb, diskGb, hypervisor, image,
       network, bridge, directUplink, directMode, directGuestIps,
-      cloudInitUser, cloudInitSshKey, kernel, initrd, kernelArgs, agent, sharedDisk,
+      cloudInitUser, cloudInitSshKey, kernel, initrd, kernelArgs, agent, sharedDisk, isos,
     })
     setSubmitting(true)
     setLog([])
@@ -214,6 +229,11 @@ export default function FluxvmCreatePanel({ initialName = '', defaultHypervisor,
             <input type="checkbox" checked={sharedDisk} onChange={(e) => setSharedDisk(e.target.checked)} data-testid="fluxvm-shared-disk" />
             Use this raw file / block device in place (shared storage) — needed for live migration and HA; never deleted
           </label>
+        </div>
+        <div className="sm:col-span-2">
+          <label htmlFor="fluxvm-isos" className="block text-sm text-[var(--text-muted)] mb-1">Install ISOs (optional, QEMU, up to {FLUXVM_MAX_ISOS})</label>
+          <textarea id="fluxvm-isos" rows={2} value={isos} onChange={(e) => setIsos(e.target.value)} className="input-field w-full font-mono text-sm" placeholder={'/var/lib/fluxvm/images/win11.iso\n/var/lib/fluxvm/images/virtio-win.iso'} />
+          <p className="text-xs text-[var(--text-muted)] mt-1">Attached as CD-ROMs install, cd2, … For a fresh install, point the image at an empty raw file. Eject them from the Manage tab before migrating.</p>
         </div>
         <div>
           <label htmlFor="fluxvm-kernel" className="block text-sm text-[var(--text-muted)] mb-1">Kernel (optional)</label>

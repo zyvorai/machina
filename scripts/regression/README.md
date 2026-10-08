@@ -126,6 +126,8 @@ make regression-pages MACHINA_BASE_URL=https://HOST:5092
 
 ## Outputs
 
+`ops-fluxvm.js` takes `FLUXVM_ONLY=b` (or `a,c`) to run a subset of its three VMs, e.g. to retest on a busy host.
+
 Written under `scripts/regression/results/` (gitignored; `MACHINA_REGRESSION_OUT` moves it — use that, or run from a
 copy, on a host where something else `rsync --delete`s the tree):
 

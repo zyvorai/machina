@@ -302,6 +302,8 @@ export interface CreateVmRequest {
   fluxvm_agent?: boolean
   /** Use `fluxvm_image` in place as a shared raw disk (`storage: shared`): needed for live migration and HA. */
   fluxvm_shared_disk?: boolean
+  /** Install ISOs on the FluxVM host, attached as CD-ROMs `install`, `cd2`… (QEMU only, at most 4). */
+  fluxvm_isos?: string[]
 }
 
 export interface VmTemplate {

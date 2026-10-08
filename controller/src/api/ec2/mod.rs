@@ -156,6 +156,9 @@ struct Inst {
     ip: Option<String>,
     created: String,
     tags: Vec<(String, String)>,
+    /// Why the launch task (`vm.apply`) failed. Set only while the host still reports no state for the VM; such an
+    /// instance is shown as `terminated` instead of `pending` forever.
+    launch_failure: Option<String>,
 }
 
 impl Inst {
@@ -191,8 +194,9 @@ fn instance_core(i: &Inst) -> String {
         .map(|(k, v)| format!("<item><key>{}</key><value>{}</value></item>", xml_escape(k), xml_escape(v)))
         .collect();
     let ip = i.ip.as_deref().map(|a| format!("<privateIpAddress>{}</privateIpAddress>", xml_escape(a))).unwrap_or_default();
+    let reason = i.launch_failure.as_deref().map(status::state_reason_xml).unwrap_or_default();
     format!(
-        "<item><instanceId>{}</instanceId><imageId/><instanceState><code>{code}</code><name>{name}</name></instanceState><privateDnsName>{}</privateDnsName>{ip}<instanceType>{}</instanceType><launchTime>{}</launchTime><tagSet>{tags}</tagSet></item>",
+        "<item><instanceId>{}</instanceId><imageId/><instanceState><code>{code}</code><name>{name}</name></instanceState><privateDnsName>{}</privateDnsName>{ip}{reason}<instanceType>{}</instanceType><launchTime>{}</launchTime><tagSet>{tags}</tagSet></item>",
         i.eid(),
         xml_escape(&i.name),
         xml_escape(&i.itype()),
@@ -237,9 +241,16 @@ async fn load_instances(state: &AppState) -> Result<Vec<Inst>, Ec2Error> {
         crate::db::query_as("SELECT resource_id, key, value FROM resource_tags WHERE resource_type = 'vm'")
             .fetch_all(&state.pool)
             .await?;
+    let failures = status::failed_launches(state).await?;
     let mut out: Vec<Inst> = rows
         .into_iter()
-        .map(|(id, name, state, vcpus, memory_mib, flavor, ip, created)| Inst {
+        .map(|(id, name, mut state, vcpus, memory_mib, flavor, ip, created)| {
+            let launch_failure = (instance_state(&state).0 == 0).then(|| failures.get(&id).cloned()).flatten();
+            if launch_failure.is_some() {
+                state = "terminated".into();
+            }
+            Inst {
+            launch_failure,
             tags: tags.iter().filter(|(r, _, _)| *r == id.simple().to_string()).map(|(_, k, v)| (k.clone(), v.clone())).collect(),
             id,
             name,
@@ -249,6 +260,7 @@ async fn load_instances(state: &AppState) -> Result<Vec<Inst>, Ec2Error> {
             flavor,
             ip,
             created,
+            }
         })
         .collect();
     out.extend(gone.into_iter().map(|(id, name, flavor, vcpus, memory_mib, at)| Inst {
@@ -261,6 +273,7 @@ async fn load_instances(state: &AppState) -> Result<Vec<Inst>, Ec2Error> {
         flavor,
         ip: None,
         created: at,
+        launch_failure: None,
     }));
     Ok(out)
 }
@@ -384,6 +397,9 @@ async fn power(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, String>,
             .find(|i| &i.eid() == want)
             .ok_or_else(|| Ec2Error::bad("InvalidInstanceID.NotFound", format!("The instance ID '{want}' does not exist")))?;
         let (pc, pn) = instance_state(&i.state);
+        if let Some(cause) = &i.launch_failure {
+            return Err(Ec2Error::bad("IncorrectInstanceState", status::launch_failed_message(want, cause)));
+        }
         if i.state == "terminated" {
             return Err(Ec2Error::bad("IncorrectInstanceState", format!("The instance '{want}' is terminated")));
         }
@@ -634,7 +650,8 @@ async fn terminate(state: &AppState, actor: &AuthUser, p: &BTreeMap<String, Stri
             .find(|i| &i.eid() == want)
             .ok_or_else(|| Ec2Error::bad("InvalidInstanceID.NotFound", format!("The instance ID '{want}' does not exist")))?;
         let (pc, pn) = instance_state(&i.state);
-        if i.state == "terminated" {
+        // A launch that failed is shown as terminated but still has its VM row: terminating it removes that row.
+        if i.state == "terminated" && i.launch_failure.is_none() {
             items.push_str(&format!("<item><instanceId>{want}</instanceId><currentState><code>48</code><name>terminated</name></currentState><previousState><code>48</code><name>terminated</name></previousState></item>"));
             continue;
         }
@@ -1151,7 +1168,12 @@ mod tests {
                 if t.len() < 25 || !["SELECT ", "INSERT ", "UPDATE ", "DELETE "].iter().any(|k| t.starts_with(k)) {
                     continue;
                 }
-                if let Err(e) = (&pool).prepare(lit).await {
+                // the controller writes SQLite-form SQL and the PostgreSQL build rewrites it (`?` to `$n`, ...) before it runs
+                #[cfg(feature = "postgres")]
+                let owned = crate::db::dialect::to_postgres(lit);
+                #[cfg(not(feature = "postgres"))]
+                let owned = lit.to_string();
+                if let Err(e) = (&pool).prepare(owned.as_str()).await {
                     panic!("SQL does not prepare: {lit}\n{e}");
                 }
                 checked += 1;
@@ -1191,6 +1213,7 @@ mod tests {
             ip: Some("10.0.0.5".into()),
             created: "2026-10-05 10:00:00".into(),
             tags: vec![("Env".into(), "prod".into())],
+            launch_failure: None,
         }
     }
 

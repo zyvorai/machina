@@ -558,6 +558,14 @@ Deleting an instance leaves a tombstone: `DescribeInstances` keeps listing it as
 with its tags, then drops it. `StartInstances`/`StopInstances` on a terminated instance fail with `IncorrectInstanceState`;
 terminating it again is a no-op. The Machina UI and `/api/v1/vms` do not list tombstones.
 
+### Failed launches
+`RunInstances` returns once the launch task (`vm.apply`) is queued; the task can still fail (for example the template image
+download). While the host reports no state for the VM and its latest `vm.apply` task is `failed`, `DescribeInstances` shows the
+instance as `terminated` (code 48) with `StateReason` `Server.InternalError` and the task's error as the message (also in
+`StateTransitionReason`); `DescribeInstanceStatus` lists it with `IncludeAllInstances` as `not-applicable`. `StartInstances`,
+`StopInstances` and `AttachVolume` answer `IncorrectInstanceState` carrying that cause, and `TerminateInstances` removes the
+leftover VM. A newer `vm.apply` that did not fail, or any state the host reports, takes precedence. Claim C45 (unit-tested only).
+
 ### VPC networking
 What each object does here, so a Terraform plan means what it says. Everything below is unit-tested only; `scripts/ec2/boto3_vpc.py`
 and `scripts/ec2/terraform/vpc/` are the client checks (see `docs/claims.md` C40 for what was actually run).

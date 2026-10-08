@@ -11,7 +11,8 @@
  *   extra NIC, backup + restore.
  *   VM C (Firecracker, default storage): live backup refused, stopped backup +
  *   restore.
- *   VM B (QEMU, shared raw disk, netns NIC): extra NIC hot-add, restart with it
+ *   VM B (QEMU, shared raw disk, netns NIC, install ISO): migration refused while
+ *   the ISO is in, eject (and re-insert refused), extra NIC hot-add, restart with it
  *   (fd-passed host tap) and removal, migration refused until a restart, daemon
  *   live migration to the same host,
  *   controller inventory row, controller vm.migrate host-to-itself, HA
@@ -20,6 +21,7 @@
  * Needs `[fluxvm] enabled` on the daemon, MACHINA_FLUXVM_URL on the agent and a
  * kernel/initrd + image on the host. The shared disk is copied on the host
  * (locally when MACHINA_BASE_URL is loopback, else over ssh FLUXVM_SSH).
+ * FLUXVM_ONLY=b (or a,c) runs a subset of the VMs.
  */
 
 const { execSync } = require('child_process');
@@ -41,11 +43,15 @@ const SHARED_DIR = process.env.FLUXVM_SHARED_DIR || '/var/lib/fluxvm/shared';
 const BRIDGE = process.env.FLUXVM_BRIDGE || 'virbr0';
 const FC_KERNEL = process.env.FLUXVM_FC_KERNEL || '/var/lib/fluxvm/kernels/vmlinux';
 const SKIP_PLATFORM = process.env.FLUXVM_SKIP_PLATFORM === '1';
+// Which VMs to run, e.g. `b` or `a,c` (default all).
+const ONLY = new Set((process.env.FLUXVM_ONLY || 'a,b,c').toLowerCase().split(/[\s,]+/).filter(Boolean));
 const SUFFIX = Date.now().toString(36);
 const A = `mfx-a-${SUFFIX}`;
 const B = `mfx-b-${SUFFIX}`;
 const C = `mfx-c-${SUFFIX}`;
 const SHARED_DISK = `${SHARED_DIR}/${B}.raw`;
+// Placeholder install medium next to the image (FluxVM only checks the path).
+const ISO = `${IMAGE.replace(/\/[^/]+$/, '')}/${B}.iso`;
 const LOCAL = ['127.0.0.1', 'localhost', '::1'].includes(cfg.host);
 const SSH = process.env.FLUXVM_SSH || `${cfg.username}@${cfg.host}`;
 
@@ -211,7 +217,7 @@ async function waitTask(taskId, timeoutMs = 600000) {
   });
 
   // --- VM A: guest features ---------------------------------------------------
-  const createdA = await step('create-kernel-agent', async () => {
+  const createdA = ONLY.has('a') && await step('create-kernel-agent', async () => {
     await must('POST', '/api/v1/vms', {
       name: A,
       vcpus: 1,
@@ -329,7 +335,7 @@ async function waitTask(taskId, timeoutMs = 600000) {
   }
 
   // --- VM C: backups on a non-QEMU engine ----------------------------------------
-  const createdC = await step('create-firecracker', async () => {
+  const createdC = ONLY.has('c') && await step('create-firecracker', async () => {
     await must('POST', '/api/v1/vms', {
       name: C,
       vcpus: 1,
@@ -387,8 +393,8 @@ async function waitTask(taskId, timeoutMs = 600000) {
   }
 
   // --- VM B: shared disk, migration, HA ----------------------------------------
-  const createdB = await step('create-shared-disk', async () => {
-    onHost(`sudo mkdir -p ${SHARED_DIR} && sudo cp --reflink=auto ${IMAGE} ${SHARED_DISK}`);
+  const createdB = ONLY.has('b') && await step('create-shared-disk', async () => {
+    onHost(`sudo mkdir -p ${SHARED_DIR} && sudo cp --reflink=auto ${IMAGE} ${SHARED_DISK} && sudo truncate -s 2M ${ISO}`);
     await must('POST', '/api/v1/vms', {
       name: B,
       vcpus: 1,
@@ -401,6 +407,7 @@ async function waitTask(taskId, timeoutMs = 600000) {
       fluxvm_initrd: INITRD,
       fluxvm_kernel_args: KARGS,
       fluxvm_shared_disk: true,
+      fluxvm_isos: [ISO],
     });
     if ((await details(B)).state !== 'running') await must('POST', q(B, '/start'));
     await waitState(B, 'running');
@@ -410,6 +417,28 @@ async function waitTask(taskId, timeoutMs = 600000) {
   });
 
   if (createdB) {
+    await step('cdrom-migrate-refused', async () => {
+      const r = await api('POST', q(B, '/migrate'), { dest_uri: 'local', live: true });
+      if (ok(r.status)) throw new Error('accepted with media in the drive');
+      if (!/eject/i.test(r.body)) throw new Error(`${r.status} ${String(r.body).slice(0, 160)}`);
+      return `${r.status}`;
+    });
+
+    await step('cdrom-eject', async () => {
+      const cd = () => details(B).then((d) => (d.disks || []).find((x) => x.device === 'cdrom' && x.target === 'install'));
+      if ((await cd())?.source !== ISO) throw new Error('install drive missing before eject');
+      await must('POST', q(B, '/cdrom/eject/install'));
+      const after = await cd();
+      if (!after || after.source !== '') throw new Error(`after eject: ${JSON.stringify(after)}`);
+      return 'install drive empty';
+    });
+
+    await step('cdrom-insert-refused', async () => {
+      const r = await api('POST', q(B, '/cdrom/insert'), { iso_path: ISO, target: 'install' });
+      if (ok(r.status)) throw new Error('accepted');
+      return `${r.status}`;
+    });
+
     // QEMU runs inside B's netns, so it holds the host-bridge tap by fd; carrier on the tap
     // (LOWER_UP) shows the VM really has it open.
     const tapOf = (iface) => String(iface?.source || '').split(' · ')[1] || '';
@@ -521,7 +550,7 @@ async function waitTask(taskId, timeoutMs = 600000) {
   }
 
   // --- cleanup -------------------------------------------------------------------
-  for (const name of [A, B, C]) {
+  for (const name of [A, B, C].filter((n) => ONLY.has(n.split('-')[1]))) {
     await step(`delete-${name.slice(0, 5)}`, async () => {
       const r = await api('DELETE', q(name));
       if (!ok(r.status) && r.status !== 404) throw new Error(`${r.status} ${String(r.body).slice(0, 120)}`);
@@ -529,7 +558,7 @@ async function waitTask(taskId, timeoutMs = 600000) {
     });
   }
   try {
-    onHost(`sudo rm -f ${SHARED_DISK} ${SHARED_DISK}.fluxvm-lock`);
+    onHost(`sudo rm -f ${SHARED_DISK} ${SHARED_DISK}.fluxvm-lock ${ISO}`);
   } catch {
     /* best effort */
   }

@@ -523,6 +523,11 @@ pub struct CreateVmRequest {
     /// needed for FluxVM HA re-create and live migration).
     #[serde(default)]
     pub fluxvm_shared_disk: bool,
+    /// Install ISOs on the host, attached read-only as SATA CD-ROMs (QEMU only, at
+    /// most 4). Drives are named `install`, `cd2`, `cd3`, `cd4`; eject them before
+    /// live migration.
+    #[serde(default)]
+    pub fluxvm_isos: Vec<String>,
 }
 
 fn default_graphics_listen() -> String {
@@ -620,6 +625,7 @@ impl Default for CreateVmRequest {
             fluxvm_kernel_args: String::new(),
             fluxvm_agent: None,
             fluxvm_shared_disk: false,
+            fluxvm_isos: Vec::new(),
         }
     }
 }
