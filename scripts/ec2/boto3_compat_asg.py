@@ -55,7 +55,7 @@ try:
         r.step("DescribeScalingActivities", lambda: asg.describe_scaling_activities(AutoScalingGroupName=grp))
     r.refused("MixedInstancesPolicy is refused, not dropped", lambda: asg.create_auto_scaling_group(
         AutoScalingGroupName=grp + "-m", MinSize=0, MaxSize=1, VPCZoneIdentifier=SUBNET,
-        MixedInstancesPolicy={"LaunchTemplate": {"LaunchTemplateSpecification": {"LaunchTemplateName": "x"}}}), ("UnsupportedOperation", "ValidationError"))
+        MixedInstancesPolicy={"LaunchTemplate": {"LaunchTemplateSpecification": {"LaunchTemplateName": "zz-compat-lt", "Version": "$Latest"}}}), ("UnsupportedOperation", "ValidationError"))
 
     if PROJECT:
         c.inject(ec2, "CreateLaunchTemplate", {"ProjectId": PROJECT})
