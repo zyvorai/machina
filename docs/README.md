@@ -122,3 +122,4 @@ Machina's native eBPF stack (`machina-bpfd`, `machina-cni`) replaces Cilium, Tet
 longer integrates with any of them.
 
 - [VPC foundations and elastic compute](cloud-vpc-elastic-compute.md) — project-owned isolated subnets, IPAM, launch templates and instance groups.
+- [EC2-compatible API](cloud-ec2-api.md) — the EC2, Auto Scaling, ELBv2 and alarm query endpoints: a per-action table (real, recorded, plan-only, refused), what is unit-tested and what has been run. [Using stock clients](cloud-ec2-clients.md) covers the aws cli, boto3 and Terraform.

@@ -55,7 +55,7 @@ mc -X POST $API/ec2/access-keys -d '{"description":"tutorial"}'     # note the k
 ```
 ```python
 import boto3
-ec2 = boto3.client("ec2", endpoint_url="https://HOST:5092/ec2", verify=False, region_name="machina",
+ec2 = boto3.client("ec2", endpoint_url="https://HOST:5093/ec2", verify=False, region_name="machina",
                    aws_access_key_id="MCAK...", aws_secret_access_key="...")
 r = ec2.describe_instances(Filters=[{"Name": "tag:env", "Values": ["tutorial"]}])
 print([i["InstanceId"] for res in r["Reservations"] for i in res["Instances"]])

@@ -14,7 +14,7 @@ The key reaches the cloud APIs and instances of project `lab` only; anything els
 ```bash
 mc -X POST $API/ec2/access-keys -d '{"description":"ci"}'        # note the key and secret
 export AWS_ACCESS_KEY_ID=MCAK... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=machina
-aws ec2 describe-instances --endpoint-url https://HOST:5092/ec2 --no-verify-ssl
+aws ec2 describe-instances --endpoint-url https://HOST:5093/ec2 --no-verify-ssl
 ```
 Set `MACHINA_API_KEY_MASTER_KEY` first so the secret is stored encrypted ([guide](../guides/ec2-api-tutorial.md)).
 

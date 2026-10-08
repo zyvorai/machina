@@ -24,13 +24,13 @@ export AWS_ACCESS_KEY_ID=MCAK... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=ma
 
 ## Use
 ```bash
-aws ec2 describe-instances --endpoint-url https://HOST:5092/ec2 --no-verify-ssl
-aws ec2 run-instances --image-id ami-... --count 2 --instance-type small --key-name laptop --endpoint-url https://HOST:5092/ec2
-aws ec2 create-tags --resources i-... --tags Key=env,Value=prod --endpoint-url https://HOST:5092/ec2
+aws ec2 describe-instances --endpoint-url https://HOST:5093/ec2 --no-verify-ssl
+aws ec2 run-instances --image-id ami-... --count 2 --instance-type small --key-name laptop --endpoint-url https://HOST:5093/ec2
+aws ec2 create-tags --resources i-... --tags Key=env,Value=prod --endpoint-url https://HOST:5093/ec2
 ```
 ```python
 import boto3
-ec2 = boto3.client("ec2", endpoint_url="https://HOST:5092/ec2", verify=False, region_name="machina")
+ec2 = boto3.client("ec2", endpoint_url="https://HOST:5093/ec2", verify=False, region_name="machina")
 print(ec2.describe_instances(Filters=[{"Name": "tag:env", "Values": ["prod"]}]))
 ```
 Supported: instances (describe, run, start, stop, reboot, terminate, modify type), volumes, security groups, images, VPCs,
@@ -42,8 +42,9 @@ subnets, network interfaces, key pairs and tags. Anything else returns `Unsuppor
 or revoked key, answer `AuthFailure`. Unit tests: `cargo test -p machina-controller api::ec2`.
 
 ## Limits
-No `NextToken` pagination, no Elastic IP or snapshot calls, no VPC create. `DescribeInstances` leaves fields without a machina
-equivalent empty. A key acts with the role of the admin who created it. Revoke with `DELETE /api/v1/ec2/access-keys/<id>`.
+`DescribeInstances` leaves fields without a machina equivalent empty (no IAM profile, CPU options or credit specification). Options Machina
+cannot honour are refused with `UnsupportedOperation`, not ignored; `cloud-ec2-api.md` lists the status of every action. The endpoint is the
+controller's (`:5093`), not the daemon's. A key acts with the role of the admin who created it. Revoke with `DELETE /api/v1/ec2/access-keys/<id>`.
 
 ## More actions
 

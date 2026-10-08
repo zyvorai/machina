@@ -2,7 +2,7 @@
 
 Machina's controller answers the EC2, Auto Scaling, ELBv2 and CloudWatch query protocols, signed with SigV4, at
 `https://HOST:5093/ec2`, `/autoscaling`, `/elbv2` and `/monitoring`. Which actions exist and what they map to is in
-[cloud-ec2-api.md](cloud-ec2-api.md). This page is about driving those endpoints with stock clients.
+[cloud-ec2-api.md](cloud-ec2-api.md) (a generated table of every action with its status: real, recorded, plan-only or refused). This page is about driving those endpoints with stock clients.
 
 **Status: the scripts and Terraform below have only been syntax-checked (`py_compile`, `bash -n`, `tofu validate`). They have not
 yet been run against a Machina endpoint, so the "expected to fail" list is derived from reading the handlers, not from a run.**
@@ -38,7 +38,7 @@ aws --endpoint-url https://HOST:5093/monitoring --no-verify-ssl cloudwatch descr
 ```
 
 Use only image ids and instance types that `describe-images` / `describe-instance-types` return; an `ami-` id from AWS means
-nothing here. `create-vpc` and `create-launch-template` need Machina's `ProjectId`, which the CLI has no flag for (see below).
+nothing here. `create-vpc` needs Machina's `ProjectId`, which the CLI has no flag for (see below); `create-launch-template` takes it optionally and uses the `default` project without it.
 
 ## boto3
 
@@ -113,8 +113,8 @@ per resource; a failed apply is still followed by a destroy. It exits 1 if any r
 
 Derived from the handlers, not yet confirmed by a run:
 
-- `aws_vpc` and `aws_launch_template` (and `aws ec2 create-vpc`, `create-launch-template`): `ProjectId` is required and the
-  provider and CLI cannot send it. Pass `vpc_id` / `subnet_id` to Terraform; use boto3 with the event hook.
+- `aws_vpc` (and `aws ec2 create-vpc`): `ProjectId` is required and the provider and CLI cannot send it. `aws_launch_template`
+  works without it (the `default` project) when that project exists. Pass `vpc_id` / `subnet_id` to Terraform; use boto3 with the event hook.
 - Options Machina cannot honour are refused with `UnsupportedOperation` rather than dropped: IAM instance profiles, IMDSv2
   `HttpTokens=required`, a root-disk size, `SpotPrice` on launch configurations, mixed instances policies on groups, security groups on launch configurations
   and on network load balancers, `EbsOptimized`, `AssociatePublicIpAddress`, `InstanceMonitoring.Enabled=true`, listeners other than

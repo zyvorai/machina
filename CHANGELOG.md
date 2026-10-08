@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-08 — EC2 compatibility: one endpoint, four services, one reference
+
+See [docs/cloud-ec2-api.md](docs/cloud-ec2-api.md) and [docs/cloud-ec2-clients.md](docs/cloud-ec2-clients.md).
+
+- **Services.** `POST /ec2`, `/autoscaling`, `/elbv2` and `/monitoring` reach one SigV4 handler; the service in the credential
+  scope picks the action table and response shape (E4, #116). Auto Scaling runs on the instance groups (E5, #120); ELBv2 on the native
+  layer-4 balancer (E6, #117).
+- **Behaviour.** `DryRun`, `ClientToken`, one filter engine and `MaxResults`/`NextToken` on the `ec2` service (E1, #115); VPC
+  networking objects, mostly stored plans (E2, #122); instance attributes, launch-template versions, placement groups, spot and
+  instant fleets (E3, #121). Migrations 067 to 072.
+- **Docs.** The API reference now has a generated per-action status table (`scripts/ec2/action_table.py`), and client scripts and a
+  Terraform config are in `scripts/ec2/` (#119). Everything after the original endpoint is unit-tested only: no boto3, aws cli or
+  Terraform run has exercised it (claims C39 to C44).
+
 ## 2026-10-08 — FluxVM: NICs on namespace VMs, backups on every engine
 
 See [docs/fluxvm.md](docs/fluxvm.md).
