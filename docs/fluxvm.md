@@ -229,7 +229,8 @@ The agent adds FluxVM VMs to its inventory, and the controller keeps them as `in
   sides. The pre-check (`POST …/migrate/precheck`) asks the source agent for the VM's current state and checks the
   engine, shared disk, hot-add, install media and destination capacity.
 - **HA** — when a host fails (and the VM has an HA policy), `ha.recover` re-creates the VM from its last FluxVM
-  record on the target host, on the same shared disk, breaking the disk lock (`shared_takeover`). Hot-add doesn't
+  record on the target host, on the same shared disk, breaking the disk lock (`shared_takeover`). A stopped instance
+  with the same name already on the target (left from an earlier move) is removed first. Hot-add doesn't
   block it, and ejected CD-ROM drives are left out of the new VM (FluxVM won't create an empty drive). The same
   re-create on demand: `POST /api/v1/vms/{id}/fluxvm/recover {host_id?}` (operator; default host = current host).
 - **Reconcile** — discovered FluxVM VMs are unmanaged, so the reconciler doesn't fight changes made directly in
@@ -251,6 +252,13 @@ VM with its ejected drive. `FLUXVM_ONLY=b` (or `a,c`) runs a subset. Overrides: 
 `FLUXVM_QEMU_INITRD`, `FLUXVM_FC_KERNEL`, `FLUXVM_BRIDGE` (`virbr0`), `FLUXVM_SHARED_DIR`
 (`/var/lib/fluxvm/shared`), `FLUXVM_SKIP_PLATFORM=1`. Results: [regression RESULTS](../scripts/regression/RESULTS.md).
 
+Between two hosts: join the second host's agent to the same controller, mount one share at the same path on both
+(for example NFS exported to the second host's address only) and set `FLUXVM_SHARED_DIR` to it,
+`FLUXVM_DEST_HOST_ID` to the second host's controller id, `FLUXVM_DEST_SSH=user@host` and, if its fluxvm-api isn't on
+`127.0.0.1:7788` there, `FLUXVM_DEST_FLUXVM_URL`. The run then checks the disk is visible on the destination,
+live-migrates VM B there (or, if that fails, stops it and re-creates it there with HA), and re-creates it back on the
+first host. The destination copy of B is deleted at the end; the shared disk is removed only once B is gone.
+
 The host needs the image and kernels under `/var/lib/fluxvm` (`images/linux-agent.raw`, `kernels/bionic-vmlinuz-4.15`,
 `kernels/bionic-initrd-4.15`, `kernels/vmlinux` for Firecracker) and the bridge. On a host where other sessions sync into
 the same deploy tree, run from a copy of `scripts/regression` (or set `MACHINA_REGRESSION_OUT`): a `rsync --delete`
@@ -258,8 +266,12 @@ removes `results/` mid-run.
 
 ## Limits
 
-- Migration and HA re-create were verified host-to-itself, on two separate hosts; moving between two hosts uses the
-  same code path but has not been run yet (it needs both hosts under one controller and a disk both can reach).
+- HA re-create between two hosts works in both directions (verified 175 ↔ 212 over NFS). It assumes the old host is
+  fenced: it doesn't stop the VM there, so stop it first when the old host is still up.
+- Live migration between hosts with different QEMU versions fails ("Unable to write to socket: Broken pipe"): FluxVM
+  starts both sides with the unversioned `q35` machine, which resolves to `pc-q35-8.2` on QEMU 8.2 and `pc-q35-10.2` on
+  QEMU 10.2. Hosts on the same QEMU version aren't affected. The fix is in FluxVM (pin the source's resolved machine
+  type on the receiver).
 - Backups need FluxVM's default storage or a shared disk file (not LVM thin, NBD or Ceph RBD). Only QEMU with
   default storage can back up a running VM.
 - Hot-add is per engine (table above); extra NICs are QEMU-only.

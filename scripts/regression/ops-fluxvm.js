@@ -22,6 +22,9 @@
  * kernel/initrd + image on the host. The shared disk is copied on the host
  * (locally when MACHINA_BASE_URL is loopback, else over ssh FLUXVM_SSH).
  * FLUXVM_ONLY=b (or a,c) runs a subset of the VMs.
+ * FLUXVM_DEST_HOST_ID (+ FLUXVM_DEST_SSH, FLUXVM_SHARED_DIR on a share mounted at the
+ * same path on both hosts) adds a live migration of B to that host (an HA re-create there
+ * if the migration fails) and an HA re-create back after stopping it there.
  */
 
 const { execSync } = require('child_process');
@@ -54,6 +57,11 @@ const SHARED_DISK = `${SHARED_DIR}/${B}.raw`;
 const ISO = `${IMAGE.replace(/\/[^/]+$/, '')}/${B}.iso`;
 const LOCAL = ['127.0.0.1', 'localhost', '::1'].includes(cfg.host);
 const SSH = process.env.FLUXVM_SSH || `${cfg.username}@${cfg.host}`;
+// Cross-host steps (opt-in): a second host in the same controller, with SHARED_DIR mounted
+// at the same path, reached over ssh for its FluxVM API.
+const DEST_HOST = process.env.FLUXVM_DEST_HOST_ID || '';
+const DEST_SSH = process.env.FLUXVM_DEST_SSH || '';
+const DEST_FLUXVM = process.env.FLUXVM_DEST_FLUXVM_URL || 'http://127.0.0.1:7788';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const ok = (s) => s >= 200 && s < 300;
@@ -62,6 +70,17 @@ const q = (name, suffix = '') => `/api/v1/vms/${encodeURIComponent(name)}${suffi
 function onHost(cmd) {
   const full = LOCAL ? cmd : `ssh -o BatchMode=yes ${SSH} ${JSON.stringify(cmd)}`;
   return execSync(full, { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+}
+
+function onDest(cmd) {
+  return execSync(`ssh -o BatchMode=yes ${DEST_SSH} ${JSON.stringify(cmd)}`, { stdio: ['ignore', 'pipe', 'pipe'] }).toString();
+}
+
+/** Id of `name` in the destination host's FluxVM, or null. */
+function destFluxId(name) {
+  const j = JSON.parse(onDest(`curl -sf ${DEST_FLUXVM}/v1/vms`) || '[]');
+  const items = Array.isArray(j) ? j : j.items || [];
+  return items.find((v) => v.name === name)?.id || null;
 }
 
 function json(r) {
@@ -545,23 +564,100 @@ async function waitTask(taskId, timeoutMs = 600000) {
           if (ok(r.status)) throw new Error('accepted');
           return `${r.status}`;
         });
+
+        if (DEST_HOST) {
+          await step('controller-precheck-cross-host', async () => {
+            onDest(`test -f ${SHARED_DISK}`);
+            const r = await must('POST', `${P}/api/v1/vms/${row.id}/migrate/precheck`, { dest_host_id: DEST_HOST, live: true });
+            if (!r.ok) throw new Error(JSON.stringify(r.checks || r).slice(0, 220));
+            return `${(r.checks || []).length} checks, disk visible on the destination`;
+          });
+
+          const moved = await step('controller-migrate-cross-host', async () => {
+            const t = await must('POST', `${P}/api/v1/vms/${row.id}/migrate`, { dest_host_id: DEST_HOST, live: true });
+            await waitTask(t.task_id, 900000);
+            const v = await waitFor(
+              'controller row on the destination',
+              async () => {
+                const v = await platformVm(B);
+                return v && v.host_id === DEST_HOST && (v.observed_state ?? v.state) === 'running' ? v : null;
+              },
+              180000,
+              5000,
+            );
+            if (!destFluxId(B)) throw new Error('not in the destination FluxVM');
+            const src = await api('GET', q(B));
+            if (ok(src.status) && json(src)?.state === 'running') throw new Error('still running on the source');
+            return `${row.host_id.slice(0, 8)} → ${v.host_id.slice(0, 8)}`;
+          });
+
+          // Without a live migration, still cover HA across hosts: stop B here (the
+          // simulated failure) and re-create it on the destination from the shared disk.
+          const onDestHost =
+            moved ||
+            (await step('controller-ha-recreate-cross-host', async () => {
+              await must('POST', q(B, '/stop'));
+              await waitState(B, 'shutoff', 90000);
+              const t = await must('POST', `${P}/api/v1/vms/${row.id}/fluxvm/recover`, { host_id: DEST_HOST });
+              await waitTask(t.task_id);
+              await waitFor(
+                'controller row on the destination',
+                async () => {
+                  const v = await platformVm(B);
+                  return v && v.host_id === DEST_HOST && (v.observed_state ?? v.state) === 'running' ? v : null;
+                },
+                180000,
+                5000,
+              );
+              if (!destFluxId(B)) throw new Error('not in the destination FluxVM');
+              return `re-created on ${DEST_HOST.slice(0, 8)}`;
+            }));
+
+          if (onDestHost) {
+            // The controller treats the previous host as fenced, so stop the instance there
+            // first (the simulated failure), then re-create B on the original host.
+            await step('controller-ha-recreate-back', async () => {
+              const id = destFluxId(B);
+              if (!id) throw new Error('destination instance missing');
+              onDest(`curl -sf -X POST ${DEST_FLUXVM}/v1/vms/${id}/stop`);
+              const t = await must('POST', `${P}/api/v1/vms/${row.id}/fluxvm/recover`, { host_id: row.host_id });
+              await waitTask(t.task_id);
+              await waitState(B, 'running', 120000);
+              const v = await platformVm(B);
+              if (v?.host_id !== row.host_id) throw new Error(`host_id=${v?.host_id}`);
+              return `back on ${row.host_id.slice(0, 8)}`;
+            });
+          }
+        }
       }
     }
   }
 
   // --- cleanup -------------------------------------------------------------------
+  let deletedB = !ONLY.has('b');
   for (const name of [A, B, C].filter((n) => ONLY.has(n.split('-')[1]))) {
-    await step(`delete-${name.slice(0, 5)}`, async () => {
+    const gone = await step(`delete-${name.slice(0, 5)}`, async () => {
       const r = await api('DELETE', q(name));
       if (!ok(r.status) && r.status !== 404) throw new Error(`${r.status} ${String(r.body).slice(0, 120)}`);
       await waitFor(`${name} gone`, async () => (await api('GET', q(name))).status === 404, 60000);
     });
+    if (name === B) deletedB = gone;
   }
+  if (DEST_HOST && ONLY.has('b')) {
+    try {
+      const id = destFluxId(B);
+      if (id) onDest(`curl -sf -X DELETE ${DEST_FLUXVM}/v1/vms/${id}`);
+    } catch {
+      /* best effort */
+    }
+  }
+  // Never pull the shared disk from under an instance that is still there.
   try {
-    onHost(`sudo rm -f ${SHARED_DISK} ${SHARED_DISK}.fluxvm-lock ${ISO}`);
+    onHost(deletedB ? `sudo rm -f ${SHARED_DISK} ${SHARED_DISK}.fluxvm-lock ${ISO}` : `sudo rm -f ${ISO}`);
   } catch {
     /* best effort */
   }
+  if (!deletedB) console.error(`left ${SHARED_DISK} in place: ${B} was not deleted`);
 
   log.append({ kind: 'SUMMARY', ok: fail === 0, note: `pass=${passed} fail=${fail} ${failed.join(',')}` });
   console.log(`FLUXVM_OPS_DONE pass=${passed} fail=${fail}${failed.length ? ` failed=${failed.join(',')}` : ''}`);

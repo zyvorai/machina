@@ -510,8 +510,9 @@ pub fn recreate_body(record: &Value) -> anyhow::Result<Value> {
 }
 
 /// HA re-create on `host_id` from the record last seen in inventory. Breaks
-/// the shared-disk lock (the failed host is fenced or gone). On the same host
-/// the stale record is removed first so the name is free.
+/// the shared-disk lock (the failed host is fenced or gone). Any instance of
+/// the same name on the target is stale (the failed one on the same host, or
+/// an earlier home of the VM) and is removed first so the name is free.
 pub async fn ha_recreate(
     state: &AppState,
     task_id: Uuid,
@@ -532,9 +533,11 @@ pub async fn ha_recreate(
         .ok_or_else(|| anyhow::anyhow!("no FluxVM record stored for {name}; cannot re-create"))?;
     let body = recreate_body(&record)?;
 
-    if previous_host == Some(host_id) {
-        update_task_progress(&state.pool, task_id, 20, "Removing the failed instance").await?;
-        if let Err(e) = delete(&state.pool, host_id, &name).await {
+    // Otherwise the new instance sits next to the stale one and power-by-name
+    // starts the stale one, which the new instance's disk lock refuses.
+    update_task_progress(&state.pool, task_id, 20, "Removing any stale instance").await?;
+    if let Err(e) = delete(&state.pool, host_id, &name).await {
+        if previous_host == Some(host_id) {
             tracing::warn!(vm = %name, "fluxvm HA: removing the old instance failed: {e:#}");
         }
     }

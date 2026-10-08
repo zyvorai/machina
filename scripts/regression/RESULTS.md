@@ -2,6 +2,44 @@
 
 Rolling notes from deployed-host sweeps. Update as new loops complete.
 
+## 2026-10-08 — FluxVM between two hosts (`175.110.122.71` controller, `212.8.248.187` second agent)
+
+A second, private `machina-agent` on 212 (port 50061, own env file and PKI) joined 175's controller over mTLS;
+`/var/lib/fluxvm/shared-mn` exported from 175 over NFS to 212's address only. All of it removed afterwards (agent,
+host record, export, `nfs-server`, the controller's extra TLS listener).
+
+| Step | Result |
+|------|--------|
+| `controller-precheck-cross-host` (disk visible on 212) | PASS |
+| `controller-migrate-cross-host` (live, 175 → 212) | **FAIL** — QEMU 8.2 → 10.2: unversioned `q35` resolves to different machine types ("Unable to write to socket: Broken pipe"); in the full run 212 also refused the receiver ("hot-added NICs are not migratable yet") |
+| `controller-ha-recreate-cross-host` (stop on 175, re-create on 212) | PASS |
+| `controller-ha-recreate-back` (stop on 212, re-create on 175) | PASS |
+| Full `ops-fluxvm.js` with the cross-host steps | **41/42** (only the live migration fails) |
+
+Found and fixed: re-creating back onto 175 left the stale stopped instance next to the new one, power-by-name started
+the stale one and the disk lock refused it (400). `ha_recreate` now removes a same-name instance on the target first.
+The script's cleanup also deleted the shared disk under a running VM when B's delete failed; it now keeps the disk
+unless B is gone.
+
+## 2026-10-08 — FluxVM bench on 212 (`fix/vhost-rx-kick` `ea01000`, private `fluxctl serve` on :7798)
+
+QEMU 10.2.1, `fluxvm_engine = "kvm"`, I/O pressure 23–28% from other workloads during the runs.
+
+| Measure | Result |
+|---------|--------|
+| Cold create → first command (`?ready=exec`), 5 runs | p50 18.8 s, p95 24.6 s (min 15.5 s) |
+| Fork source: create / agent wait | 10.8 s / 3.6 s |
+| 5 forks: first command | 41.7, 49.6, 51.0, 66.4, 78.6 s (all succeeded) |
+| Fork identity reset | **failed 5/5** — the golden image's guest agent predates `ResetIdentity`, closes the connection on the unknown request, and each fork waits out the 15 s timeout |
+| Density, 256 MiB VMs, floor 6144 MiB, `MAX=20` — BASELINE (`idle_balloon_secs = 0`) | 20 (cap), PSS avg 239 MiB, host available −216 MiB/VM |
+| Density — TUNED (`idle_balloon_secs = 10`, 50%, 30 s settle) | 20 (cap), PSS avg 129 MiB, host available −276 MiB/VM |
+
+A fork breaks down as ~15 s parent snapshot, ~26 s child restore (disk clone), 15 s identity-reset timeout, then
+1–21 s until the child's agent answers. Both density runs hit the cap before the floor, so the count doesn't
+separate them; the balloon halves per-VM PSS, but host `MemAvailable` on a shared host is too noisy to show it.
+Next: rebuild the golden image with the current agent, and have the agent answer an undecodable request with an
+error instead of closing.
+
 ## 2026-10-08 — FluxVM install ISOs from Machina (`175.110.122.71`, FluxVM `14b8d0b`)
 
 Machina built with `fluxvm_isos`, the CD-ROM eject route for FluxVM and the HA re-create fix; FluxVM upgraded to
