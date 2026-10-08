@@ -21,3 +21,5 @@ render() { # <name> <width> <height>
 }
 render machina-social-card 1600 900
 render machina-share-card 1200 630
+render fluxvm-results-card 1600 900
+render fluxvm-results-share 1200 630
