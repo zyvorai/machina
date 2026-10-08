@@ -187,6 +187,9 @@ pub async fn attach_volume(state: &AppState, actor: &AuthUser, p: &Params) -> Re
     let vol = resolve(state, Kind::Volume, &vol_s, "InvalidVolume.NotFound").await?;
     let vm = resolve(state, Kind::Vm, &need(p, "InstanceId")?, "InvalidInstanceID.NotFound").await?;
     let dev = device_name(&need(p, "Device")?).ok_or_else(|| bad("InvalidParameterValue", "Device must look like /dev/vdb"))?;
+    if let Some(cause) = super::status::launch_failure_of(state, vm).await? {
+        return Err(bad("IncorrectInstanceState", super::status::launch_failed_message(&ec2_id(Kind::Vm, vm), &cause)));
+    }
     let body: crate::api::volumes::AttachVolumeBody =
         serde_json::from_value(json!({ "vm_id": vm, "target_dev": dev })).map_err(|e| bad("InvalidParameterValue", e.to_string()))?;
     let _ = crate::api::volumes::attach_volume(State(state.clone()), Extension(actor.clone()), Path(vol), Json(body)).await.map_err(api_err)?;
