@@ -1142,7 +1142,12 @@ mod tests {
                 if t.len() < 25 || !["SELECT ", "INSERT ", "UPDATE ", "DELETE "].iter().any(|k| t.starts_with(k)) {
                     continue;
                 }
-                if let Err(e) = (&pool).prepare(lit).await {
+                // the controller writes SQLite-form SQL and the PostgreSQL build rewrites it (`?` to `$n`, ...) before it runs
+                #[cfg(feature = "postgres")]
+                let owned = crate::db::dialect::to_postgres(lit);
+                #[cfg(not(feature = "postgres"))]
+                let owned = lit.to_string();
+                if let Err(e) = (&pool).prepare(owned.as_str()).await {
                     panic!("SQL does not prepare: {lit}\n{e}");
                 }
                 checked += 1;
