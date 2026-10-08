@@ -1,4 +1,7 @@
 #!/usr/bin/env bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Machina node bootstrap, served by the controller at /install.sh.
 #
 #   sudo bash install.sh --controller https://CTL:5094 --token join-... [--ca-sha256 FP] [--no-deps] [--no-expose]

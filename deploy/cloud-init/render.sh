@@ -1,4 +1,7 @@
 #!/bin/bash
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 # Usage: ./render.sh 'JOIN COMMAND' > user-data
 #        ./render.sh --from-controller user@controller > user-data
 # The join command comes from the web wizard (Platform > Hosts > Add host), from POST /api/v1/enrollment/tokens

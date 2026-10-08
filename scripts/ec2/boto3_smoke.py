@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# Copyright 2026 Zyvor AI Labs · https://zyvor.dev
+# SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
+
 """boto3 smoke test for Machina's EC2 API foundation: DryRun, ClientToken, filters, pagination, RunInstances
 options and DescribeTags.
 
@@ -72,9 +75,10 @@ try:
     check("MetadataOptions HttpTokens=required is refused",
           code_of(lambda: ec2.run_instances(ImageId=IMAGE, MinCount=1, MaxCount=1,
                                             MetadataOptions={"HttpTokens": "required"})) == "UnsupportedOperation")
-    check("a root-disk size is refused",
-          code_of(lambda: ec2.run_instances(ImageId=IMAGE, MinCount=1, MaxCount=1,
-                                            BlockDeviceMapping=[{"DeviceName": "/dev/sda1", "Ebs": {"VolumeSize": 99}}])) == "UnsupportedOperation")
+    # a root-disk size is applied since the instances package (not refused); DryRun checks it parses without launching
+    check("a root-disk size passes validation (DryRun)",
+          code_of(lambda: ec2.run_instances(ImageId=IMAGE, MinCount=1, MaxCount=1, DryRun=True,
+                                            BlockDeviceMappings=[{"DeviceName": "/dev/sda1", "Ebs": {"VolumeSize": 99}}])) == "DryRunOperation")
 
     # ---- ClientToken idempotency ---------------------------------------------------------------------------
     token = uuid.uuid4().hex

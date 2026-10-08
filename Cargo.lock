@@ -3605,6 +3605,7 @@ dependencies = [
  "async-nats",
  "async-trait",
  "axum",
+ "axum-server",
  "base64 0.22.1",
  "bcrypt",
  "bytes",
@@ -3627,6 +3628,7 @@ dependencies = [
  "rand 0.8.8",
  "reqwest",
  "ring",
+ "rustls",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -6893,8 +6895,12 @@ dependencies = [
  "futures-util",
  "log",
  "native-tls",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
  "tokio",
  "tokio-native-tls",
+ "tokio-rustls",
  "tungstenite 0.30.0",
 ]
 
@@ -7211,6 +7217,8 @@ dependencies = [
  "log",
  "native-tls",
  "rand 0.10.3",
+ "rustls",
+ "rustls-pki-types",
  "sha1 0.11.0",
  "thiserror 2.0.21",
 ]

@@ -13,7 +13,7 @@ No row for them exists in `claims.md` until a run does.
 An admin creates an access key (it carries a role, not a project scope):
 
 ```bash
-curl -sk -H "Authorization: Bearer $TOKEN" -X POST https://HOST:5093/api/v1/ec2/access-keys
+curl -sk -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' -d '{}' -X POST https://HOST:5093/api/v1/ec2/access-keys
 export AWS_ACCESS_KEY_ID=MCAK... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=machina
 ```
 
