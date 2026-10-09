@@ -35,7 +35,10 @@ See [Architecture](core-concepts/architecture.md) for how they connect.
 | Masakari and Watcher | Built-in HA and DRS |
 | A VNC/SPICE gateway | Console proxies in the daemon |
 | Cilium, Tetragon, kube-proxy, a firewall agent | `machina-bpfd` and `machina-cni` |
-| MariaDB/Galera and RabbitMQ | Embedded SQLite, optional NATS |
+| MariaDB/Galera and RabbitMQ | Embedded SQLite or PostgreSQL, optional NATS |
+| Nova, Neutron or Keystone clients | [The EC2-compatible API](core-concepts/ec2-api.md) and Machina's REST API |
+
+Moving off OpenStack? Read [Replacing OpenStack](getting-started/from-openstack.md), which includes what Machina does not cover.
 
 ## Where to start
 
