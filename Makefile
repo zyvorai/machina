@@ -359,9 +359,21 @@ regression-ui-complx: ## Live CDP compliance/enforcement/HA/placement shells (ne
 regression-pages: ## Live CDP page sweep (needs Chrome :9222; LOOPS=N; see scripts/regression/README.md)
 	cd scripts/regression && npm install --silent && node page-sweep.js --loops $(LOOPS)
 
-bpf-deps: ## Install the eBPF toolchain (nightly rust-src + bpf-linker)
+BPF_LINKER_VERSION ?= v0.11.1
+
+bpf-deps: ## Install the eBPF toolchain (nightly rust-src + prebuilt musl bpf-linker; builds it from source if the download fails)
 	rustup toolchain install nightly --component rust-src
-	$(CARGO) install bpf-linker
+	@if ! command -v bpf-linker >/dev/null 2>&1; then \
+	  arch=$$(uname -m); [ "$$arch" = arm64 ] && arch=aarch64; \
+	  tmp=$$(mktemp -d); \
+	  if curl -fsSL "https://github.com/aya-rs/bpf-linker/releases/download/$(BPF_LINKER_VERSION)/bpf-linker-$$arch-unknown-linux-musl.tar.zst" -o "$$tmp/bpf-linker.tar.zst" \
+	     && tar --zstd -xf "$$tmp/bpf-linker.tar.zst" -C "$$tmp" \
+	     && bin=$$(find "$$tmp" -type f -name bpf-linker | head -1) && [ -n "$$bin" ]; then \
+	    install -Dm755 "$$bin" "$${CARGO_HOME:-$$HOME/.cargo}/bin/bpf-linker"; echo "bpf-linker $(BPF_LINKER_VERSION) installed (prebuilt)"; \
+	  else \
+	    echo "prebuilt bpf-linker unavailable, building from source (needs llvm-config)"; $(CARGO) install bpf-linker; \
+	  fi; rm -rf "$$tmp"; \
+	fi
 
 bpf: ## Build machina-bpfd with the embedded eBPF datapath (Linux; see bpf-deps)
 	$(CARGO) build --release -p machina-bpf --bin machina-bpfd $(CARGO_FLAGS)
