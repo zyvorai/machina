@@ -13,6 +13,8 @@ sudo apt install ./machina_*_amd64.deb ./machina-controller_*_amd64.deb ./machin
 sudo machinactl show-login                      # URL, user name and the generated admin password
 ```
 
+The controller keeps its state in embedded SQLite, which is right for a first cloud. For a large fleet or several controllers, choose PostgreSQL at install time (`scripts/install-platform.sh --database pod`) or later with `sudo machinactl db setup pod --migrate`: [database guide](guides/database.md).
+
 Open the URL (`https://<host>:5092`; the certificate is self-signed until you install your own) and sign in as `admin`. Change the password.
 
 ## 2. Let nodes join (once)

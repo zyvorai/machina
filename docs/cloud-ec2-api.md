@@ -9,6 +9,16 @@ tables below say which actions are real, merely recorded, stored plans or refuse
 How to drive it with stock clients (aws cli, boto3, Terraform, `run-compat.sh`) is in [cloud-ec2-clients.md](cloud-ec2-clients.md).
 What each EC2 concept means on Machina is in [cloud-ec2-semantics.md](cloud-ec2-semantics.md).
 
+![EC2-compatible API: stock AWS clients to the controller to your hosts](ux/readme-ec2.jpg)
+
+**Quickstart.** Create an access key (below), then:
+
+```bash
+export AWS_ACCESS_KEY_ID=MCAK… AWS_SECRET_ACCESS_KEY=… AWS_DEFAULT_REGION=machina
+aws --endpoint-url https://HOST:5093/ec2 --no-verify-ssl ec2 describe-images
+aws --endpoint-url https://HOST:5093/ec2 --no-verify-ssl ec2 run-instances --image-id <ImageId> --count 3
+```
+
 ## Endpoint and credentials
 The endpoints live on the **controller** (`https://HOST:5093/ec2`, `/autoscaling`, `/elbv2`, `/monitoring`, each also with a
 trailing slash). The daemon on `:5092` only reverse-proxies `/api/v1/platform/controller/...`, so these paths are not served there.
@@ -299,7 +309,7 @@ Reached with scope `ec2`, `POST /ec2`.
 | `RevokeSecurityGroupIngress` | mixed | IPv6 and prefix-list peers refused |  |
 | `RewindInstance` | real |  | M |
 | `RunExperiment` | real |  | M |
-| `RunInstances` | mixed | Run, terminate and tags: each option is applied or refused, none dropped. `SubnetId` launches on the subnet's network (`mc-<subnet uuid>`) and its VPC's host; a subnet that is not `ready` gives `IncorrectState` |  |
+| `RunInstances` | mixed | Run, terminate and tags: each option is applied or refused, none dropped |  |
 | `SetStackAutoHeal` | real |  | M |
 | `SleepInstances` | real |  | M |
 | `StartInstances` | real |  |  |
