@@ -19,7 +19,7 @@ render() { # <html> <jpg> <height>
   sips -s format jpeg -s formatOptions 90 "$TMP/$2.png" --out "$OUT/$2" >/dev/null
   echo "wrote docs/ux/$2 ($(du -k "$OUT/$2" | cut -f1) KB)"
 }
-render architecture.html readme-architecture.jpg 560
+render architecture.html readme-architecture.jpg 580
 render capabilities.html readme-capabilities.jpg 590
 render vs-openstack.html readme-vs-openstack.jpg 800
 render hero.html readme-hero.jpg 680
