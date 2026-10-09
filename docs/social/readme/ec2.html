@@ -22,7 +22,7 @@
   <div class="flow">
     <div class="card k"><span class="lane">YOUR TOOLS</span><h3>Stock AWS clients</h3><pre>aws ec2 run-instances \
   --endpoint-url \
-  https://HOST:5093/ec2 \
+  http://127.0.0.1:5093/ec2 \
   --image-id &hellip; --count 3</pre></div>
     <div class="ar">&rarr;</div>
     <div class="card m"><span class="lane">CONTROLLER :5093</span><h3>SigV4 query endpoint</h3><p>One handler verifies the signature and picks the service from the credential scope. Project scoping and roles stay in the REST handlers.</p></div>

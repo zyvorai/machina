@@ -15,8 +15,9 @@ What each EC2 concept means on Machina is in [cloud-ec2-semantics.md](cloud-ec2-
 
 ```bash
 export AWS_ACCESS_KEY_ID=MCAK… AWS_SECRET_ACCESS_KEY=… AWS_DEFAULT_REGION=machina
-aws --endpoint-url https://HOST:5093/ec2 --no-verify-ssl ec2 describe-images
-aws --endpoint-url https://HOST:5093/ec2 --no-verify-ssl ec2 run-instances --image-id <ImageId> --count 3
+# on the host (the controller listens on http://127.0.0.1:5093), or through: ssh -N -L 15093:127.0.0.1:5093 USER@HOST
+aws --endpoint-url http://127.0.0.1:5093/ec2 ec2 describe-images
+aws --endpoint-url http://127.0.0.1:5093/ec2 ec2 run-instances --image-id <ImageId> --count 3
 ```
 
 ## Endpoint and credentials
