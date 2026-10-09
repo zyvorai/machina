@@ -18,7 +18,7 @@
   <h1>Run your own cloud on <em>your own hardware.</em></h1>
   <p class="lede">Machina turns Linux KVM hosts into a private cloud: VMs, a fleet control plane, an EC2-compatible API and a native eBPF network. One <span style="font-family:var(--mono)">machinactl deploy</span> on a single host.</p>
   <div class="row grid">
-    <div class="card k"><span class="lane">HYPERVISOR</span><h3>VMs, done properly</h3><p>Create, clone, snapshot, migrate. Browser consoles, GPU passthrough, cloud-init, golden images, FluxVM microVMs.</p></div>
+    <div class="card k"><span class="lane">HYPERVISOR</span><h3>VMs, done properly</h3><p>Create, clone, snapshot, migrate. Browser consoles, GPU passthrough, cloud-init, golden images, and a FluxVM backend (QEMU, Cloud Hypervisor, Firecracker).</p></div>
     <div class="card m"><span class="lane">PRIVATE CLOUD</span><h3>Fleet Cloud + EC2 API</h3><p>Flavors, images, volumes, security groups, load balancers, stacks. <code>aws</code> and boto3 work with an endpoint override.</p></div>
     <div class="card t"><span class="lane">NETWORK</span><h3>Native eBPF</h3><p>Flows, L7 visibility and VM network policy in the kernel. Enforcement is lease-gated and fails open.</p></div>
   </div>
