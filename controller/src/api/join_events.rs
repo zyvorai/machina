@@ -9,6 +9,7 @@ use axum::extract::{Path, State};
 use axum::{Extension, Json};
 use chrono::{Duration, Utc};
 use serde::Serialize;
+use std::sync::atomic::{AtomicI64, Ordering};
 use uuid::Uuid;
 
 use crate::api::ApiError;
@@ -17,8 +18,24 @@ use crate::state::AppState;
 
 const KEEP_DAYS: i64 = 7;
 
+/// Timestamp for a join event. Events are listed `ORDER BY created_at, id` and `id` is a random UUID, so two events
+/// recorded in the same instant would come back in arbitrary order. Microsecond resolution, and never equal to or
+/// earlier than the previous value handed out by this process, keeps the order in which steps were recorded.
 fn now_text() -> String {
-    Utc::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string()
+    static LAST_MICROS: AtomicI64 = AtomicI64::new(0);
+    let now = Utc::now().timestamp_micros();
+    let mut prev = LAST_MICROS.load(Ordering::Relaxed);
+    let micros = loop {
+        let next = now.max(prev + 1);
+        match LAST_MICROS.compare_exchange_weak(prev, next, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break next,
+            Err(seen) => prev = seen,
+        }
+    };
+    chrono::DateTime::from_timestamp_micros(micros)
+        .unwrap_or_else(Utc::now)
+        .format("%Y-%m-%d %H:%M:%S%.6f")
+        .to_string()
 }
 
 /// Appends one step. Never fails the caller: a missing log line must not break a join.
