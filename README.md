@@ -12,13 +12,15 @@
 [![30-day PoC](https://img.shields.io/badge/30--day_PoC-000000?style=for-the-badge)](https://zyvor.dev/poc?utm_source=github&utm_medium=machina&utm_campaign=readme_hero)
 [![Quickstart](https://img.shields.io/badge/Quickstart_in_one_command-2997ff?style=for-the-badge)](#quickstart)
 
-![Machina — your metal, your cloud, one control plane](docs/social/machina-share-card.jpg)
+![Machina: run your own cloud on your own hardware](docs/ux/readme-hero.jpg)
+
+![Deploy Machina on one host with one command](docs/social/anim/deploy-single-host.svg)
 
 ### Your metal. Your cloud. One control plane.
 
 **The private cloud you can install before lunch.** VMs, browser consoles, fleet HA/DRS, an OpenStack-style self-service cloud, a native eBPF datapath and AI operations, from a handful of Rust services on plain Linux + KVM.
 
-**One-command install** · **No SQL cluster, no message queue** · **Consoles built in** · **eBPF networking built in** · **AI that asks before it acts**
+**One-command install** · **SQLite built in, PostgreSQL when you grow** · **EC2-compatible API** · **A way off OpenStack** · **Consoles built in** · **eBPF networking built in** · **AI that asks before it acts**
 
 </div>
 
@@ -54,6 +56,8 @@ CPU scaling, and the explicit routing/peering limitations.
 | **Project isolation** | Fleet Cloud projects are isolated from each other by default, with per-project egress allowlists and egress IPs that Machina adds to the host and announces itself. |
 | **Encrypted cross-host overlay** | WireGuard between hypervisors; VM traffic keeps its identity across hosts, so isolation holds even on NAT networks. |
 | **Segmentation evidence** | Export a sealed (SHA-256) JSON or Markdown report of policies, the reachability matrix and denied traffic for audits. |
+| **FluxVM backend** | VMs from the FluxVM engine appear next to libvirt VMs, with eBPF networking, live migration and HA across hosts. [Guide →](docs/fluxvm.md) |
+| **PostgreSQL controller** | Run the controller on PostgreSQL for large fleets or several controllers; `machinactl db setup pod --migrate` moves an SQLite site over. [Database →](#database-sqlite-or-postgresql) |
 | **Quick create and Fix-it** | Image, size, Create; then a one-click Fix-it list (guest agent, backups) in Command Center. |
 
 ---
@@ -62,7 +66,7 @@ CPU scaling, and the explicit routing/peering limitations.
 
 | When this happens… | Machina gives you… |
 |---|---|
-| You want a private cloud, but OpenStack is a six-week project and a full-time team | `./machinactl deploy`: a few Rust services, embedded SQLite, a browser UI on `:5092` minutes later |
+| You want a private cloud, but OpenStack is a six-week project and a full-time team | `./machinactl deploy`: a few Rust services, embedded SQLite (PostgreSQL when you outgrow it), a browser UI on `:5092` minutes later |
 | VMware renewal quotes keep climbing | Open KVM/libvirt underneath, with HA failover, DRS and live migration on top |
 | libvirt ops live in a pile of `virsh` scripts | One dashboard, a REST API with 1,000+ routes, a CLI and a Terraform provider over the same model |
 | Every console needs its own gateway | noVNC, SPICE, serial and SSH proxied by the daemon, with RBAC and audit |
@@ -75,14 +79,42 @@ CPU scaling, and the explicit routing/peering limitations.
 
 ---
 
-## Machina vs OpenStack
+## Replace OpenStack
+
+![Replace OpenStack, service by service](docs/ux/readme-replace-openstack.jpg)
+
+![Nine OpenStack services collapse into four Machina services](docs/social/anim/openstack-vs-machina.svg)
+
+Machina covers the private-cloud primitives most OpenStack deployments use: identity, compute, networking, images, volumes,
+orchestration, load balancing, a dashboard, HA and alarms. It is **not a drop-in**: there is no Nova or Neutron API, so tools
+move to Machina's REST API or its [EC2-compatible API](#ec2-compatible-api), and guests move as disk images.
+
+| OpenStack | Machina |
+|---|---|
+| Keystone | PAM, OIDC, SAML, LDAP, RBAC, project-scoped API keys |
+| Nova, Placement | `machina-daemon` and `machina-agent` on libvirt/KVM; the controller schedules, with live migration, HA and DRS |
+| Neutron | Native eBPF VM edge and network policy, VPC objects, NAT, Elastic IPs, WireGuard overlay between hosts |
+| Glance | Images and templates, Golden Forge builds |
+| Cinder | Volumes with I/O limits and snapshots; Atlas for Ceph, NFS or ZFS |
+| Heat | Stacks with dry run, approval and drift repair |
+| Octavia | Native layer-4 balancer on the host, no amphora VM |
+| Horizon | The web UI, with browser consoles |
+| Masakari, Watcher | HA failover and DRS in the controller |
+| Ceilometer, Aodh | Metrics history, alarms with scaling actions, Prometheus and OTLP |
+| MariaDB, RabbitMQ | SQLite or PostgreSQL; in-memory task bus, NATS optional |
+
+**Gaps, stated plainly:** thousands of tenants and Neutron-grade SDN breadth are out of scope; the OpenStack client tools and
+ecosystem projects do not work against Machina; there is no OpenStack importer, and moving a guest as a disk image has not been run end to end on a real OpenStack
+cloud. Which features have run on a real host and which are unit-tested only: [claims.md](docs/claims.md). The full map, with how to move a workload: [Replacing OpenStack](docs/migration/from-openstack.md).
+
+### Machina vs OpenStack, side by side
 
 ![Machina vs OpenStack — same private-cloud primitives, a fraction of the moving parts](docs/ux/readme-vs-openstack.jpg)
 
 | | **Machina** | **OpenStack** (typical IaaS) |
 |---|---|---|
 | Services to run | **4** Rust services | 9+ services (Keystone, Nova, Neutron, Glance, Cinder, Placement, Horizon, Heat, Octavia) |
-| Backing infrastructure | Embedded SQLite; optional NATS | MariaDB/Galera, RabbitMQ, Memcached |
+| Backing infrastructure | Embedded SQLite or PostgreSQL; optional NATS | MariaDB/Galera, RabbitMQ, Memcached |
 | Install | `./machinactl deploy` | Kolla-Ansible / OpenStack-Ansible project |
 | Smallest useful footprint | A single KVM host | A multi-node control plane |
 | Flavors, images, volumes, SGs, stacks, LBs | Yes, in [Fleet Cloud](docs/customer/pages/fleet-cloud/fleet-cloud.md) | Yes, across six projects |
@@ -172,13 +204,72 @@ Everything that can drop traffic starts in observe mode and enforces only under 
 | Component | Port | Role |
 |---|---|---|
 | `machina-daemon` | `:5092` | Single-host API, auth/RBAC, console proxies, web UI |
-| `machina-controller` | `:5093` | Fleet, HA, DRS, Fleet Cloud, Zyra AI (embedded SQLite) |
+| `machina-controller` | `:5093` | Fleet, HA, DRS, Fleet Cloud, Zyra AI (SQLite or PostgreSQL) |
 | `machina-agent` | `:50051`, `:50052` | Per-host gRPC agent (TLS) for libvirt and eBPF ops; `:50052` is its console proxy |
 | `machina-bpfd` | unix socket | Root eBPF datapath, telemetry and enforcement (`/api/v1/bpf/*`) |
 | `machina-cni` | — | Opt-in Kubernetes CNI plugin and node agent |
 | `machina-scx` | — | Optional sched_ext VM scheduler (kernel 6.12+) |
 
+![Deploy a fleet: agents join, the controller fails a VM over](docs/social/anim/deploy-fleet.svg)
+
 The daemon alone is a complete single-host manager. Add the controller and an agent per host for a fleet; `machina-bpfd` runs on every host that should get the eBPF datapath.
+
+---
+
+## Database: SQLite or PostgreSQL
+
+![SQLite or PostgreSQL: start embedded, grow into a shared database](docs/ux/readme-database.jpg)
+
+The controller keeps its state in one database. Both backends come from one source tree and are chosen when the controller is built.
+
+| | SQLite (default) | PostgreSQL |
+|---|---|---|
+| Setup | None; one file, created and migrated on first start | `machinactl db setup pod\|package\|external` |
+| Fits | 1 or 2 hosts, labs, evaluations | Hundreds of machines |
+| Controllers | One | Several on different hosts; one leader, hand-over inside the lease |
+| Way back | n/a | `machinactl db setup sqlite` (the SQLite file is never touched) |
+
+![Move the controller from SQLite to PostgreSQL with one command](docs/social/anim/deploy-postgres.svg)
+
+```bash
+sudo machinactl db setup pod --migrate     # managed PostgreSQL 16 in Podman, copies your SQLite data
+sudo machinactl db status                  # backend, login, size, migrations
+sudo machinactl db backup                  # pg_dump, or an online copy on SQLite
+# or at install time: scripts/install-platform.sh --database pod|package|external|sqlite
+```
+
+Every schema change ships as two migrations, and CI prepares every SQL statement against PostgreSQL. **Status:** the PostgreSQL build passes the controller's whole test suite on PostgreSQL 16, and an isolated PostgreSQL-backed controller was run live (two controllers on one database elect one leader and hand over within the lease; 500 machines list in under a second), and a copy of the lab host's real database loaded with identical row counts. Not done yet: a PostgreSQL controller managing real hosts. Until a site has run on it, SQLite stays the safe default ([claim C24](docs/claims.md), [guide](docs/guides/database.md)).
+
+---
+
+## EC2-compatible API
+
+![EC2-compatible API: stock AWS clients to the controller to your hosts](docs/ux/readme-ec2.jpg)
+
+![Launch instances with the aws CLI against Machina](docs/social/anim/ec2-launch.svg)
+
+The controller answers four AWS query services (EC2, Auto Scaling, ELBv2 and CloudWatch-style alarms) with SigV4-signed requests, so
+`aws`, boto3 and Terraform's `aws` provider work with an endpoint override. It is a compatibility layer over Machina's own objects, **not AWS**: 288 actions are
+mapped, each one applied, recorded as a stored plan, or refused by name, never silently dropped. The per-action status table is generated from the code.
+
+```bash
+# an admin creates an access key (the secret is shown once)
+curl -sk -H "Authorization: Bearer $TOKEN" -X POST https://HOST:5093/api/v1/ec2/access-keys \
+     -d '{"description":"ci"}' -H 'content-type: application/json'
+
+export AWS_ACCESS_KEY_ID=MCAK… AWS_SECRET_ACCESS_KEY=… AWS_DEFAULT_REGION=machina
+EC2=https://HOST:5093/ec2
+aws --endpoint-url $EC2 --no-verify-ssl ec2 run-instances --image-id <ImageId> --count 3
+aws --endpoint-url $EC2 --no-verify-ssl ec2 describe-instances
+```
+
+```python
+import boto3   # same endpoint, same keys
+ec2 = boto3.client("ec2", endpoint_url="https://HOST:5093/ec2", verify=False, region_name="machina")
+print([i["InstanceId"] for r in ec2.describe_instances()["Reservations"] for i in r["Instances"]])
+```
+
+**Status:** implemented and unit-tested; not every action has been exercised with a stock client ([what has been run](docs/cloud-ec2-api.md#what-has-been-run-with-a-real-client)). [API and action table →](docs/cloud-ec2-api.md) · [Clients and Terraform →](docs/cloud-ec2-clients.md) · [Semantics →](docs/cloud-ec2-semantics.md)
 
 ---
 
@@ -190,6 +281,7 @@ On any Linux host with KVM (Ubuntu, Debian, Fedora, RHEL/Alma/Rocky, openSUSE, A
 git clone https://github.com/zyvorai/zyvor-machina.git machina && cd machina
 ./machinactl deploy        # deps · build · install · start · verify
 # open https://<host>:5092 and sign in with a local (PAM) account
+# controller state is embedded SQLite; for PostgreSQL see "Database" above
 # (package installs create an admin user instead: sudo machinactl show-login prints it)
 ```
 

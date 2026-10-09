@@ -16,7 +16,8 @@ const scenes = {
     title: 'One host. One command.', sub: 'machinactl deploy builds, installs, starts and verifies',
     dur: 14,
     lines: [
-      { t: 0.5, text: '$ git clone https://github.com/zyvorai/zyvor-machina.git machina', c: C.ink },
+      { t: 0.5, text: '$ git clone \\', c: C.ink },
+      { t: 0.7, text: '    https://github.com/zyvorai/zyvor-machina.git machina', c: C.ink },
       { t: 1.5, text: '$ cd machina && ./machinactl deploy', c: C.ink },
       { t: 3, text: 'deps · build · install · start · verify', c: C.soft },
       { t: 5, text: '✓ machina-daemon      :5092', c: C.green },
@@ -74,7 +75,7 @@ const scenes = {
       { id: 's', x: 700, y: 180, w: 340, h: 120, label: 'SQLite', sub: 'controller.db · default', c: C.green, t: 0.5 },
       { id: 'p', x: 1180, y: 180, w: 340, h: 120, label: 'PostgreSQL 16', sub: 'managed pod · daily dumps', c: C.blue, t: 5 },
       { id: 'c1', x: 1180, y: 400, w: 340, h: 90, label: 'controller A', sub: 'leader', c: C.amber, t: 8 },
-      { id: 'c2', x: 1180, y: 520, w: 340, h: 90, label: 'controller B', sub: 'standby, takes over inside the lease', c: C.amber, t: 11.5 },
+      { id: 'c2', x: 1180, y: 520, w: 340, h: 90, label: 'controller B', sub: 'standby, takes over', c: C.amber, t: 11.5 },
       { id: 'm', x: 700, y: 400, w: 340, h: 90, label: '--migrate', sub: 'rows copied, counts checked', c: C.violet, t: 6.5 },
     ],
   },
@@ -82,7 +83,8 @@ const scenes = {
     title: 'Use the tools you already know.', sub: 'The EC2-compatible endpoint answers awscli, boto3 and Terraform',
     dur: 14,
     lines: [
-      { t: 0.5, text: '$ export AWS_ACCESS_KEY_ID=MCAK… AWS_SECRET_ACCESS_KEY=…', c: C.soft },
+      { t: 0.5, text: '$ export AWS_ACCESS_KEY_ID=MCAK…', c: C.soft },
+      { t: 0.8, text: '$ export AWS_SECRET_ACCESS_KEY=…', c: C.soft },
       { t: 1.5, text: '$ EC2=https://HOST:5093/ec2', c: C.soft },
       { t: 3, text: '$ aws --endpoint-url $EC2 ec2 run-instances \\', c: C.ink },
       { t: 3.4, text: '    --image-id <id> --count 3', c: C.ink },
@@ -139,15 +141,16 @@ function build(name, s) {
   }
   let out = ''
   s.lines.forEach((l, i) => {
-    out += `<text class="${anim(l.t)}" x="64" y="${196 + i * 46}" font-size="21" fill="${l.c}">${esc(l.text)}</text>`
+    out += `<text class="${anim(l.t)}" x="64" y="${196 + i * 46}" font-size="18" fill="${l.c}">${esc(l.text)}</text>`
   })
   for (const nd of s.nodes) {
     const cls = anim(nd.t, nd.off)
     const cx = nd.x + nd.w / 2
     out += `<g class="${cls}"><rect x="${nd.x}" y="${nd.y}" width="${nd.w}" height="${nd.h}" rx="14" fill="${nd.c}" fill-opacity=".13" stroke="${nd.c}" stroke-opacity=".7" stroke-width="2"/>`
     if (nd.sub) {
-      out += `<text x="${cx}" y="${nd.y + nd.h / 2 - 2}" text-anchor="middle" class="h" font-size="25" fill="${C.ink}">${esc(nd.label)}</text>`
-      out += `<text x="${cx}" y="${nd.y + nd.h / 2 + 26}" text-anchor="middle" font-size="16" fill="${C.soft}">${esc(nd.sub)}</text></g>`
+      const ly = nd.h >= 150 ? nd.y + 44 : nd.y + nd.h / 2 - 2
+      out += `<text x="${cx}" y="${ly}" text-anchor="middle" class="h" font-size="25" fill="${C.ink}">${esc(nd.label)}</text>`
+      out += `<text x="${cx}" y="${ly + 28}" text-anchor="middle" font-size="16" fill="${C.soft}">${esc(nd.sub)}</text></g>`
     } else {
       out += `<text x="${cx}" y="${nd.y + nd.h / 2 + 9}" text-anchor="middle" class="h" font-size="24" fill="${C.ink}">${esc(nd.label)}</text></g>`
     }
@@ -168,7 +171,7 @@ ${css.join('\n')}
 <text x="1536" y="64" text-anchor="end" font-size="17" fill="${C.blue}">${esc(s.sub)}</text>
 <rect x="40" y="150" width="610" height="${H - 190}" rx="16" fill="#0b0b0e" stroke="#ffffff" stroke-opacity=".12"/>
 <circle cx="66" cy="172" r="6" fill="#ff5f57"/><circle cx="88" cy="172" r="6" fill="#febc2e"/><circle cx="110" cy="172" r="6" fill="#28c840"/>
-${out.replace(/y="(\d+)" font-size="21"/g, (m, y) => `y="${+y + 40}" font-size="21"`)}
+${out.replace(/y="(\d+)" font-size="18"/g, (m, y) => `y="${+y + 40}" font-size="18"`)}
 <text x="64" y="${H - 20}" font-size="16" fill="${C.soft}">github.com/zyvorai/zyvor-machina</text>
 </svg>
 `
