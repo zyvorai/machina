@@ -253,19 +253,22 @@ The controller answers four AWS query services (EC2, Auto Scaling, ELBv2 and Clo
 mapped, each one applied, recorded as a stored plan, or refused by name, never silently dropped. The per-action status table is generated from the code.
 
 ```bash
-# an admin creates an access key (the secret is shown once)
-curl -sk -H "Authorization: Bearer $TOKEN" -X POST https://HOST:5093/api/v1/ec2/access-keys \
-     -d '{"description":"ci"}' -H 'content-type: application/json'
+# an admin creates an access key through the daemon (the secret is shown once)
+curl -sk -c jar -X POST https://HOST:5092/api/v1/auth/login -H 'content-type: application/json' -d '{"username":"USER","password":"PASS"}'
+curl -sk -b jar -X POST https://HOST:5092/api/v1/platform/controller/api/v1/ec2/access-keys \
+     -H 'content-type: application/json' -d '{"description":"ci"}'
 
+# the EC2 endpoint is plain http on the controller's loopback port 5093; run this on the host, or tunnel:
+#   ssh -N -L 15093:127.0.0.1:5093 USER@HOST     (then use http://127.0.0.1:15093)
 export AWS_ACCESS_KEY_ID=MCAK… AWS_SECRET_ACCESS_KEY=… AWS_DEFAULT_REGION=machina
-EC2=https://HOST:5093/ec2
-aws --endpoint-url $EC2 --no-verify-ssl ec2 run-instances --image-id <ImageId> --count 3
-aws --endpoint-url $EC2 --no-verify-ssl ec2 describe-instances
+EC2=http://127.0.0.1:5093/ec2
+aws --endpoint-url $EC2 ec2 run-instances --image-id <ImageId> --count 3
+aws --endpoint-url $EC2 ec2 describe-instances
 ```
 
 ```python
-import boto3   # same endpoint, same keys
-ec2 = boto3.client("ec2", endpoint_url="https://HOST:5093/ec2", verify=False, region_name="machina")
+import boto3   # same endpoint, same keys (run on the host or through the tunnel)
+ec2 = boto3.client("ec2", endpoint_url="http://127.0.0.1:5093/ec2", region_name="machina")
 print([i["InstanceId"] for r in ec2.describe_instances()["Reservations"] for i in r["Instances"]])
 ```
 

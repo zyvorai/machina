@@ -85,7 +85,7 @@ const scenes = {
     lines: [
       { t: 0.5, text: '$ export AWS_ACCESS_KEY_ID=MCAK…', c: C.soft },
       { t: 0.8, text: '$ export AWS_SECRET_ACCESS_KEY=…', c: C.soft },
-      { t: 1.5, text: '$ EC2=https://HOST:5093/ec2', c: C.soft },
+      { t: 1.5, text: '$ EC2=http://127.0.0.1:5093/ec2', c: C.soft },
       { t: 3, text: '$ aws --endpoint-url $EC2 ec2 run-instances \\', c: C.ink },
       { t: 3.4, text: '    --image-id <id> --count 3', c: C.ink },
       { t: 6, text: 'i-… pending  i-… pending  i-… pending', c: C.soft },
