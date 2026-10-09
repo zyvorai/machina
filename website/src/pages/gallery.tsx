@@ -15,6 +15,10 @@ const CARDS = [
   {src: '/readme-capabilities.jpg', title: 'Capabilities at a glance'},
   {src: '/readme-architecture.jpg', title: 'How the core services fit together'},
   {src: '/readme-vs-openstack.jpg', title: 'Machina vs OpenStack'},
+  {src: '/readme-hero.jpg', title: 'Run your own cloud on your own hardware'},
+  {src: '/readme-replace-openstack.jpg', title: 'Replace OpenStack, service by service'},
+  {src: '/readme-database.jpg', title: 'SQLite or PostgreSQL'},
+  {src: '/readme-ec2.jpg', title: 'EC2-compatible API'},
   {src: '/machina-social-card.jpg', title: 'Run, secure, scale, operate'},
 ];
 

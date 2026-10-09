@@ -13,7 +13,7 @@ import styles from './subpage.module.css';
 
 const ROWS: {topic: string; machina: string; openstack: string}[] = [
   {topic: 'Services to run', machina: '4 Rust services: daemon, controller, agent, machina-bpfd', openstack: '9+ services: Keystone, Nova, Neutron, Glance, Cinder, Placement, Horizon, Heat, Octavia'},
-  {topic: 'Backing infrastructure', machina: 'Embedded SQLite; NATS only if you want it', openstack: 'MariaDB/Galera, RabbitMQ, Memcached'},
+  {topic: 'Backing infrastructure', machina: 'Embedded SQLite, or PostgreSQL for large fleets; NATS only if you want it', openstack: 'MariaDB/Galera, RabbitMQ, Memcached'},
   {topic: 'Install', machina: './machinactl deploy on one host; deploy-remote.sh for the next', openstack: 'Kolla-Ansible or OpenStack-Ansible deployment project'},
   {topic: 'Smallest useful footprint', machina: 'A single KVM host', openstack: 'A multi-node control plane'},
   {topic: 'Self-service primitives', machina: 'Flavors, images, volumes, security groups, keypairs, stacks, load balancers in Fleet Cloud', openstack: 'Nova, Glance, Cinder, Neutron, Heat, Octavia'},
@@ -45,6 +45,16 @@ export default function VsOpenStack(): ReactNode {
       <main className="container mx-section">
         <Reveal>
           <img src={card} alt="Machina vs OpenStack" className={styles.card} />
+        </Reveal>
+
+        <Reveal>
+          <Heading as="h2">Service by service</Heading>
+          <img src={useBaseUrl('/readme-replace-openstack.jpg')} alt="Each OpenStack service and what replaces it in Machina" className={styles.card} loading="lazy" />
+          <p>
+            Machina is not a drop-in: there is no Nova or Neutron API, so tools move to Machina's REST API or its
+            EC2-compatible API, and guests move as disk images. There is no OpenStack importer.{' '}
+            <Link to="/docs/getting-started/from-openstack">Read the migration guide →</Link>
+          </p>
         </Reveal>
 
         <Reveal>

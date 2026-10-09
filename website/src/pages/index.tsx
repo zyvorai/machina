@@ -1,6 +1,7 @@
 // Copyright 2026 Zyvor AI Labs · https://zyvor.dev
 // SPDX-License-Identifier: LicenseRef-Zyvor-Production-1.0
 
+import {useState} from 'react';
 import type {ReactNode} from 'react';
 import clsx from 'clsx';
 import Link from '@docusaurus/Link';
@@ -188,7 +189,7 @@ function VsOpenStack() {
             <span className="mx-gradient">A fraction of the moving parts.</span>
           </Heading>
           <p className={clsx('mx-lede mx-center', styles.darkLede)}>
-            Four Rust services and embedded SQLite instead of nine-plus services, a Galera cluster and a message bus. Choose
+            Four Rust services and embedded SQLite (or PostgreSQL) instead of nine-plus services, a Galera cluster and a message bus. Choose
             OpenStack for thousands of tenants; choose Machina for the fleets you own.
           </p>
         </Reveal>
@@ -198,7 +199,85 @@ function VsOpenStack() {
         <div className="text--center">
           <Link className="mx-btn mx-btn--light" to="/vs-openstack">
             See the full comparison
+          </Link>{' '}
+          <Link className="mx-btn mx-btn--ghost" to="/docs/getting-started/from-openstack">
+            Replace OpenStack: the guide
           </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const DEPLOYS = [
+  {key: 'single', label: 'One host', src: '/anim/deploy-single-host.svg', alt: 'Deploy Machina on one host with ./machinactl deploy', doc: '/docs/getting-started/quickstart'},
+  {key: 'fleet', label: 'A fleet', src: '/anim/deploy-fleet.svg', alt: 'Add hosts; the controller fails a VM over to a healthy host', doc: '/docs/core-concepts/fleet-ha'},
+  {key: 'pg', label: 'PostgreSQL', src: '/anim/deploy-postgres.svg', alt: 'Move the controller from SQLite to PostgreSQL', doc: '/docs/getting-started/database'},
+  {key: 'ec2', label: 'EC2 API', src: '/anim/ec2-launch.svg', alt: 'Launch instances with the aws CLI', doc: '/docs/core-concepts/ec2-api'},
+];
+
+function Deploy() {
+  const [active, setActive] = useState('single');
+  const d = DEPLOYS.find((x) => x.key === active) ?? DEPLOYS[0];
+  const src = useBaseUrl(d.src);
+  return (
+    <section className="mx-section mx-section--panel">
+      <div className="container">
+        <Reveal className="mx-center text--center">
+          <div className="mx-eyebrow">Deploy</div>
+          <Heading as="h2">
+            From one command <span className="mx-gradient--light">to a fleet.</span>
+          </Heading>
+          <p className="mx-lede mx-center">Start on a single host with embedded SQLite, add hypervisors, move to PostgreSQL when the fleet grows.</p>
+        </Reveal>
+        <div className="text--center" role="tablist" aria-label="Deployment stories">
+          {DEPLOYS.map((x) => (
+            <button
+              key={x.key}
+              role="tab"
+              aria-selected={x.key === active}
+              className={clsx('mx-btn', x.key === active ? 'mx-btn--primary' : 'mx-btn--ghost-dark')}
+              style={{margin: '0 6px 8px'}}
+              onClick={() => setActive(x.key)}>
+              {x.label}
+            </button>
+          ))}
+        </div>
+        <Reveal>
+          <img src={src} alt={d.alt} className={styles.wideCard} />
+        </Reveal>
+        <div className="text--center">
+          <Link to={d.doc}>Read the guide →</Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function PlatformFacts() {
+  const base = useBaseUrl('/');
+  const items = [
+    {img: '/readme-database.jpg', alt: 'SQLite or PostgreSQL', title: 'SQLite or PostgreSQL', body: 'Embedded SQLite by default. PostgreSQL for hundreds of machines or several controllers, with a one-command migration and a way back.', to: '/docs/getting-started/database'},
+    {img: '/readme-ec2.jpg', alt: 'EC2-compatible API', title: 'EC2-compatible API', body: 'awscli, boto3 and Terraform work against the controller with an endpoint override. Every action is applied, recorded or refused by name.', to: '/docs/core-concepts/ec2-api'},
+  ];
+  return (
+    <section className="mx-section">
+      <div className="container">
+        <Reveal className="mx-center text--center">
+          <div className="mx-eyebrow">Under the hood</div>
+          <Heading as="h2">Use the tools you already know.</Heading>
+        </Reveal>
+        <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24, marginTop: 32}}>
+          {items.map((it, i) => (
+            <Reveal key={it.title} delay={i * 90}>
+              <div className={clsx('mx-card', styles.port)}>
+                <img src={base + it.img.slice(1)} alt={it.alt} loading="lazy" style={{width: '100%', borderRadius: 12}} />
+                <div className={styles.portHead}><code>{it.title}</code></div>
+                <p>{it.body}</p>
+                <Link to={it.to}>Read more →</Link>
+              </div>
+            </Reveal>
+          ))}
         </div>
       </div>
     </section>
@@ -209,7 +288,7 @@ function Architecture() {
   const card = useBaseUrl('/readme-architecture.jpg');
   const parts = [
     {name: 'machina-daemon', port: ':5092', body: 'Single-host REST + WebSocket API, auth, RBAC and console proxies. Serves the web UI.'},
-    {name: 'machina-controller', port: ':5093', body: 'Fleet, HA, DRS, Fleet Cloud and Zyra AI. Embedded SQLite, optional NATS.'},
+    {name: 'machina-controller', port: ':5093', body: 'Fleet, HA, DRS, Fleet Cloud and Zyra AI. Embedded SQLite or PostgreSQL, optional NATS.'},
     {name: 'machina-agent', port: ':50051', body: 'gRPC over TLS on every hypervisor. Executes libvirt and eBPF operations for the fleet.'},
     {name: 'machina-bpfd', port: 'unix socket', body: 'Root eBPF service on every host: load balancing, CNI datapath, shield, isolation and telemetry.'},
   ];
@@ -339,6 +418,8 @@ export default function Home(): ReactNode {
         <Why />
         <Features />
         <VsOpenStack />
+        <Deploy />
+        <PlatformFacts />
         <Architecture />
         <Strip />
         <Trust />

@@ -80,7 +80,7 @@ export const FEATURES: Feature[] = [
 ];
 
 export const WHY = [
-  {problem: 'OpenStack is a six-week project and a full-time team.', answer: 'One machinactl deploy: a few Rust services, embedded SQLite, a browser UI minutes later.'},
+  {problem: 'OpenStack is a six-week project and a full-time team.', answer: 'One machinactl deploy: a few Rust services, embedded SQLite (PostgreSQL when you outgrow it), a browser UI minutes later.'},
   {problem: 'VMware renewal quotes keep climbing.', answer: 'Open KVM/libvirt underneath, with HA failover, DRS and live migration on top.'},
   {problem: 'libvirt ops live in a pile of virsh scripts.', answer: 'One dashboard, a REST API, a CLI and a Terraform provider over the same model.'},
   {problem: 'Every console needs its own gateway.', answer: 'noVNC, SPICE, serial and SSH built into the daemon, with RBAC and audit.'},
@@ -91,6 +91,9 @@ export const WHY = [
 export type News = {title: string; body: string};
 
 export const WHATS_NEW: News[] = [
+  {title: 'EC2-compatible API', body: 'Point awscli, boto3 and Terraform at the controller: 288 actions, each applied, recorded or refused by name.'},
+  {title: 'PostgreSQL controller', body: 'Run the controller on PostgreSQL for large fleets or several controllers; one command migrates an SQLite site.'},
+  {title: 'FluxVM backend', body: 'FluxVM VMs sit next to libvirt VMs, with eBPF networking, live migration and HA across hosts.'},
   {title: 'Boot Doctor', body: "A VM that won't boot is diagnosed and repaired offline through GuestKit, after a backup."},
   {title: 'VM quarantine', body: 'Isolate a suspect VM in the eBPF datapath under a lease that lapses on its own.'},
   {title: 'Just-in-time access', body: 'Open a VM for a set time, with two-person approval and automatic expiry.'},
