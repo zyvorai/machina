@@ -186,6 +186,12 @@ Default port: **5092** (daemon), **5093** (controller), **50051** (agent gRPC).
 
 ---
 
+## Docs graphics and animations
+
+README and website graphics are generated, not drawn by hand. Cards: HTML in `docs/social/readme/*.html`, rendered to `docs/ux/readme-*.jpg` by `docs/social/readme/build.sh` (Chrome + `sips`, macOS). Animated deploy SVGs: `node docs/social/anim/gen.mjs` (CSS-only, no script); `docs/social/anim/build.sh` renders GIF fallbacks. Edit the source, rerun the build, commit both. The EC2 action tables in `docs/cloud-ec2-api.md` come from `python3 scripts/ec2/action_table.py` (`--check` fails when stale).
+
+---
+
 ## Design System
 
 The UI follows **apple.com / Zeus OS** contracts — see [docs/design/APPLE-UX-CONTRACT.md](docs/design/APPLE-UX-CONTRACT.md) and [docs/design/DAYLIGHT-CONTRACT.md](docs/design/DAYLIGHT-CONTRACT.md).

@@ -9,6 +9,17 @@ controller is built:
   and sites that already run and back up a PostgreSQL service. SQLite has a single writer and one file; PostgreSQL has neither
   limit.
 
+![SQLite or PostgreSQL: start embedded, grow into a shared database](../ux/readme-database.jpg)
+
+| | SQLite (default) | PostgreSQL |
+|---|---|---|
+| Setup | None; the file is created and migrated on first start | `machinactl db setup pod\|package\|external` |
+| Machines | 1 or 2 hosts, evaluations, labs | Hundreds |
+| Controllers | One | Several on different hosts, one leader, hand-over inside the lease |
+| Writers | One | Many |
+| Backups | Online copy (`machinactl db backup`, needs `sqlite3`) | `pg_dump`, daily dumps from the managed pod |
+| Way back | n/a | `machinactl db setup sqlite` (the SQLite file is never touched by a switch) |
+
 **Status (what has actually been run).** The PostgreSQL build passes the controller's whole test suite against PostgreSQL 16, and an
 isolated PostgreSQL-backed controller was run live on the lab host: login, security groups and rules, tags, key pairs, alarms,
 the EC2 endpoint with boto3, 500 machines listed in under a second, **two controllers on one database** (one leader; killing it
