@@ -22,3 +22,7 @@ render() { # <html> <jpg> <height>
 render architecture.html readme-architecture.jpg 560
 render capabilities.html readme-capabilities.jpg 590
 render vs-openstack.html readme-vs-openstack.jpg 800
+render hero.html readme-hero.jpg 680
+render replace-openstack.html readme-replace-openstack.jpg 880
+render database.html readme-database.jpg 700
+render ec2.html readme-ec2.jpg 720
